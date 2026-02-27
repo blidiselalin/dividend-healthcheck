@@ -1,0 +1,27 @@
+# DividendScope - Core Dependencies
+# Install with: pip install -r requirements.txt
+
+# Web Framework
+streamlit>=1.30.0
+
+# Data & Analysis
+pandas>=2.0.0
+yfinance>=0.2.36
+
+# Vector Database
+chromadb>=0.4.22
+
+# Visualization
+plotly>=5.18.0
+
+# PDF Reports (optional)
+reportlab>=4.0.0
+
+# Data Download (optional)
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+
+# Development (optional)
+# pytest>=8.0.0
+# black>=24.0.0
+# mypy>=1.8.0

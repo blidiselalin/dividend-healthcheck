@@ -1,28 +1,64 @@
 """
 Configuration and constants for DividendScope.
 
-This module contains all configurable parameters including stock lists,
-scoring weights, thresholds, and data provider settings.
+This module contains all configurable parameters including:
+- Data directory paths
+- Stock lists (Dividend Kings, Aristocrats)
+- Scoring weights and thresholds
+- Data validation limits
+- API settings
 """
+
+from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Dict, List, Final
+from typing import Dict, List, Final, FrozenSet
 
-# Data directory configuration
-# Uses ~/.dividendscope/data by default, can be overridden with DIVIDENDSCOPE_DATA_DIR env var
+# =============================================================================
+# DATA DIRECTORY CONFIGURATION
+# =============================================================================
+
+# Uses ~/.dividendscope/data by default, can be overridden with env var
 _default_data_dir = Path.home() / ".dividendscope" / "data"
 DATA_DIR: Final[Path] = Path(os.environ.get("DIVIDENDSCOPE_DATA_DIR", str(_default_data_dir)))
 
 # Subdirectories
 VECTORDB_DIR: Final[Path] = DATA_DIR / "vectordb"
 DOWNLOADS_DIR: Final[Path] = DATA_DIR / "downloads"
-REPORTS_DIR: Final[Path] = Path("reports")  # Reports stay in project directory
+REPORTS_DIR: Final[Path] = Path("reports")
 
 # Ensure directories exist
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 VECTORDB_DIR.mkdir(parents=True, exist_ok=True)
 DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# =============================================================================
+# DIVIDEND TIER DEFINITIONS
+# =============================================================================
+
+class DividendTier:
+    """Dividend tier classification based on consecutive years of increases."""
+    
+    KING = 50        # 50+ years - Elite status
+    ARISTOCRAT = 25  # 25+ years - S&P 500 Dividend Aristocrats
+    ACHIEVER = 10    # 10+ years - Dividend Achievers
+    CONTENDER = 5    # 5+ years - Dividend Contenders
+    STARTER = 1      # 1+ years - Beginning dividend history
+
+
+DIVIDEND_TIERS: Final[Dict[str, int]] = {
+    "king": DividendTier.KING,
+    "aristocrat": DividendTier.ARISTOCRAT,
+    "achiever": DividendTier.ACHIEVER,
+    "contender": DividendTier.CONTENDER,
+}
+
+
+# =============================================================================
+# STOCK LISTS
+# =============================================================================
 
 # Dividend stocks for analysis - including Kings (50+ years) and high-quality payers
 DIVIDEND_KINGS: Final[List[str]] = [
@@ -58,16 +94,14 @@ DIVIDEND_ARISTOCRATS: Final[List[str]] = [
     "T", "TROW", "VFC", "WBA", "WMT", "WST", "XOM",
 ]
 
-# Combined list for full analysis
+# Combined list for full analysis (frozen for immutability)
 ALL_DIVIDEND_STOCKS: Final[List[str]] = sorted(set(DIVIDEND_KINGS + DIVIDEND_ARISTOCRATS))
+DIVIDEND_SYMBOLS_SET: Final[FrozenSet[str]] = frozenset(ALL_DIVIDEND_STOCKS)
 
-# Dividend streak tiers
-DIVIDEND_TIERS: Final[Dict[str, int]] = {
-    "king": 50,        # 50+ years
-    "aristocrat": 25,  # 25+ years
-    "achiever": 10,    # 10+ years
-    "contender": 5,    # 5+ years
-}
+
+# =============================================================================
+# SCORING CONFIGURATION
+# =============================================================================
 
 # Scoring weights - total = 100 points (investor-focused)
 SCORING_WEIGHTS: Final[Dict[str, int]] = {
@@ -89,17 +123,51 @@ RECOMMENDATION_THRESHOLDS: Final[Dict[str, int]] = {
     "hold": 35,
 }
 
-# Data validation thresholds
+
+# =============================================================================
+# DATA VALIDATION THRESHOLDS
+# =============================================================================
+
+# Maximum valid values (values above these are likely data errors)
 MAX_DIVIDEND_YIELD_PCT: Final[float] = 15.0
 MAX_PAYOUT_RATIO_PCT: Final[float] = 200.0
+MAX_PE_RATIO: Final[float] = 500.0
+MAX_DEBT_TO_EQUITY: Final[float] = 10.0
 
-# API rate limiting (seconds between requests)
+# Minimum valid values
+MIN_MARKET_CAP: Final[float] = 1_000_000  # $1M minimum
+
+# Dividend safety thresholds (payout ratio percentage)
+PAYOUT_VERY_SAFE: Final[float] = 40.0
+PAYOUT_SAFE: Final[float] = 60.0
+PAYOUT_MODERATE: Final[float] = 75.0
+PAYOUT_ELEVATED: Final[float] = 90.0
+
+
+# =============================================================================
+# API & RATE LIMITING
+# =============================================================================
+
 API_DELAY_SECONDS: Final[float] = 0.2
+API_TIMEOUT_SECONDS: Final[int] = 30
+MAX_RETRIES: Final[int] = 3
 
-# Data source attribution (masked as aggregated public sources)
+
+# =============================================================================
+# DATA SOURCE ATTRIBUTION
+# =============================================================================
+
 DATA_SOURCES: Final[Dict[str, str]] = {
     "primary": "Market Data Aggregator",
     "fundamentals": "Public Financial Filings",
     "analyst": "Consensus Estimates",
     "historical": "Exchange Data",
 }
+
+
+# =============================================================================
+# HISTORY LIMITS
+# =============================================================================
+
+MAX_HISTORY_YEARS: Final[int] = 10
+DEFAULT_STALENESS_DAYS: Final[int] = 7

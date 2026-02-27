@@ -5,8 +5,27 @@ Provides conversion functions between different data models
 used across the application.
 """
 
-from typing import Optional, List
-from datetime import date
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, List, Optional, Dict, Any
+
+if TYPE_CHECKING:
+    from models.stock import StockData, DividendHistory
+    from data_ingestion.models import StockDocument, DividendRecord
+
+logger = logging.getLogger(__name__)
+
+# Payment frequency constants
+FREQUENCY_MONTHLY = 12
+FREQUENCY_QUARTERLY = 4
+FREQUENCY_SEMI_ANNUAL = 2
+FREQUENCY_ANNUAL = 1
+
+# Thresholds for frequency detection
+MONTHLY_THRESHOLD = 11
+QUARTERLY_THRESHOLD = 3.5
+SEMI_ANNUAL_THRESHOLD = 1.5
 
 
 def document_to_stock_data(doc: "StockDocument") -> "StockData":
@@ -21,55 +40,28 @@ def document_to_stock_data(doc: "StockDocument") -> "StockData":
         
     Returns:
         StockData instance for UI consumption.
+        
+    Raises:
+        ValueError: If doc is None or missing required fields.
     """
+    if doc is None:
+        raise ValueError("Cannot convert None document to StockData")
+    
+    if not doc.symbol:
+        raise ValueError("Document must have a symbol")
+    
+    # Import here to avoid circular imports
     from models.stock import StockData, DividendHistory
-    from data_ingestion.models import StockDocument
     
-    # Build DividendHistory from document
-    div_history = None
-    if doc.dividend_streak_years is not None or doc.dividend_history:
-        cagr_5y = doc.dividend_cagr_5y or 0.0
-        cagr_10y = doc.dividend_cagr_10y or 0.0
-        total_years = doc.dividend_total_years or 0
-        
-        # Calculate total years from history if not set
-        if not total_years and doc.dividend_history:
-            years = set(d.ex_date.year for d in doc.dividend_history)
-            total_years = len(years)
-        
-        # Get ex-dividend date from history if not set
-        ex_date = doc.ex_dividend_date
-        if not ex_date and doc.dividend_history:
-            sorted_divs = sorted(doc.dividend_history, key=lambda x: x.ex_date, reverse=True)
-            if sorted_divs:
-                ex_date = sorted_divs[0].ex_date
-        
-        # Get payment frequency
-        payment_freq = doc.payment_frequency
-        if not payment_freq and doc.dividend_history:
-            payment_freq = _detect_payment_frequency(doc.dividend_history)
-        
-        div_history = DividendHistory(
-            consecutive_years=doc.dividend_streak_years or 0,
-            total_years=total_years,
-            cagr_5y=cagr_5y,
-            cagr_10y=cagr_10y,
-            current_annual=doc.annual_dividend or 0.0,
-            ex_dividend_date=ex_date,
-            payment_frequency=payment_freq,
-        )
-    
-    # Calculate price to 52w high percentage
-    price_to_52w_high = None
-    if doc.current_price and doc.fifty_two_week_high:
-        price_to_52w_high = ((doc.current_price / doc.fifty_two_week_high) - 1) * 100
+    div_history = _build_dividend_history(doc)
+    price_to_52w_high = _calculate_price_to_high(doc.current_price, doc.fifty_two_week_high)
     
     stock_data = StockData(
         # Identity
         symbol=doc.symbol,
-        name=doc.name,
-        sector=doc.sector,
-        industry=doc.industry,
+        name=doc.name or doc.symbol,
+        sector=doc.sector or "Unknown",
+        industry=doc.industry or "Unknown",
         
         # Dividend metrics
         dividend_yield_pct=doc.dividend_yield,
@@ -125,45 +117,119 @@ def document_to_stock_data(doc: "StockDocument") -> "StockData":
         num_analysts=doc.num_analysts,
         
         # Metadata
-        data_sources=[doc.source.value],
+        data_sources=[doc.source.value] if doc.source else [],
         data_quality_score=doc.data_quality,
     )
     
-    # Store last updated for freshness checks
+    # Store last updated for freshness checks (private attribute)
     stock_data._last_updated = doc.last_updated
     
     return stock_data
 
 
-def _detect_payment_frequency(dividend_history: List) -> int:
+def _build_dividend_history(doc: "StockDocument") -> Optional["DividendHistory"]:
+    """
+    Build DividendHistory from StockDocument fields.
+    
+    Args:
+        doc: Source document with dividend data.
+        
+    Returns:
+        DividendHistory instance or None if no dividend data.
+    """
+    from models.stock import DividendHistory
+    
+    if doc.dividend_streak_years is None and not doc.dividend_history:
+        return None
+    
+    cagr_5y = doc.dividend_cagr_5y or 0.0
+    cagr_10y = doc.dividend_cagr_10y or 0.0
+    total_years = doc.dividend_total_years or 0
+    
+    # Calculate total years from history if not set
+    if not total_years and doc.dividend_history:
+        years = {d.ex_date.year for d in doc.dividend_history}
+        total_years = len(years)
+    
+    # Get ex-dividend date from history if not set
+    ex_date = doc.ex_dividend_date
+    if not ex_date and doc.dividend_history:
+        sorted_divs = sorted(doc.dividend_history, key=lambda x: x.ex_date, reverse=True)
+        if sorted_divs:
+            ex_date = sorted_divs[0].ex_date
+    
+    # Get payment frequency
+    payment_freq = doc.payment_frequency
+    if not payment_freq and doc.dividend_history:
+        payment_freq = detect_payment_frequency(doc.dividend_history)
+    
+    return DividendHistory(
+        consecutive_years=doc.dividend_streak_years or 0,
+        total_years=total_years,
+        cagr_5y=cagr_5y,
+        cagr_10y=cagr_10y,
+        current_annual=doc.annual_dividend or 0.0,
+        ex_dividend_date=ex_date,
+        payment_frequency=payment_freq or FREQUENCY_QUARTERLY,
+    )
+
+
+def _calculate_price_to_high(
+    current_price: Optional[float],
+    high_52w: Optional[float],
+) -> Optional[float]:
+    """
+    Calculate percentage difference from 52-week high.
+    
+    Args:
+        current_price: Current stock price.
+        high_52w: 52-week high price.
+        
+    Returns:
+        Percentage (negative if below high) or None.
+    """
+    if not current_price or not high_52w or high_52w <= 0:
+        return None
+    return ((current_price / high_52w) - 1) * 100
+
+
+def detect_payment_frequency(dividend_history: List["DividendRecord"]) -> int:
     """
     Detect dividend payment frequency from history.
     
-    Returns payments per year as int (12=monthly, 4=quarterly, 2=semi-annual, 1=annual).
+    Analyzes the dividend history to determine how often dividends
+    are paid (monthly, quarterly, semi-annual, or annual).
+    
+    Args:
+        dividend_history: List of DividendRecord objects.
+        
+    Returns:
+        Payments per year (12=monthly, 4=quarterly, 2=semi-annual, 1=annual).
     """
     if not dividend_history or len(dividend_history) < 2:
-        return 4  # Default to quarterly
+        return FREQUENCY_QUARTERLY
     
     try:
         # Count payments per year
-        years: dict = {}
+        years_count: Dict[int, int] = {}
         for div in dividend_history:
             year = div.ex_date.year
-            years[year] = years.get(year, 0) + 1
+            years_count[year] = years_count.get(year, 0) + 1
         
-        if not years:
-            return 4
+        if not years_count:
+            return FREQUENCY_QUARTERLY
         
-        avg_per_year = sum(years.values()) / len(years)
+        avg_per_year = sum(years_count.values()) / len(years_count)
         
-        if avg_per_year >= 11:
-            return 12  # Monthly
-        elif avg_per_year >= 3.5:
-            return 4   # Quarterly
-        elif avg_per_year >= 1.5:
-            return 2   # Semi-annual
+        if avg_per_year >= MONTHLY_THRESHOLD:
+            return FREQUENCY_MONTHLY
+        elif avg_per_year >= QUARTERLY_THRESHOLD:
+            return FREQUENCY_QUARTERLY
+        elif avg_per_year >= SEMI_ANNUAL_THRESHOLD:
+            return FREQUENCY_SEMI_ANNUAL
         else:
-            return 1   # Annual
+            return FREQUENCY_ANNUAL
             
-    except Exception:
-        return 4
+    except Exception as e:
+        logger.debug(f"Error detecting payment frequency: {e}")
+        return FREQUENCY_QUARTERLY
