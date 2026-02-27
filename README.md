@@ -211,9 +211,11 @@ python download_data.py --no-history
 python download_data.py --run-ingestion
 ```
 
-Output files are saved to:
-- `data/downloads/stockquote/` - StockQuote.io data
-- `data/downloads/nasdaq/` - Nasdaq historical data
+Data is stored externally at `~/.dividendscope/data/`:
+- `~/.dividendscope/data/downloads/` - Downloaded source files
+- `~/.dividendscope/data/vectordb/` - Vector database
+
+You can override the data location with the `DIVIDENDSCOPE_DATA_DIR` environment variable.
 
 ### Data Ingestion System
 

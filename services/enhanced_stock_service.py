@@ -14,6 +14,13 @@ from services.stock_service import StockService
 from data_ingestion.vector_store import VectorStore
 from data_ingestion.models import StockDocument
 
+# Import config for default paths
+try:
+    from config import VECTORDB_DIR
+    DEFAULT_VECTORDB_DIR = str(VECTORDB_DIR)
+except ImportError:
+    DEFAULT_VECTORDB_DIR = "data/vectordb"
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,7 +50,7 @@ class EnhancedStockService:
     
     def __init__(
         self, 
-        vectordb_dir: str = "data/vectordb",
+        vectordb_dir: str = None,
         staleness_days: int = 7,
         fetch_realtime_prices: bool = True,
     ):
@@ -51,12 +58,12 @@ class EnhancedStockService:
         Initialize enhanced service.
         
         Args:
-            vectordb_dir: Path to vector database.
+            vectordb_dir: Path to vector database. Defaults to ~/.dividendscope/data/vectordb.
             staleness_days: Days before data is considered stale.
             fetch_realtime_prices: Whether to fetch real-time prices from API.
         """
         self._vector_store: Optional[VectorStore] = None
-        self._vectordb_dir = vectordb_dir
+        self._vectordb_dir = vectordb_dir or DEFAULT_VECTORDB_DIR
         self._vector_db_available = False
         self._staleness_threshold = timedelta(days=staleness_days)
         self._fetch_realtime = fetch_realtime_prices

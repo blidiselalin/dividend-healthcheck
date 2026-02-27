@@ -15,6 +15,15 @@ from .models import StockDocument, DataSource
 from .downloaders import StockQuoteDownloader, NasdaqDownloader, BaseDownloader
 from .vector_store import VectorStore
 
+# Import config for default paths
+try:
+    from config import DOWNLOADS_DIR, VECTORDB_DIR
+    DEFAULT_DOWNLOADS_DIR = str(DOWNLOADS_DIR)
+    DEFAULT_VECTORDB_DIR = str(VECTORDB_DIR)
+except ImportError:
+    DEFAULT_DOWNLOADS_DIR = "data/downloads"
+    DEFAULT_VECTORDB_DIR = "data/vectordb"
+
 logger = logging.getLogger(__name__)
 
 # Try to import yfinance enricher
@@ -43,17 +52,17 @@ class DataIngestionPipeline:
     
     def __init__(
         self,
-        data_dir: str = "data/downloads",
-        vectordb_dir: str = "data/vectordb",
+        data_dir: str = None,
+        vectordb_dir: str = None,
     ):
         """
         Initialize the pipeline.
         
         Args:
-            data_dir: Base directory for downloaded data.
-            vectordb_dir: Directory for vector database.
+            data_dir: Base directory for downloaded data. Defaults to ~/.dividendscope/data/downloads.
+            vectordb_dir: Directory for vector database. Defaults to ~/.dividendscope/data/vectordb.
         """
-        self.data_dir = Path(data_dir)
+        self.data_dir = Path(data_dir or DEFAULT_DOWNLOADS_DIR)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         
         # Initialize components
@@ -499,14 +508,14 @@ class DataIngestionPipeline:
         return self.vector_store.import_from_json(filepath)
 
 
-def create_sample_data(data_dir: str = "data/downloads") -> None:
+def create_sample_data(data_dir: str = None) -> None:
     """
     Create sample CSV files demonstrating expected formats.
     
     This helps users understand the expected file structure
     for bulk downloads from StockQuote.io and Nasdaq.
     """
-    base_dir = Path(data_dir)
+    base_dir = Path(data_dir or DEFAULT_DOWNLOADS_DIR)
     
     # StockQuote sample files
     sq_dir = base_dir / "stockquote"

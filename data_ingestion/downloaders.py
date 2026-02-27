@@ -18,14 +18,21 @@ import logging
 
 from .models import StockDocument, PriceHistory, DividendRecord, DataSource
 
+# Import config for default paths
+try:
+    from config import DOWNLOADS_DIR
+    DEFAULT_DOWNLOADS_DIR = str(DOWNLOADS_DIR)
+except ImportError:
+    DEFAULT_DOWNLOADS_DIR = "data/downloads"
+
 logger = logging.getLogger(__name__)
 
 
 class BaseDownloader(ABC):
     """Base class for stock data downloaders."""
     
-    def __init__(self, data_dir: str = "data/downloads"):
-        self.data_dir = Path(data_dir)
+    def __init__(self, data_dir: str = None):
+        self.data_dir = Path(data_dir or DEFAULT_DOWNLOADS_DIR)
         self.data_dir.mkdir(parents=True, exist_ok=True)
     
     @abstractmethod
@@ -79,8 +86,8 @@ class StockQuoteDownloader(BaseDownloader):
        KO,Coca-Cola,62,King
     """
     
-    def __init__(self, data_dir: str = "data/downloads/stockquote"):
-        super().__init__(data_dir)
+    def __init__(self, data_dir: str = None):
+        super().__init__(data_dir or f"{DEFAULT_DOWNLOADS_DIR}/stockquote")
         self._documents: Dict[str, StockDocument] = {}
     
     def get_source(self) -> DataSource:
@@ -300,8 +307,8 @@ class NasdaqDownloader(BaseDownloader):
        {"symbol": "KO", "name": "Coca-Cola", "sector": "Consumer Defensive", ...}
     """
     
-    def __init__(self, data_dir: str = "data/downloads/nasdaq"):
-        super().__init__(data_dir)
+    def __init__(self, data_dir: str = None):
+        super().__init__(data_dir or f"{DEFAULT_DOWNLOADS_DIR}/nasdaq")
     
     def get_source(self) -> DataSource:
         return DataSource.NASDAQ

@@ -1,11 +1,28 @@
 """
-Configuration and constants for Dividend Kings Analysis.
+Configuration and constants for DividendScope.
 
 This module contains all configurable parameters including stock lists,
 scoring weights, thresholds, and data provider settings.
 """
 
+import os
+from pathlib import Path
 from typing import Dict, List, Final
+
+# Data directory configuration
+# Uses ~/.dividendscope/data by default, can be overridden with DIVIDENDSCOPE_DATA_DIR env var
+_default_data_dir = Path.home() / ".dividendscope" / "data"
+DATA_DIR: Final[Path] = Path(os.environ.get("DIVIDENDSCOPE_DATA_DIR", str(_default_data_dir)))
+
+# Subdirectories
+VECTORDB_DIR: Final[Path] = DATA_DIR / "vectordb"
+DOWNLOADS_DIR: Final[Path] = DATA_DIR / "downloads"
+REPORTS_DIR: Final[Path] = Path("reports")  # Reports stay in project directory
+
+# Ensure directories exist
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+VECTORDB_DIR.mkdir(parents=True, exist_ok=True)
+DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Dividend stocks for analysis - including Kings (50+ years) and high-quality payers
 DIVIDEND_KINGS: Final[List[str]] = [

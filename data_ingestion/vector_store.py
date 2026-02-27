@@ -13,6 +13,13 @@ from datetime import datetime
 
 from .models import StockDocument, SearchResult, DataSource, PriceHistory, DividendRecord
 
+# Import config for default paths
+try:
+    from config import VECTORDB_DIR
+    DEFAULT_VECTORDB_DIR = str(VECTORDB_DIR)
+except ImportError:
+    DEFAULT_VECTORDB_DIR = "data/vectordb"
+
 logger = logging.getLogger(__name__)
 
 # Try to import chromadb, provide fallback if not available
@@ -40,16 +47,18 @@ class VectorStore:
     
     def __init__(
         self,
-        persist_directory: str = "data/vectordb",
+        persist_directory: str = None,
         embedding_model: str = "default",
     ):
         """
         Initialize vector store.
         
         Args:
-            persist_directory: Directory for persistent storage.
+            persist_directory: Directory for persistent storage. Defaults to ~/.dividendscope/data/vectordb.
             embedding_model: Embedding model to use (default uses ChromaDB's built-in).
         """
+        if persist_directory is None:
+            persist_directory = DEFAULT_VECTORDB_DIR
         self.persist_directory = Path(persist_directory)
         self.persist_directory.mkdir(parents=True, exist_ok=True)
         

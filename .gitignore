@@ -18,13 +18,13 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Project specific
+# Legacy files (no longer used)
 pyStockPriceAlert_oneDir
 stocks.db
+pydivStocks.csv
+data/
 
-# Data directories (large/generated)
-data/downloads/
-data/vectordb/
+# Reports (generated)
 reports/
 
 # Claude/Cursor

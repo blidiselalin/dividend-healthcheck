@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Unified Data Download Script for Dividend Kings Analyzer.
+Unified Data Download Script for DividendScope.
 
 Downloads stock exchange data from multiple public sources:
 - StockQuote.io: Dividend Kings/Aristocrats lists, fundamentals, dividend history
@@ -28,6 +28,15 @@ Usage:
 import argparse
 import logging
 import sys
+
+# Import config for default paths
+try:
+    from config import DOWNLOADS_DIR, VECTORDB_DIR
+    DEFAULT_DOWNLOADS_DIR = str(DOWNLOADS_DIR)
+    DEFAULT_VECTORDB_DIR = str(VECTORDB_DIR)
+except ImportError:
+    DEFAULT_DOWNLOADS_DIR = "data/downloads"
+    DEFAULT_VECTORDB_DIR = "data/vectordb"
 from pathlib import Path
 from typing import List, Optional
 
@@ -178,8 +187,8 @@ Examples:
     # Output configuration
     parser.add_argument(
         "--output-dir",
-        default="data/downloads",
-        help="Base output directory (default: data/downloads)",
+        default=DEFAULT_DOWNLOADS_DIR,
+        help=f"Base output directory (default: {DEFAULT_DOWNLOADS_DIR})",
     )
     
     # Other options
@@ -279,7 +288,7 @@ Examples:
                 
                 pipeline = DataIngestionPipeline(
                     data_dir=args.output_dir,
-                    vectordb_dir="data/vectordb",
+                    vectordb_dir=DEFAULT_VECTORDB_DIR,
                 )
                 stats = pipeline.run()
                 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Data Ingestion CLI for Dividend Kings Analyzer.
+Data Ingestion CLI for DividendScope.
 
 Downloads and processes stock data from public sources into a vector database
 for enhanced report generation.
@@ -14,7 +14,7 @@ Usage:
     python ingest_data.py --source nasdaq
     
     # Process a single file
-    python ingest_data.py --file data/downloads/stockquote/fundamentals.csv
+    python ingest_data.py --file path/to/fundamentals.csv
     
     # Create sample data files (to see expected format)
     python ingest_data.py --create-samples
@@ -26,10 +26,10 @@ Usage:
     python ingest_data.py --list-kings
     
     # Export database to JSON
-    python ingest_data.py --export data/export.json
+    python ingest_data.py --export ~/export.json
     
     # Import database from JSON
-    python ingest_data.py --import data/export.json
+    python ingest_data.py --import ~/export.json
 """
 
 import argparse
@@ -39,6 +39,15 @@ from pathlib import Path
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
+
+# Import config for default paths
+try:
+    from config import DOWNLOADS_DIR, VECTORDB_DIR
+    DEFAULT_DOWNLOADS_DIR = str(DOWNLOADS_DIR)
+    DEFAULT_VECTORDB_DIR = str(VECTORDB_DIR)
+except ImportError:
+    DEFAULT_DOWNLOADS_DIR = "data/downloads"
+    DEFAULT_VECTORDB_DIR = "data/vectordb"
 
 from data_ingestion.pipeline import DataIngestionPipeline, create_sample_data
 from data_ingestion.vector_store import VectorStore
@@ -138,15 +147,15 @@ Examples:
     parser.add_argument(
         "--data-dir",
         type=str,
-        default="data/downloads",
-        help="Directory containing downloaded data (default: data/downloads)",
+        default=DEFAULT_DOWNLOADS_DIR,
+        help=f"Directory containing downloaded data (default: {DEFAULT_DOWNLOADS_DIR})",
     )
     
     parser.add_argument(
         "--db-dir",
         type=str,
-        default="data/vectordb",
-        help="Directory for vector database (default: data/vectordb)",
+        default=DEFAULT_VECTORDB_DIR,
+        help=f"Directory for vector database (default: {DEFAULT_VECTORDB_DIR})",
     )
     
     parser.add_argument(

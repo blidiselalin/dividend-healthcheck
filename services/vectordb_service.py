@@ -16,6 +16,13 @@ from models.stock import StockData, DividendHistory
 
 logger = logging.getLogger(__name__)
 
+# Import config for default paths
+try:
+    from config import VECTORDB_DIR
+    DEFAULT_VECTORDB_DIR = str(VECTORDB_DIR)
+except ImportError:
+    DEFAULT_VECTORDB_DIR = "data/vectordb"
+
 # Try to import vector store
 try:
     from data_ingestion.vector_store import VectorStore
@@ -34,15 +41,15 @@ class VectorDBService:
     Provides a complete offline data source when the DB is populated.
     """
     
-    def __init__(self, db_path: str = "data/vectordb"):
+    def __init__(self, db_path: str = None):
         """
         Initialize the service.
         
         Args:
-            db_path: Path to the vector database directory.
+            db_path: Path to the vector database directory. Defaults to ~/.dividendscope/data/vectordb.
         """
         self._store: Optional["VectorStore"] = None
-        self._db_path = db_path
+        self._db_path = db_path or DEFAULT_VECTORDB_DIR
         
         if VECTOR_DB_AVAILABLE:
             try:
