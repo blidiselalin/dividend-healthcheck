@@ -18,6 +18,8 @@ from .calculations import (
     calculate_price_to_target_pct,
 )
 
+from .converters import document_to_stock_data
+
 __all__ = [
     "format_currency",
     "format_percent",
@@ -31,4 +33,5 @@ __all__ = [
     "calculate_payout_ratio",
     "calculate_dividend_coverage",
     "calculate_price_to_target_pct",
+    "document_to_stock_data",
 ]

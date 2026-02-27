@@ -13,6 +13,7 @@ from models.stock import StockData, DividendHistory
 from services.stock_service import StockService
 from data_ingestion.vector_store import VectorStore
 from data_ingestion.models import StockDocument
+from utils.converters import document_to_stock_data
 
 # Import config for default paths
 try:
@@ -224,7 +225,7 @@ class EnhancedStockService:
         if not doc:
             return None
         
-        return self._document_to_stock_data(doc)
+        return document_to_stock_data(doc)
     
     def _is_data_fresh(self, data: StockData) -> bool:
         """Check if stock data is fresh enough."""
@@ -255,130 +256,6 @@ class EnhancedStockService:
             logger.debug(f"Could not update real-time price for {data.symbol}: {e}")
         
         return data
-    
-    def _document_to_stock_data(self, doc: StockDocument) -> StockData:
-        """Convert vector DB document to StockData."""
-        div_history = None
-        
-        if doc.dividend_streak_years or doc.dividend_history:
-            # Calculate CAGR from dividend history if available
-            cagr_5y = self._calculate_cagr(doc.dividend_history, years=5)
-            cagr_10y = self._calculate_cagr(doc.dividend_history, years=10)
-            current_annual = doc.annual_dividend or 0.0
-            
-            # Get ex-dividend date from history
-            ex_date = None
-            if doc.dividend_history:
-                sorted_divs = sorted(doc.dividend_history, key=lambda x: x.ex_date, reverse=True)
-                if sorted_divs:
-                    # ex_date should be a date object, not string
-                    ex_date = sorted_divs[0].ex_date.date() if hasattr(sorted_divs[0].ex_date, 'date') else sorted_divs[0].ex_date
-            
-            div_history = DividendHistory(
-                consecutive_years=doc.dividend_streak_years or 0,
-                total_years=len(set(d.ex_date.year for d in doc.dividend_history)) if doc.dividend_history else 0,
-                cagr_5y=cagr_5y,
-                cagr_10y=cagr_10y,
-                current_annual=current_annual,
-                ex_dividend_date=ex_date,
-                payment_frequency=self._detect_frequency(doc.dividend_history),
-            )
-        
-        # Build StockData from document
-        stock_data = StockData(
-            symbol=doc.symbol,
-            name=doc.name,
-            sector=doc.sector,
-            industry=doc.industry,
-            price=doc.current_price,
-            market_cap=doc.market_cap,
-            trailing_pe=doc.pe_ratio,
-            dividend_yield_pct=doc.dividend_yield,
-            dividend_rate=doc.annual_dividend,
-            payout_ratio_pct=doc.payout_ratio,
-            dividend_history=div_history,
-            data_sources=[f"Vector DB ({doc.source.value})"],
-            data_quality_score=doc.data_quality,
-        )
-        
-        # Store last updated for freshness check
-        stock_data._last_updated = doc.last_updated
-        
-        return stock_data
-    
-    def _calculate_cagr(self, dividend_history: list, years: int) -> float:
-        """Calculate compound annual growth rate from dividend history."""
-        if not dividend_history or len(dividend_history) < 4:
-            return 0.0
-        
-        try:
-            # Sort by date
-            sorted_divs = sorted(dividend_history, key=lambda x: x.ex_date)
-            
-            # Get annual totals
-            annual_totals = {}
-            for div in sorted_divs:
-                year = div.ex_date.year
-                annual_totals[year] = annual_totals.get(year, 0) + div.amount
-            
-            if len(annual_totals) < 2:
-                return 0.0
-            
-            years_list = sorted(annual_totals.keys())
-            
-            # Calculate CAGR for requested period
-            target_years = min(years, len(years_list) - 1)
-            if target_years < 1:
-                return 0.0
-            
-            end_year = years_list[-1]
-            start_year = years_list[-(target_years + 1)]
-            
-            end_value = annual_totals[end_year]
-            start_value = annual_totals[start_year]
-            
-            if start_value <= 0:
-                return 0.0
-            
-            cagr = ((end_value / start_value) ** (1 / target_years) - 1) * 100
-            return round(cagr, 2)
-            
-        except Exception as e:
-            logger.debug(f"Error calculating CAGR: {e}")
-            return 0.0
-    
-    def _detect_frequency(self, dividend_history: list) -> int:
-        """
-        Detect dividend payment frequency from history.
-        
-        Returns payments per year as int (12=monthly, 4=quarterly, 2=semi-annual, 1=annual).
-        """
-        if not dividend_history or len(dividend_history) < 2:
-            return 4  # Default to quarterly
-        
-        try:
-            # Count payments per year
-            years: dict[int, int] = {}
-            for div in dividend_history:
-                year = div.ex_date.year
-                years[year] = years.get(year, 0) + 1
-            
-            if not years:
-                return 4
-            
-            avg_per_year = sum(years.values()) / len(years)
-            
-            if avg_per_year >= 11:
-                return 12  # Monthly
-            elif avg_per_year >= 3.5:
-                return 4   # Quarterly
-            elif avg_per_year >= 1.5:
-                return 2   # Semi-annual
-            else:
-                return 1   # Annual
-                
-        except Exception:
-            return 4
     
     # === Batch Operations (DB-first) ===
     
@@ -449,7 +326,7 @@ class EnhancedStockService:
         try:
             # Get all documents
             results = self._vector_store.search("dividend stock", n_results=1000)
-            return [self._document_to_stock_data(r.document) for r in results]
+            return [document_to_stock_data(r.document) for r in results]
         except Exception as e:
             logger.error(f"Error getting all from DB: {e}")
             return []
@@ -460,7 +337,7 @@ class EnhancedStockService:
             return []
         
         docs = self._vector_store.get_dividend_kings(min_streak=50)
-        return [self._document_to_stock_data(doc) for doc in docs]
+        return [document_to_stock_data(doc) for doc in docs]
     
     def get_sector_from_db(self, sector: str) -> List[StockData]:
         """Get all stocks in a sector from vector DB (no API calls)."""
@@ -468,7 +345,7 @@ class EnhancedStockService:
             return []
         
         docs = self._vector_store.get_by_sector(sector)
-        return [self._document_to_stock_data(doc) for doc in docs]
+        return [document_to_stock_data(doc) for doc in docs]
     
     def search(
         self,
@@ -505,7 +382,7 @@ class EnhancedStockService:
             where=where if where else None,
         )
         
-        return [self._document_to_stock_data(r.document) for r in results]
+        return [document_to_stock_data(r.document) for r in results]
     
     # === Status & Info ===
     

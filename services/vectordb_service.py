@@ -12,7 +12,8 @@ import logging
 from typing import Optional, List, Dict, Any
 from datetime import date, datetime
 
-from models.stock import StockData, DividendHistory
+from models.stock import StockData
+from utils.converters import document_to_stock_data
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ class VectorDBService:
         if not doc:
             return None
         
-        return self._document_to_stock_data(doc)
+        return document_to_stock_data(doc)
     
     def get_stocks(self, symbols: List[str]) -> Dict[str, StockData]:
         """
@@ -113,7 +114,7 @@ class VectorDBService:
             return []
         
         docs = self._store.get_dividend_kings(min_streak=min_streak)
-        return [self._document_to_stock_data(d) for d in docs]
+        return [document_to_stock_data(d) for d in docs]
     
     def get_all_stocks(self) -> List[StockData]:
         """
@@ -127,7 +128,7 @@ class VectorDBService:
         
         # Use get_dividend_kings with min_streak=0 to get all
         docs = self._store.get_dividend_kings(min_streak=0)
-        return [self._document_to_stock_data(d) for d in docs]
+        return [document_to_stock_data(d) for d in docs]
     
     def search(self, query: str, n_results: int = 10) -> List[StockData]:
         """
@@ -144,7 +145,7 @@ class VectorDBService:
             return []
         
         results = self._store.search(query, n_results=n_results)
-        return [self._document_to_stock_data(r.document) for r in results]
+        return [document_to_stock_data(r.document) for r in results]
     
     def get_by_sector(self, sector: str) -> List[StockData]:
         """
@@ -170,104 +171,6 @@ class VectorDBService:
             return {"available": False}
         
         return self._store.get_stats()
-    
-    def _document_to_stock_data(self, doc: "StockDocument") -> StockData:
-        """
-        Convert StockDocument to StockData.
-        
-        Maps all fields from the vector DB model to the UI model.
-        """
-        # Build DividendHistory from document
-        div_history = None
-        if doc.dividend_streak_years is not None:
-            # Calculate values from dividend_history if available
-            cagr_5y = doc.dividend_cagr_5y or 0.0
-            cagr_10y = doc.dividend_cagr_10y or 0.0
-            total_years = doc.dividend_total_years or 0
-            
-            if not total_years and doc.dividend_history:
-                years = set(d.ex_date.year for d in doc.dividend_history)
-                total_years = len(years)
-            
-            div_history = DividendHistory(
-                consecutive_years=doc.dividend_streak_years,
-                total_years=total_years,
-                cagr_5y=cagr_5y,
-                cagr_10y=cagr_10y,
-                current_annual=doc.annual_dividend or 0.0,
-                ex_dividend_date=doc.ex_dividend_date,
-                payment_frequency=doc.payment_frequency,
-            )
-        
-        # Calculate price to 52w high percentage
-        price_to_52w_high = None
-        if doc.current_price and doc.fifty_two_week_high:
-            price_to_52w_high = ((doc.current_price / doc.fifty_two_week_high) - 1) * 100
-        
-        return StockData(
-            # Identity
-            symbol=doc.symbol,
-            name=doc.name,
-            sector=doc.sector,
-            industry=doc.industry,
-            
-            # Dividend metrics
-            dividend_yield_pct=doc.dividend_yield,
-            dividend_rate=doc.annual_dividend,
-            payout_ratio_pct=doc.payout_ratio,
-            dividend_history=div_history,
-            fcf_payout_ratio_pct=doc.fcf_payout_ratio,
-            dividend_coverage=doc.dividend_coverage,
-            
-            # Price & Valuation
-            price=doc.current_price,
-            market_cap=doc.market_cap,
-            trailing_pe=doc.pe_ratio,
-            forward_pe=doc.forward_pe,
-            peg_ratio=doc.peg_ratio,
-            price_to_book=doc.price_to_book,
-            price_to_sales=doc.price_to_sales,
-            ev_ebitda=doc.ev_ebitda,
-            fifty_two_week_high=doc.fifty_two_week_high,
-            fifty_two_week_low=doc.fifty_two_week_low,
-            price_to_52w_high_pct=price_to_52w_high,
-            
-            # Financial Health
-            debt_to_equity=doc.debt_to_equity,
-            debt_to_ebitda=doc.debt_to_ebitda,
-            interest_coverage=doc.interest_coverage,
-            current_ratio=doc.current_ratio,
-            quick_ratio=doc.quick_ratio,
-            
-            # Profitability
-            roe_pct=doc.roe,
-            roa_pct=doc.roa,
-            roic_pct=doc.roic,
-            profit_margin_pct=doc.profit_margin,
-            operating_margin_pct=doc.operating_margin,
-            gross_margin_pct=doc.gross_margin,
-            
-            # Growth
-            revenue_growth_pct=doc.revenue_growth,
-            earnings_growth_pct=doc.earnings_growth,
-            fcf_growth_pct=doc.fcf_growth,
-            
-            # Performance
-            price_return_1y=doc.price_return_1y,
-            total_return_1y=doc.total_return_1y,
-            price_return_5y=doc.price_return_5y,
-            
-            # Analyst
-            beta=doc.beta,
-            target_price=doc.target_price,
-            target_upside_pct=doc.target_upside,
-            analyst_rating=doc.analyst_rating,
-            num_analysts=doc.num_analysts,
-            
-            # Metadata
-            data_sources=[doc.source.value],
-            data_quality_score=doc.data_quality,
-        )
     
     def is_data_complete(self, data: StockData) -> bool:
         """

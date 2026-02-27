@@ -24,8 +24,9 @@ stocks.db
 pydivStocks.csv
 data/
 
-# Reports (generated)
+# Reports and docs (generated)
 reports/
+docs/
 
 # Claude/Cursor
 .claude/
