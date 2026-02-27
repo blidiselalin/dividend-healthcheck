@@ -1,2 +1,35 @@
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
 pyStockPriceAlert_oneDir
+stocks.db
+
+# Data directories (large/generated)
+data/downloads/
+data/vectordb/
+reports/
+
+# Claude/Cursor
+.claude/
+
+# Environment
+.env
+.env.local
