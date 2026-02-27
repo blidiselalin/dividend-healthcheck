@@ -18,7 +18,7 @@ from config import DATA_SOURCES
 
 # Page configuration
 st.set_page_config(
-    page_title="Dividend Kings Analyzer",
+    page_title="DividendScope",
     page_icon="👑",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -50,11 +50,11 @@ def _render_data_source_status() -> None:
 
 def main() -> None:
     """Main application entry point."""
-    # Header with true characteristic
-    st.title("👑 Dividend Kings Analyzer")
+    # Header
+    st.title("👑 DividendScope")
     st.markdown(
-        "**Elite dividend stocks with 50+ consecutive years of dividend increases** — "
-        "Analyze the most reliable income investments in the market"
+        "**Intelligent dividend analytics** — Analyze Dividend Kings, "
+        "assess payout sustainability, and discover quality income investments"
     )
     
     # Sidebar navigation

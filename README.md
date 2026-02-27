@@ -1,6 +1,12 @@
-# 👑 Dividend Kings Analyzer
+# 👑 DividendScope
 
-Analyze elite dividend stocks with **50+ consecutive years of dividend increases** — the most reliable income investments in the market.
+**Intelligent financial analytics for dividend investors.**
+
+Analyze elite Dividend Kings (50+ years of consecutive increases), assess dividend safety, track payout sustainability, and discover high-quality income opportunities — powered by a local vector database for fast, offline analysis.
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Streamlit](https://img.shields.io/badge/streamlit-1.30+-red.svg)](https://streamlit.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## What Are Dividend Kings?
 
