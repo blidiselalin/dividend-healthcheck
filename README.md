@@ -8,409 +8,199 @@ Analyze elite Dividend Kings (50+ years of consecutive increases), assess divide
 [![Streamlit](https://img.shields.io/badge/streamlit-1.30+-red.svg)](https://streamlit.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## What Are Dividend Kings?
+---
 
-**Dividend Kings** are companies that have raised their dividends for 50 or more consecutive years. This remarkable achievement requires:
+## Table of Contents
 
-- 📈 Consistent earnings through multiple economic cycles
-- 💪 Conservative financial management
-- 🛡️ Durable competitive advantages
-- 👥 Shareholder-focused leadership
+- [Prerequisites](#prerequisites)
+- [Quick Start — UI in 3 Steps](#quick-start--ui-in-3-steps)
+- [Full Setup — With Local Vector Database](#full-setup--with-local-vector-database)
+- [Using the UI](#using-the-ui)
+- [Project Structure](#project-structure)
+- [Configuration](#configuration)
+- [Features Reference](#features-reference)
+- [Data Download & Ingestion CLI](#data-download--ingestion-cli)
+- [Scoring Framework](#scoring-framework)
+- [Troubleshooting](#troubleshooting)
 
-Only ~50 companies in the U.S. have achieved this elite status.
+---
 
-## Features
+## Prerequisites
 
-### Key Investor Metrics (Prime View)
+| Requirement | Version | Notes |
+|---|---|---|
+| **Python** | 3.10 or higher | [Download](https://www.python.org/downloads/) |
+| **pip** | Latest recommended | Comes with Python |
+| Internet access | — | Required for live market data (yfinance) |
 
-The analyzer surfaces the **6 most important metrics** for dividend investors:
+> **No API keys required.** DividendScope uses only public data sources.
 
-| Metric | Why It Matters |
-|--------|----------------|
-| **Dividend Streak** | Years of consecutive increases — the defining factor |
-| **Dividend Yield** | Current income potential |
-| **5Y Dividend Growth** | Historical CAGR indicates future growth |
-| **Dividend Safety** | Payout ratio and coverage analysis |
-| **Payout Ratio** | Sustainability of current dividend |
-| **Income per $10K** | Actual annual income from investment |
+---
 
-### "Dividends Don't Lie" Philosophy
+## Quick Start — UI in 3 Steps
 
-This analyzer implements the investment philosophy from Geraldine Weiss's classic 1988 book *Dividends Don't Lie*. The core principle: **a company's dividend policy is a more honest indicator of financial health than reported earnings.**
+The fastest way to get the app running. Uses live public API data with no local database setup required.
 
-Why dividends don't lie:
-- Dividends require **actual cash** — you can't fake cash flow
-- Consistent dividend increases demonstrate **management confidence**
-- Dividend history provides a **stable valuation anchor**
-- High-quality dividend payers have **proven track records**
-
-### Dividend Yield Channels Chart
-
-Interactive 10-year yield channel visualization based on the "Dividends Don't Lie" methodology:
-
-| Zone | Yield Level | Price Implication | Action |
-|------|-------------|-------------------|--------|
-| 🟢 Undervalued | Above historical avg | Price depressed | Consider buying |
-| 🟡 Fair Value | Near historical avg | Fairly priced | Hold / DCA |
-| 🔴 Overvalued | Below historical avg | Price elevated | Patience / Trim |
-
-**Key Principles:**
-- **Mean Reversion**: Yields tend to return to historical averages over time
-- **Buy High Yield**: When yield is above average, price is typically below fair value
-- **Sell Low Yield**: When yield is below average, price may be stretched
-- **Dividend Growth Shifts Value**: Rising dividends push fair value price higher
-
-### Sector Comparison with Reference Stocks
-
-Compare your selected stock against:
-1. **All dividend stocks in sector** from your analysis list
-2. **Top 2-3 public reference stocks** — highly-rated dividend payers NOT in your list
-
-Reference stocks are selected using dividend quality filters:
-- Must have at least 3+ years consecutive dividend payments
-- Yield between 0-10% (avoiding distress signals)
-- Prioritized by dividend growth rate and payout sustainability
-
-### Additional Analysis
-
-- **Investment Thesis** — Automated strengths and concerns
-- **Sector Comparison** — Rank against peers in the same sector
-- **Valuation Metrics** — P/E, PEG, Price/Book, EV/EBITDA
-- **Financial Health** — Debt levels, liquidity ratios
-- **Performance** — 1Y/5Y returns, analyst targets
-
-### Data Sources
-
-Data aggregated from multiple public sources:
-- **Market Data Aggregator** — Real-time quotes and fundamentals
-- **Public Financial Filings** — SEC filings and company reports
-- **Exchange Data** — Historical prices from Nasdaq
-- **StockQuote.io** — Dividend history and streak data
-
-## Installation
+**Step 1 — Clone and enter the project**
 
 ```bash
-# Core dependencies
-pip install yfinance pandas streamlit
-
-# Optional: For vector database and semantic search
-pip install chromadb
-
-# Optional: For PDF report generation
-pip install reportlab
-
-# Optional: For automated data download
-pip install requests beautifulsoup4
-
-# Optional: For yield channel charts
-pip install plotly
+git clone https://github.com/blidiselalin/dividend-healthcheck.git
+cd dividend-healthcheck
 ```
 
-## Quick Start
+**Step 2 — Install dependencies**
 
-### Web UI
+```bash
+pip install -r requirements.txt
+```
+
+**Step 3 — Launch the UI**
 
 ```bash
 streamlit run app.py
 ```
 
-Open `http://localhost:8501` to access the analyzer.
+Open **http://localhost:8501** in your browser. The app is ready to use.
 
-### Automated Data Download
+> **Tip:** On first launch the sidebar shows `🌐 Public API`. This is normal — it means the app is fetching live data directly from the market. Analysis may take a few seconds per stock due to API rate limiting.
 
-Download dividend data from public sources:
+---
+
+## Full Setup — With Local Vector Database
+
+For faster analysis, offline use, and enriched historical data, populate the local vector database. This is optional but highly recommended for the full experience.
+
+**Step 1 — Download public stock data**
 
 ```bash
-# Install download dependencies
-pip install requests beautifulsoup4
-
-# Download all data (Dividend Kings + Aristocrats)
 python download_data.py
-
-# Download from specific source
-python download_data.py --source nasdaq --symbols KO JNJ PG
-
-# Download and run ingestion automatically
-python download_data.py --run-ingestion
 ```
 
-### Data Ingestion
+This fetches Dividend Kings and Aristocrats data from public sources into `~/.dividendscope/data/downloads/`. The script has built-in rate limiting — expect 5–15 minutes for a full download.
 
-Build a local vector database from downloaded files:
+**Step 2 — Ingest data into the vector database**
 
 ```bash
-# Create sample files to see expected format
-python ingest_data.py --create-samples
-
-# Run ingestion after downloading data
-python ingest_data.py
-
-# Search the database
-python ingest_data.py --search "high yield consumer defensive"
-
-# List all Dividend Kings
-python ingest_data.py --list-kings
+python ingest_data.py --enrich
 ```
+
+The `--enrich` flag also pulls live fundamentals (P/E, payout ratio, etc.) from yfinance for each stock. This takes 10–20 minutes for the full list.
+
+**Step 3 — Launch the UI**
+
+```bash
+streamlit run app.py
+```
+
+Once the vector database is populated, the sidebar shows `🗄️ Vector DB (N stocks)`. All analysis now runs from local data — no API calls for the core metrics.
+
+### Environment Variable Override
+
+By default, data is stored at `~/.dividendscope/data/`. Override with:
+
+```bash
+export DIVIDENDSCOPE_DATA_DIR=/your/custom/path
+streamlit run app.py
+```
+
+---
+
+## Using the UI
+
+### Sidebar
+
+| Element | Description |
+|---|---|
+| **Analysis Mode** | Switch between Single Stock and All Dividend Kings |
+| **Data Source** | Shows whether DB or live API is active |
+
+### Single Stock Analysis
+
+1. Select a ticker from the Dividend Kings dropdown, or type any symbol in the text box
+2. Click **Analyze** to load data
+3. The **Prime Metrics** panel shows the 6 most important dividend figures at a glance
+4. Scroll down for the **Investment Thesis**, **Sector Comparison**, **Yield Channels** chart, and detailed metric tables
+5. Expand the **News & Sentiment** section for recent headlines and sentiment score
+6. Click **Download PDF Report** to export a professional research report
+
+### All Dividend Kings Analysis
+
+1. Select **All Dividend Kings** in the sidebar
+2. Click **Run Full Analysis** — this analyzes all stocks in the list (~2–3 minutes via API, ~30 seconds with DB)
+3. Use the **Filters** to narrow by minimum dividend streak and yield range
+4. The results table is sortable; click any column header to re-rank
+5. Use **Export CSV** or **Export PDF** to save results
+
+### Data Source Status
+
+| Sidebar indicator | Meaning |
+|---|---|
+| `🗄️ Vector DB (N stocks)` | Local database active — fast, offline-capable |
+| `🌐 Public API (DB empty)` | Live API mode — populate DB with `python ingest_data.py --enrich` |
+| `🌐 Public API only` | chromadb not installed — install it to enable the local database |
+
+---
 
 ## Project Structure
 
 ```
-dividend-king/
-├── app.py                      # Streamlit entry point
-├── config.py                   # Configuration (stock lists, thresholds)
-├── download_data.py            # Automated data downloader
-├── ingest_data.py              # Data ingestion CLI
+dividend-healthcheck/
+├── app.py                         # Streamlit entry point
+├── config.py                      # Stock lists, scoring weights, thresholds
+├── download_data.py               # Automated public data downloader
+├── ingest_data.py                 # Vector database ingestion CLI
+├── requirements.txt               # All Python dependencies
+│
 ├── models/
-│   └── stock.py                # StockData model with dividend focus
+│   └── stock.py                   # StockData and DividendHistory dataclasses
+│
 ├── services/
-│   ├── stock_service.py        # Real-time data from APIs
-│   ├── enhanced_stock_service.py  # Combined API + Vector DB
-│   ├── scoring.py              # Dividend-focused scoring
-│   ├── sector_service.py       # Sector comparison
-│   └── report_generator.py     # PDF research report generation
+│   ├── stock_service.py           # Live data from yfinance
+│   ├── enhanced_stock_service.py  # DB-first, API fallback orchestration
+│   ├── vectordb_service.py        # Read-only vector DB service for the UI
+│   ├── scoring.py                 # Dividend-focused 0–100 scoring engine
+│   ├── sector_service.py          # Sector peer comparison
+│   ├── news_service.py            # News aggregation and sentiment analysis
+│   ├── report_generator.py        # PDF research report generation
+│   └── yield_channel_chart.py     # "Dividends Don't Lie" chart builder
+│
 ├── ui/
-│   ├── components.py           # Reusable UI components
-│   └── views.py                # Page views (Single/Full analysis)
-├── data_ingestion/             # Vector DB pipeline
-│   ├── models.py               # StockDocument, DividendRecord
-│   ├── downloaders.py          # StockQuote.io + Nasdaq parsers
-│   ├── fetch_stockquote.py     # StockQuote.io automated fetcher
-│   ├── fetch_nasdaq.py         # Nasdaq automated fetcher
-│   ├── vector_store.py         # ChromaDB wrapper
-│   └── pipeline.py             # Ingestion orchestration
-├── data/
-│   ├── downloads/              # Downloaded CSV/JSON files
-│   │   ├── stockquote/         # StockQuote.io exports
-│   │   └── nasdaq/             # Nasdaq historical data
-│   └── vectordb/               # ChromaDB persistent storage
-└── reports/                    # Generated CSV reports
+│   ├── components.py              # Reusable Streamlit UI components
+│   └── views.py                   # Page views (Single Stock / Full Analysis)
+│
+├── data_ingestion/                # Vector database pipeline
+│   ├── models.py                  # StockDocument, DividendRecord schemas
+│   ├── downloaders.py             # StockQuote.io + Nasdaq CSV parsers
+│   ├── fetch_stockquote.py        # StockQuote.io automated fetcher
+│   ├── fetch_nasdaq.py            # Nasdaq historical data fetcher
+│   ├── yfinance_enricher.py       # Enriches documents with live yfinance data
+│   ├── vector_store.py            # ChromaDB wrapper (search, get, upsert)
+│   └── pipeline.py                # Ingestion orchestration and CLI logic
+│
+└── tests/
+    └── test_data_accuracy.py      # Data accuracy tests
 ```
 
-## Data Download & Ingestion
-
-### Automated Download
-
-The `download_data.py` script fetches data automatically from public sources:
-
-```bash
-# Download everything (all Dividend Kings + Aristocrats)
-python download_data.py
-
-# Download specific symbols only
-python download_data.py --symbols KO JNJ PG MMM
-
-# Download from single source
-python download_data.py --source nasdaq --symbols KO JNJ
-python download_data.py --source stockquote
-
-# Skip certain data types (faster)
-python download_data.py --no-prices
-python download_data.py --no-history
-
-# Download and ingest in one step
-python download_data.py --run-ingestion
-```
-
-Data is stored externally at `~/.dividendscope/data/`:
-- `~/.dividendscope/data/downloads/` - Downloaded source files
-- `~/.dividendscope/data/vectordb/` - Vector database
-
-You can override the data location with the `DIVIDENDSCOPE_DATA_DIR` environment variable.
-
-### Data Ingestion System
-
-The data ingestion system allows you to build a local vector database from publicly available stock data. This enables:
-
-- **Semantic search** — Find stocks by description (e.g., "high yield healthcare")
-- **Enriched data** — Combine multiple sources for accuracy
-- **Offline analysis** — Work without API calls
-- **Historical tracking** — Store price and dividend history
-- **UI Data Viewer** — Browse all stored data for any ticker in the app
-
-### Vector Database Viewer
-
-The UI includes a dedicated section to view all data stored in the vector database:
-
-```python
-from ui.components import UIComponents
-
-# Display all vector DB data for a ticker
-UIComponents.display_vector_db_data("KO")
-
-# Display overall database statistics
-UIComponents.display_vector_db_stats()
-```
-
-The viewer shows:
-- **Basic Info** — Symbol, name, sector, industry, exchange
-- **Dividend Metrics** — Yield, annual dividend, streak, payout ratio, tier
-- **Price Data** — Current price, market cap, P/E ratio
-- **Historical Data** — Price history and dividend payment records
-- **Metadata** — Source, last updated, data quality score
-- **Raw JSON** — Exportable data in JSON format
-
-### Supported Data Sources
-
-#### StockQuote.io
-
-Download dividend data in CSV format:
-
-| File | Contents |
-|------|----------|
-| `fundamentals.csv` | Symbol, Name, Sector, PE, Yield, Payout |
-| `dividend_streaks.csv` | Symbol, ConsecutiveYears, Category |
-| `dividend_history.csv` | Symbol, Ex-Date, Amount |
-
-Expected format:
-```csv
-Symbol,Name,Sector,Industry,MarketCap,PE,DivYield,PayoutRatio
-KO,Coca-Cola,Consumer Defensive,Beverages,265000000000,25.4,3.12,75.2
-```
-
-#### Nasdaq Historical
-
-Download from Nasdaq historical pages:
-
-| File | Contents |
-|------|----------|
-| `KO_historical.csv` | Date, Close, Volume, Open, High, Low |
-| `KO_dividends.csv` | Ex-Date, Amount, Payment Date |
-
-Expected format:
-```csv
-Date,Close/Last,Volume,Open,High,Low
-03/14/2024,$60.12,12345678,$59.85,$60.45,$59.72
-```
-
-### CLI Commands
-
-```bash
-# Full ingestion from all sources
-python ingest_data.py
-
-# Process specific source
-python ingest_data.py --source stockquote
-python ingest_data.py --source nasdaq
-
-# Process single file
-python ingest_data.py --file data/downloads/stockquote/fundamentals.csv
-
-# Search database
-python ingest_data.py --search "technology dividend growth"
-
-# List Dividend Kings
-python ingest_data.py --list-kings
-
-# Export/Import database
-python ingest_data.py --export backup.json
-python ingest_data.py --import backup.json
-
-# Statistics
-python ingest_data.py --stats
-```
-
-## Scoring Framework
-
-The analyzer uses a dividend-focused scoring system (0-100):
-
-| Factor | Weight | Description |
-|--------|--------|-------------|
-| Dividend Streak | 20% | Consecutive years of increases (50+ = max) |
-| Dividend Safety | 15% | Payout ratio and coverage |
-| Dividend Yield | 15% | Current yield (2.5-4.5% optimal) |
-| Dividend Growth | 15% | 5-year CAGR of dividend increases |
-| Valuation | 10% | P/E and price vs 52-week high |
-| Financial Strength | 10% | Debt/Equity, current ratio |
-| Profitability | 10% | ROE, profit margins |
-| Size/Stability | 5% | Market cap (larger = more stable) |
-
-### Recommendations
-
-| Score | Label | Meaning |
-|-------|-------|---------|
-| 80+ | **STRONG BUY** | Excellent across all factors |
-| 65-79 | **BUY** | Strong fundamentals, good value |
-| 50-64 | **ACCUMULATE** | Solid, consider building position |
-| 35-49 | **HOLD** | Maintain but don't add |
-| <35 | **AVOID** | Significant concerns |
-
-## Dividend Tiers
-
-| Tier | Years | Badge |
-|------|-------|-------|
-| King | 50+ | 👑 |
-| Aristocrat | 25-49 | 🏆 |
-| Achiever | 10-24 | ⭐ |
-| Contender | 5-9 | 📈 |
-| Starter | <5 | 🌱 |
-
-## Dividend Yield Channels
-
-The analyzer implements the **"Dividends Don't Lie"** methodology by Geraldine Weiss (1988), one of the most respected dividend investing strategies.
-
-### Core Principle
-
-> *"A stock's dividend yield is the most honest indicator of its value."*
-> — Geraldine Weiss
-
-When a stock's yield is **high** relative to its historical norm, the stock is **undervalued**.  
-When a stock's yield is **low** relative to its historical norm, the stock is **overvalued**.
-
-### Valuation Zones
-
-| Zone | Yield Percentile | Signal | Action |
-|------|------------------|--------|--------|
-| 💎 Deep Value | 90th+ | Exceptional opportunity | Strong Buy |
-| 🟢 Value | 75th-90th | Good value | Buy |
-| 🟡 Fair Value | 25th-75th | Fairly priced | Hold / DCA |
-| 🟠 Caution | 10th-25th | Below average value | Wait |
-| 🔴 Expensive | <10th | Price stretched | Avoid / Trim |
-
-### Features
-
-- **10-Year Historical Analysis**: Uses robust percentile-based zones
-- **Price Targets**: Calculates exact prices at each yield level
-- **Professional Charts**: Plotly-powered interactive visualizations
-- **Weiss Interpretation**: Actionable buy/sell/hold signals
-- **Vector DB Integration**: Uses stored dividend history when available
-
-### Example Output
+**Data stored outside the repo** (never committed):
 
 ```
-JNJ (Johnson & Johnson)
-Zone: Expensive (Percentile: 8%)
-Current Yield: 2.14%  |  Median: 3.07%
-
-Price Targets:
-  Deep Value: $153.98 (yield > 3.4%)
-  Value:      $161.17 (yield > 3.2%)
-  Fair Value: $169.65 (yield = 3.1%)
-  Expensive:  $207.70 (yield < 2.5%)
-
-Action: Avoid / Trim — Yield in bottom 10% historically.
+~/.dividendscope/data/
+├── downloads/
+│   ├── stockquote/                # StockQuote.io CSV exports
+│   └── nasdaq/                    # Nasdaq historical CSVs
+└── vectordb/                      # ChromaDB persistent storage
 ```
 
-### Best Practices from Top Investors
-
-**Warren Buffett**:
-> *"Price is what you pay, value is what you get."*
-
-**Benjamin Graham**:
-> *"The margin of safety is always dependent on the price paid."*
-
-The yield channel strategy works best with:
-- Blue-chip dividend growth stocks with 10+ year histories
-- Companies with consistent, growing dividends
-- Stable, mature businesses (utilities, consumer staples, healthcare)
+---
 
 ## Configuration
 
-Edit `config.py` to customize:
+All tunable parameters live in `config.py`. No environment variables needed for basic use.
 
 ```python
-# Stock lists
-DIVIDEND_KINGS = [...]      # 50+ year streaks
-DIVIDEND_ARISTOCRATS = [...] # 25+ year streaks
+# Stock universe — edit to add/remove tickers
+DIVIDEND_KINGS = ["KO", "JNJ", "PG", ...]      # 50+ year streak stocks
+DIVIDEND_ARISTOCRATS = ["ABBV", "ADM", ...]     # 25+ year streak stocks
 
 # Scoring thresholds
 RECOMMENDATION_THRESHOLDS = {
@@ -420,90 +210,192 @@ RECOMMENDATION_THRESHOLDS = {
     "hold": 35,
 }
 
-# API rate limiting
+# API rate limiting (increase if hitting limits)
 API_DELAY_SECONDS = 0.2
+API_TIMEOUT_SECONDS = 30
+
+# Data freshness — how many days before re-fetching from API
+DEFAULT_STALENESS_DAYS = 7
 ```
 
-## UI Features
+---
 
-### Single Stock Analysis
+## Features Reference
 
-1. Select from Dividend Kings or enter any symbol
-2. View prime metrics at a glance
-3. Read automated investment thesis
-4. Compare with sector peers
-5. Explore detailed metrics in expandable sections
+### What Are Dividend Kings?
 
-### Full Analysis
+**Dividend Kings** are companies that have raised their dividends for **50 or more consecutive years**. This requires:
 
-1. Analyze all Dividend Kings (2-3 minutes)
-2. View summary statistics
-3. See top picks ranked by score
-4. Filter by dividend streak and yield
-5. Export results to CSV or PDF
+- 📈 Consistent earnings through multiple economic cycles
+- 💪 Conservative financial management
+- 🛡️ Durable competitive advantages
+- 👥 Shareholder-focused leadership
 
-### News Summary & Sentiment
+Only ~50 companies in the U.S. have achieved this elite status.
 
-Get the latest news and sentiment analysis from top financial sources:
+### Dividend Tiers
 
-```python
-from services.news_service import NewsService
+| Tier | Consecutive Years | Badge |
+|---|---|---|
+| King | 50+ | 👑 |
+| Aristocrat | 25–49 | 🏆 |
+| Achiever | 10–24 | ⭐ |
+| Contender | 5–9 | 📈 |
+| Starter | <5 | 🌱 |
 
-service = NewsService()
-summary = service.fetch_news_summary("JNJ", days=7)
+### Key Investor Metrics (Prime View)
 
-print(f"Sentiment: {summary.overall_sentiment}")
-print(f"Score: {summary.sentiment_score}")
-print(f"Articles: {summary.article_count}")
-```
+| Metric | Why It Matters |
+|---|---|
+| **Dividend Streak** | Years of consecutive increases — the defining factor |
+| **Dividend Yield** | Current income potential |
+| **5Y Dividend Growth** | CAGR of dividend increases |
+| **Dividend Safety** | Payout ratio and coverage analysis |
+| **Payout Ratio** | Sustainability of current dividend |
+| **Income per $10K** | Actual annual income from a $10,000 investment |
 
-**Features:**
-- Aggregates news from Yahoo Finance, Google News RSS
-- Keyword-based sentiment analysis (bullish/bearish/neutral/mixed)
-- Extracts key themes (earnings, dividend, growth, valuation, etc.)
-- Highlights positive news and risk indicators
-- No API keys required - uses public sources
+### Dividend Yield Channels ("Dividends Don't Lie")
 
-**Sentiment Labels:**
+Based on Geraldine Weiss's 1988 methodology: a stock's dividend yield is its most honest valuation signal.
 
-| Label | Meaning | Emoji |
-|-------|---------|-------|
-| Bullish | More positive than negative news | 📈 |
-| Bearish | More negative than positive news | 📉 |
-| Mixed | Both positive and negative signals | 🔄 |
-| Neutral | No strong sentiment detected | ➖ |
+| Zone | Yield Percentile | Signal | Action |
+|---|---|---|---|
+| 💎 Deep Value | 90th+ | Exceptional opportunity | Strong Buy |
+| 🟢 Value | 75th–90th | Good value | Buy |
+| 🟡 Fair Value | 25th–75th | Fairly priced | Hold / DCA |
+| 🟠 Caution | 10th–25th | Below average value | Wait |
+| 🔴 Expensive | <10th | Price stretched | Avoid / Trim |
+
+### News & Sentiment
+
+Aggregates headlines from Yahoo Finance and Google News RSS. No API key required.
+
+| Label | Meaning |
+|---|---|
+| 📈 Bullish | More positive than negative signals |
+| 📉 Bearish | More negative than positive signals |
+| 🔄 Mixed | Both positive and negative present |
+| ➖ Neutral | No strong signal detected |
 
 ### PDF Research Reports
 
-Generate professional research reports similar to analyst research documents:
+Install `reportlab` (included in `requirements.txt`) then export from the UI. Reports include score card, dividend analysis, valuation metrics, and automated investment thesis.
+
+---
+
+## Data Download & Ingestion CLI
+
+### Download Commands
 
 ```bash
-# Install PDF generation dependency
-pip install reportlab
+# Download all data (Dividend Kings + Aristocrats)
+python download_data.py
+
+# Download specific symbols only
+python download_data.py --symbols KO JNJ PG MMM
+
+# Download from a single source
+python download_data.py --source nasdaq
+python download_data.py --source stockquote
+
+# Skip price history (faster)
+python download_data.py --no-prices --no-history
+
+# Download and ingest in one command
+python download_data.py --run-ingestion
 ```
 
-Reports include:
-- **Rate Card** - Score, yields, growth rates, key metrics
-- **Dividend Analysis** - Growth rates, safety metrics, yield channels
-- **Valuation** - P/E, price targets, financial strength ratings
-- **Investment Thesis** - Automated strengths and concerns
+### Ingestion Commands
 
-Export directly from the UI after analyzing any stock.
+```bash
+# Full ingestion (parse downloaded files into vector DB)
+python ingest_data.py
+
+# Ingest and enrich with live yfinance data (recommended)
+python ingest_data.py --enrich
+
+# Process a single source
+python ingest_data.py --source stockquote
+python ingest_data.py --source nasdaq
+
+# Process one file
+python ingest_data.py --file path/to/fundamentals.csv
+
+# Enrich stocks already in the database
+python ingest_data.py --enrich-existing
+python ingest_data.py --enrich-existing --symbols KO,JNJ,PG
+
+# Database utilities
+python ingest_data.py --stats                    # Show document counts
+python ingest_data.py --list-kings               # List all Dividend Kings
+python ingest_data.py --search "high yield tech" # Semantic search
+python ingest_data.py --consolidate              # Remove duplicates
+python ingest_data.py --fix-values              # Fix invalid data
+python ingest_data.py --export backup.json      # Export to JSON
+python ingest_data.py --import backup.json      # Import from JSON
+python ingest_data.py --clear                   # Wipe the database
+
+# Create sample CSV files (to see expected input format)
+python ingest_data.py --create-samples
+```
+
+### Expected CSV Formats
+
+**StockQuote fundamentals (`fundamentals.csv`)**
+```csv
+Symbol,Name,Sector,Industry,MarketCap,PE,DivYield,PayoutRatio
+KO,Coca-Cola,Consumer Defensive,Beverages,265000000000,25.4,3.12,75.2
+```
+
+**Nasdaq historical (`KO_historical.csv`)**
+```csv
+Date,Close/Last,Volume,Open,High,Low
+03/14/2024,$60.12,12345678,$59.85,$60.45,$59.72
+```
+
+---
+
+## Scoring Framework
+
+| Factor | Weight | Description |
+|---|---|---|
+| Dividend Streak | 20% | Consecutive years of increases (50+ = max score) |
+| Dividend Safety | 15% | Payout ratio and coverage ratio |
+| Dividend Yield | 15% | Current yield (2.5–4.5% optimal range) |
+| Dividend Growth | 15% | 5-year CAGR of dividend increases |
+| Valuation | 10% | P/E ratio and price vs. 52-week high |
+| Financial Strength | 10% | Debt/Equity, current ratio |
+| Profitability | 10% | ROE, profit margins |
+| Size / Stability | 5% | Market cap (larger = more stable) |
+
+### Recommendation Thresholds
+
+| Score | Label | Meaning |
+|---|---|---|
+| 80–100 | **STRONG BUY** | Excellent across all factors |
+| 65–79 | **BUY** | Strong fundamentals, good value |
+| 50–64 | **ACCUMULATE** | Solid, consider building a position |
+| 35–49 | **HOLD** | Maintain current position |
+| <35 | **AVOID** | Significant concerns |
+
+---
 
 ## Troubleshooting
 
 | Issue | Solution |
-|-------|----------|
-| Missing data | Some metrics unavailable for certain stocks |
-| Slow analysis | Rate limiting prevents API blocks (0.2s/request) |
-| Import errors | Run `pip install yfinance pandas streamlit` |
-| ChromaDB errors | Optional; falls back to JSON storage |
-| No vector data | Run `python download_data.py` then `python ingest_data.py` |
-| Download rate limits | Scripts have built-in delays; run overnight if needed |
-| Missing requests | Run `pip install requests beautifulsoup4` |
-| PDF generation fails | Run `pip install reportlab` |
-| News RSS fails | Run `pip install feedparser` (optional, Yahoo Finance works without it) |
+|---|---|
+| `ModuleNotFoundError` | Run `pip install -r requirements.txt` |
+| App opens but shows no data | Check internet connection; yfinance requires network access |
+| Slow single-stock analysis | Normal — API rate limiting adds ~0.2 s/request. Use vector DB to speed up. |
+| Slow full analysis (API mode) | Expected (~2–3 min for 50+ stocks). Run `python ingest_data.py --enrich` to build the DB. |
+| Sidebar shows `🌐 Public API (DB empty)` | Run `python download_data.py && python ingest_data.py --enrich` |
+| `chromadb` import errors | Run `pip install chromadb>=0.4.22`; the app works without it (API-only mode) |
+| Download rate limits / timeouts | Built-in delays handle most cases; try `--symbols` to download a smaller batch |
+| PDF export fails | Run `pip install reportlab` |
+| News section empty | Run `pip install feedparser` (optional); Yahoo Finance news still works without it |
+| `streamlit: command not found` | Run `pip install streamlit` or use `python -m streamlit run app.py` |
+| Port 8501 already in use | Run `streamlit run app.py --server.port 8502` |
 
 ---
 
-**Disclaimer:** This tool is for educational purposes only. Not financial advice. Always do your own research and consult professionals before investing.
+**Disclaimer:** This tool is for educational purposes only. Not financial advice. Always do your own research and consult a qualified professional before investing.
