@@ -140,7 +140,19 @@ Examples:
     parser.add_argument(
         "--fix-values",
         action="store_true",
-        help="Fix invalid/corrupt values (yields > 30%, payout > 500%)",
+        help="Fix invalid/corrupt values (yields > 30%%, payout > 150%%)",
+    )
+
+    parser.add_argument(
+        "--refresh-prices",
+        action="store_true",
+        help="Update current_price in the vector DB from live market quotes",
+    )
+
+    parser.add_argument(
+        "--remove-delisted",
+        action="store_true",
+        help="Remove delisted symbols (WBA, SJW, LANC, BF.B) from the vector DB",
     )
     
     # Configuration
@@ -175,6 +187,12 @@ Examples:
         "--enrich-existing",
         action="store_true",
         help="Enrich existing documents in the database with yfinance data",
+    )
+
+    parser.add_argument(
+        "--sync-portfolio",
+        action="store_true",
+        help="Link portfolio.db holdings into the vector DB (creates missing symbols via yfinance)",
     )
     
     parser.add_argument(
@@ -244,6 +262,34 @@ Examples:
         print(f"  Yield fixes: {stats['yield_fixes']}")
         print(f"  Payout ratio fixes: {stats['payout_fixes']}")
         return 0
+
+    if args.refresh_prices:
+        from services.db_price_refresh import refresh_vector_db_prices
+
+        print(f"\n{'='*50}")
+        print("  REFRESHING LATEST PRICES IN VECTOR DB")
+        print(f"{'='*50}\n")
+
+        stats = refresh_vector_db_prices()
+        print("\n✓ Price refresh complete!")
+        print(f"  Symbols targeted: {stats['total']}")
+        print(f"  Updated: {stats['updated']}")
+        print(f"  Skipped: {stats['skipped']}")
+        print(f"  Errors: {stats['errors']}")
+        return 0
+
+    if args.remove_delisted:
+        from services.db_price_refresh import remove_delisted_from_vector_db
+
+        print(f"\n{'='*50}")
+        print("  REMOVING DELISTED SYMBOLS FROM VECTOR DB")
+        print(f"{'='*50}\n")
+
+        stats = remove_delisted_from_vector_db()
+        print("\n✓ Delisted symbols removed!")
+        print(f"  Symbols: {', '.join(stats['symbols'])}")
+        print(f"  Documents removed: {stats['removed']}")
+        return 0
     
     if args.stats:
         stats = pipeline.get_stats()
@@ -310,6 +356,22 @@ Examples:
         print(f"\nProcessed {count} stocks: {', '.join(symbols)}")
         return 0
     
+    if args.sync_portfolio:
+        from services.portfolio_vector_sync import sync_portfolio_to_vector_db
+
+        print(f"\n{'='*50}")
+        print("  SYNC PORTFOLIO → VECTOR DB")
+        print(f"{'='*50}\n")
+        stats = sync_portfolio_to_vector_db(enrich_missing=True)
+        print(f"  Holdings linked: {stats.get('linked', 0)}")
+        print(f"  New documents:   {stats.get('created', 0)}")
+        print(f"  Stored:          {stats.get('stored', 0)}")
+        print(f"  Errors:          {stats.get('errors', 0)}")
+        if stats.get("still_missing"):
+            print(f"  Still missing:   {', '.join(stats['still_missing'])}")
+        print(f"  Total in DB:     {stats.get('total_documents', 0)}")
+        return 0
+
     # Handle enrich-existing action
     if args.enrich_existing:
         print(f"\n{'='*50}")

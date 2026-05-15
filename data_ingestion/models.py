@@ -179,6 +179,14 @@ class StockDocument:
     # === TEXT CONTENT ===
     description: str = ""
     notes: str = ""
+
+    # === PORTFOLIO LINK (synced from portfolio.db) ===
+    in_portfolio: bool = False
+    portfolio_shares: Optional[float] = None
+    portfolio_avg_cost_per_share: Optional[float] = None
+    portfolio_acquisition_value: Optional[float] = None
+    portfolio_dividends_paid: Optional[float] = None
+    portfolio_purchase_count: Optional[int] = None
     
     MAX_HISTORY_YEARS = 10  # Maximum years of historical data to store
     
@@ -244,6 +252,20 @@ class StockDocument:
         
         if self.notes:
             parts.append(f"Notes: {self.notes}")
+
+        if self.in_portfolio:
+            position_parts = ["Portfolio holding: yes"]
+            if self.portfolio_shares is not None:
+                position_parts.append(f"{self.portfolio_shares:g} shares")
+            if self.portfolio_avg_cost_per_share is not None:
+                position_parts.append(
+                    f"avg cost ${self.portfolio_avg_cost_per_share:.2f}"
+                )
+            if self.portfolio_acquisition_value is not None:
+                position_parts.append(
+                    f"acquisition ${self.portfolio_acquisition_value:,.0f}"
+                )
+            parts.append(", ".join(position_parts))
         
         return "\n".join(parts)
     
@@ -358,6 +380,14 @@ class StockDocument:
             metadata["description"] = self.description
         if self.notes:
             metadata["notes"] = self.notes
+
+        # Portfolio linkage
+        metadata["in_portfolio"] = bool(self.in_portfolio)
+        add_float("portfolio_shares", self.portfolio_shares)
+        add_float("portfolio_avg_cost_per_share", self.portfolio_avg_cost_per_share)
+        add_float("portfolio_acquisition_value", self.portfolio_acquisition_value)
+        add_float("portfolio_dividends_paid", self.portfolio_dividends_paid)
+        add_int("portfolio_purchase_count", self.portfolio_purchase_count)
         
         return metadata
     
@@ -457,6 +487,12 @@ class StockDocument:
             data_quality=data.get("data_quality", 0.0),
             description=data.get("description", ""),
             notes=data.get("notes", ""),
+            in_portfolio=bool(data.get("in_portfolio", False)),
+            portfolio_shares=data.get("portfolio_shares"),
+            portfolio_avg_cost_per_share=data.get("portfolio_avg_cost_per_share"),
+            portfolio_acquisition_value=data.get("portfolio_acquisition_value"),
+            portfolio_dividends_paid=data.get("portfolio_dividends_paid"),
+            portfolio_purchase_count=data.get("portfolio_purchase_count"),
         )
 
 

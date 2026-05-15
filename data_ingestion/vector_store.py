@@ -13,12 +13,13 @@ from datetime import datetime
 
 from .models import StockDocument, SearchResult, DataSource, PriceHistory, DividendRecord
 
-# Import config for default paths
+# Import config for default paths and constants
 try:
-    from config import VECTORDB_DIR
+    from config import VECTORDB_DIR, MAX_PAYOUT_RATIO_PCT
     DEFAULT_VECTORDB_DIR = str(VECTORDB_DIR)
 except ImportError:
     DEFAULT_VECTORDB_DIR = "data/vectordb"
+    MAX_PAYOUT_RATIO_PCT = 150.0
 
 logger = logging.getLogger(__name__)
 
@@ -437,6 +438,12 @@ class VectorStore:
             data_quality=metadata.get("data_quality", 0),
             description=metadata.get("description", ""),
             notes=metadata.get("notes", ""),
+            in_portfolio=bool(metadata.get("in_portfolio", False)),
+            portfolio_shares=metadata.get("portfolio_shares"),
+            portfolio_avg_cost_per_share=metadata.get("portfolio_avg_cost_per_share"),
+            portfolio_acquisition_value=metadata.get("portfolio_acquisition_value"),
+            portfolio_dividends_paid=metadata.get("portfolio_dividends_paid"),
+            portfolio_purchase_count=metadata.get("portfolio_purchase_count"),
         )
     
     def get_by_symbol(self, symbol: str) -> Optional[StockDocument]:
@@ -656,6 +663,44 @@ class VectorStore:
             logger.info("Vector store cleared")
         except Exception as e:
             logger.error(f"Error clearing store: {e}")
+
+    def delete_symbols(self, symbols: List[str]) -> int:
+        """
+        Remove all documents for the given ticker symbols.
+
+        Returns:
+            Number of documents removed.
+        """
+        if not symbols:
+            return 0
+
+        removed = 0
+        targets = {symbol.upper() for symbol in symbols}
+
+        if self._use_fallback:
+            to_delete = [
+                doc_id
+                for doc_id, doc in self._fallback_store.items()
+                if doc.symbol.upper() in targets
+            ]
+            for doc_id in to_delete:
+                del self._fallback_store[doc_id]
+                removed += 1
+            if to_delete:
+                self._save_fallback()
+            return removed
+
+        try:
+            for symbol in targets:
+                results = self._collection.get(where={"symbol": symbol})
+                if results and results.get("ids"):
+                    self._collection.delete(ids=results["ids"])
+                    removed += len(results["ids"])
+                    logger.info("Removed %s document(s) for %s", len(results["ids"]), symbol)
+        except Exception as e:
+            logger.error("Error deleting symbols %s: %s", targets, e)
+
+        return removed
     
     def export_to_json(self, filepath: str) -> int:
         """
@@ -791,7 +836,7 @@ class VectorStore:
         
         Fixes:
         - Dividend yields > 30% (likely multiplied by 100 twice)
-        - Payout ratios > 500% (likely corrupt)
+        - Payout ratios > 150% (capped; likely corrupt)
         - Missing dividend streak for known Dividend Kings
         
         Returns:
@@ -827,21 +872,41 @@ class VectorStore:
                 changed = True
                 logger.info(f"{doc.symbol}: Fixed payout ratio (10000x) to {doc.payout_ratio:.2f}%")
             
-            # Cap extremely high payout ratios at 500% (likely data error or special situation)
-            # Some REITs can have > 200% legitimately, but > 500% is usually bad data
-            elif doc.payout_ratio is not None and doc.payout_ratio > 500:
-                logger.warning(f"{doc.symbol}: Capping extreme payout ratio {doc.payout_ratio:.1f}% to 500%")
-                doc.payout_ratio = 500.0
-                stats["payout_fixes"] += 1
-                changed = True
+            # Fix likely double-multiplied payout: 300–500% often means 3–5% (stored as 5 then *100)
+            # e.g. 500 might mean 5%, 350 might mean 3.5%
+            if doc.payout_ratio is not None and 300 < doc.payout_ratio <= 500:
+                candidate = doc.payout_ratio / 100
+                if 0 < candidate <= 150:
+                    doc.payout_ratio = candidate
+                    stats["payout_fixes"] += 1
+                    changed = True
+                    logger.info(f"{doc.symbol}: Fixed payout ratio (double-multiplied) to {doc.payout_ratio:.2f}%")
             
-            # Fix payout ratio in decimal form (< 10, should be multiplied by 100)
-            # e.g., 1.03 should be 103%, 0.67 should be 67%
-            elif doc.payout_ratio is not None and 0 < doc.payout_ratio < 10:
+            # Only treat decimal ratio (0, 1) as needing *100. Values in [1, 10] are already % (e.g. 5 = 5%)
+            # so we must NOT multiply them or we get 500% from 5%.
+            if doc.payout_ratio is not None and 0 < doc.payout_ratio < 1:
                 doc.payout_ratio = doc.payout_ratio * 100
                 stats["payout_fixes"] += 1
                 changed = True
                 logger.info(f"{doc.symbol}: Fixed payout ratio (decimal) to {doc.payout_ratio:.2f}%")
+            
+            # Cap extreme payout (REITs/special cases can be 100–150%; higher is usually bad data)
+            if doc.payout_ratio is not None and doc.payout_ratio > MAX_PAYOUT_RATIO_PCT:
+                logger.warning(f"{doc.symbol}: Capping payout ratio {doc.payout_ratio:.1f}% to {MAX_PAYOUT_RATIO_PCT:.0f}%")
+                doc.payout_ratio = float(MAX_PAYOUT_RATIO_PCT)
+                stats["payout_fixes"] += 1
+                changed = True
+
+            from utils.dividend_streak import apply_dividend_streak_to_document
+
+            previous_streak = doc.dividend_streak_years
+            apply_dividend_streak_to_document(doc)
+            if doc.dividend_streak_years != previous_streak:
+                stats["streak_fixes"] += 1
+                changed = True
+                logger.info(
+                    f"{doc.symbol}: Updated dividend streak to {doc.dividend_streak_years}"
+                )
             
             if changed:
                 doc.last_updated = datetime.now()
@@ -949,5 +1014,9 @@ class VectorStore:
         
         # Update timestamp
         best.last_updated = datetime.now()
+
+        from utils.dividend_streak import apply_dividend_streak_to_document
+
+        apply_dividend_streak_to_document(best)
         
         return best
