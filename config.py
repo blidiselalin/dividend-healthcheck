@@ -19,9 +19,33 @@ from typing import Dict, List, Final, FrozenSet
 # DATA DIRECTORY CONFIGURATION
 # =============================================================================
 
-# Uses ~/.dividendscope/data by default, can be overridden with env var
-_default_data_dir = Path.home() / ".dividendscope" / "data"
-DATA_DIR: Final[Path] = Path(os.environ.get("DIVIDENDSCOPE_DATA_DIR", str(_default_data_dir)))
+def is_cloud_runtime() -> bool:
+    """True on Streamlit Community Cloud and similar ephemeral hosts."""
+    flag = os.environ.get("DIVIDENDSCOPE_CLOUD", "").strip().lower()
+    if flag in ("1", "true", "yes"):
+        return True
+    if os.environ.get("STREAMLIT_RUNTIME_ENV", "").strip().lower() == "cloud":
+        return True
+    host = " ".join(
+        (
+            os.environ.get("HOSTNAME", ""),
+            os.environ.get("STREAMLIT_SERVER_ADDRESS", ""),
+            os.environ.get("STREAMLIT_SHARING_BASE_URL", ""),
+        )
+    ).lower()
+    return "streamlit.app" in host
+
+
+def _resolve_data_dir() -> Path:
+    override = os.environ.get("DIVIDENDSCOPE_DATA_DIR")
+    if override:
+        return Path(override)
+    if is_cloud_runtime():
+        return Path(__file__).resolve().parent / "data"
+    return Path.home() / ".dividendscope" / "data"
+
+
+DATA_DIR: Final[Path] = _resolve_data_dir()
 
 # Subdirectories
 VECTORDB_DIR: Final[Path] = DATA_DIR / "vectordb"
@@ -85,17 +109,29 @@ DIVIDEND_KINGS: Final[List[str]] = [
     "ZTS",
 ]
 
+# Tickers removed from lists and purged from the vector DB (no reliable Yahoo quotes)
+DELISTED_SYMBOLS: Final[FrozenSet[str]] = frozenset({
+    "WBA",   # Delisted / acquired (Walgreens Boots Alliance)
+    "SJW",   # Acquired; no active Yahoo quote
+    "LANC",  # Lancaster Colony — invalid history on Yahoo
+    "BF.B",  # Brown-Forman Class B — use BF-B on Yahoo; kept out of DB
+    "BF-B",
+})
+
 # Dividend Aristocrats for comparison (25+ years)
 DIVIDEND_ARISTOCRATS: Final[List[str]] = [
     "ABBV", "ADM", "ADP", "AFL", "ALB", "AMCR", "AOS", "APD", "ATO", "BDX",
-    "BEN", "BF.B", "BRO", "CAH", "CAT", "CB", "CHRW", "CINF", "CLX", "CTAS",
+    "BEN", "BRO", "CAH", "CAT", "CB", "CHRW", "CINF", "CLX", "CTAS",
     "CVX", "ECL", "ED", "ESS", "EXPD", "FAST", "FDS", "GD", "IBM", "KMB",
     "LIN", "MCD", "MDT", "MKC", "NEE", "NUE", "O", "PEP", "ROP", "SPGI",
-    "T", "TROW", "VFC", "WBA", "WMT", "WST", "XOM",
+    "T", "TROW", "VFC", "WMT", "WST", "XOM",
 ]
 
 # Combined list for full analysis (frozen for immutability)
-ALL_DIVIDEND_STOCKS: Final[List[str]] = sorted(set(DIVIDEND_KINGS + DIVIDEND_ARISTOCRATS))
+ALL_DIVIDEND_STOCKS: Final[List[str]] = sorted(
+    symbol for symbol in set(DIVIDEND_KINGS + DIVIDEND_ARISTOCRATS)
+    if symbol not in DELISTED_SYMBOLS
+)
 DIVIDEND_SYMBOLS_SET: Final[FrozenSet[str]] = frozenset(ALL_DIVIDEND_STOCKS)
 
 
@@ -142,6 +178,8 @@ PAYOUT_VERY_SAFE: Final[float] = 40.0
 PAYOUT_SAFE: Final[float] = 60.0
 PAYOUT_MODERATE: Final[float] = 75.0
 PAYOUT_ELEVATED: Final[float] = 90.0
+# Max payout ratio to store/display; values above are capped (avoids bad data showing 500%+)
+MAX_PAYOUT_RATIO_PCT: Final[float] = 150.0
 
 
 # =============================================================================
@@ -171,3 +209,6 @@ DATA_SOURCES: Final[Dict[str, str]] = {
 
 MAX_HISTORY_YEARS: Final[int] = 10
 DEFAULT_STALENESS_DAYS: Final[int] = 7
+
+# Portfolio risk / attention watchlist auto-refresh (Streamlit sidebar + dashboard)
+PORTFOLIO_RISK_REFRESH_SECONDS: Final[int] = 3600

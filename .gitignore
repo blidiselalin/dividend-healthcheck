@@ -23,6 +23,8 @@ pyStockPriceAlert_oneDir
 stocks.db
 pydivStocks.csv
 data/
+# Allow committing a pre-built vector DB for cloud deploy (optional):
+# !data/vectordb/
 
 # Reports and docs (generated)
 reports/
