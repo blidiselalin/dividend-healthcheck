@@ -138,6 +138,10 @@ def _build_dividend_history(doc: "StockDocument") -> Optional["DividendHistory"]
         DividendHistory instance or None if no dividend data.
     """
     from models.stock import DividendHistory
+    from utils.dividend_streak import (
+        annual_totals_from_payments,
+        resolve_consecutive_years,
+    )
     
     if doc.dividend_streak_years is None and not doc.dividend_history:
         return None
@@ -150,6 +154,18 @@ def _build_dividend_history(doc: "StockDocument") -> Optional["DividendHistory"]
     if not total_years and doc.dividend_history:
         years = {d.ex_date.year for d in doc.dividend_history}
         total_years = len(years)
+
+    annual_totals = None
+    if doc.dividend_history:
+        year_to_payments: dict[int, list[float]] = {}
+        for record in doc.dividend_history:
+            year_to_payments.setdefault(record.ex_date.year, []).append(record.amount)
+        annual_totals = annual_totals_from_payments(year_to_payments)
+
+    consecutive_years = resolve_consecutive_years(
+        curated_years=doc.dividend_streak_years,
+        annual_totals=annual_totals,
+    )
     
     # Get ex-dividend date from history if not set
     ex_date = doc.ex_dividend_date
@@ -164,7 +180,7 @@ def _build_dividend_history(doc: "StockDocument") -> Optional["DividendHistory"]
         payment_freq = detect_payment_frequency(doc.dividend_history)
     
     return DividendHistory(
-        consecutive_years=doc.dividend_streak_years or 0,
+        consecutive_years=consecutive_years,
         total_years=total_years,
         cagr_5y=cagr_5y,
         cagr_10y=cagr_10y,
@@ -194,42 +210,7 @@ def _calculate_price_to_high(
 
 
 def detect_payment_frequency(dividend_history: List["DividendRecord"]) -> int:
-    """
-    Detect dividend payment frequency from history.
-    
-    Analyzes the dividend history to determine how often dividends
-    are paid (monthly, quarterly, semi-annual, or annual).
-    
-    Args:
-        dividend_history: List of DividendRecord objects.
-        
-    Returns:
-        Payments per year (12=monthly, 4=quarterly, 2=semi-annual, 1=annual).
-    """
-    if not dividend_history or len(dividend_history) < 2:
-        return FREQUENCY_QUARTERLY
-    
-    try:
-        # Count payments per year
-        years_count: Dict[int, int] = {}
-        for div in dividend_history:
-            year = div.ex_date.year
-            years_count[year] = years_count.get(year, 0) + 1
-        
-        if not years_count:
-            return FREQUENCY_QUARTERLY
-        
-        avg_per_year = sum(years_count.values()) / len(years_count)
-        
-        if avg_per_year >= MONTHLY_THRESHOLD:
-            return FREQUENCY_MONTHLY
-        elif avg_per_year >= QUARTERLY_THRESHOLD:
-            return FREQUENCY_QUARTERLY
-        elif avg_per_year >= SEMI_ANNUAL_THRESHOLD:
-            return FREQUENCY_SEMI_ANNUAL
-        else:
-            return FREQUENCY_ANNUAL
-            
-    except Exception as e:
-        logger.debug(f"Error detecting payment frequency: {e}")
-        return FREQUENCY_QUARTERLY
+    """Detect dividend payment frequency from history (see utils.dividend_amounts)."""
+    from utils.dividend_amounts import detect_payment_frequency as _detect
+
+    return _detect(dividend_history)

@@ -221,6 +221,10 @@ class YFinanceEnricher:
             
             # Calculate dividend growth rates
             doc = self._calculate_dividend_growth(doc)
+
+            from utils.dividend_streak import apply_dividend_streak_to_document
+
+            apply_dividend_streak_to_document(doc)
             
             # Fetch price history and calculate returns
             doc = self._enrich_price_data(doc, ticker)
@@ -347,10 +351,13 @@ class YFinanceEnricher:
             # Sort by date
             doc.dividend_history.sort(key=lambda d: d.ex_date)
             
-            # Update total years
+            # Update total years and payment frequency from history
             if doc.dividend_history:
                 years = set(d.ex_date.year for d in doc.dividend_history)
                 doc.dividend_total_years = len(years)
+                from utils.dividend_amounts import detect_payment_frequency
+
+                doc.payment_frequency = detect_payment_frequency(doc.dividend_history)
             
         except Exception as e:
             logger.debug(f"Error getting dividend history for {doc.symbol}: {e}")

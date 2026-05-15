@@ -182,19 +182,23 @@ class EnhancedStockService:
     
     def _enhance_with_db_data(self, api_data: StockData, db_data: StockData) -> StockData:
         """Enhance API data with useful fields from DB data."""
-        # Add dividend streak if DB has better data
-        if db_data.dividend_history and db_data.dividend_history.consecutive_years:
-            if not api_data.dividend_history or api_data.dividend_history.consecutive_years == 0:
-                api_data.dividend_history = db_data.dividend_history
-            elif db_data.dividend_history.consecutive_years > api_data.dividend_history.consecutive_years:
+        if db_data.dividend_history and api_data.dividend_history:
+            best_streak = max(
+                db_data.dividend_history.consecutive_years,
+                api_data.dividend_history.consecutive_years,
+            )
+            if best_streak != api_data.dividend_history.consecutive_years:
                 api_data.dividend_history = DividendHistory(
-                    consecutive_years=db_data.dividend_history.consecutive_years,
+                    consecutive_years=best_streak,
                     total_years=api_data.dividend_history.total_years,
                     cagr_5y=api_data.dividend_history.cagr_5y or db_data.dividend_history.cagr_5y,
                     cagr_10y=api_data.dividend_history.cagr_10y or db_data.dividend_history.cagr_10y,
                     current_annual=api_data.dividend_history.current_annual,
                     ex_dividend_date=api_data.dividend_history.ex_dividend_date,
+                    payment_frequency=api_data.dividend_history.payment_frequency,
                 )
+        elif db_data.dividend_history and not api_data.dividend_history:
+            api_data.dividend_history = db_data.dividend_history
         
         # Track sources
         api_data.data_sources = ["Public API", "Enhanced: Vector DB"]

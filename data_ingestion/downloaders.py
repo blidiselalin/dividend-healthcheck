@@ -531,50 +531,18 @@ class NasdaqDownloader(BaseDownloader):
             return None
     
     def _calculate_dividend_streak(self, dividends: List[DividendRecord]) -> int:
-        """
-        Calculate consecutive years of dividend INCREASES.
-        
-        Counts backwards from the most recent COMPLETE year, incrementing
-        for each year where total dividends >= prior year.
-        
-        Note: Current year is excluded since it's incomplete.
-        """
+        """Calculate consecutive years of dividend increases from payment history."""
         if not dividends:
             return 0
-        
-        # Group dividends by year and sum amounts
-        annual_totals: dict[int, float] = {}
-        for d in dividends:
-            year = d.ex_date.year
-            annual_totals[year] = annual_totals.get(year, 0) + d.amount
-        
-        if len(annual_totals) < 2:
-            return 0
-        
-        # Sort years ascending
-        years = sorted(annual_totals.keys())
-        
-        # Exclude current year (incomplete data)
-        current_year = datetime.now().year
-        if years and years[-1] == current_year:
-            years = years[:-1]
-        
-        if len(years) < 2:
-            return 0
-        
-        # Count consecutive increases from most recent complete year
-        streak = 0
-        for i in range(len(years) - 1, 0, -1):
-            current_yr = years[i]
-            prior_yr = years[i - 1]
-            
-            current_div = annual_totals[current_yr]
-            prior_div = annual_totals[prior_yr]
-            
-            # Check if dividend was maintained or increased
-            if prior_div > 0 and current_div >= prior_div:
-                streak += 1
-            else:
-                break
-        
-        return streak
+
+        year_to_payments: dict[int, list[float]] = {}
+        for dividend in dividends:
+            year_to_payments.setdefault(dividend.ex_date.year, []).append(dividend.amount)
+
+        from utils.dividend_streak import (
+            annual_totals_from_payments,
+            calculate_consecutive_increase_years,
+        )
+
+        annual_totals = annual_totals_from_payments(year_to_payments)
+        return calculate_consecutive_increase_years(annual_totals)

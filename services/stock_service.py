@@ -11,6 +11,7 @@ import yfinance as yf
 
 from models.stock import StockData, DividendHistory
 from config import MAX_DIVIDEND_YIELD_PCT, MAX_PAYOUT_RATIO_PCT, DATA_SOURCES
+from utils.dividend_streak import annual_totals_from_payments, calculate_consecutive_increase_years
 
 
 class StockService:
@@ -78,35 +79,17 @@ class StockService:
             if len(annual) < 2:
                 return None
             
-            # IMPORTANT: Exclude current year from streak calculation
-            # since it's incomplete and would show lower dividends
             current_year = datetime.now().year
             years_list = list(annual.index)
             values_list = list(annual.values)
-            
-            # Remove current year if present (it's incomplete)
-            if years_list and years_list[-1] == current_year:
-                years_for_streak = years_list[:-1]
-                values_for_streak = values_list[:-1]
-            else:
-                years_for_streak = years_list
-                values_for_streak = values_list
-            
-            # Calculate consecutive years of dividend increases
-            # Go from most recent complete year backwards
-            consecutive = 0
-            if len(values_for_streak) >= 2:
-                for i in range(len(values_for_streak) - 1, 0, -1):
-                    current_div = values_for_streak[i]
-                    prior_div = values_for_streak[i - 1]
-                    
-                    # Check for increase or maintained (>= allows flat years)
-                    # Both must be positive
-                    if prior_div > 0 and current_div >= prior_div:
-                        consecutive += 1
-                    else:
-                        break
-            
+
+            year_to_payments = {
+                int(year): group["dividend"].tolist()
+                for year, group in div_df.groupby("year")
+            }
+            annual_totals = annual_totals_from_payments(year_to_payments)
+            consecutive = calculate_consecutive_increase_years(annual_totals)
+
             # Calculate total years of dividend payments
             total_years = len(annual)
             

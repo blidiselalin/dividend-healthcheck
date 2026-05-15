@@ -192,8 +192,8 @@ def test_data_sanity(store):
         if doc.dividend_yield is not None and (doc.dividend_yield < 0 or doc.dividend_yield > 30):
             issues.append(f"{doc.symbol}: Invalid yield {doc.dividend_yield}%")
         
-        # Payout ratio should be 0-500%
-        if doc.payout_ratio is not None and (doc.payout_ratio < 0 or doc.payout_ratio > 500):
+        # Payout ratio should be 0-150% (higher values are capped in fix_invalid_values)
+        if doc.payout_ratio is not None and (doc.payout_ratio < 0 or doc.payout_ratio > 150):
             issues.append(f"{doc.symbol}: Invalid payout ratio {doc.payout_ratio}%")
         
         # Streak should be 0-100 years

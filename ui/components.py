@@ -222,7 +222,8 @@ class UIComponents:
         
         with col1:
             streak = data.dividend_history.consecutive_years if data.dividend_history else None
-            st.metric("Consecutive Years", UIComponents.format_years(streak))
+            streak_label = UIComponents.format_years(streak) if streak else "N/A"
+            st.metric("Consecutive Years", streak_label)
         with col2:
             st.metric("Current Yield", UIComponents.format_percent(data.dividend_yield_pct))
         with col3:
@@ -603,7 +604,12 @@ class UIComponents:
     # === DIVIDEND YIELD CHANNELS CHART ===
     
     @staticmethod
-    def display_yield_channel_chart(symbol: str, years: int = 10) -> bool:
+    def display_yield_channel_chart(
+        symbol: str,
+        years: int = 10,
+        *,
+        channel_data=None,
+    ) -> bool:
         """
         Display enhanced Dividend Yield Channels chart with Geraldine Weiss methodology.
         
@@ -625,10 +631,13 @@ class UIComponents:
         
         # Use the enhanced service
         service = YieldChannelService()
-        
-        with st.spinner(f"Analyzing {years}-year dividend yield history..."):
-            data = service.fetch_yield_channel_data(symbol, years)
-        
+
+        if channel_data is None:
+            with st.spinner(f"Analyzing {years}-year dividend yield history..."):
+                data = service.fetch_yield_channel_data(symbol, years)
+        else:
+            data = channel_data
+
         if data is None:
             st.warning(f"Insufficient dividend history for {symbol} yield channel analysis")
             return False
@@ -1011,7 +1020,7 @@ class UIComponents:
     # === VECTOR DATABASE DATA DISPLAY ===
     
     @staticmethod
-    def display_vector_db_data(symbol: str) -> bool:
+    def display_vector_db_data(symbol: str, *, document=None) -> bool:
         """
         Display all data stored in the vector database for a given ticker.
         
@@ -1036,8 +1045,10 @@ class UIComponents:
             return False
         
         try:
-            store = VectorStore()
-            doc = store.get_by_symbol(symbol.upper())
+            doc = document
+            if doc is None:
+                store = VectorStore()
+                doc = store.get_by_symbol(symbol.upper())
             
             if doc is None:
                 st.info(

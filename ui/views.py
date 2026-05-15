@@ -126,16 +126,26 @@ class SingleStockView:
             Tuple of (selected_symbol, show_sector_comparison).
         """
         st.sidebar.markdown("### Select Stock")
-        
+
+        preset_symbol = st.session_state.get("single_stock_symbol")
+        default_symbol = preset_symbol if preset_symbol in DIVIDEND_KINGS else (
+            "KO" if "KO" in DIVIDEND_KINGS else DIVIDEND_KINGS[0]
+        )
+
         symbol = st.sidebar.selectbox(
             "Dividend Kings (50+ Years)",
             DIVIDEND_KINGS,
-            index=DIVIDEND_KINGS.index("KO") if "KO" in DIVIDEND_KINGS else 0,
+            index=DIVIDEND_KINGS.index(default_symbol) if default_symbol in DIVIDEND_KINGS else 0,
         )
-        
-        custom_symbol = st.sidebar.text_input("Or enter any symbol:")
+
+        custom_default = ""
+        if preset_symbol and preset_symbol not in DIVIDEND_KINGS:
+            custom_default = preset_symbol
+        custom_symbol = st.sidebar.text_input("Or enter any symbol:", value=custom_default)
         if custom_symbol:
             symbol = custom_symbol.upper().strip()
+        else:
+            st.session_state["single_stock_symbol"] = symbol
         
         st.sidebar.markdown("---")
         show_sector = st.sidebar.checkbox("Compare with sector peers", value=True)
@@ -164,11 +174,100 @@ class SingleStockView:
                 st.error(f"**{rec.label}**\n\nScore: {rec.score}")
     
     @classmethod
+    def render_analysis_for_symbol(
+        cls,
+        symbol: str,
+        *,
+        show_sector: bool = True,
+        data: Optional[StockData] = None,
+        yield_channel_data=None,
+        vector_doc=None,
+    ) -> None:
+        """Render the full single-stock dashboard for a symbol."""
+        if data is None:
+            with st.spinner(f"Loading data for {symbol}..."):
+                data = get_stock_data(symbol)
+
+        if not data:
+            st.error(f"Could not fetch data for {symbol}. Please verify the symbol.")
+            return
+
+        score = ScoringService.calculate_score(data)
+        confidence = data.data_quality_score or 100
+        rec = ScoringService.get_recommendation(score, confidence)
+        pros, cons = ScoringService.get_investment_thesis(data)
+
+        cls._render_header(data, rec)
+        st.divider()
+
+        st.subheader("📊 Key Dividend Metrics")
+        UIComponents.display_prime_metrics(data, score)
+
+        st.divider()
+        UIComponents.display_quick_stats(data)
+
+        st.divider()
+        st.subheader("📋 Investment Analysis")
+        UIComponents.display_investment_thesis(pros, cons)
+        UIComponents.display_recommendation(rec.label, score, confidence)
+
+        st.divider()
+        with st.expander("📰 Latest News & Sentiment", expanded=True):
+            UIComponents.display_news_summary(symbol, days=7)
+
+        if show_sector and data.sector != "N/A":
+            st.divider()
+            with st.expander("🏭 Sector Comparison", expanded=True):
+                with st.spinner(f"Loading {data.sector} peers..."):
+                    sector_peers, external = SectorService.get_top_sector_peers(
+                        data, score, include_external=True
+                    )
+                UIComponents.display_sector_comparison(data, score, sector_peers, external)
+
+        st.divider()
+        st.subheader("📊 Dividend Yield Channels — \"Dividends Don't Lie\"")
+        st.caption(
+            "Geraldine Weiss (1988): A company's dividend yield history reveals "
+            "buying/selling opportunities more honestly than earnings reports."
+        )
+        UIComponents.display_yield_channel_chart(
+            symbol, years=10, channel_data=yield_channel_data
+        )
+
+        st.divider()
+        st.subheader("📖 Detailed Analysis")
+
+        with st.expander("💰 Dividend Details"):
+            UIComponents.display_dividend_details(data)
+
+        with st.expander("📈 Valuation"):
+            UIComponents.display_valuation_metrics(data)
+
+        with st.expander("🏦 Financial Health"):
+            UIComponents.display_financial_health(data)
+
+        with st.expander("💹 Profitability"):
+            UIComponents.display_profitability(data)
+
+        with st.expander("🎯 Performance & Analysts"):
+            UIComponents.display_performance(data)
+
+        with st.expander("📦 Vector Database Data"):
+            UIComponents.display_vector_db_data(symbol, document=vector_doc)
+
+        st.divider()
+        cls._render_report_section(data, score, rec, pros, cons, symbol)
+
+        st.divider()
+        cls._render_data_source_footer(data, confidence)
+
+    @classmethod
     def render(cls) -> None:
         """Render the single stock analysis view."""
         symbol, show_sector = cls._render_sidebar()
-        
-        if not st.sidebar.button("Analyze", type="primary"):
+        auto_analyze = st.session_state.pop("single_stock_auto_analyze", False)
+
+        if not auto_analyze and not st.sidebar.button("Analyze", type="primary"):
             # Show empty state
             st.info("👈 Select a stock and click **Analyze** to begin")
             st.markdown("""
@@ -184,92 +283,8 @@ class SingleStockView:
             Only ~50 companies in the U.S. have achieved this status.
             """)
             return
-        
-        with st.spinner(f"Loading data for {symbol}..."):
-            data = get_stock_data(symbol)
-        
-        if not data:
-            st.error(f"Could not fetch data for {symbol}. Please verify the symbol.")
-            return
-        
-        score = ScoringService.calculate_score(data)
-        confidence = data.data_quality_score or 100
-        rec = ScoringService.get_recommendation(score, confidence)
-        pros, cons = ScoringService.get_investment_thesis(data)
-        
-        # === HEADER ===
-        cls._render_header(data, rec)
-        st.divider()
-        
-        # === PRIME METRICS (Key Decision Factors) ===
-        st.subheader("📊 Key Dividend Metrics")
-        UIComponents.display_prime_metrics(data, score)
-        
-        st.divider()
-        
-        # === QUICK STATS ===
-        UIComponents.display_quick_stats(data)
-        
-        st.divider()
-        
-        # === INVESTMENT THESIS ===
-        st.subheader("📋 Investment Analysis")
-        UIComponents.display_investment_thesis(pros, cons)
-        UIComponents.display_recommendation(rec.label, score, confidence)
-        
-        # === NEWS & SENTIMENT ===
-        st.divider()
-        with st.expander("📰 Latest News & Sentiment", expanded=True):
-            UIComponents.display_news_summary(symbol, days=7)
-        
-        # === SECTOR COMPARISON ===
-        if show_sector and data.sector != "N/A":
-            st.divider()
-            with st.expander("🏭 Sector Comparison", expanded=True):
-                with st.spinner(f"Loading {data.sector} peers..."):
-                    sector_peers, external = SectorService.get_top_sector_peers(
-                        data, score, include_external=True
-                    )
-                UIComponents.display_sector_comparison(data, score, sector_peers, external)
-        
-        # === DIVIDEND YIELD CHANNELS (Dividends Don't Lie) ===
-        st.divider()
-        st.subheader("📊 Dividend Yield Channels — \"Dividends Don't Lie\"")
-        st.caption(
-            "Geraldine Weiss (1988): A company's dividend yield history reveals "
-            "buying/selling opportunities more honestly than earnings reports."
-        )
-        UIComponents.display_yield_channel_chart(symbol, years=10)
-        
-        # === DETAILED SECTIONS (Expandable) ===
-        st.divider()
-        st.subheader("📖 Detailed Analysis")
-        
-        with st.expander("💰 Dividend Details"):
-            UIComponents.display_dividend_details(data)
-        
-        with st.expander("📈 Valuation"):
-            UIComponents.display_valuation_metrics(data)
-        
-        with st.expander("🏦 Financial Health"):
-            UIComponents.display_financial_health(data)
-        
-        with st.expander("💹 Profitability"):
-            UIComponents.display_profitability(data)
-        
-        with st.expander("🎯 Performance & Analysts"):
-            UIComponents.display_performance(data)
-        
-        with st.expander("📦 Vector Database Data"):
-            UIComponents.display_vector_db_data(symbol)
-        
-        # === REPORT GENERATION & EXPORT ===
-        st.divider()
-        cls._render_report_section(data, score, rec, pros, cons, symbol)
-        
-        # === DATA SOURCE FOOTER ===
-        st.divider()
-        cls._render_data_source_footer(data, confidence)
+
+        cls.render_analysis_for_symbol(symbol, show_sector=show_sector)
     
     @classmethod
     def _render_report_section(

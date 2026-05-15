@@ -130,6 +130,20 @@ class DataIngestionPipeline:
                 self._stats["documents_merged"] += 1
         
         logger.info(f"Merged into {len(merged_documents)} documents")
+
+        try:
+            from config import DELISTED_SYMBOLS
+
+            before = len(merged_documents)
+            merged_documents = [
+                doc for doc in merged_documents
+                if doc.symbol.upper() not in DELISTED_SYMBOLS
+            ]
+            skipped = before - len(merged_documents)
+            if skipped:
+                logger.info("Skipped %s delisted symbol(s) from ingestion", skipped)
+        except ImportError:
+            pass
         
         # Step 3: Enrich with yfinance if requested
         if enrich_with_yfinance and ENRICHER_AVAILABLE:
@@ -197,7 +211,13 @@ class DataIngestionPipeline:
         else:
             # Get all documents from vector store
             all_docs = []
+            try:
+                from config import DELISTED_SYMBOLS
+            except ImportError:
+                DELISTED_SYMBOLS = frozenset()
             for doc in self.vector_store.get_dividend_kings(min_streak=0):
+                if doc.symbol.upper() in DELISTED_SYMBOLS:
+                    continue
                 if doc.data_quality < min_quality or min_quality == 0:
                     all_docs.append(doc)
             documents = all_docs
@@ -249,6 +269,9 @@ class DataIngestionPipeline:
             return None
         
         if len(documents) == 1:
+            from utils.dividend_streak import apply_dividend_streak_to_document
+
+            apply_dividend_streak_to_document(documents[0])
             return documents[0]
         
         # Sort by preference
@@ -277,7 +300,11 @@ class DataIngestionPipeline:
         sources = list(set(d.source for d in documents))
         if len(sources) > 1:
             base.notes = f"Data from: {', '.join(s.value for s in sources)}"
-        
+
+        from utils.dividend_streak import apply_dividend_streak_to_document
+
+        apply_dividend_streak_to_document(base)
+
         return base
     
     def _merge_two_documents(
