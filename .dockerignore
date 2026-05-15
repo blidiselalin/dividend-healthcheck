@@ -1,0 +1,16 @@
+.venv/
+venv/
+venv3.12/
+__pycache__/
+*.pyc
+.git/
+.idea/
+.vscode/
+reports/
+docs/
+.claude/
+*.md
+!DEPLOY*.md
+data/downloads/
+.pytest_cache/
+.DS_Store

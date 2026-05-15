@@ -6,6 +6,7 @@ __pycache__/
 .Python
 .venv/
 venv/
+venv3.12/
 ENV/
 
 # IDE
@@ -22,9 +23,11 @@ Thumbs.db
 pyStockPriceAlert_oneDir
 stocks.db
 pydivStocks.csv
-data/
-# Allow committing a pre-built vector DB for cloud deploy (optional):
-# !data/vectordb/
+# Local ingest downloads (do not commit)
+data/*
+!data/vectordb/
+!data/portfolio.db
+!data/.gitkeep
 
 # Reports and docs (generated)
 reports/

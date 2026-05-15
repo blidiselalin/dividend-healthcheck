@@ -44,19 +44,49 @@ DIVIDENDSCOPE_DATA_DIR = "data"
 
 Save. The app will redeploy automatically.
 
+## Persistent DB on Streamlit Cloud
+
+Streamlit’s server disk is **wiped on sleep/redeploy**. To ship your DB with the app, commit it under `data/` in Git.
+
+### One-time on your Mac
+
+```bash
+# 1. Build the DB locally (10–20 min first time)
+python ingest_data.py --enrich
+python ingest_data.py --sync-portfolio
+
+# 2. Copy into the repo
+chmod +x scripts/bundle_streamlit_data.sh
+./scripts/bundle_streamlit_data.sh
+
+# 3. Push (keep vectordb under ~100 MB for GitHub; use Git LFS if larger)
+git add data/vectordb data/portfolio.db
+git commit -m "Bundle data for Streamlit Cloud"
+git push
+```
+
+Redeploy on [share.streamlit.io](https://share.streamlit.io) (automatic after push).
+
+### Streamlit secrets (required)
+
+```toml
+DIVIDENDSCOPE_CLOUD = "true"
+DIVIDENDSCOPE_DATA_DIR = "data"
+```
+
+The app reads ChromaDB from `data/vectordb` and SQLite from `data/portfolio.db`.
+
+### Updating the cloud DB later
+
+Re-run ingest locally → `./scripts/bundle_streamlit_data.sh` → commit → push.
+
 ## Step 4 — First use after deploy
 
 | Feature | On cloud |
 |--------|----------|
-| Single Stock / Kings | Works via yfinance when vector DB is empty |
-| Portfolio Details | Click **Run portfolio scan (~1–2 min)** in the sidebar first |
-| Vector DB | Ephemeral — resets when the app sleeps; re-run ingest locally and export if you need a persistent DB in git |
-
-To pre-fill the vector DB in the cloud (optional, advanced):
-
-1. Locally: `python ingest_data.py --enrich` then `python ingest_data.py --sync-portfolio`
-2. Zip `data/vectordb` (keep under ~100 MB for GitHub)
-3. Commit under `data/vectordb` in the repo (remove `data/` from `.gitignore` for that folder only) and redeploy
+| Single Stock / Kings | Fast if `data/vectordb` is in the repo |
+| Portfolio Details | Use sidebar **Run portfolio scan** if you skipped bundling |
+| Vector DB | **Persistent across deploys** only if `data/vectordb` is committed in Git |
 
 ## Troubleshooting
 

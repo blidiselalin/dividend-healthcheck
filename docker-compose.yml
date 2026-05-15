@@ -1,0 +1,13 @@
+services:
+  dividendscope:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      DIVIDENDSCOPE_DATA_DIR: /data
+    volumes:
+      - dividendscope-data:/data
+
+volumes:
+  dividendscope-data:
