@@ -1,6 +1,13 @@
+# Persistent data: named volume "motion_dividendscope-persistent-data" → /data in the container
+#   /data/vectordb     ChromaDB (vector store)
+#   /data/portfolio.db SQLite (holdings, journal, deposits)
+# Survives: restart, rebuild (docker compose up --build), container recreate
+# Deleted only by: docker compose down -v   OR   docker volume rm ...
+
 services:
   dividendscope:
     build: .
+    container_name: dividendscope
     restart: unless-stopped
     ports:
       - "8501:8501"
@@ -11,3 +18,4 @@ services:
 
 volumes:
   dividendscope-data:
+    name: dividendscope-persistent-data

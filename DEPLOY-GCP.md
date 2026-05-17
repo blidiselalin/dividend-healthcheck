@@ -114,16 +114,35 @@ http://EXTERNAL_IP:8501
 
 Replace `EXTERNAL_IP` with the VM’s external IP.
 
+### Persistent data (vector DB + SQLite)
+
+Data is stored in Docker volume **`dividendscope-persistent-data`** (mounted at **`/data`** in the container):
+
+| Path | Contents |
+|------|----------|
+| `/data/vectordb` | ChromaDB |
+| `/data/portfolio.db` | SQLite portfolio data |
+
+Survives **restart**, **`docker compose up --build`**, and **VM reboot**.
+
+**Never run** `docker compose down -v` — `-v` deletes the volume and wipes the DB.
+
+```bash
+./scripts/docker_volume_status.sh   # list vectordb size
+```
+
 ---
 
 ## Step 7 — Build the database (first time, ~15–25 min)
 
-Run inside the container (persists in Docker volume `dividendscope-data`):
+Run inside the container (writes to volume `dividendscope-persistent-data` → `/data`):
 
 ```bash
-docker compose exec dividendscope python ingest_data.py --enrich
-docker compose exec dividendscope python ingest_data.py --sync-portfolio
+docker exec -it dividendscope python ingest_data.py --enrich
+docker exec -it dividendscope python ingest_data.py --sync-portfolio
 ```
+
+Or from the project directory: `docker compose exec dividendscope python ingest_data.py --enrich`
 
 Restart is optional; refresh the browser. Sidebar should show **Vector DB (N stocks)**.
 
