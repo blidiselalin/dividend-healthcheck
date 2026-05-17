@@ -27,8 +27,10 @@ fi
 GCP_PROJECT="${GCP_PROJECT:-}"
 GCP_INSTANCE="${GCP_INSTANCE:-}"
 GCP_ZONE="${GCP_ZONE:-}"
+GCP_SSH_USER="${GCP_SSH_USER:-}"
 SSH_HOST="${SSH_HOST:-}"
 REMOTE_APP_DIR="${REMOTE_APP_DIR:-dividend-healthcheck}"
+REMOTE_APP_FULL_PATH="${REMOTE_APP_FULL_PATH:-}"
 DEPLOY_METHOD="${DEPLOY_METHOD:-rsync}"
 
 SYNC_PORTFOLIO=false
@@ -52,8 +54,47 @@ for arg in "$@"; do
   esac
 done
 
-REMOTE_APP_DIR="${REMOTE_APP_DIR#~/}"
-REMOTE_APP_DIR="${REMOTE_APP_DIR#/}"
+REMOTE_APP_CD=""
+
+_resolve_remote_app_dir() {
+  if [[ -n "$REMOTE_APP_FULL_PATH" ]]; then
+    REMOTE_APP_CD="$REMOTE_APP_FULL_PATH"
+    return
+  fi
+
+  local rel="${REMOTE_APP_DIR#~/}"
+  rel="${rel#/}"
+  local found
+  found=$(_remote_exec "
+    for d in \"\$HOME/${rel}\" \"\$HOME/dividend-healthcheck\" \"/home/blidiselalin/dividend-healthcheck\"; do
+      if [[ -f \"\$d/docker-compose.yml\" ]]; then
+        echo \"\$d\"
+        exit 0
+      fi
+    done
+    exit 1
+  " 2>/dev/null || true)
+
+  if [[ -z "$found" ]]; then
+    echo "Could not find docker-compose.yml on the VM." >&2
+    echo "Set REMOTE_APP_FULL_PATH in deploy.env (e.g. /home/blidiselalin/dividend-healthcheck)" >&2
+    echo "Or GCP_SSH_USER=blidiselalin if the repo is under another Linux user." >&2
+    echo "" >&2
+    echo "Remote home listing:" >&2
+    _remote_exec 'echo HOME=$HOME; ls -la $HOME; ls -la /home/*/dividend-healthcheck 2>/dev/null || true' || true
+    exit 1
+  fi
+  REMOTE_APP_CD="$found"
+  echo ">>> Using remote app dir: $REMOTE_APP_CD"
+}
+
+_gcloud_ssh_target() {
+  if [[ -n "$GCP_SSH_USER" ]]; then
+    echo "${GCP_SSH_USER}@${GCP_INSTANCE}"
+  else
+    echo "$GCP_INSTANCE"
+  fi
+}
 
 _ssh_rsh() {
   if [[ -n "$SSH_HOST" ]]; then
@@ -74,7 +115,7 @@ _remote_exec() {
       echo "Set GCP_INSTANCE, GCP_ZONE, GCP_PROJECT in deploy.env or set SSH_HOST." >&2
       exit 1
     fi
-    gcloud compute ssh "$GCP_INSTANCE" \
+    gcloud compute ssh "$(_gcloud_ssh_target)" \
       --zone="$GCP_ZONE" \
       --project="$GCP_PROJECT" \
       --command="$cmd"
@@ -91,9 +132,9 @@ _rsync_to_remote() {
 
   local target
   if [[ -n "$SSH_HOST" ]]; then
-    target="${SSH_HOST}:${REMOTE_APP_DIR}/"
+    target="${SSH_HOST}:${REMOTE_APP_CD:-${REMOTE_APP_DIR}}/"
   else
-    target="${GCP_INSTANCE}:${REMOTE_APP_DIR}/"
+    target="$(_gcloud_ssh_target):${REMOTE_APP_CD:-${REMOTE_APP_DIR}}/"
   fi
 
   echo ">>> Rsync local project → ${target}"
@@ -128,17 +169,18 @@ _rebuild_on_remote() {
   flags=$(_build_remote_flags)
 
   echo ">>> Rebuild Docker on VM (volume /data preserved)"
-  _remote_exec "cd ~/${REMOTE_APP_DIR} && chmod +x scripts/update_cloud_docker.sh scripts/run_tests.sh 2>/dev/null || true && ./scripts/update_cloud_docker.sh --no-pull${flags}"
+  _remote_exec "cd $(printf '%q' "$REMOTE_APP_CD") && chmod +x scripts/update_cloud_docker.sh scripts/run_tests.sh 2>/dev/null || true && ./scripts/update_cloud_docker.sh --no-pull${flags}"
 }
 
 _deploy_git() {
   echo ">>> Git pull on VM"
-  _remote_exec "cd ~/${REMOTE_APP_DIR} && git fetch origin main && git reset --hard origin/main"
+  _remote_exec "cd $(printf '%q' "$REMOTE_APP_CD") && git fetch origin main && git reset --hard origin/main"
   _rebuild_on_remote
 }
 
 _main() {
   echo "Deploy method: $DEPLOY_METHOD"
+  _resolve_remote_app_dir
   if [[ "$DEPLOY_METHOD" == "rsync" ]]; then
     _rsync_to_remote
     _rebuild_on_remote
