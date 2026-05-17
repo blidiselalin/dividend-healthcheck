@@ -9,6 +9,7 @@
 # Options:
 #   --sync-portfolio   After restart, sync holdings → vector DB
 #   --ingest           Run ingest_data.py --enrich (slow; first-time or refresh)
+#   --no-pull          Skip git pull (used when code was rsync'd from local)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -16,12 +17,14 @@ cd "$ROOT"
 
 SYNC_PORTFOLIO=false
 RUN_INGEST=false
+SKIP_PULL=false
 for arg in "$@"; do
   case "$arg" in
     --sync-portfolio) SYNC_PORTFOLIO=true ;;
     --ingest) RUN_INGEST=true ;;
+    --no-pull) SKIP_PULL=true ;;
     -h|--help)
-      echo "Usage: $0 [--sync-portfolio] [--ingest]"
+      echo "Usage: $0 [--sync-portfolio] [--ingest] [--no-pull]"
       exit 0
       ;;
     *)
@@ -31,8 +34,12 @@ for arg in "$@"; do
   esac
 done
 
-echo ">>> Git pull"
-git pull --ff-only origin main || git pull --ff-only
+if [[ "$SKIP_PULL" != true ]]; then
+  echo ">>> Git pull"
+  git pull --ff-only origin main || git pull --ff-only
+else
+  echo ">>> Skip git pull (deployed tree already on host)"
+fi
 
 echo ">>> Rebuild image and restart container (data volume preserved)"
 docker compose build --pull

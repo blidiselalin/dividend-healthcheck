@@ -39,3 +39,4 @@ docs/
 # Environment
 .env
 .env.local
+deploy.env

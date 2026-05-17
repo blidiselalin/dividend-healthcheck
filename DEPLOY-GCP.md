@@ -186,7 +186,7 @@ chmod +x scripts/update_cloud_docker.sh
 
 ---
 
-## Step 9 — Useful commands
+## Step 10 — Useful commands
 
 ```bash
 # Logs
