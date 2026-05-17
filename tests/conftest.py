@@ -1,0 +1,85 @@
+"""Shared pytest fixtures for portfolio and data-layer tests."""
+
+from __future__ import annotations
+
+from datetime import date
+from pathlib import Path
+
+import pytest
+
+from data_ingestion.deposits_store import DepositsStore
+from data_ingestion.portfolio_store import PortfolioStore
+from data_ingestion.purchase_journal_store import PurchaseJournalStore
+
+
+@pytest.fixture
+def temp_db(tmp_path: Path) -> Path:
+    """Isolated SQLite database path (holdings, journal, deposits share one file)."""
+    return tmp_path / "portfolio.db"
+
+
+@pytest.fixture
+def portfolio_store(temp_db: Path) -> PortfolioStore:
+    return PortfolioStore(db_path=temp_db, seed=False)
+
+
+@pytest.fixture
+def journal_store(temp_db: Path) -> PurchaseJournalStore:
+    return PurchaseJournalStore(db_path=temp_db, seed=False)
+
+
+@pytest.fixture
+def deposits_store(temp_db: Path) -> DepositsStore:
+    return DepositsStore(db_path=temp_db, seed=False)
+
+
+@pytest.fixture
+def store():
+    """Live vector database for integration-style accuracy tests."""
+    from data_ingestion.vector_store import VectorStore
+
+    vector_store = VectorStore()
+    if vector_store.count() == 0:
+        import pytest
+
+        pytest.skip("Vector database is empty; run ingest to enable accuracy tests")
+    return vector_store
+
+
+@pytest.fixture
+def sample_deposits(deposits_store: DepositsStore) -> DepositsStore:
+    """Two months of deposit history for service-layer tests."""
+    deposits_store.upsert_deposit(
+        year=2024,
+        month=1,
+        label="January 2024",
+        deposit_eur=1000.0,
+        deposit_usd=1100.0,
+        portfolio_eur=10000.0,
+    )
+    deposits_store.upsert_deposit(
+        year=2024,
+        month=2,
+        label="February 2024",
+        deposit_eur=500.0,
+        deposit_usd=550.0,
+        portfolio_eur=10800.0,
+    )
+    return deposits_store
+
+
+@pytest.fixture
+def portfolio_with_trades(
+    portfolio_store: PortfolioStore,
+    journal_store: PurchaseJournalStore,
+) -> tuple[PortfolioStore, PurchaseJournalStore]:
+    """One holding with two journal lots."""
+    portfolio_store.upsert_holding(
+        "KO",
+        shares=20,
+        avg_cost_per_share=50.0,
+        company_name="Coca-Cola Co",
+    )
+    journal_store.add_purchase("KO", date(2023, 6, 1), 48.0)
+    journal_store.add_purchase("KO", date(2024, 1, 15), 52.0)
+    return portfolio_store, journal_store

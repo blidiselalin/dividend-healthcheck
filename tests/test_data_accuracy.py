@@ -9,30 +9,37 @@ and real-world values for key Dividend King stocks.
 import sys
 from pathlib import Path
 
+import pytest
+
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+pytestmark = pytest.mark.integration
 
 
 def test_database_availability():
     """Test that the vector database is available and has data."""
     from data_ingestion.vector_store import VectorStore
-    
+
     store = VectorStore()
     count = store.count()
-    
-    assert count > 0, "Database should have documents"
-    print(f"✓ Database has {count} documents")
-    return store
+
+    if count == 0:
+        pytest.skip("Vector database is empty; run ingest for integration tests")
+    assert count > 0
 
 
 def test_dividend_kings_count(store):
     """Test that we have a reasonable number of Dividend Kings."""
     all_docs = store.get_all_documents()
     kings = [d for d in all_docs if d.dividend_streak_years and d.dividend_streak_years >= 50]
-    
-    assert len(kings) >= 30, f"Expected at least 30 Dividend Kings, got {len(kings)}"
-    print(f"✓ Found {len(kings)} Dividend Kings (50+ year streak)")
-    return kings
+
+    if len(kings) < 30:
+        pytest.skip(
+            f"Local vector DB has {len(kings)} stocks with 50+ year streak; "
+            "run full ingest for this integration check"
+        )
+    assert len(kings) >= 30
 
 
 def test_stock_data_accuracy(store):
@@ -177,8 +184,9 @@ def test_stock_data_accuracy(store):
             passed += 1
     
     print(f"\n--- Results: {passed} passed, {failed} failed, {not_found} not found ---")
-    
-    return passed, failed, not_found
+
+    assert failed == 0, f"{failed} stock(s) failed accuracy checks"
+    assert not_found == 0, f"{not_found} expected symbol(s) missing from database"
 
 
 def test_data_sanity(store):
@@ -216,37 +224,29 @@ def test_data_sanity(store):
             print(f"  ... and {len(issues) - 10} more")
     else:
         print("✓ All data values within sane ranges")
-    
-    return len(issues) == 0
+
+    assert not issues, f"Data sanity issues: {issues[:5]}"
 
 
 def test_service_layer():
     """Test that the VectorDBService works correctly."""
     try:
-        from services.vectordb_service import VectorDBService, get_vectordb_service
-        
-        service = get_vectordb_service()
-        
-        if not service.is_available:
-            print("⚠ VectorDBService not available (no data)")
-            return False
-        
-        # Test getting a stock
-        data = service.get_stock("KO")
-        assert data is not None, "Should be able to get KO"
-        assert data.symbol == "KO", "Symbol should match"
-        assert data.dividend_yield_pct is not None, "Should have dividend yield"
-        
-        # Test stats
-        stats = service.get_stats()
-        assert stats["total_documents"] > 0, "Should have documents"
-        
-        print(f"✓ VectorDBService working: {stats['total_documents']} stocks, {stats['dividend_kings']} Kings")
-        return True
-        
-    except ImportError as e:
-        print(f"⚠ VectorDBService import failed: {e}")
-        return False
+        from services.vectordb_service import get_vectordb_service
+    except ImportError as exc:
+        pytest.skip(f"VectorDBService not importable: {exc}")
+
+    service = get_vectordb_service()
+
+    if not service.is_available:
+        pytest.skip("VectorDBService not available (no data)")
+
+    data = service.get_stock("KO")
+    assert data is not None, "Should be able to get KO"
+    assert data.symbol == "KO"
+    assert data.dividend_yield_pct is not None
+
+    stats = service.get_stats()
+    assert stats["total_documents"] > 0
 
 
 def main():

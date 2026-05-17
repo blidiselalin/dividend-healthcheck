@@ -46,7 +46,8 @@ def test_summary_round_trip():
         profit_pct=-22.0,
     )
     summary = AttentionSummary(
-        items=[item],
+        risk_items=[item],
+        dividend_items=[],
         reference_date=date(2026, 5, 13),
     )
     stored = PortfolioRiskMonitorService.summary_to_store(summary)

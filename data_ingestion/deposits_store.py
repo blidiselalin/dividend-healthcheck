@@ -80,11 +80,12 @@ class MonthlyDeposit:
 class DepositsStore:
     """Read monthly deposit records from SQLite (same DB as holdings)."""
 
-    def __init__(self, db_path: Optional[Path] = None) -> None:
+    def __init__(self, db_path: Optional[Path] = None, *, seed: bool = True) -> None:
         self.db_path = Path(db_path or DEPOSITS_DB_PATH)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
-        self._seed_if_empty()
+        if seed:
+            self._seed_if_empty()
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)
@@ -159,3 +160,75 @@ class DepositsStore:
             )
             for row in rows
         ]
+
+    def upsert_deposit(
+        self,
+        *,
+        year: int,
+        month: int,
+        label: str,
+        deposit_eur: float,
+        deposit_usd: float,
+        portfolio_eur: float,
+    ) -> MonthlyDeposit:
+        period_key = f"{year:04d}-{month:02d}"
+        with self._connect() as connection:
+            existing = connection.execute(
+                "SELECT sort_order FROM monthly_deposits WHERE period_key = ?",
+                (period_key,),
+            ).fetchone()
+            if existing:
+                connection.execute(
+                    """
+                    UPDATE monthly_deposits SET
+                      year = ?, month = ?, label = ?,
+                      deposit_eur = ?, deposit_usd = ?, portfolio_eur = ?
+                    WHERE period_key = ?
+                    """,
+                    (
+                        year,
+                        month,
+                        label,
+                        deposit_eur,
+                        deposit_usd,
+                        portfolio_eur,
+                        period_key,
+                    ),
+                )
+                sort_order = int(existing["sort_order"])
+            else:
+                max_order = connection.execute(
+                    "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM monthly_deposits"
+                ).fetchone()[0]
+                sort_order = int(max_order)
+                connection.execute(
+                    """
+                    INSERT INTO monthly_deposits (
+                      period_key, year, month, label,
+                      deposit_eur, deposit_usd, portfolio_eur, sort_order
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        period_key,
+                        year,
+                        month,
+                        label,
+                        deposit_eur,
+                        deposit_usd,
+                        portfolio_eur,
+                        sort_order,
+                    ),
+                )
+
+        for deposit in self.list_deposits():
+            if deposit.period_key == period_key:
+                return deposit
+        raise RuntimeError(f"Failed to save deposit for {period_key}")
+
+    def delete_deposit(self, period_key: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM monthly_deposits WHERE period_key = ?",
+                (period_key,),
+            )
+            return cursor.rowcount > 0

@@ -11,12 +11,17 @@ from pathlib import Path
 from typing import List, Optional, Set
 
 from config import DATA_DIR
-from data_ingestion.portfolio_store import PORTFOLIO_SHARES
 from data_ingestion.purchase_journal_seed import PURCHASE_JOURNAL_SEED
 
 PURCHASE_JOURNAL_DB_PATH = DATA_DIR / "portfolio.db"
 
-PORTFOLIO_SYMBOLS: Set[str] = {symbol for symbol, _name, _shares in PORTFOLIO_SHARES}
+
+def portfolio_symbols(db_path: Optional[Path] = None) -> Set[str]:
+    """Tickers currently in the portfolio holdings table."""
+    from data_ingestion.portfolio_store import PortfolioStore
+
+    store = PortfolioStore(db_path=db_path, seed=False) if db_path else PortfolioStore()
+    return {holding.symbol for holding in store.list_holdings()}
 
 
 @dataclass(frozen=True)
@@ -32,12 +37,13 @@ class PurchaseRecord:
 
 
 class PurchaseJournalStore:
-    def __init__(self, db_path: Optional[Path] = None) -> None:
+    def __init__(self, db_path: Optional[Path] = None, *, seed: bool = True) -> None:
         self.db_path = Path(db_path or PURCHASE_JOURNAL_DB_PATH)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
-        self._seed_if_empty()
-        self.sync_seed()
+        if seed:
+            self._seed_if_empty()
+            self.sync_seed()
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)
@@ -66,10 +72,11 @@ class PurchaseJournalStore:
             self._insert_seed(connection)
 
     def _insert_seed(self, connection: sqlite3.Connection) -> None:
+        symbols = portfolio_symbols(self.db_path)
         rows = [
             (symbol, purchase_date, price_usd)
             for symbol, purchase_date, price_usd in PURCHASE_JOURNAL_SEED
-            if symbol in PORTFOLIO_SYMBOLS
+            if symbol in symbols
         ]
         connection.executemany(
             """
@@ -80,9 +87,10 @@ class PurchaseJournalStore:
         )
 
     def sync_seed(self) -> None:
+        symbols = portfolio_symbols(self.db_path)
         with self._connect() as connection:
             for symbol, purchase_date, price_usd in PURCHASE_JOURNAL_SEED:
-                if symbol not in PORTFOLIO_SYMBOLS:
+                if symbol not in symbols:
                     continue
                 connection.execute(
                     """
@@ -94,6 +102,7 @@ class PurchaseJournalStore:
                 )
 
     def list_purchases(self, *, portfolio_only: bool = True) -> List[PurchaseRecord]:
+        allowed = portfolio_symbols(self.db_path) if portfolio_only else None
         with self._connect() as connection:
             rows = connection.execute(
                 """
@@ -106,7 +115,7 @@ class PurchaseJournalStore:
         records: List[PurchaseRecord] = []
         for row in rows:
             symbol = row["symbol"]
-            if portfolio_only and symbol not in PORTFOLIO_SYMBOLS:
+            if allowed is not None and symbol not in allowed:
                 continue
             records.append(
                 PurchaseRecord(
@@ -117,3 +126,60 @@ class PurchaseJournalStore:
                 )
             )
         return records
+
+    def add_purchase(
+        self,
+        symbol: str,
+        purchase_date: date,
+        price_usd: float,
+    ) -> PurchaseRecord:
+        symbol = symbol.strip().upper()
+        if not symbol:
+            raise ValueError("Symbol is required")
+        if price_usd <= 0:
+            raise ValueError("Price must be positive")
+
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO purchase_journal (symbol, purchase_date, price_usd)
+                VALUES (?, ?, ?)
+                ON CONFLICT(symbol, purchase_date, price_usd) DO NOTHING
+                """,
+                (symbol, purchase_date.isoformat(), price_usd),
+            )
+            if cursor.rowcount == 0:
+                row = connection.execute(
+                    """
+                    SELECT id, symbol, purchase_date, price_usd
+                    FROM purchase_journal
+                    WHERE symbol = ? AND purchase_date = ? AND price_usd = ?
+                    """,
+                    (symbol, purchase_date.isoformat(), price_usd),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    """
+                    SELECT id, symbol, purchase_date, price_usd
+                    FROM purchase_journal WHERE id = ?
+                    """,
+                    (cursor.lastrowid,),
+                ).fetchone()
+
+        if row is None:
+            raise RuntimeError("Failed to save purchase")
+
+        return PurchaseRecord(
+            id=int(row["id"]),
+            symbol=row["symbol"],
+            purchase_date=date.fromisoformat(row["purchase_date"]),
+            price_usd=float(row["price_usd"]),
+        )
+
+    def delete_purchase(self, purchase_id: int) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM purchase_journal WHERE id = ?",
+                (purchase_id,),
+            )
+            return cursor.rowcount > 0

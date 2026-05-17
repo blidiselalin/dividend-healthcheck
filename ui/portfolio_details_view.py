@@ -42,6 +42,10 @@ from services.portfolio_attention_service import (
     PortfolioAttentionService,
     normalize_attention_summary,
 )
+from ui.portfolio_manage_panel import (
+    render_portfolio_manage_sidebar,
+    render_tab_refresh_button,
+)
 from ui.portfolio_risk_panel import (
     get_cached_attention_summary,
     refresh_portfolio_risks,
@@ -125,8 +129,12 @@ class PortfolioDetailsView:
     @staticmethod
     def _render_tab_header(tab_key: str) -> None:
         title, scope = PORTFOLIO_TAB_SCOPES[tab_key]
-        st.subheader(title)
-        st.caption(scope)
+        col_title, col_refresh = st.columns([6, 1])
+        with col_title:
+            st.subheader(title)
+            st.caption(scope)
+        with col_refresh:
+            render_tab_refresh_button(tab_key)
 
     @staticmethod
     def _rows_to_dataframe(
@@ -1774,10 +1782,12 @@ class PortfolioDetailsView:
 
     @classmethod
     def render(cls) -> None:
+        render_portfolio_manage_sidebar()
         st.sidebar.markdown("---")
         st.sidebar.caption(
             "Portfolio data loads automatically with the risk scan (sidebar). "
-            "Use **Load Portfolio Details** to force a full reload (~1–2 min)."
+            "Use **Load Portfolio Details** to force a full reload (~1–2 min). "
+            "Add tickers under **Manage portfolio**."
         )
 
         if st.sidebar.button("Load Portfolio Details", type="primary"):

@@ -21,6 +21,14 @@ _COMPANY_NAMES: Dict[str, str] = {
 }
 
 
+def _company_name_for(symbol: str) -> Optional[str]:
+    symbol = symbol.upper()
+    for holding in PortfolioStore().list_holdings():
+        if holding.symbol.upper() == symbol and holding.company_name:
+            return holding.company_name
+    return _COMPANY_NAMES.get(symbol)
+
+
 def collect_portfolio_symbols() -> Set[str]:
     """All tickers from holdings and purchase journal."""
     symbols: Set[str] = set()
@@ -80,7 +88,7 @@ def _fetch_or_create_document(
     if not enrich_missing:
         return StockDocument(
             symbol=symbol,
-            name=_COMPANY_NAMES.get(symbol, symbol),
+            name=_company_name_for(symbol) or symbol,
             source=DataSource.MANUAL,
         )
 
@@ -96,7 +104,7 @@ def _fetch_or_create_document(
         logger.warning("Could not enrich %s for vector DB: %s", symbol, exc)
         return StockDocument(
             symbol=symbol,
-            name=_COMPANY_NAMES.get(symbol, symbol),
+            name=_company_name_for(symbol) or symbol,
             source=DataSource.MANUAL,
         )
 
@@ -161,7 +169,7 @@ def sync_portfolio_to_vector_db(
                 document,
                 holding=holdings_by_symbol.get(symbol),
                 purchase_count=purchases.get(symbol, 0),
-                company_name=_COMPANY_NAMES.get(symbol),
+                company_name=_company_name_for(symbol),
             )
             to_store.append(document)
             stats["linked"] += 1
