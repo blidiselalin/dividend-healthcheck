@@ -60,6 +60,48 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+_INGESTIBLE_SUFFIXES = {".csv", ".json"}
+
+
+def _downloads_have_ingestible_files(data_path: Path) -> bool:
+    """True if stockquote/nasdaq (or data root) contains files the pipeline can parse."""
+    if not data_path.exists():
+        return False
+    for path in data_path.rglob("*"):
+        if path.is_file() and path.suffix.lower() in _INGESTIBLE_SUFFIXES:
+            return True
+    return False
+
+
+def _run_enrich_without_downloads(pipeline: DataIngestionPipeline) -> int:
+    """Docker/cloud path: no CSV downloads — sync portfolio and refresh yfinance on DB."""
+    from services.portfolio_vector_sync import sync_portfolio_to_vector_db
+
+    print("No CSV/JSON files in downloads — using portfolio + existing vector DB.\n")
+
+    print("Step 1: Sync portfolio holdings → vector DB")
+    sync_stats = sync_portfolio_to_vector_db(enrich_missing=True)
+    print(f"  Holdings linked: {sync_stats.get('linked', 0)}")
+    print(f"  New documents:   {sync_stats.get('created', 0)}")
+    print(f"  Stored:          {sync_stats.get('stored', 0)}")
+    if sync_stats.get("still_missing"):
+        print(f"  Still missing:   {', '.join(sync_stats['still_missing'])}")
+    print()
+
+    print("Step 2: Enrich all documents in vector DB (yfinance)")
+
+    def progress_cb(msg, current, total):
+        pct = (current / total) * 100 if total > 0 else 0
+        print(f"\r[{pct:5.1f}%] {msg}...", end="", flush=True)
+
+    stats = pipeline.enrich_existing(progress_callback=progress_cb)
+    print("\n")
+    print("Enrichment complete!")
+    print(f"  Documents enriched: {stats.get('enriched', 0)}")
+    print(f"  Errors: {stats.get('errors', 0)}")
+    print(f"  Total documents: {stats.get('total_documents', 0)}")
+    return 0
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -410,15 +452,28 @@ Examples:
     print(f"Enrich with yfinance: {args.enrich}")
     print()
     
-    # Check if data exists
     data_path = Path(args.data_dir)
-    if not data_path.exists() or not any(data_path.iterdir()):
-        print("⚠️  No data files found!")
+    has_download_files = _downloads_have_ingestible_files(data_path)
+
+    if args.enrich and not has_download_files:
+        print(f"\n{'='*50}")
+        print("  DIVIDEND KINGS DATA INGESTION (yfinance)")
+        print(f"{'='*50}\n")
+        print(f"Database directory: {args.db_dir}")
+        return _run_enrich_without_downloads(pipeline)
+
+    if not has_download_files:
+        print("⚠️  No CSV/JSON data files found!")
         print()
-        print("To get started:")
+        print("Docker / cloud (portfolio only):")
+        print("  python ingest_data.py --enrich")
+        print("  python ingest_data.py --sync-portfolio")
+        print("  python ingest_data.py --enrich-existing")
+        print()
+        print("Full file-based ingestion:")
         print("  1. Create sample files:  python ingest_data.py --create-samples")
         print("  2. Download real data from StockQuote.io and Nasdaq")
-        print("  3. Place files in the appropriate directories:")
+        print("  3. Place files in:")
         print(f"     - StockQuote: {data_path}/stockquote/")
         print(f"     - Nasdaq: {data_path}/nasdaq/")
         print()

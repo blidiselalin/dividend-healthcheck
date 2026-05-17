@@ -167,10 +167,18 @@ class DataIngestionPipeline:
                 doc.data_quality = self._calculate_quality(doc)
         
         # Step 5: Store in vector database
-        ids = self.vector_store.add_documents(merged_documents)
-        self._stats["documents_added"] = len(ids)
-        
-        logger.info(f"Added {len(ids)} documents to vector store")
+        if merged_documents:
+            ids = self.vector_store.add_documents(merged_documents)
+            self._stats["documents_added"] = len(ids)
+            logger.info(f"Added {len(ids)} documents to vector store")
+        elif enrich_with_yfinance and ENRICHER_AVAILABLE:
+            logger.warning(
+                "No documents from file sources; enriching existing vector DB instead"
+            )
+            return self.enrich_existing(progress_callback=progress_callback)
+        else:
+            self._stats["documents_added"] = 0
+            logger.warning("No documents from file sources; skipping vector store update")
         
         # Summary
         self._stats["total_documents"] = self.vector_store.count()

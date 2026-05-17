@@ -179,6 +179,9 @@ class VectorStore:
         Returns:
             List of document IDs.
         """
+        if not documents:
+            return []
+
         ids = []
         
         if self._use_fallback:
