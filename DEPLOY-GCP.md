@@ -155,13 +155,49 @@ docker compose exec dividendscope ls -la /data/vectordb
 
 ---
 
-## Step 8 — Useful commands
+## Step 8 — Update after a new release (rebuild Docker image)
+
+On the VM (keeps volume `motion_dividendscope-persistent-data` / `/data`):
+
+```bash
+cd ~/motion_dividend-healthcheck
+```
+
+Use `~/dividend-healthcheck` if that is your clone path.
+
+```bash
+git pull
+./scripts/update_cloud_docker.sh --sync-portfolio
+```
+
+Or manually:
+
+```bash
+cd ~/dividend-healthcheck
+git pull
+docker compose build --pull
+docker compose up -d
+docker compose exec -T dividendscope python ingest_data.py --sync-portfolio
+```
+
+First time on a VM without the script yet:
+
+```bash
+cd ~/dividend-healthcheck
+git pull
+chmod +x scripts/update_cloud_docker.sh
+./scripts/update_cloud_docker.sh --sync-portfolio
+```
+
+---
+
+## Step 9 — Useful commands
 
 ```bash
 # Logs
 docker compose logs -f
 
-# Restart after git pull
+# Restart after git pull (same as update script)
 git pull
 docker compose up -d --build
 
