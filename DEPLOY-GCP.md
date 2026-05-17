@@ -155,7 +155,20 @@ docker compose exec dividendscope ls -la /data/vectordb
 
 ---
 
-## Step 8 — Update after a new release (rebuild Docker image)
+## Step 8 — Update from your Mac (no VM login)
+
+```bash
+cp deploy.env.example deploy.env
+# Set SSH_HOST=you@EXTERNAL_IP  or  GCP_INSTANCE + GCP_ZONE + GCP_PROJECT
+
+./scripts/deploy_from_local.sh --sync-portfolio
+```
+
+Rsyncs your local repo to the VM, rebuilds Docker, keeps `/data`. Use `./scripts/deploy_from_local.sh --git --sync-portfolio` to pull from GitHub on the VM instead.
+
+---
+
+## Step 9 — Update on the VM (SSH)
 
 On the VM (keeps volume `dividendscope-persistent-data` → `/data`):
 
