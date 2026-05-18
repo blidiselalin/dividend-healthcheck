@@ -217,17 +217,121 @@ docker compose up -d --build
 
 ---
 
-## HTTPS (optional)
+## Custom domain — DNS → GCP VM → Streamlit
 
-Streamlit on port 8501 is **HTTP only**. For HTTPS:
+Use a **hostname** (e.g. `app.yourdomain.com`) instead of `http://34.x.x.x:8501`. Google sign-in needs **HTTPS** in production.
 
-1. Point a domain A-record to the VM external IP.
-2. Install Caddy on the VM and reverse-proxy to `localhost:8501`, or put **Cloudflare** in front.
+### A. Reserve a static IP (required)
 
-Simple Caddy example (`/etc/caddy/Caddyfile`):
+If the VM IP changes, DNS breaks.
+
+1. **VPC network** → **IP addresses** → **Reserve static external**.
+2. Name: `motion-app-ip` → region same as VM → **Reserve**.
+3. **Compute Engine** → **VM instances** → your VM → **Edit** → **Network interfaces** → set **External IP** to the reserved address.
+4. Note the IP (e.g. `34.123.45.67`).
+
+### B. Create DNS records
+
+Pick **one** DNS provider (registrar, Cloudflare, or **Google Cloud DNS**).
+
+#### Option 1 — Registrar or Cloudflare (simplest)
+
+At your domain host (Namecheap, GoDaddy, Cloudflare, etc.):
+
+| Type | Name / Host | Value | TTL |
+|------|-------------|--------|-----|
+| **A** | `app` (for `app.yourdomain.com`) | `34.123.45.67` (static IP) | 300 |
+
+- Apex `yourdomain.com` → use **A** with name `@` (same IP).
+- **www** → **CNAME** to `app.yourdomain.com` if you want both.
+
+Wait 5–30 minutes, then check:
+
+```bash
+dig +short app.yourdomain.com
+# should print your static IP
+```
+
+#### Option 2 — Google Cloud DNS
+
+1. **Network services** → **Cloud DNS** → **Create zone**.
+2. Zone type **Public**, DNS name: `yourdomain.com.`
+3. **Create record set** → Type **A**, DNS name `app.yourdomain.com.`, IPv4 = static IP.
+4. Cloud DNS shows **NS** nameservers (4 lines). At your **domain registrar**, replace nameservers with those NS records (delegation).
+5. Propagation can take up to 48 hours (often much faster).
+
+### C. Firewall for HTTPS
+
+**VPC network** → **Firewall** → create (or extend) rules:
+
+| Name | Ports | Source |
+|------|-------|--------|
+| `allow-http-80` | tcp **80** | `0.0.0.0/0` |
+| `allow-https-443` | tcp **443** | `0.0.0.0/0` |
+
+Keep **8501** only if you still want direct IP access; for production, prefer **only 80/443** via Caddy.
+
+### D. HTTPS reverse proxy (Caddy on the VM)
+
+SSH to the VM (Streamlit must already run on `localhost:8501` via Docker):
+
+```bash
+cd ~/dividend-healthcheck
+export DOMAIN=app.yourdomain.com
+chmod +x deploy/gcp/setup-https-caddy.sh
+sudo DOMAIN="$DOMAIN" ./deploy/gcp/setup-https-caddy.sh
+```
+
+Open **https://app.yourdomain.com** (no `:8501`).
+
+### E. Google OAuth redirect (required for login)
+
+1. [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services** → **Credentials** → your **OAuth 2.0 Web client**.
+2. **Authorized redirect URIs** → add:
+
+   ```text
+   https://app.yourdomain.com/oauth2callback
+   ```
+
+3. On the VM, edit secrets (not in git):
+
+   ```toml
+   [auth]
+   redirect_uri = "https://app.yourdomain.com/oauth2callback"
+   ```
+
+4. Rebuild/restart so Streamlit picks up secrets:
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+### F. Quick checklist
+
+| Step | Done when |
+|------|-----------|
+| Static IP reserved & attached to VM | IP unchanged after VM stop/start |
+| DNS A record | `dig +short app.yourdomain.com` = static IP |
+| Firewall 80, 443 | `curl -I https://app.yourdomain.com` returns 200/302 |
+| Caddy running | `sudo systemctl status caddy` active |
+| OAuth redirect | Google login completes without redirect mismatch |
+
+### Alternative — Cloudflare only (no Caddy)
+
+1. Add site in Cloudflare, DNS **A** `app` → VM static IP (orange cloud **Proxied**).
+2. **SSL/TLS** → **Full** (or **Full (strict)** if you install a cert on the VM).
+3. Still run Caddy on the VM for origin TLS, or use Cloudflare → `http://VM_IP:8501` (not recommended; use Caddy on 443).
+
+---
+
+## HTTPS (reference)
+
+Streamlit in Docker listens on **8501** (HTTP). Caddy terminates TLS on **443** and proxies to `localhost:8501`.
+
+Manual Caddyfile (`/etc/caddy/Caddyfile`):
 
 ```text
-yourdomain.com {
+app.yourdomain.com {
     reverse_proxy localhost:8501
 }
 ```
