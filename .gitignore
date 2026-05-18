@@ -27,7 +27,11 @@ pydivStocks.csv
 data/*
 !data/vectordb/
 !data/portfolio.db
+!data/sp500_symbols.json
 !data/.gitkeep
+data/users/
+data/users.db
+data/.legacy_portfolio_migrated
 
 # Reports and docs (generated)
 reports/
@@ -40,3 +44,4 @@ docs/
 .env
 .env.local
 deploy.env
+.streamlit/secrets.toml

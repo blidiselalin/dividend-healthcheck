@@ -11,6 +11,7 @@ import streamlit as st
 from services.portfolio_analysis_preload import PortfolioAnalysisPreload
 from services.portfolio_details_service import PortfolioDetailsService
 from services.portfolio_management_service import SECTION_KEYS
+from services.portfolio_ui_cache import clear_session_cache
 from ui.portfolio_risk_panel import refresh_portfolio_risks, store_portfolio_payload
 
 SectionKey = str
@@ -44,7 +45,8 @@ def reload_portfolio_session(
     else:
         invalidate_section_caches(["all"])
 
-    rows, preload = PortfolioDetailsService().build_rows_with_cache()
+    clear_session_cache()
+    rows, preload = PortfolioDetailsService().build_rows_with_cache(use_live_prices=True)
     store_portfolio_payload(rows, preload)
     if refresh_risks:
         refresh_portfolio_risks(force=True, rows=rows, preload=preload)

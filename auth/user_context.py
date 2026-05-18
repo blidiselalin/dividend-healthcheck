@@ -1,0 +1,223 @@
+"""
+Resolve the signed-in user and per-user data paths for portfolio storage.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Optional
+
+from config import DATA_DIR
+from auth.models import CurrentUser, sanitize_user_id
+
+from auth.demo_portfolio import ensure_demo_database, load_demo_ui_snapshot
+from auth.migration import migrate_legacy_portfolio, restore_owner_portfolio
+from auth.settings import auth_required, dev_bypass_email, is_admin_email, is_email_allowed
+from auth.test_user import (
+    is_test_user,
+    test_user_current,
+    test_user_session_active,
+)
+from auth.user_store import AppUser, UserStore
+
+_LOCAL_USER_ID = "local"
+_SESSION_USER_KEY = "app_user_id"
+_SESSION_EMAIL_KEY = "app_user_email"
+
+
+def _streamlit_logged_in() -> bool:
+    try:
+        import streamlit as st
+
+        return bool(getattr(st.user, "is_logged_in", False))
+    except Exception:
+        return False
+
+
+def _identity_from_streamlit() -> Optional[CurrentUser]:
+    try:
+        import streamlit as st
+    except Exception:
+        return None
+
+    if not _streamlit_logged_in():
+        return None
+
+    subject = str(getattr(st.user, "sub", "") or getattr(st.user, "id", "") or "").strip()
+    email = str(getattr(st.user, "email", "") or "").strip()
+    if not subject and email:
+        subject = email
+    if not subject:
+        return None
+
+    name = getattr(st.user, "name", None) or getattr(st.user, "given_name", None)
+    picture = getattr(st.user, "picture", None)
+    user_id = sanitize_user_id(subject)
+    admin = is_admin_email(email) if email else False
+    return CurrentUser(
+        id=user_id,
+        email=email or f"{user_id}@users.local",
+        name=str(name) if name else None,
+        picture_url=str(picture) if picture else None,
+        is_admin=admin,
+    )
+
+
+def _dev_user() -> Optional[CurrentUser]:
+    email = dev_bypass_email()
+    if not email:
+        try:
+            import streamlit as st
+
+            email = (st.session_state.get("dev_login_email") or "").strip()
+        except Exception:
+            email = ""
+    if not email:
+        return None
+    user_id = sanitize_user_id(email)
+    return CurrentUser(
+        id=user_id,
+        email=email,
+        name="Local dev",
+        is_admin=is_admin_email(email),
+    )
+
+
+def uses_per_user_storage() -> bool:
+    return auth_required() or test_user_session_active()
+
+
+def google_identity() -> Optional[CurrentUser]:
+    """Signed-in Google user from Streamlit OIDC (even if not yet allowed in the app)."""
+    if test_user_session_active():
+        return None
+    if not auth_required():
+        return _dev_user()
+    return _identity_from_streamlit()
+
+
+def current_user() -> Optional[CurrentUser]:
+    if test_user_session_active():
+        return test_user_current()
+
+    if auth_required():
+        user = _identity_from_streamlit()
+        if user:
+            return user
+        return None
+
+    dev = _dev_user()
+    if dev:
+        return dev
+
+    return CurrentUser(
+        id=_LOCAL_USER_ID,
+        email="local@dividendscope",
+        name="Local",
+        is_admin=True,
+    )
+
+
+def current_user_id() -> Optional[str]:
+    user = current_user()
+    return user.id if user else None
+
+
+def resolve_user_data_dir() -> Path:
+    user = current_user()
+    if user and uses_per_user_storage():
+        path = DATA_DIR / "users" / user.id
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    return DATA_DIR
+
+
+def resolve_portfolio_db_path() -> Path:
+    return resolve_user_data_dir() / "portfolio.db"
+
+
+def resolve_user_session_cache_path() -> Path:
+    return resolve_user_data_dir() / "portfolio_ui_session.pkl"
+
+
+def clear_portfolio_session_state() -> None:
+    try:
+        import streamlit as st
+    except Exception:
+        return
+
+    keys = [
+        "portfolio_details_rows",
+        "portfolio_details_time",
+        "portfolio_analysis_ready",
+        "portfolio_show_analysis",
+        "portfolio_stock_cache",
+        "portfolio_yield_cache",
+        "portfolio_vector_docs",
+        "portfolio_attention_summary",
+        "portfolio_risk_checked_at",
+        "portfolio_risk_refresh_in_progress",
+        "portfolio_view_mode",
+        "portfolio_selected_symbol",
+        _SESSION_USER_KEY,
+        _SESSION_EMAIL_KEY,
+    ]
+    for key in keys:
+        st.session_state.pop(key, None)
+
+
+def _register_user(user: CurrentUser) -> AppUser:
+    store = UserStore()
+    return store.upsert_from_login(
+        user_id=user.id,
+        email=user.email,
+        name=user.name,
+        picture_url=user.picture_url,
+        is_admin=user.is_admin,
+    )
+
+
+def ensure_user_session() -> Optional[AppUser]:
+    """
+    After login, register the user, enforce allowlist, and attach per-user storage.
+
+    Returns None when not signed in or not allowed.
+    """
+    user = current_user()
+    if user is None:
+        return None
+
+    if not is_test_user(user) and auth_required() and not is_email_allowed(user.email):
+        return None
+
+    try:
+        import streamlit as st
+    except Exception:
+        return _register_user(user)
+
+    previous_id = st.session_state.get(_SESSION_USER_KEY)
+    if previous_id and previous_id != user.id:
+        clear_portfolio_session_state()
+
+    registered = _register_user(user)
+    if not registered.is_active:
+        return None
+
+    user_dir = resolve_user_data_dir()
+    db_path = user_dir / "portfolio.db"
+
+    if is_test_user(user):
+        ensure_demo_database(db_path)
+        load_demo_ui_snapshot()
+    else:
+        store = UserStore()
+        if user.is_admin or is_admin_email(user.email):
+            if restore_owner_portfolio(user.id, user_dir):
+                clear_portfolio_session_state()
+        elif auth_required() and store.count_users() <= 1:
+            if migrate_legacy_portfolio(user.id, user_dir):
+                clear_portfolio_session_state()
+
+    st.session_state[_SESSION_USER_KEY] = user.id
+    st.session_state[_SESSION_EMAIL_KEY] = user.email
+    return registered

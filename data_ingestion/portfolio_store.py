@@ -14,6 +14,25 @@ from typing import Dict, List, Optional, Tuple
 
 from config import DATA_DIR
 
+
+def _default_portfolio_db_path() -> Path:
+    try:
+        from auth.user_context import resolve_portfolio_db_path
+
+        return resolve_portfolio_db_path()
+    except Exception:
+        return DATA_DIR / "portfolio.db"
+
+
+def _default_seed() -> bool:
+    try:
+        from auth.settings import auth_required
+
+        return not auth_required()
+    except Exception:
+        return True
+
+
 PORTFOLIO_DB_PATH = DATA_DIR / "portfolio.db"
 
 # Authoritative share counts — update this list when you buy or sell.
@@ -159,11 +178,17 @@ class PortfolioHolding:
 class PortfolioStore:
     """Read and write portfolio holdings in SQLite."""
 
-    def __init__(self, db_path: Optional[Path] = None, *, seed: bool = True) -> None:
-        self.db_path = Path(db_path or PORTFOLIO_DB_PATH)
+    def __init__(
+        self,
+        db_path: Optional[Path] = None,
+        *,
+        seed: Optional[bool] = None,
+    ) -> None:
+        self.db_path = Path(db_path or _default_portfolio_db_path())
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
-        if seed:
+        do_seed = _default_seed() if seed is None else seed
+        if do_seed:
             self._seed_if_empty()
             self.sync_share_counts()
 

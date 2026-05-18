@@ -12,6 +12,25 @@ from typing import List, Optional, Tuple
 
 from config import DATA_DIR
 
+
+def _default_db_path() -> Path:
+    try:
+        from auth.user_context import resolve_portfolio_db_path
+
+        return resolve_portfolio_db_path()
+    except Exception:
+        return DATA_DIR / "portfolio.db"
+
+
+def _default_seed() -> bool:
+    try:
+        from auth.settings import auth_required
+
+        return not auth_required()
+    except Exception:
+        return True
+
+
 DEPOSITS_DB_PATH = DATA_DIR / "portfolio.db"
 
 # (year, month, label, deposit_eur, deposit_usd, portfolio_eur)
@@ -80,11 +99,17 @@ class MonthlyDeposit:
 class DepositsStore:
     """Read monthly deposit records from SQLite (same DB as holdings)."""
 
-    def __init__(self, db_path: Optional[Path] = None, *, seed: bool = True) -> None:
-        self.db_path = Path(db_path or DEPOSITS_DB_PATH)
+    def __init__(
+        self,
+        db_path: Optional[Path] = None,
+        *,
+        seed: Optional[bool] = None,
+    ) -> None:
+        self.db_path = Path(db_path or _default_db_path())
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
-        if seed:
+        do_seed = _default_seed() if seed is None else seed
+        if do_seed:
             self._seed_if_empty()
 
     def _connect(self) -> sqlite3.Connection:

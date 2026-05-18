@@ -12,6 +12,25 @@ from typing import List, Optional, Tuple
 
 from config import DATA_DIR
 
+
+def _default_db_path() -> Path:
+    try:
+        from auth.user_context import resolve_portfolio_db_path
+
+        return resolve_portfolio_db_path()
+    except Exception:
+        return DATA_DIR / "portfolio.db"
+
+
+def _default_seed() -> bool:
+    try:
+        from auth.settings import auth_required
+
+        return not auth_required()
+    except Exception:
+        return True
+
+
 DIVIDEND_INCOME_DB_PATH = DATA_DIR / "portfolio.db"
 
 # (year, month, net_dividend_usd) — net = brut × (1 − tax_rate)
@@ -107,12 +126,19 @@ def net_to_gross(net_usd: float, year: int) -> float:
 class DividendIncomeStore:
     """Monthly net dividend records."""
 
-    def __init__(self, db_path: Optional[Path] = None) -> None:
-        self.db_path = Path(db_path or DIVIDEND_INCOME_DB_PATH)
+    def __init__(
+        self,
+        db_path: Optional[Path] = None,
+        *,
+        seed: Optional[bool] = None,
+    ) -> None:
+        self.db_path = Path(db_path or _default_db_path())
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
-        self._seed_if_empty()
-        self.sync_seed()
+        do_seed = _default_seed() if seed is None else seed
+        if do_seed:
+            self._seed_if_empty()
+            self.sync_seed()
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)

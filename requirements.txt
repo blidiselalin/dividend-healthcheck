@@ -1,8 +1,8 @@
 # DividendScope - Core Dependencies
 # Install with: pip install -r requirements.txt
 
-# Web Framework
-streamlit>=1.30.0
+# Web Framework (auth extra enables st.login / Google OIDC)
+streamlit[auth]>=1.42.0
 
 # Data & Analysis
 pandas>=2.0.0

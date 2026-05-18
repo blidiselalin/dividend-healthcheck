@@ -1,8 +1,8 @@
 [theme]
-primaryColor = "#1f77b4"
+primaryColor = "#0f766e"
 backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f5f7fa"
-textColor = "#1a1a1a"
+secondaryBackgroundColor = "#f8fafc"
+textColor = "#0f172a"
 font = "sans serif"
 
 [server]
@@ -15,3 +15,7 @@ maxUploadSize = 50
 
 [browser]
 gatherUsageStats = false
+
+# Hide Deploy / developer toolbar in the app header (user-facing mode).
+[client]
+toolbarMode = "viewer"
