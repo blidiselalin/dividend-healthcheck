@@ -4,6 +4,8 @@ Hypothetical benchmark portfolios from monthly index/ETF share purchases.
 
 from __future__ import annotations
 
+from utils.chart_theme import style_figure
+
 import calendar
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -254,7 +256,7 @@ class PortfolioBenchmarkService:
             xaxis=dict(tickangle=-45),
             hovermode="x unified",
         )
-        return fig
+        return style_figure(fig)
 
     def build_yearly_summary(self, comparison_df: pd.DataFrame) -> pd.DataFrame:
         """Per-calendar-year deposits, year-end values, and YoY returns."""
@@ -331,7 +333,7 @@ class PortfolioBenchmarkService:
             xaxis=dict(tickangle=-45),
             hovermode="x unified",
         )
-        return fig
+        return style_figure(fig)
 
     def create_yearly_end_values_chart(self, yearly_df: pd.DataFrame):
         """Grouped bars: year-end portfolio vs benchmarks each year."""
@@ -366,7 +368,7 @@ class PortfolioBenchmarkService:
             margin=dict(t=50, b=40),
             legend=dict(orientation="h", yanchor="bottom", y=1.02),
         )
-        return fig
+        return style_figure(fig)
 
     def create_yearly_returns_chart(self, yearly_df: pd.DataFrame):
         """Grouped bars: YoY % return per year for each series."""
@@ -401,7 +403,7 @@ class PortfolioBenchmarkService:
             margin=dict(t=50, b=40),
             legend=dict(orientation="h", yanchor="bottom", y=1.02),
         )
-        return fig
+        return style_figure(fig)
 
     def create_yearly_distribution_chart(self, yearly_df: pd.DataFrame):
         """
@@ -457,7 +459,7 @@ class PortfolioBenchmarkService:
             margin=dict(t=50, b=40),
             legend=dict(orientation="h", yanchor="bottom", y=1.02),
         )
-        return fig
+        return style_figure(fig)
 
     def create_yearly_deposits_chart(self, yearly_df: pd.DataFrame):
         """Deposits per calendar year."""
@@ -481,4 +483,4 @@ class PortfolioBenchmarkService:
             height=340,
             margin=dict(t=50, b=40),
         )
-        return fig
+        return style_figure(fig)

@@ -415,8 +415,9 @@ class YFinanceEnricher:
     ) -> StockDocument:
         """Enrich with price history and calculate returns."""
         try:
-            # Get 5 years of price history
-            hist = ticker.history(period="5y")
+            from utils.yfinance_history import fetch_price_history
+
+            hist = fetch_price_history(doc.symbol, years=5)
             if hist is None or hist.empty:
                 return doc
             

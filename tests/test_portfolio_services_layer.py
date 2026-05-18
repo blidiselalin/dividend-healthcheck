@@ -88,6 +88,20 @@ def test_dashboard_evolution_and_metrics(sample_deposits: DepositsStore) -> None
     assert metrics.deposits.month_count == 2
 
 
+def test_dashboard_empty_deposits_no_keyerror(tmp_path) -> None:
+    empty_store = DepositsStore(db_path=tmp_path / "empty.db", seed=False)
+    dashboard = PortfolioDashboardService(
+        deposits_service=PortfolioDepositsService(store=empty_store)
+    )
+    df = dashboard.evolution_dataframe()
+    assert list(df.columns) == list(
+        PortfolioDashboardService._empty_evolution_frame().columns
+    )
+    assert dashboard.create_gain_chart() is None
+    metrics = dashboard.build_metrics()
+    assert metrics.deposits.month_count == 0
+
+
 def test_dashboard_holdings_from_rows() -> None:
     rows = [
         _detail_row(ticker="A", current_value=600.0, acquisition_value=500.0, annual_income=20.0),

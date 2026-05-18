@@ -4,6 +4,8 @@ Portfolio allocation by sector and market-cap bucket.
 
 from __future__ import annotations
 
+from utils.chart_theme import style_figure
+
 from typing import TYPE_CHECKING, List, Optional
 
 import pandas as pd
@@ -169,7 +171,7 @@ class PortfolioAllocationService:
             margin=dict(t=50, b=20, l=20, r=20),
             showlegend=False,
         )
-        return fig
+        return style_figure(fig)
 
     def create_market_cap_pie(self, rows: List["PortfolioDetailRow"]):
         if not PLOTLY_AVAILABLE:
@@ -203,7 +205,7 @@ class PortfolioAllocationService:
             margin=dict(t=50, b=20, l=20, r=20),
             showlegend=False,
         )
-        return fig
+        return style_figure(fig)
 
     def create_sector_bar(self, rows: List["PortfolioDetailRow"]):
         if not PLOTLY_AVAILABLE:
@@ -230,4 +232,4 @@ class PortfolioAllocationService:
             height=max(320, 28 * len(ordered)),
             margin=dict(t=50, b=40, l=10, r=40),
         )
-        return fig
+        return style_figure(fig)

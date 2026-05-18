@@ -4,6 +4,8 @@ High-level portfolio dashboard: KPIs and monthly evolution since inception.
 
 from __future__ import annotations
 
+from utils.chart_theme import style_figure
+
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -44,11 +46,27 @@ class PortfolioDashboardMetrics:
     holdings: Optional[HoldingsSnapshot] = None
 
 
+_EVOLUTION_COLUMNS = (
+    "period",
+    "label",
+    "deposit_eur",
+    "deposit_usd",
+    "portfolio_eur",
+    "cumulative_deposits_eur",
+    "gain_vs_deposits_eur",
+    "mom_change_pct",
+)
+
+
 class PortfolioDashboardService:
     """Aggregate deposits history and optional live holdings into dashboard KPIs."""
 
     def __init__(self, deposits_service: Optional[PortfolioDepositsService] = None) -> None:
         self.deposits_service = deposits_service or PortfolioDepositsService()
+
+    @staticmethod
+    def _empty_evolution_frame() -> pd.DataFrame:
+        return pd.DataFrame(columns=list(_EVOLUTION_COLUMNS))
 
     def list_deposits(self) -> List[MonthlyDeposit]:
         return self.deposits_service.list_deposits()
@@ -57,7 +75,7 @@ class PortfolioDashboardService:
         """Monthly series for charts: deposits, portfolio, cumulative capital, returns."""
         records = deposits if deposits is not None else self.list_deposits()
         if not records:
-            return pd.DataFrame()
+            return self._empty_evolution_frame()
 
         cumulative_deposits: List[float] = []
         running = 0.0
@@ -132,7 +150,11 @@ class PortfolioDashboardService:
         best_label = ""
         best_mom = None
         latest_mom = None
-        if not df.empty and df["mom_change_pct"].notna().any():
+        if (
+            not df.empty
+            and "mom_change_pct" in df.columns
+            and df["mom_change_pct"].notna().any()
+        ):
             valid = df.dropna(subset=["mom_change_pct"])
             if not valid.empty:
                 best_idx = valid["mom_change_pct"].idxmax()
@@ -214,7 +236,7 @@ class PortfolioDashboardService:
             xaxis=dict(tickangle=-45),
             hovermode="x unified",
         )
-        return fig
+        return style_figure(fig)
 
     def create_monthly_flow_chart(self, deposits: Optional[List[MonthlyDeposit]] = None):
         """Monthly deposits and portfolio month-over-month change."""
@@ -258,13 +280,15 @@ class PortfolioDashboardService:
         )
         fig.update_yaxes(title_text="Deposit €", secondary_y=False)
         fig.update_yaxes(title_text="MoM %", secondary_y=True)
-        return fig
+        return style_figure(fig)
 
     def create_gain_chart(self, deposits: Optional[List[MonthlyDeposit]] = None):
         """Unrealized gain vs cumulative deposits over time."""
         if not PLOTLY_AVAILABLE:
             return None
         df = self.evolution_dataframe(deposits)
+        if df.empty or "gain_vs_deposits_eur" not in df.columns:
+            return None
         plot_df = df.dropna(subset=["gain_vs_deposits_eur"])
         if plot_df.empty:
             return None
@@ -288,4 +312,4 @@ class PortfolioDashboardService:
             margin=dict(t=50, b=120),
             xaxis=dict(tickangle=-45),
         )
-        return fig
+        return style_figure(fig)

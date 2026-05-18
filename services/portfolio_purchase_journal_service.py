@@ -4,6 +4,8 @@ Purchase journal views: timeline, tables, and charts.
 
 from __future__ import annotations
 
+from utils.chart_theme import style_figure
+
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
@@ -289,7 +291,7 @@ class PortfolioPurchaseJournalService:
             height=480,
             margin=dict(t=50, b=20),
         )
-        return fig
+        return style_figure(fig)
 
     def create_lots_count_pie(self, records: Optional[List[PurchaseRecord]] = None):
         if not PLOTLY_AVAILABLE:
@@ -320,7 +322,7 @@ class PortfolioPurchaseJournalService:
             height=420,
             margin=dict(t=50, b=20),
         )
-        return fig
+        return style_figure(fig)
 
     def create_value_vs_lots_chart(self, records: Optional[List[PurchaseRecord]] = None):
         """Bubble: x = # lots, y = acquisition value, size = shares."""
@@ -364,7 +366,7 @@ class PortfolioPurchaseJournalService:
             height=480,
             margin=dict(t=50, b=40),
         )
-        return fig
+        return style_figure(fig)
 
     def create_dual_split_bar(self, records: Optional[List[PurchaseRecord]] = None):
         if not PLOTLY_AVAILABLE:
@@ -408,7 +410,7 @@ class PortfolioPurchaseJournalService:
             xaxis=dict(tickangle=-45),
             legend=dict(orientation="h", yanchor="bottom", y=1.02),
         )
-        return fig
+        return style_figure(fig)
 
     def create_timeline_chart(self, records: Optional[List[PurchaseRecord]] = None):
         if not PLOTLY_AVAILABLE:
@@ -448,7 +450,7 @@ class PortfolioPurchaseJournalService:
             height=max(420, 22 * len(symbols)),
             margin=dict(t=50, b=40, l=80),
         )
-        return fig
+        return style_figure(fig)
 
     def create_yearly_activity_chart(self, records: Optional[List[PurchaseRecord]] = None):
         if not PLOTLY_AVAILABLE:
@@ -470,7 +472,7 @@ class PortfolioPurchaseJournalService:
             height=340,
             margin=dict(t=50, b=40),
         )
-        return fig
+        return style_figure(fig)
 
     def create_price_scatter_by_symbol(self, records: Optional[List[PurchaseRecord]] = None):
         if not PLOTLY_AVAILABLE:
@@ -499,4 +501,4 @@ class PortfolioPurchaseJournalService:
             margin=dict(t=50, b=40),
             legend=dict(orientation="h", yanchor="bottom", y=1.02),
         )
-        return fig
+        return style_figure(fig)

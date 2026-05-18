@@ -4,6 +4,8 @@ Charts and summaries for net dividend income (after tax).
 
 from __future__ import annotations
 
+from utils.chart_theme import style_figure
+
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -182,7 +184,7 @@ class PortfolioDividendIncomeService:
             height=380,
             margin=dict(t=50, b=40),
         )
-        return fig
+        return style_figure(fig)
 
     def create_monthly_by_year_chart(self, records: Optional[List[MonthlyNetDividend]] = None):
         if not PLOTLY_AVAILABLE:
@@ -221,7 +223,7 @@ class PortfolioDividendIncomeService:
             margin=dict(t=50, b=40),
             legend=dict(orientation="h", yanchor="bottom", y=1.02),
         )
-        return fig
+        return style_figure(fig)
 
     def create_cumulative_chart(self, records: Optional[List[MonthlyNetDividend]] = None):
         if not PLOTLY_AVAILABLE:
@@ -246,7 +248,7 @@ class PortfolioDividendIncomeService:
             margin=dict(t=50, b=120),
             xaxis=dict(tickangle=-45),
         )
-        return fig
+        return style_figure(fig)
 
     def create_heatmap_chart(self, records: Optional[List[MonthlyNetDividend]] = None):
         if not PLOTLY_AVAILABLE:
@@ -274,4 +276,4 @@ class PortfolioDividendIncomeService:
             height=400,
             margin=dict(t=50, b=40),
         )
-        return fig
+        return style_figure(fig)

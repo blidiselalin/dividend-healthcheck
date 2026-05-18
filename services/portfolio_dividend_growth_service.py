@@ -4,6 +4,8 @@ Portfolio-wide dividend history and growth since 2021 (from vector DB).
 
 from __future__ import annotations
 
+from utils.chart_theme import style_figure
+
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
@@ -208,7 +210,7 @@ class PortfolioDividendGrowthService:
             height=max(480, 18 * len(items_sorted)),
             margin=dict(t=50, b=40, l=60),
         )
-        return fig
+        return style_figure(fig)
 
     def create_growth_lines_chart(
         self,
@@ -250,7 +252,7 @@ class PortfolioDividendGrowthService:
             margin=dict(t=50, b=40),
             legend=dict(orientation="h", yanchor="bottom", y=1.02),
         )
-        return fig
+        return style_figure(fig)
 
     def create_portfolio_cash_chart(
         self, symbols: Optional[List[SymbolDividendGrowth]] = None
@@ -277,7 +279,7 @@ class PortfolioDividendGrowthService:
             height=380,
             margin=dict(t=50, b=40),
         )
-        return fig
+        return style_figure(fig)
 
     def create_yoy_heatmap(self, symbols: Optional[List[SymbolDividendGrowth]] = None):
         if not PLOTLY_AVAILABLE:
@@ -310,4 +312,4 @@ class PortfolioDividendGrowthService:
             height=max(480, 18 * len(yoy)),
             margin=dict(t=50, b=40, l=60),
         )
-        return fig
+        return style_figure(fig)

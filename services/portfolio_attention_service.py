@@ -19,14 +19,24 @@ if TYPE_CHECKING:
     from services.news_service import NewsSummary
 
 EX_DATE_SOON_DAYS = 21
-OVERWEIGHT_WEIGHT_PCT = 8.0
-PROFIT_WARN_PCT = -8.0
-PROFIT_ALERT_PCT = -18.0
-DECLINE_180_WARN_PCT = -12.0
-DECLINE_365_WARN_PCT = -18.0
-TARGET_DOWNSIDE_WARN_PCT = -12.0
+OVERWEIGHT_WEIGHT_PCT = 10.0
+PROFIT_WARN_PCT = -12.0
+PROFIT_ALERT_PCT = -20.0
+DECLINE_180_WARN_PCT = -18.0
+DECLINE_365_WARN_PCT = -25.0
+TARGET_DOWNSIDE_WARN_PCT = -15.0
+
+# Risk watchlist: only material, high-severity issues (keeps counts actionable).
+RISK_MIN_SCORE = 42
+RISK_HIGH_SCORE = 52
+
+# Buy opportunities: yield-zone value + supportive fundamentals.
+OPPORTUNITY_MIN_SCORE = 30
+OPPORTUNITY_HIGH_SCORE = 48
+OPPORTUNITY_MIN_GAP_TO_FAIR_PCT = 6.0
 
 DIVIDEND_CATEGORY = "Dividend"
+OPPORTUNITY_CATEGORY = "Opportunity"
 NEGATIVE_CATEGORIES = frozenset({"Exposure", "Estimates", "News"})
 
 
@@ -44,15 +54,16 @@ class AttentionItem:
 
 @dataclass
 class AttentionSummary:
-    """Risk watchlist (negative) and dividend attention (timing / cash) are separate."""
+    """Risk (high severity only), buy opportunities, and dividend timing — separate lists."""
 
     risk_items: List[AttentionItem] = field(default_factory=list)
+    opportunity_items: List[AttentionItem] = field(default_factory=list)
     dividend_items: List[AttentionItem] = field(default_factory=list)
     reference_date: date = field(default_factory=date.today)
 
     @property
     def items(self) -> List[AttentionItem]:
-        """Backward compatibility: attention watchlist = risk only."""
+        """Backward compatibility: attention watchlist = high-risk only."""
         return self.risk_items
 
     @property
@@ -60,12 +71,17 @@ class AttentionSummary:
         return len(self.risk_items)
 
     @property
+    def opportunity_total(self) -> int:
+        return len(self.opportunity_items)
+
+    @property
     def dividend_total(self) -> int:
         return len(self.dividend_items)
 
     @property
     def high_count(self) -> int:
-        return sum(1 for item in self.risk_items if item.severity == "high")
+        """High-priority buy opportunities (not risk severity)."""
+        return sum(1 for item in self.opportunity_items if item.severity == "high")
 
     @property
     def dividend_high_count(self) -> int:
@@ -198,6 +214,7 @@ class PortfolioAttentionService:
         }
 
         risk_scored: List[AttentionItem] = []
+        opportunity_scored: List[AttentionItem] = []
         dividend_scored: List[AttentionItem] = []
         for row in rows:
             dividend_flags = self._evaluate_dividend_attention(
@@ -212,6 +229,7 @@ class PortfolioAttentionService:
                 preload=preload,
                 news=news_by_symbol.get(row.ticker) if news_by_symbol else None,
             )
+            opportunity_flags = self._evaluate_buy_opportunity(row, preload=preload)
             if dividend_flags:
                 score, severity, reasons = dividend_flags
                 dividend_scored.append(
@@ -228,7 +246,22 @@ class PortfolioAttentionService:
                 )
             if risk_flags:
                 score, severity, categories, reasons = risk_flags
-                risk_scored.append(
+                if severity == "high":
+                    risk_scored.append(
+                        AttentionItem(
+                            symbol=row.ticker,
+                            company=row.company,
+                            severity=severity,
+                            score=score,
+                            categories=tuple(sorted(categories)),
+                            reasons=tuple(reasons),
+                            portfolio_weight_pct=row.weight_pct,
+                            profit_pct=row.profit_pct,
+                        )
+                    )
+            if opportunity_flags:
+                score, severity, categories, reasons = opportunity_flags
+                opportunity_scored.append(
                     AttentionItem(
                         symbol=row.ticker,
                         company=row.company,
@@ -242,9 +275,11 @@ class PortfolioAttentionService:
                 )
 
         risk_scored.sort(key=lambda item: (-item.score, item.symbol))
+        opportunity_scored.sort(key=lambda item: (-item.score, item.symbol))
         dividend_scored.sort(key=lambda item: (-item.score, item.symbol))
         return AttentionSummary(
             risk_items=risk_scored,
+            opportunity_items=opportunity_scored,
             dividend_items=dividend_scored,
             reference_date=today,
         )
@@ -295,105 +330,176 @@ class PortfolioAttentionService:
         preload: "PortfolioAnalysisPreload",
         news: Optional["NewsSummary"],
     ) -> Optional[tuple[int, str, set[str], List[str]]]:
+        """Flag only material, compounded risk — surfaced on watchlist if severity is high."""
         score = 0
         categories: set[str] = set()
         reasons: List[str] = []
 
         channel = preload.yield_channels.get(row.ticker)
-        if channel:
-            category = zone_to_category(channel.zone)
-            if category == "red":
-                score += 28
-                categories.add("Exposure")
-                reasons.append(f"Yield zone: {channel.zone} (expensive vs history)")
-            elif category == "yellow" and row.profit_pct is not None and row.profit_pct < 0:
-                score += 10
+        zone_category = zone_to_category(channel.zone) if channel else "unknown"
+        loss_pct = row.profit_pct
+
+        if channel and zone_category == "red":
+            if loss_pct is not None and loss_pct <= PROFIT_WARN_PCT:
+                score += 22
                 categories.add("Exposure")
                 reasons.append(
-                    f"Fair-value zone with unrealized loss ({row.profit_pct:+.1f}%)"
+                    f"Expensive yield zone ({channel.zone}) with "
+                    f"{loss_pct:+.1f}% unrealized loss"
+                )
+            elif loss_pct is not None and loss_pct < -5:
+                score += 14
+                categories.add("Exposure")
+                reasons.append(
+                    f"Expensive yield zone ({channel.zone}) while underwater "
+                    f"({loss_pct:+.1f}%)"
                 )
 
-            if channel.current_price and channel.fair_value_price:
-                gap_pct = ((channel.fair_value_price / channel.current_price) - 1) * 100
-                if gap_pct < -12:
-                    score += 14
-                    categories.add("Exposure")
-                    reasons.append(f"Price {abs(gap_pct):.0f}% above fair-value yield level")
-
-        if row.weight_pct is not None and row.weight_pct >= OVERWEIGHT_WEIGHT_PCT:
-            if categories.intersection({"Exposure"}) or (
-                row.profit_pct is not None and row.profit_pct < 0
-            ):
-                score += 12
+        if loss_pct is not None:
+            if loss_pct <= PROFIT_ALERT_PCT:
+                score += 36
                 categories.add("Exposure")
-                reasons.append(f"Large position ({row.weight_pct:.1f}% of portfolio)")
-
-        if row.profit_pct is not None:
-            if row.profit_pct <= PROFIT_ALERT_PCT:
-                score += 30
+                reasons.append(f"Severe unrealized loss ({loss_pct:+.1f}%)")
+            elif loss_pct <= PROFIT_WARN_PCT:
+                score += 20
                 categories.add("Exposure")
-                reasons.append(f"Large unrealized loss ({row.profit_pct:+.1f}%)")
-            elif row.profit_pct <= PROFIT_WARN_PCT:
-                score += 16
-                categories.add("Exposure")
-                reasons.append(f"Unrealized loss ({row.profit_pct:+.1f}%)")
+                reasons.append(f"Deep unrealized loss ({loss_pct:+.1f}%)")
 
         if row.change_365d_pct is not None and row.change_365d_pct <= DECLINE_365_WARN_PCT:
-            score += 18
-            categories.add("Exposure")
-            reasons.append(f"Price down {abs(row.change_365d_pct):.1f}% vs 1 year ago")
+            if loss_pct is not None and loss_pct < 0:
+                score += 16
+                categories.add("Exposure")
+                reasons.append(
+                    f"Price down {abs(row.change_365d_pct):.1f}% over 12 months "
+                    f"with {loss_pct:+.1f}% position loss"
+                )
         elif row.change_180d_pct is not None and row.change_180d_pct <= DECLINE_180_WARN_PCT:
-            score += 12
-            categories.add("Exposure")
-            reasons.append(f"Price down {abs(row.change_180d_pct):.1f}% vs 6 months ago")
+            if loss_pct is not None and loss_pct <= PROFIT_WARN_PCT:
+                score += 12
+                categories.add("Exposure")
+                reasons.append(
+                    f"Price down {abs(row.change_180d_pct):.1f}% over 6 months "
+                    f"with {loss_pct:+.1f}% loss"
+                )
 
         rating = (row.analyst_rating or "").upper()
         if rating in {"AVOID", "SELL", "STRONG SELL", "UNDERPERFORM"}:
-            score += 32
+            score += 34
             categories.add("Estimates")
             reasons.append(f"Analyst view: {row.analyst_rating}")
-        elif rating in {"WEAK HOLD", "HOLD/WATCH"} and row.profit_pct is not None and row.profit_pct < 0:
-            score += 14
-            categories.add("Estimates")
-            reasons.append(f"Neutral analyst view with loss ({row.analyst_rating})")
 
         stock = preload.stock_data.get(row.ticker)
         if stock and stock.target_upside_pct is not None:
             if stock.target_upside_pct <= TARGET_DOWNSIDE_WARN_PCT:
-                score += 24
-                categories.add("Estimates")
-                reasons.append(f"Price target implies {stock.target_upside_pct:+.1f}% downside")
-            elif stock.target_upside_pct < 0:
-                score += 12
-                categories.add("Estimates")
-                reasons.append(f"Below consensus target ({stock.target_upside_pct:+.1f}%)")
+                if loss_pct is not None and loss_pct < 0:
+                    score += 18
+                    categories.add("Estimates")
+                    reasons.append(
+                        f"Consensus target implies {stock.target_upside_pct:+.1f}% "
+                        "downside while at a loss"
+                    )
 
-        if stock and stock.earnings_growth_pct is not None and stock.earnings_growth_pct < -10:
+        if (
+            row.weight_pct is not None
+            and row.weight_pct >= OVERWEIGHT_WEIGHT_PCT
+            and len(categories) >= 2
+        ):
             score += 10
-            categories.add("Estimates")
-            reasons.append(f"Earnings growth estimate {stock.earnings_growth_pct:+.1f}%")
+            categories.add("Exposure")
+            reasons.append(f"Concentrated position ({row.weight_pct:.1f}% of portfolio)")
 
-        if news:
-            if news.overall_sentiment in ("bearish",) or news.sentiment_score <= -0.35:
-                score += 26
+        if news and score >= 25:
+            if news.overall_sentiment in ("bearish",) or news.sentiment_score <= -0.4:
+                score += 18
                 categories.add("News")
                 reasons.append(f"Recent news sentiment: {news.overall_sentiment}")
-            elif news.negative_count > news.positive_count and news.negative_count >= 2:
-                score += 16
+            elif news.negative_count >= 3 and news.negative_count > news.positive_count:
+                score += 12
                 categories.add("News")
                 reasons.append(
-                    f"More negative than positive headlines "
-                    f"({news.negative_count} vs {news.positive_count})"
+                    f"Headline skew negative ({news.negative_count} vs "
+                    f"{news.positive_count})"
                 )
-            if news.risks:
-                score += 8
-                categories.add("News")
-                reasons.append(news.risks[0][:120])
 
-        if score < 8 or not categories:
+        if score < RISK_MIN_SCORE or not categories:
+            return None
+        if len(categories) < 2 and score < RISK_HIGH_SCORE:
             return None
 
-        severity = "high" if score >= 40 else "medium" if score >= 20 else "low"
+        severity = "high" if score >= RISK_HIGH_SCORE else "medium"
+        return score, severity, categories, reasons[:5]
+
+    def _evaluate_buy_opportunity(
+        self,
+        row: PortfolioDetailRow,
+        *,
+        preload: "PortfolioAnalysisPreload",
+    ) -> Optional[tuple[int, str, set[str], List[str]]]:
+        """Rank holdings that fit a disciplined buy thesis (yield zone + quality signals)."""
+        channel = preload.yield_channels.get(row.ticker)
+        if not channel:
+            return None
+
+        zone_category = zone_to_category(channel.zone)
+        if zone_category == "red":
+            return None
+
+        rating = (row.analyst_rating or "").upper()
+        if rating in {"AVOID", "SELL", "STRONG SELL", "UNDERPERFORM"}:
+            return None
+        if row.profit_pct is not None and row.profit_pct <= PROFIT_ALERT_PCT:
+            return None
+
+        score = 0
+        categories: set[str] = set()
+        reasons: List[str] = []
+
+        if channel.zone == "Deep Value":
+            score += 38
+            categories.add(OPPORTUNITY_CATEGORY)
+            reasons.append("Deep value yield zone — historically high dividend yield")
+        elif zone_category == "green":
+            score += 30
+            categories.add(OPPORTUNITY_CATEGORY)
+            reasons.append(f"Buy-zone yield ({channel.zone}) vs long-term history")
+
+        gap_fair_pct: Optional[float] = None
+        if channel.current_price and channel.fair_value_price:
+            gap_fair_pct = ((channel.fair_value_price / channel.current_price) - 1) * 100
+            if gap_fair_pct >= OPPORTUNITY_MIN_GAP_TO_FAIR_PCT:
+                score += 14
+                categories.add(OPPORTUNITY_CATEGORY)
+                reasons.append(
+                    f"Price {gap_fair_pct:.0f}% below fair-value yield level"
+                )
+            elif zone_category == "yellow" and gap_fair_pct >= 4:
+                score += 20
+                categories.add(OPPORTUNITY_CATEGORY)
+                reasons.append(
+                    f"Fair-value zone trading {gap_fair_pct:.0f}% below fair-yield price"
+                )
+
+        if rating in {"BUY", "STRONG BUY", "OUTPERFORM"}:
+            score += 10
+            categories.add(OPPORTUNITY_CATEGORY)
+            reasons.append(f"Analyst view: {row.analyst_rating}")
+
+        if row.growth_years and row.growth_years >= 25:
+            score += 8
+            reasons.append(f"{row.growth_years} consecutive years of dividend growth")
+
+        stock = preload.stock_data.get(row.ticker)
+        if stock and stock.dividend_safety_score is not None and stock.dividend_safety_score >= 65:
+            score += 8
+            reasons.append(f"Dividend safety {stock.dividend_safety_score:.0f}/100")
+
+        if row.profit_pct is not None and row.profit_pct >= 0:
+            score += 4
+
+        if score < OPPORTUNITY_MIN_SCORE or OPPORTUNITY_CATEGORY not in categories:
+            return None
+
+        severity = "high" if score >= OPPORTUNITY_HIGH_SCORE else "medium"
         return score, severity, categories, reasons[:5]
 
     def to_dataframe(
@@ -408,9 +514,12 @@ class PortfolioAttentionService:
         if summary is None:
             return pd.DataFrame()
 
-        items = (
-            summary.dividend_items if list_kind == "dividend" else summary.risk_items
-        )
+        if list_kind == "dividend":
+            items = summary.dividend_items
+        elif list_kind == "opportunity":
+            items = summary.opportunity_items
+        else:
+            items = summary.risk_items
         return pd.DataFrame(
             [
                 {

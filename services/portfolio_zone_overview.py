@@ -4,6 +4,8 @@ Portfolio-level dividend yield zone summary (Weiss methodology).
 
 from __future__ import annotations
 
+from utils.chart_theme import style_figure
+
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -179,7 +181,7 @@ def create_category_count_chart(zone_df: pd.DataFrame) -> Optional["go.Figure"]:
         margin=dict(t=50, b=20, l=20, r=20),
         showlegend=False,
     )
-    return fig
+    return style_figure(fig)
 
 
 def create_position_zone_chart(zone_df: pd.DataFrame) -> Optional["go.Figure"]:
@@ -217,7 +219,7 @@ def create_position_zone_chart(zone_df: pd.DataFrame) -> Optional["go.Figure"]:
         margin=dict(l=10, r=10, t=50, b=40),
         xaxis=dict(range=[0, 100]),
     )
-    return fig
+    return style_figure(fig)
 
 
 def tickers_missing_zones(

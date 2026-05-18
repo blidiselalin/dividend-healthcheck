@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Dividend Yield Channels Chart Service.
 
@@ -96,6 +98,140 @@ class YieldChannelData:
     dividend_streak: Optional[int] = None
 
 
+def _ordered_percentiles(stats: Dict[str, float]) -> Dict[str, float]:
+    """Ensure yield percentiles are monotonic (avoids crossed band lines)."""
+    keys = ("p10", "p25", "median", "p75", "p90")
+    values = [float(stats[k]) for k in keys]
+    values.sort()
+    return {
+        "p10": values[0],
+        "p25": values[1],
+        "median": values[2],
+        "p75": values[3],
+        "p90": values[4],
+        "mean": float(stats["mean"]),
+        "std": float(stats["std"]),
+        "min": float(stats["min"]),
+        "max": float(stats["max"]),
+    }
+
+
+def validate_yield_channel_data(data: YieldChannelData) -> Optional[YieldChannelData]:
+    """
+    Sanitize series and price targets before charting.
+
+    Returns None if the payload cannot be shown safely.
+    """
+    if data is None:
+        return None
+
+    n = len(data.dates)
+    if n < 50 or len(data.prices) != n or len(data.yields) != n:
+        return None
+
+    pairs = sorted(
+        zip(data.dates, data.prices, data.yields),
+        key=lambda row: row[0],
+    )
+    dates, prices, yields = [], [], []
+    for dt, price, yld in pairs:
+        if price is None or yld is None:
+            continue
+        try:
+            price_f = float(price)
+            yld_f = float(yld)
+        except (TypeError, ValueError):
+            continue
+        if price_f != price_f or yld_f != yld_f:  # NaN check without numpy
+            continue
+        if price_f <= 0 or yld_f <= 0.05 or yld_f > 25:
+            continue
+        dates.append(dt)
+        prices.append(price_f)
+        yields.append(yld_f)
+
+    if len(dates) < 50:
+        return None
+
+    current_price = float(data.current_price)
+    current_div = float(data.current_dividend)
+    current_yield = float(data.current_yield)
+    if current_price <= 0 or current_div <= 0 or current_yield <= 0:
+        return None
+
+    stats = _ordered_percentiles(
+        {
+            "p10": data.yield_10th,
+            "p25": data.yield_25th,
+            "median": data.median_yield,
+            "p75": data.yield_75th,
+            "p90": data.yield_90th,
+            "mean": data.avg_yield,
+            "std": data.std_yield,
+            "min": data.min_yield,
+            "max": data.max_yield,
+        }
+    )
+
+    def _target(div: float, yld: float) -> float:
+        return div / (yld / 100.0) if yld > 0 else 0.0
+
+    targets = {
+        "expensive": _target(current_div, stats["p10"]),
+        "caution": _target(current_div, stats["p25"]),
+        "fair_value": _target(current_div, stats["median"]),
+        "value": _target(current_div, stats["p75"]),
+        "deep_value": _target(current_div, stats["p90"]),
+    }
+
+    lo = min(prices) * 0.65
+    hi = max(prices) * 1.35
+    for key, val in list(targets.items()):
+        if val != val or val <= 0:
+            targets[key] = current_price
+        else:
+            targets[key] = float(max(lo, min(val, hi * 2)))
+
+    # Deep value (lowest $) → expensive (highest $)
+    targets = dict(sorted(targets.items(), key=lambda item: item[1]))
+
+    return YieldChannelData(
+        symbol=data.symbol,
+        company_name=data.company_name,
+        current_yield=round(current_yield, 2),
+        current_price=round(current_price, 2),
+        current_dividend=round(current_div, 2),
+        avg_yield=round(stats["mean"], 2),
+        median_yield=round(stats["median"], 2),
+        min_yield=round(stats["min"], 2),
+        max_yield=round(stats["max"], 2),
+        std_yield=round(stats["std"], 2),
+        yield_10th=round(stats["p10"], 2),
+        yield_25th=round(stats["p25"], 2),
+        yield_75th=round(stats["p75"], 2),
+        yield_90th=round(stats["p90"], 2),
+        deep_value_price=round(targets["deep_value"], 2),
+        value_price=round(targets["value"], 2),
+        fair_value_price=round(targets["fair_value"], 2),
+        caution_price=round(targets["caution"], 2),
+        expensive_price=round(targets["expensive"], 2),
+        zone=data.zone,
+        zone_score=data.zone_score,
+        percentile=data.percentile,
+        dates=dates,
+        prices=prices,
+        yields=yields,
+        annual_dividends=data.annual_dividends[-len(dates) :]
+        if len(data.annual_dividends) >= len(dates)
+        else [current_div] * len(dates),
+        years_analyzed=data.years_analyzed,
+        data_points=len(dates),
+        dividend_cagr_5y=data.dividend_cagr_5y,
+        dividend_cagr_10y=data.dividend_cagr_10y,
+        dividend_streak=data.dividend_streak,
+    )
+
+
 class YieldChannelService:
     """
     Service for calculating and charting dividend yield channels.
@@ -158,33 +294,53 @@ class YieldChannelService:
         # Try vector DB first for historical dividend data
         db_dividend_history = None
         db_streak = None
-        
+        db_doc = None
+
         if use_db and self._vector_store:
             try:
-                doc = self._vector_store.get_by_symbol(symbol)
-                if doc and doc.dividend_history:
-                    db_dividend_history = doc.dividend_history
-                    db_streak = doc.dividend_streak_years
+                db_doc = self._vector_store.get_by_symbol(symbol)
+                if db_doc and db_doc.dividend_history:
+                    db_dividend_history = db_doc.dividend_history
+                    db_streak = db_doc.dividend_streak_years
                     logger.debug(f"{symbol}: Found {len(db_dividend_history)} dividends in DB")
             except Exception as e:
                 logger.debug(f"Vector DB lookup failed for {symbol}: {e}")
-        
+
         try:
+            from utils.yfinance_history import fetch_price_history_with_fallback
+
             ticker = yf.Ticker(symbol)
-            
+
             # Get company name
             company_name = symbol
-            try:
-                info = ticker.info
-                company_name = info.get("shortName") or info.get("longName") or symbol
-            except Exception:
-                pass
-            
-            # Get historical prices
-            hist = ticker.history(period=f"{years}y")
+            if db_doc and getattr(db_doc, "name", None):
+                company_name = db_doc.name
+            else:
+                try:
+                    info = ticker.info
+                    company_name = info.get("shortName") or info.get("longName") or symbol
+                except Exception:
+                    pass
+
+            hist, price_source = fetch_price_history_with_fallback(
+                symbol,
+                years=years,
+                document=db_doc,
+                min_rows=200,
+            )
             if hist.empty or len(hist) < 200:
+                logger.debug(
+                    "%s: insufficient price history (source=%s, rows=%d)",
+                    symbol,
+                    price_source,
+                    len(hist),
+                )
                 return None
-            
+            if price_source == "analysed_library":
+                logger.debug("%s: yield channel using analysed-library prices", symbol)
+
+            hist = self._prepare_history_frame(hist)
+
             # Get dividend data - prefer DB data if available and substantial
             if db_dividend_history and len(db_dividend_history) >= 20:
                 hist = self._integrate_db_dividends(hist, db_dividend_history)
@@ -203,10 +359,14 @@ class YieldChannelService:
             hist = hist[(hist["Yield"] > 0.1) & (hist["Yield"] < 20)]
             if len(hist) < 100:
                 return None
-            
+
+            hist = self._downsample_for_display(hist)
+            if len(hist) < 80:
+                return None
+
             # Statistical analysis using percentiles (Weiss methodology)
             yields = hist["Yield"].dropna()
-            stats = self._calculate_yield_statistics(yields)
+            stats = _ordered_percentiles(self._calculate_yield_statistics(yields))
             
             # Current values
             current_price = float(hist["Close"].iloc[-1])
@@ -222,11 +382,11 @@ class YieldChannelService:
             
             # Calculate price targets at different yield levels
             price_targets = self._calculate_price_targets(current_div, stats)
-            
+
             # Calculate dividend growth metrics
             dividend_growth = self._calculate_dividend_growth(hist)
-            
-            return YieldChannelData(
+
+            payload = YieldChannelData(
                 symbol=symbol,
                 company_name=company_name,
                 current_yield=round(current_yield, 2),
@@ -259,11 +419,43 @@ class YieldChannelService:
                 dividend_cagr_10y=dividend_growth.get("cagr_10y"),
                 dividend_streak=db_streak,
             )
-            
+            return validate_yield_channel_data(payload)
+
         except Exception as e:
             logger.error(f"Error fetching yield channel data for {symbol}: {e}")
             return None
-    
+
+    @staticmethod
+    def _prepare_history_frame(hist: pd.DataFrame) -> pd.DataFrame:
+        """Sort, dedupe, and normalize OHLCV before yield math."""
+        frame = hist.copy()
+        frame = frame.sort_index()
+        frame = frame[~frame.index.duplicated(keep="last")]
+        if "Adj Close" in frame.columns:
+            frame["Close"] = frame["Adj Close"]
+        frame["Close"] = pd.to_numeric(frame["Close"], errors="coerce")
+        frame = frame.dropna(subset=["Close"])
+        frame = frame[frame["Close"] > 0]
+        if "Dividends" not in frame.columns:
+            frame["Dividends"] = 0.0
+        frame["Dividends"] = pd.to_numeric(frame["Dividends"], errors="coerce").fillna(0.0)
+        return frame
+
+    @staticmethod
+    def _downsample_for_display(hist: pd.DataFrame) -> pd.DataFrame:
+        """Weekly points for a readable 10Y chart (less noise than daily)."""
+        if len(hist) <= 320:
+            return hist
+        agg: Dict[str, str] = {
+            "Close": "last",
+            "Div_TTM": "last",
+            "Yield": "last",
+        }
+        if "Dividends" in hist.columns:
+            agg["Dividends"] = "sum"
+        weekly = hist.resample("W-FRI").agg(agg)
+        return weekly.dropna(subset=["Close", "Yield", "Div_TTM"])
+
     def _integrate_db_dividends(self, hist: pd.DataFrame, db_dividends: List) -> pd.DataFrame:
         """Integrate vector DB dividend data into price history."""
         try:
@@ -369,7 +561,10 @@ class YieldChannelService:
                 return result
             
             # Get annual values
-            annual = hist["Div_TTM"].resample("YE").last().dropna()
+            try:
+                annual = hist["Div_TTM"].resample("YE").last().dropna()
+            except ValueError:
+                annual = hist["Div_TTM"].resample("Y").last().dropna()
             if len(annual) < 2:
                 return result
             
@@ -396,8 +591,8 @@ class YieldChannelService:
     def create_yield_channel_chart(
         self,
         data: YieldChannelData,
-        height: int = 600,
-        show_annotations: bool = True,
+        height: int = 520,
+        show_annotations: bool = False,
     ) -> Optional[Any]:
         """
         Create professional Plotly chart showing yield channels.
@@ -418,248 +613,182 @@ class YieldChannelService:
         """
         if not PLOTLY_AVAILABLE or data is None:
             return None
-        
-        # Create figure with two subplots
-        fig = make_subplots(
-            rows=2, cols=1,
-            row_heights=[0.65, 0.35],
-            shared_xaxes=True,
-            vertical_spacing=0.08,
-            subplot_titles=(
-                f"<b>{data.symbol}</b> • Price with Yield-Based Valuation Zones",
-                f"Dividend Yield History ({data.years_analyzed}Y)"
-            )
-        )
-        
-        # Prepare data
+
+        clean = validate_yield_channel_data(data)
+        if clean is None:
+            return None
+        data = clean
+
         dates = list(data.dates)
         prices = list(data.prices)
         yields = list(data.yields)
-        dividends = list(data.annual_dividends)
-        
-        # Build zone price lines
-        df = pd.DataFrame({
-            "date": dates,
-            "price": prices,
-            "dividend": dividends,
-        })
-        
-        # Calculate price at each yield level over time
-        df["expensive"] = df["dividend"] / (data.yield_10th / 100)
-        df["caution"] = df["dividend"] / (data.yield_25th / 100)
-        df["fair_value"] = df["dividend"] / (data.median_yield / 100)
-        df["value"] = df["dividend"] / (data.yield_75th / 100)
-        df["deep_value"] = df["dividend"] / (data.yield_90th / 100)
-        
-        # === TOP CHART: Price with zones ===
-        
-        # Add zone fills (from top to bottom)
-        zones = [
-            ("expensive", "caution", "rgba(244, 67, 54, 0.15)", "Expensive Zone"),
-            ("caution", "fair_value", "rgba(255, 152, 0, 0.12)", "Caution Zone"),
-            ("fair_value", "value", "rgba(255, 193, 7, 0.10)", "Fair Value Zone"),
-            ("value", "deep_value", "rgba(76, 175, 80, 0.12)", "Value Zone"),
-        ]
-        
-        dates_rev = dates[::-1]
-        for upper, lower, color, name in zones:
-            upper_prices = df[upper].tolist()
-            lower_prices = df[lower].tolist()
-            
+        zone_color = self.ZONES.get(data.zone, {}).get("color", "#0f766e")
+
+        fig = make_subplots(
+            rows=2,
+            cols=1,
+            row_heights=[0.58, 0.42],
+            shared_xaxes=True,
+            vertical_spacing=0.06,
+            subplot_titles=(
+                f"{data.symbol} price — green to red = cheaper to pricier (today’s ${data.current_dividend:.2f} dividend)",
+                f"Trailing yield — dashed lines = {data.years_analyzed}Y percentiles",
+            ),
+        )
+
+        for y0, y1, fill in (
+            (data.deep_value_price, data.value_price, "rgba(22, 163, 74, 0.10)"),
+            (data.value_price, data.fair_value_price, "rgba(234, 179, 8, 0.10)"),
+            (data.fair_value_price, data.caution_price, "rgba(249, 115, 22, 0.08)"),
+            (data.caution_price, data.expensive_price, "rgba(239, 68, 68, 0.08)"),
+        ):
+            if y1 > y0:
+                fig.add_hrect(y0=y0, y1=y1, fillcolor=fill, line_width=0, row=1, col=1)
+
+        x_band = [dates[0], dates[-1]]
+        for price_level, color, dash in (
+            (data.expensive_price, "#dc2626", "dot"),
+            (data.caution_price, "#ea580c", "dash"),
+            (data.fair_value_price, "#64748b", "solid"),
+            (data.value_price, "#16a34a", "dash"),
+            (data.deep_value_price, "#14532d", "dot"),
+        ):
             fig.add_trace(
                 go.Scatter(
-                    x=dates + dates_rev,
-                    y=upper_prices + lower_prices[::-1],
-                    fill="toself",
-                    fillcolor=color,
-                    line=dict(width=0),
-                    name=name,
+                    x=x_band,
+                    y=[price_level, price_level],
+                    mode="lines",
+                    line=dict(color=color, width=1, dash=dash),
                     showlegend=False,
                     hoverinfo="skip",
                 ),
-                row=1, col=1
+                row=1,
+                col=1,
             )
-        
-        # Add zone boundary lines
-        zone_lines = [
-            ("expensive", "#f44336", "dash", f"Expensive (Yield < {data.yield_10th:.1f}%)"),
-            ("caution", "#ff9800", "dot", f"Caution (Yield < {data.yield_25th:.1f}%)"),
-            ("fair_value", "#9e9e9e", "solid", f"Fair Value (Yield = {data.median_yield:.1f}%)"),
-            ("value", "#4caf50", "dot", f"Value (Yield > {data.yield_75th:.1f}%)"),
-            ("deep_value", "#1b5e20", "dash", f"Deep Value (Yield > {data.yield_90th:.1f}%)"),
-        ]
-        
-        for col, color, dash, name in zone_lines:
-            fig.add_trace(
-                go.Scatter(
-                    x=dates,
-                    y=df[col].tolist(),
-                    mode="lines",
-                    name=name,
-                    line=dict(color=color, width=1.5, dash=dash),
-                    hovertemplate=f"{name.split(' (')[0]}: $%{{y:.2f}}<extra></extra>",
-                ),
-                row=1, col=1
-            )
-        
-        # Actual price line (prominent)
+
         fig.add_trace(
             go.Scatter(
                 x=dates,
                 y=prices,
                 mode="lines",
-                name=f"{data.symbol} Price",
-                line=dict(color="#1976d2", width=3),
-                hovertemplate="<b>%{x|%b %d, %Y}</b><br>Price: $%{y:.2f}<extra></extra>",
+                name="Share price",
+                line=dict(color="#0f766e", width=2.5),
+                hovertemplate="%{x|%b %Y}<br>Price $%{y:.2f}<extra></extra>",
             ),
-            row=1, col=1
+            row=1,
+            col=1,
         )
-        
-        # Current price marker with zone color
-        zone_color = self.ZONES.get(data.zone, {}).get("color", "#1976d2")
         fig.add_trace(
             go.Scatter(
                 x=[dates[-1]],
                 y=[data.current_price],
-                mode="markers+text",
-                name=f"Current: ${data.current_price:.2f}",
-                marker=dict(size=14, color=zone_color, symbol="circle",
-                           line=dict(width=2, color="white")),
-                text=[f"${data.current_price:.2f}"],
-                textposition="top center",
-                textfont=dict(size=11, color=zone_color, family="Arial Black"),
-                showlegend=False,
+                mode="markers",
+                name=f"Now ${data.current_price:.2f}",
+                marker=dict(size=10, color=zone_color, line=dict(width=2, color="white")),
+                hovertemplate=f"Current ${data.current_price:.2f}<extra></extra>",
             ),
-            row=1, col=1
+            row=1,
+            col=1,
         )
-        
-        # === BOTTOM CHART: Yield history ===
-        
-        # Yield line
+
+        price_lo = min(min(prices), data.deep_value_price) * 0.92
+        price_hi = max(max(prices), data.expensive_price) * 1.08
+        fig.update_yaxes(range=[price_lo, price_hi], row=1, col=1)
+
         fig.add_trace(
             go.Scatter(
                 x=dates,
                 y=yields,
                 mode="lines",
-                name="Dividend Yield",
-                line=dict(color="#ff6f00", width=2.5),
-                fill="tozeroy",
-                fillcolor="rgba(255, 111, 0, 0.1)",
-                hovertemplate="<b>%{x|%b %d, %Y}</b><br>Yield: %{y:.2f}%<extra></extra>",
+                name="Trailing yield",
+                line=dict(color="#c2410c", width=2),
+                hovertemplate="%{x|%b %Y}<br>Yield %{y:.2f}%<extra></extra>",
             ),
-            row=2, col=1
+            row=2,
+            col=1,
         )
-        
-        # Zone thresholds
-        yield_lines = [
-            (data.yield_10th, "#f44336", "dash", "10th Pctl (Expensive)"),
-            (data.yield_25th, "#ff9800", "dot", "25th Pctl"),
-            (data.median_yield, "#9e9e9e", "solid", "Median"),
-            (data.yield_75th, "#4caf50", "dot", "75th Pctl"),
-            (data.yield_90th, "#1b5e20", "dash", "90th Pctl (Value)"),
-        ]
-        
-        for yval, color, dash, label in yield_lines:
-            fig.add_hline(
-                y=yval, row=2, col=1,
-                line=dict(color=color, width=1, dash=dash),
-                annotation=dict(
-                    text=f"{yval:.1f}%",
-                    font=dict(size=9, color=color),
+
+        for y_level, color, dash in (
+            (data.yield_90th, "#14532d", "dot"),
+            (data.yield_75th, "#16a34a", "dash"),
+            (data.median_yield, "#64748b", "solid"),
+            (data.yield_25th, "#ea580c", "dash"),
+            (data.yield_10th, "#dc2626", "dot"),
+        ):
+            fig.add_trace(
+                go.Scatter(
+                    x=x_band,
+                    y=[y_level, y_level],
+                    mode="lines",
+                    line=dict(color=color, width=1, dash=dash),
+                    showlegend=False,
+                    hoverinfo="skip",
                 ),
-                annotation_position="right",
+                row=2,
+                col=1,
             )
-        
-        # Current yield marker
+
         fig.add_trace(
             go.Scatter(
                 x=[dates[-1]],
                 y=[data.current_yield],
-                mode="markers+text",
-                marker=dict(size=12, color=zone_color, symbol="diamond",
-                           line=dict(width=2, color="white")),
-                text=[f"{data.current_yield:.2f}%"],
-                textposition="top left",
-                textfont=dict(size=10, color=zone_color),
+                mode="markers",
+                marker=dict(size=9, color=zone_color, symbol="diamond"),
                 showlegend=False,
+                hovertemplate=f"Current {data.current_yield:.2f}%<extra></extra>",
             ),
-            row=2, col=1
+            row=2,
+            col=1,
         )
-        
-        # === Layout ===
-        
-        fig.update_layout(
+
+        y_lo = max(0, min(yields) * 0.85)
+        y_hi = max(yields) * 1.12
+        fig.update_yaxes(range=[y_lo, y_hi], row=2, col=1)
+
+        from utils.chart_theme import PALETTE, style_figure, style_subplot_titles
+
+        style_subplot_titles(fig, size=12)
+
+        fig.update_yaxes(title_text="Price", tickprefix="$", row=1, col=1)
+        fig.update_yaxes(title_text="Yield", ticksuffix="%", row=2, col=1)
+
+        style_figure(
+            fig,
             height=height,
-            showlegend=True,
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="center",
-                x=0.5,
-                font=dict(size=10),
-                bgcolor="rgba(255,255,255,0.8)",
-            ),
-            hovermode="x unified",
-            margin=dict(l=70, r=120, t=100, b=50),
-            paper_bgcolor="white",
-            plot_bgcolor="rgba(248, 249, 250, 0.5)",
-            font=dict(family="Arial, sans-serif"),
+            legend=True,
+            horizontal_legend=True,
+            margin=dict(l=52, r=20, t=64, b=40),
         )
-        
-        # Y-axis formatting
-        fig.update_yaxes(
-            title_text="<b>Price ($)</b>",
-            title_font=dict(size=11),
-            tickprefix="$",
-            gridcolor="rgba(200, 200, 200, 0.3)",
-            row=1, col=1
-        )
-        fig.update_yaxes(
-            title_text="<b>Yield (%)</b>",
-            title_font=dict(size=11),
-            ticksuffix="%",
-            gridcolor="rgba(200, 200, 200, 0.3)",
-            row=2, col=1
-        )
-        
-        # X-axis
-        fig.update_xaxes(
-            gridcolor="rgba(200, 200, 200, 0.3)",
-            showgrid=True,
-        )
-        
-        # Add price target annotations on the right
+
         if show_annotations:
-            annotations = [
-                (data.expensive_price, f"${data.expensive_price:.0f}", "#f44336", "Expensive"),
-                (data.fair_value_price, f"${data.fair_value_price:.0f}", "#757575", "Fair Value"),
-                (data.value_price, f"${data.value_price:.0f}", "#4caf50", "Value"),
-            ]
-            
-            for price, text, color, label in annotations:
-                fig.add_annotation(
-                    x=1.01,
-                    y=price,
-                    xref="paper",
-                    yref="y",
-                    text=f"<b>{text}</b><br><span style='font-size:9px'>{label}</span>",
-                    showarrow=True,
-                    arrowhead=0,
-                    arrowwidth=1,
-                    arrowcolor=color,
-                    ax=30,
-                    ay=0,
-                    font=dict(size=10, color=color),
-                    align="left",
-                    bgcolor="white",
-                    bordercolor=color,
-                    borderwidth=1,
-                    borderpad=3,
-                )
-        
+            fig.add_annotation(
+                x=dates[-1],
+                y=data.current_price,
+                text=data.zone,
+                showarrow=False,
+                yshift=12,
+                font=dict(size=11, color=zone_color),
+                bgcolor="white",
+                bordercolor=zone_color,
+                borderwidth=1,
+            )
+
+        # Zone guide (right margin text via annotation)
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=1.0,
+            y=1.12,
+            xanchor="right",
+            showarrow=False,
+            text=(
+                f"<span style='color:{PALETTE['muted']};font-size:10px'>"
+                f"Green=cheaper · Red=pricier · vs ${data.current_dividend:.2f}/yr div</span>"
+            ),
+        )
+
         return fig
-    
+
     @staticmethod
     def get_zone_info(zone: str) -> Dict[str, Any]:
         """Get zone information including color and emoji."""

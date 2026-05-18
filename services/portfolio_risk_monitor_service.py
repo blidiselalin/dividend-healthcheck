@@ -78,6 +78,10 @@ class PortfolioRiskMonitorService:
                 PortfolioRiskMonitorService._item_to_store(item)
                 for item in summary.dividend_items
             ],
+            "opportunity_items": [
+                PortfolioRiskMonitorService._item_to_store(item)
+                for item in summary.opportunity_items
+            ],
         }
 
     @staticmethod
@@ -99,8 +103,13 @@ class PortfolioRiskMonitorService:
                     data.get("motion_dividend_items", []),
                 )
             ]
+            opportunity_items = [
+                PortfolioRiskMonitorService._item_from_store(item)
+                for item in data.get("opportunity_items", [])
+            ]
             return AttentionSummary(
                 risk_items=risk_items,
+                opportunity_items=opportunity_items,
                 dividend_items=dividend_items,
                 reference_date=ref,
             )

@@ -124,3 +124,30 @@ def test_healthy_holding_not_flagged():
     summary = service.build_summary([row], preload, reference_date=date(2026, 5, 13))
     assert summary.total == 0
     assert summary.dividend_total == 0
+
+
+def test_flags_value_zone_buy_opportunity():
+    service = PortfolioAttentionService()
+    row = _row(ticker="TGT", profit_pct=8.0, analyst_rating="BUY", growth_years=30)
+    preload = PortfolioAnalysisPreload(
+        stock_data={},
+        yield_channels={"TGT": _yield_channel("Value")},
+        vector_docs={},
+    )
+    summary = service.build_summary([row], preload, reference_date=date(2026, 5, 13))
+    assert summary.total == 0
+    assert summary.opportunity_total >= 1
+    assert summary.high_count >= 1
+    assert summary.opportunity_items[0].severity == "high"
+
+
+def test_mild_red_zone_without_loss_not_high_risk():
+    service = PortfolioAttentionService()
+    row = _row(ticker="XOM", profit_pct=5.0, analyst_rating="HOLD")
+    preload = PortfolioAnalysisPreload(
+        stock_data={},
+        yield_channels={"XOM": _yield_channel("Expensive")},
+        vector_docs={},
+    )
+    summary = service.build_summary([row], preload, reference_date=date(2026, 5, 13))
+    assert summary.total == 0

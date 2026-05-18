@@ -39,6 +39,7 @@ def test_normalize_modern_summary_round_trip() -> None:
     assert normalized is not None
     assert len(normalized.risk_items) == 1
     assert len(normalized.dividend_items) == 1
+    assert normalized.opportunity_total == 0
 
 
 def test_normalize_dict_uses_risk_monitor_store() -> None:

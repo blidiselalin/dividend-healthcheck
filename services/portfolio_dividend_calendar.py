@@ -4,6 +4,8 @@ Monthly dividend cash-flow projection for portfolio holdings.
 
 from __future__ import annotations
 
+from utils.chart_theme import style_figure
+
 import calendar
 from collections import Counter
 from dataclasses import dataclass, field
@@ -335,7 +337,7 @@ def create_month_comparison_chart(calendar: PortfolioDividendCalendar):
         height=360,
         margin=dict(t=50, b=40),
     )
-    return fig
+    return style_figure(fig)
 
 
 def create_month_payers_chart(exposure: MonthDividendExposure):
@@ -375,4 +377,4 @@ def create_month_payers_chart(exposure: MonthDividendExposure):
         height=max(320, 26 * len(ordered)),
         margin=dict(l=10, r=10, t=50, b=40),
     )
-    return fig
+    return style_figure(fig)

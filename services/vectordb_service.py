@@ -126,8 +126,7 @@ class VectorDBService:
         if not self._store:
             return []
         
-        # Use get_dividend_kings with min_streak=0 to get all
-        docs = self._store.get_dividend_kings(min_streak=0)
+        docs = self._store.get_all_documents()
         return [document_to_stock_data(d) for d in docs]
     
     def search(self, query: str, n_results: int = 10) -> List[StockData]:

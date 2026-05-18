@@ -1,10 +1,10 @@
 """
-Sidebar portfolio risk monitor: runs on app load and refreshes every hour.
+Sidebar portfolio risk monitor — uses cached session data; refresh on demand only.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Optional
 
 import streamlit as st
@@ -17,6 +17,7 @@ from services.portfolio_attention_service import (
 )
 from services.portfolio_details_service import PortfolioDetailRow
 from services.portfolio_risk_monitor_service import PortfolioRiskMonitorService
+from services.portfolio_ui_cache import hydrate_session_from_disk, save_session_cache
 
 SESSION_SUMMARY_KEY = "portfolio_attention_summary"
 SESSION_CHECKED_AT_KEY = "portfolio_risk_checked_at"
@@ -35,6 +36,7 @@ def store_portfolio_payload(
     st.session_state["portfolio_details_time"] = datetime.now()
     st.session_state["portfolio_analysis_ready"] = True
     st.session_state["portfolio_show_analysis"] = True
+    save_session_cache()
 
 
 def get_cached_attention_summary() -> Optional[AttentionSummary]:
@@ -57,19 +59,28 @@ def refresh_portfolio_risks(
     """
     monitor = PortfolioRiskMonitorService()
     checked_at = st.session_state.get(SESSION_CHECKED_AT_KEY)
-    if not force and not monitor.is_stale(checked_at) and get_cached_attention_summary():
-        return get_cached_attention_summary()
+    if not force:
+        if get_cached_attention_summary() and st.session_state.get("portfolio_details_rows"):
+            return get_cached_attention_summary()
+        hydrate_session_from_disk()
+        if get_cached_attention_summary() and st.session_state.get("portfolio_details_rows"):
+            return get_cached_attention_summary()
 
     if st.session_state.get(SESSION_REFRESHING_KEY):
         return get_cached_attention_summary()
 
     st.session_state[SESSION_REFRESHING_KEY] = True
     try:
-        from services.portfolio_vector_sync import link_portfolio_in_vector_db
+        if force:
+            from services.portfolio_vector_sync import link_portfolio_in_vector_db
 
-        link_portfolio_in_vector_db()
+            link_portfolio_in_vector_db()
         if rows is None or preload is None:
-            rows, preload = monitor.load_portfolio_payload()
+            from services.portfolio_details_service import PortfolioDetailsService
+
+            rows, preload = PortfolioDetailsService().build_rows_with_cache(
+                use_live_prices=force,
+            )
         store_portfolio_payload(rows, preload)
         summary = monitor.build_summary(rows, preload, include_news=include_news)
         st.session_state[SESSION_SUMMARY_KEY] = monitor.summary_to_store(summary)
@@ -79,32 +90,32 @@ def refresh_portfolio_risks(
         st.session_state[SESSION_REFRESHING_KEY] = False
 
 
-@st.fragment(run_every=timedelta(hours=1))
-def _portfolio_risk_sidebar_fragment() -> None:
-    """Scan all holdings on load; show every flagged ticker; re-scan every hour."""
-    from config import is_cloud_runtime
+def _rebuild_attention_from_session() -> Optional[AttentionSummary]:
+    """Recompute risk/opportunity lists from cached rows (no network)."""
+    rows = st.session_state.get("portfolio_details_rows")
+    if not rows:
+        return None
+    from services.portfolio_analysis_preload import PortfolioAnalysisPreload
 
-    deferred = st.session_state.get("portfolio_risk_cloud_deferred", False)
-    if deferred and is_cloud_runtime():
-        _render_risk_sidebar_content(get_cached_attention_summary())
-        if st.button(
-            "Run portfolio scan (~1–2 min)",
-            key="portfolio_risk_cloud_start",
-            help="Loads live prices and builds the risk watchlist (required on cloud)",
-        ):
-            st.session_state["portfolio_risk_cloud_deferred"] = False
-            with st.spinner("Scanning portfolio for risk flags…"):
-                refresh_portfolio_risks(force=True)
-            st.rerun()
-        return
+    preload = PortfolioAnalysisPreload(
+        stock_data=st.session_state.get("portfolio_stock_cache", {}),
+        yield_channels=st.session_state.get("portfolio_yield_cache", {}),
+        vector_docs=st.session_state.get("portfolio_vector_docs", {}),
+    )
+    monitor = PortfolioRiskMonitorService()
+    summary = monitor.build_summary(rows, preload)
+    st.session_state[SESSION_SUMMARY_KEY] = monitor.summary_to_store(summary)
+    return summary
+
+
+@st.fragment
+def _portfolio_risk_sidebar_fragment() -> None:
+    """Show cached risk data; full scan only when the user requests it."""
+    hydrate_session_from_disk()
 
     summary = get_cached_attention_summary()
-    checked_at = st.session_state.get(SESSION_CHECKED_AT_KEY)
-    monitor = PortfolioRiskMonitorService()
-
-    if summary is None or monitor.is_stale(checked_at):
-        with st.spinner("Scanning portfolio for risk flags…"):
-            summary = refresh_portfolio_risks(force=True)
+    if summary is None and st.session_state.get("portfolio_details_rows"):
+        summary = _rebuild_attention_from_session()
 
     _render_risk_sidebar_content(summary)
 
@@ -126,13 +137,13 @@ def _render_risk_sidebar_content(summary: Optional[AttentionSummary] = None) -> 
     checked_at: Optional[datetime] = st.session_state.get(SESSION_CHECKED_AT_KEY)
 
     if checked_at:
-        st.caption(
-            f"Last scan: {checked_at.strftime('%Y-%m-%d %H:%M')} · "
-            "auto-refresh every hour"
-        )
+        st.caption(f"Last full reload: {checked_at.strftime('%Y-%m-%d %H:%M')}")
 
     if summary is None:
-        st.info("Risk scan has not completed yet.")
+        st.info(
+            "No portfolio snapshot yet. Use **Reload live data** in the sidebar "
+            "to load holdings and run the first scan (~1–2 min)."
+        )
         return
 
     service = PortfolioAttentionService()
@@ -151,18 +162,42 @@ def _render_risk_sidebar_content(summary: Optional[AttentionSummary] = None) -> 
                 },
             )
 
-    if summary.total == 0:
-        st.success("No negative risk flags.")
-    else:
+    if summary.opportunity_total > 0:
         c1, c2 = st.columns(2)
-        c1.metric("At risk", summary.total)
+        c1.metric("Buy opportunities", summary.opportunity_total)
         c2.metric("High priority", summary.high_count)
+        opp_df = service.to_dataframe(summary, list_kind="opportunity")
+        with st.expander(
+            f"Buy opportunities ({summary.opportunity_total})",
+            expanded=summary.total == 0,
+        ):
+            st.caption(
+                "Green / deep-value yield zones with supportive fundamentals — "
+                "candidates worth researching for a buy."
+            )
+            st.dataframe(
+                opp_df,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Weight %": st.column_config.NumberColumn(format="%.2f%%"),
+                    "Profit %": st.column_config.NumberColumn(format="%+.2f%%"),
+                },
+            )
 
+    if summary.total == 0:
+        st.success("No high-risk holdings flagged.")
+    else:
+        st.metric("High risk", summary.total)
         watch_df = service.to_dataframe(summary, list_kind="risk")
         with st.expander(
-            f"Risk watchlist ({summary.total})",
+            f"High-risk watchlist ({summary.total})",
             expanded=True,
         ):
+            st.caption(
+                "Only compounded, high-severity issues (deep losses, sell ratings, "
+                "expensive zones while underwater)."
+            )
             st.dataframe(
                 watch_df,
                 width="stretch",
@@ -174,10 +209,20 @@ def _render_risk_sidebar_content(summary: Optional[AttentionSummary] = None) -> 
             )
 
     if st.button(
-        "Refresh risk scan now",
+        "Refresh risk scan",
         key="portfolio_risk_manual_refresh",
-        help="Reload live prices and re-run all attention rules",
+        help="Re-run attention rules on cached holdings (no live price fetch)",
     ):
-        with st.spinner("Re-scanning…"):
+        with st.spinner("Updating watchlists…"):
+            _rebuild_attention_from_session()
+        st.rerun()
+        return
+
+    if st.button(
+        "Reload portfolio & scan",
+        key="portfolio_risk_full_reload",
+        help="Fetch live prices, rebuild charts, and refresh all watchlists (~1–2 min)",
+    ):
+        with st.spinner("Reloading portfolio…"):
             refresh_portfolio_risks(force=True)
         st.rerun()

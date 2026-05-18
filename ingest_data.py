@@ -236,6 +236,19 @@ Examples:
         action="store_true",
         help="Link portfolio.db holdings into the vector DB (creates missing symbols via yfinance)",
     )
+
+    parser.add_argument(
+        "--ensure-sp500",
+        action="store_true",
+        help="Add missing S&P 500 constituents to analysed stocks (yfinance enrich)",
+    )
+
+    parser.add_argument(
+        "--sp500-limit",
+        type=int,
+        default=None,
+        help="With --ensure-sp500, max new tickers to fetch this run",
+    )
     
     parser.add_argument(
         "--symbols",
@@ -402,7 +415,7 @@ Examples:
         from services.portfolio_vector_sync import sync_portfolio_to_vector_db
 
         print(f"\n{'='*50}")
-        print("  SYNC PORTFOLIO → VECTOR DB")
+        print("  SYNC PORTFOLIO → ANALYSED STOCKS")
         print(f"{'='*50}\n")
         stats = sync_portfolio_to_vector_db(enrich_missing=True)
         print(f"  Holdings linked: {stats.get('linked', 0)}")
@@ -412,6 +425,38 @@ Examples:
         if stats.get("still_missing"):
             print(f"  Still missing:   {', '.join(stats['still_missing'])}")
         print(f"  Total in DB:     {stats.get('total_documents', 0)}")
+        return 0
+
+    if args.ensure_sp500:
+        from services.sp500_peers_service import coverage_stats, ensure_sp500_in_vectordb
+
+        print(f"\n{'='*50}")
+        print("  S&P 500 → ANALYSED STOCKS")
+        print(f"{'='*50}\n")
+        before = coverage_stats()
+        print(
+            f"  Coverage before: {before['analysed_sp500']}/{before['universe_total']} "
+            f"({before['pct_covered']:.0f}%)"
+        )
+
+        def progress_cb(msg, current, total):
+            pct = (current / total) * 100 if total > 0 else 0
+            print(f"\r[{pct:5.1f}%] {msg}...", end="", flush=True)
+
+        stats = ensure_sp500_in_vectordb(
+            limit=args.sp500_limit,
+            progress_callback=progress_cb,
+        )
+        print("\n")
+        after = coverage_stats()
+        print("✓ S&P 500 ingest complete!")
+        print(f"  New documents:   {stats.get('created', 0)}")
+        print(f"  Errors:          {stats.get('errors', 0)}")
+        print(
+            f"  Coverage after:  {after['analysed_sp500']}/{after['universe_total']} "
+            f"({after['pct_covered']:.0f}%)"
+        )
+        print(f"  Total analysed:  {after['analysed_total']}")
         return 0
 
     # Handle enrich-existing action

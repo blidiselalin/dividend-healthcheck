@@ -178,8 +178,25 @@ class SectorService:
         cache_key = f"ext_{sector}_{len(exclude_symbols)}"
         if cache_key in cls._external_cache:
             return cls._external_cache[cache_key][:max_count]
+
+        try:
+            from services.sp500_peers_service import find_sector_peers
+
+            exclude_set = set(exclude_symbols) | set(DIVIDEND_KINGS) | set(DIVIDEND_ARISTOCRATS)
+            sp500_peers = find_sector_peers(
+                sector=sector,
+                exclude_symbols=list(exclude_set),
+                max_peers=max_count,
+            )
+            if sp500_peers:
+                for peer in sp500_peers:
+                    peer.setdefault("yield_quality", peer.get("interest", 0))
+                cls._external_cache[cache_key] = sp500_peers
+                return sp500_peers[:max_count]
+        except Exception:
+            pass
         
-        # Try multiple sector name variations
+        # Fallback: hardcoded reference list + live API
         candidates = []
         sector_parts = sector.split()
         sector_variations = [sector, sector.replace(" ", "")]

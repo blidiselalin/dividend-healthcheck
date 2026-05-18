@@ -19,7 +19,7 @@ from services.scoring import ScoringService, Recommendation
 from services.sector_service import SectorService
 from ui.components import UIComponents
 
-# Try to import VectorDB-first service (primary data source)
+# Try to import Analysed-stocks-first service (primary data source)
 try:
     from services.vectordb_service import VectorDBService, get_vectordb_service
     VECTORDB_SERVICE_AVAILABLE = True
@@ -91,10 +91,16 @@ def get_service_status() -> dict:
             if vdb_service.is_available:
                 stats = vdb_service.get_stats()
                 doc_count = stats.get("total_documents", 0)
-                status["mode"] = "VectorDB-first"
+                status["mode"] = "Analysed-stocks-first"
                 status["vector_db_available"] = True
                 status["is_db_primary"] = doc_count > 0
                 status["document_count"] = doc_count
+                try:
+                    from services.sp500_peers_service import coverage_stats
+                    cov = coverage_stats()
+                    status["sp500_coverage"] = cov
+                except Exception:
+                    status["sp500_coverage"] = None
                 status["dividend_kings"] = stats.get("dividend_kings", 0)
         except Exception:
             pass
@@ -198,6 +204,19 @@ class SingleStockView:
         pros, cons = ScoringService.get_investment_thesis(data)
 
         cls._render_header(data, rec)
+
+        from ui.analysis_evidence import render_analysis_evidence
+
+        portfolio_at = st.session_state.get("portfolio_details_time")
+
+        render_analysis_evidence(
+            symbol,
+            data=data,
+            vector_doc=vector_doc,
+            yield_channel_data=yield_channel_data,
+            portfolio_prices_at=portfolio_at,
+            expanded=True,
+        )
         st.divider()
 
         st.subheader("📊 Key Dividend Metrics")
@@ -225,13 +244,11 @@ class SingleStockView:
                 UIComponents.display_sector_comparison(data, score, sector_peers, external)
 
         st.divider()
-        st.subheader("📊 Dividend Yield Channels — \"Dividends Don't Lie\"")
-        st.caption(
-            "Geraldine Weiss (1988): A company's dividend yield history reveals "
-            "buying/selling opportunities more honestly than earnings reports."
-        )
         UIComponents.display_yield_channel_chart(
-            symbol, years=10, channel_data=yield_channel_data
+            symbol,
+            years=10,
+            channel_data=yield_channel_data,
+            show_header=True,
         )
 
         st.divider()
@@ -259,7 +276,9 @@ class SingleStockView:
         cls._render_report_section(data, score, rec, pros, cons, symbol)
 
         st.divider()
-        cls._render_data_source_footer(data, confidence)
+        cls._render_data_source_footer(
+            data, confidence, symbol=symbol, vector_doc=vector_doc
+        )
 
     @classmethod
     def render(cls) -> None:
@@ -542,38 +561,31 @@ class SingleStockView:
         return json.dumps(report, indent=2, default=str)
     
     @staticmethod
-    def _render_data_source_footer(data: StockData, confidence: float) -> None:
+    def _render_data_source_footer(
+        data: StockData,
+        confidence: float,
+        *,
+        symbol: str = "",
+        vector_doc=None,
+    ) -> None:
         """Render the data source footer with status information."""
+        from ui.analysis_evidence import render_analysis_evidence_footer
+
+        render_analysis_evidence_footer(
+            symbol or data.symbol,
+            data=data,
+            vector_doc=vector_doc,
+        )
         if USE_ENHANCED_SERVICE:
             status = get_service_status()
-            mode = status.get("mode", "Unknown")
-            doc_count = status.get("document_count", 0)
-            
             if status.get("is_db_primary"):
-                source_icon = "🗄️"
-                source_text = f"Vector DB ({doc_count} stocks)"
+                st.caption(
+                    f"Analysed stocks library · {status.get('document_count', 0)} tickers loaded"
+                )
             else:
-                source_icon = "🌐"
-                source_text = "Public API"
+                st.caption("Live API mode — run ingest to persist history locally")
         else:
-            source_icon = "🌐"
-            source_text = "Public API"
-            mode = "API-only"
-        
-        # Show data sources used for this specific stock
-        if data.data_sources:
-            used_sources = ", ".join(data.data_sources)
-        else:
-            used_sources = DATA_SOURCES["primary"]
-        
-        col1, col2, col3 = st.columns([2, 2, 1])
-        
-        with col1:
-            st.caption(f"{source_icon} **Source:** {used_sources}")
-        with col2:
-            st.caption(f"📊 **Mode:** {mode}")
-        with col3:
-            st.caption(f"✓ Quality: {confidence:.0f}%")
+            st.caption(f"Data: {DATA_SOURCES['primary']} (API only)")
 
 
 class FullAnalysisView:
@@ -581,7 +593,7 @@ class FullAnalysisView:
     
     @staticmethod
     def _run_analysis() -> pd.DataFrame:
-        """Run analysis on all Dividend Kings, prioritizing vector DB."""
+        """Run analysis on all Dividend Kings, prioritizing analysed stocks."""
         progress = st.progress(0)
         status = st.empty()
         
@@ -595,7 +607,7 @@ class FullAnalysisView:
             vdb_service = get_vectordb_service()
             if vdb_service.is_available:
                 stats = vdb_service.get_stats()
-                status.text(f"Loading from Vector DB ({stats.get('total_documents', 0)} stocks cached)...")
+                status.text(f"Loading from Analysed stocks ({stats.get('total_documents', 0)} stocks cached)...")
                 
                 all_data = vdb_service.get_stocks(DIVIDEND_KINGS)
                 
@@ -714,7 +726,7 @@ class FullAnalysisView:
         
         # Show source summary
         if db_hits > 0 or api_hits > 0:
-            st.info(f"📊 Data sources: **{db_hits}** from Vector DB, **{api_hits}** from API")
+            st.info(f"📊 Data sources: **{db_hits}** from Analysed stocks, **{api_hits}** from API")
         
         if results:
             return pd.DataFrame(results).sort_values("Score", ascending=False)
@@ -1039,7 +1051,7 @@ class FullAnalysisView:
             doc_count = status.get("document_count", 0)
             kings_count = status.get("dividend_kings", 0)
             if status.get("is_db_primary"):
-                st.caption(f"🗄️ Vector DB: {doc_count} stocks ({kings_count} Kings) • Fast local data")
+                st.caption(f"🗄️ Analysed stocks: {doc_count} stocks ({kings_count} Kings) • Fast local data")
             else:
                 st.caption("🌐 Public API • Run `python ingest_data.py --enrich` to populate local DB")
         else:

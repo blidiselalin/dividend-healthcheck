@@ -472,10 +472,10 @@ class UIComponents:
         # External reference stocks (top public dividend payers NOT in config)
         if external_competitors:
             st.markdown("---")
-            st.markdown("**🔍 Top Reference Stocks (Not in Analysis List):**")
+            st.markdown("**🔍 S&P 500 peers (same sector)**")
             st.caption(
-                "These are highly-rated public dividend payers in the same sector "
-                "for comparison — not part of your current analysis list."
+                "Dividend-paying S&P 500 names from analysed stocks — "
+                "ranked by yield quality and dividend history (not in your portfolio)."
             )
             ext_rows = [UIComponents._build_comparison_row(c) for c in external_competitors]
             UIComponents._display_comparison_table(ext_rows)
@@ -609,6 +609,7 @@ class UIComponents:
         years: int = 10,
         *,
         channel_data=None,
+        show_header: bool = True,
     ) -> bool:
         """
         Display enhanced Dividend Yield Channels chart with Geraldine Weiss methodology.
@@ -642,137 +643,88 @@ class UIComponents:
             st.warning(f"Insufficient dividend history for {symbol} yield channel analysis")
             return False
         
-        # Get formatted analysis
+        from ui.charts import show_chart
+        from utils.chart_theme import YIELD_ZONE_COLORS
+
         analysis = service.format_analysis_summary(data)
-        
-        # Header with Weiss methodology attribution
-        st.markdown(f"### 📊 Dividend Yield Channels • *Dividends Don't Lie*")
-        st.caption(
-            f"Analysis based on Geraldine Weiss methodology (1988) • "
-            f"{data.data_points:,} data points over {years} years"
-        )
-        
-        # Main metrics row
-        col1, col2, col3, col4, col5 = st.columns(5)
-        
-        with col1:
-            zone_emoji = analysis["zone_emoji"]
-            st.metric(
-                "Valuation Zone",
-                f"{zone_emoji} {data.zone}",
-                f"Percentile: {data.percentile:.0f}%",
-                delta_color="normal" if data.percentile >= 50 else "inverse"
+
+        if show_header:
+            st.markdown("### Dividend Yield Channels · *Dividends Don't Lie*")
+            st.caption(
+                f"Geraldine Weiss (1988): yield vs its own history shows if price is fair. "
+                f"{data.data_points:,} weekly points · ${data.current_dividend:.2f}/yr dividend today."
             )
-        
-        with col2:
-            delta = analysis["yield_vs_median"]
-            delta_str = f"{delta:+.2f}pp vs median"
-            st.metric(
-                "Current Yield",
-                f"{data.current_yield:.2f}%",
-                delta_str,
-                delta_color="normal" if delta >= 0 else "inverse"
+
+        zone_color = YIELD_ZONE_COLORS.get(data.zone, "#0f766e")
+        headline, sub = st.columns([1, 2])
+        with headline:
+            st.markdown(
+                f"<p style='margin:0;font-size:1.45rem;font-weight:600;color:{zone_color}'>"
+                f"{analysis['zone_emoji']} {data.zone}</p>"
+                f"<p style='margin:0;color:#64748b;font-size:0.9rem'>"
+                f"Yield percentile {data.percentile:.0f}% · {analysis['action']}</p>",
+                unsafe_allow_html=True,
             )
-        
-        with col3:
-            gap = analysis["gap_to_fair_pct"]
-            st.metric(
-                "Fair Value",
-                f"${data.fair_value_price:.2f}",
-                f"{gap:+.1f}% gap",
-                delta_color="normal" if gap > 0 else "inverse"
-            )
-        
-        with col4:
-            st.metric(
-                f"Median Yield",
+        with sub:
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Current yield", f"{data.current_yield:.2f}%", f"{analysis['yield_vs_median']:+.2f}pp vs median")
+            m2.metric("Share price", f"${data.current_price:.2f}", f"Fair ≈ ${data.fair_value_price:.2f}")
+            m3.metric(
+                "Median yield (10Y)",
                 f"{data.median_yield:.2f}%",
-                f"10Y Range: {data.min_yield:.1f}-{data.max_yield:.1f}%"
+                f"Range {data.min_yield:.1f}–{data.max_yield:.1f}%",
             )
-        
-        with col5:
-            if data.dividend_cagr_5y is not None:
-                growth_delta = "Growing" if data.dividend_cagr_5y > 0 else "Declining"
-                st.metric(
-                    "5Y Div CAGR",
-                    f"{data.dividend_cagr_5y:+.1f}%",
-                    growth_delta,
-                    delta_color="normal" if data.dividend_cagr_5y > 0 else "inverse"
-                )
-            else:
-                st.metric("Annual Dividend", f"${data.current_dividend:.2f}", "Per share")
-        
-        # Action recommendation with color-coded styling
-        action_color = analysis["action_color"]
-        action = analysis["action"]
-        action_detail = analysis["action_detail"]
-        
-        if data.zone in ["Deep Value", "Value"]:
-            st.success(f"**{action}** • {action_detail}")
-        elif data.zone == "Fair Value":
-            st.info(f"**{action}** • {action_detail}")
-        elif data.zone == "Caution":
-            st.warning(f"**{action}** • {action_detail}")
-        else:
-            st.error(f"**{action}** • {action_detail}")
-        
-        # Weiss interpretation
-        weiss_text = service.get_weiss_interpretation(data)
-        st.markdown(weiss_text)
-        
-        # Interactive chart
-        fig = service.create_yield_channel_chart(data, height=600, show_annotations=True)
+
+        st.caption(analysis["action_detail"])
+
+        with st.expander("How to read this chart", expanded=False):
+            st.markdown(
+                """
+                **Top — price**  
+                Green → red bands are *fixed* levels implied by today’s dividend at historical yields
+                (not wavy lines). The teal line is the actual share price.
+
+                **Bottom — yield**  
+                Orange = trailing dividend yield. Dashed lines = 10Y percentiles.
+                **Higher yield usually means a cheaper price** vs this stock’s past.
+
+                | Zone | Typical read |
+                |------|----------------|
+                | Deep Value / Value | Yield high vs history — investigate for entry |
+                | Fair Value | Near median yield — hold / accumulate |
+                | Caution / Expensive | Yield low vs history — patience or trim |
+                """
+            )
+
+        fig = service.create_yield_channel_chart(data, height=480, show_annotations=False)
         if fig:
-            st.plotly_chart(fig, width="stretch")
-        
-        # Price targets grid
-        st.markdown("---")
-        st.markdown("#### 🎯 Yield-Based Price Targets")
-        st.caption("Based on historical yield percentiles and current annual dividend")
-        
-        cols = st.columns(5)
-        
+            show_chart(fig, key=f"yield_channel_{symbol}")
+
+        st.markdown("#### Price targets at today’s dividend")
+        zone_to_label = {
+            "Expensive": "Expensive",
+            "Caution": "Caution",
+            "Fair Value": "Fair",
+            "Value": "Value",
+            "Deep Value": "Deep value",
+        }
+        tcols = st.columns(5)
         targets = [
-            ("🔴 Expensive", data.expensive_price, f"<{data.yield_10th:.1f}%", "#f44336"),
-            ("🟠 Caution", data.caution_price, f"<{data.yield_25th:.1f}%", "#ff9800"),
-            ("🟡 Fair Value", data.fair_value_price, f"≈{data.median_yield:.1f}%", "#ffc107"),
-            ("🟢 Value", data.value_price, f">{data.yield_75th:.1f}%", "#4caf50"),
-            ("💎 Deep Value", data.deep_value_price, f">{data.yield_90th:.1f}%", "#1b5e20"),
+            ("Expensive", data.expensive_price, data.yield_10th),
+            ("Caution", data.caution_price, data.yield_25th),
+            ("Fair", data.fair_value_price, data.median_yield),
+            ("Value", data.value_price, data.yield_75th),
+            ("Deep value", data.deep_value_price, data.yield_90th),
         ]
-        
-        for col, (label, price, yield_range, color) in zip(cols, targets):
-            pct_from_current = ((price / data.current_price) - 1) * 100
-            is_current = (
-                (label == "💎 Deep Value" and data.zone == "Deep Value") or
-                (label == "🟢 Value" and data.zone == "Value") or
-                (label == "🟡 Fair Value" and data.zone == "Fair Value") or
-                (label == "🟠 Caution" and data.zone == "Caution") or
-                (label == "🔴 Expensive" and data.zone == "Expensive")
-            )
-            
+        for col, (label, price, yld) in zip(tcols, targets):
+            active = zone_to_label.get(data.zone) == label
             with col:
-                border = "3px solid" if is_current else "1px solid"
-                st.markdown(f"""
-                <div style="
-                    border: {border} {color}; 
-                    border-radius: 8px; 
-                    padding: 12px; 
-                    text-align: center;
-                    background: {'rgba(0,0,0,0.05)' if is_current else 'transparent'};
-                ">
-                    <div style="font-weight: bold; margin-bottom: 4px;">{label}</div>
-                    <div style="font-size: 1.3em; color: {color}; font-weight: bold;">
-                        ${price:.2f}
-                    </div>
-                    <div style="font-size: 0.85em; color: #666;">
-                        Yield {yield_range}
-                    </div>
-                    <div style="font-size: 0.8em; color: {'green' if pct_from_current > 0 else 'red'};">
-                        {pct_from_current:+.1f}% from now
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-        
+                st.metric(
+                    label + (" ←" if active else ""),
+                    f"${price:.2f}",
+                    f"at {yld:.1f}% yield",
+                )
+
         # Educational section with Weiss methodology
         with st.expander("📖 Understanding the Dividends Don't Lie Strategy", expanded=False):
             st.markdown("""

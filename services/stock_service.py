@@ -36,7 +36,9 @@ class StockService:
         return default
     
     @classmethod
-    def _calc_dividend_history(cls, stock: Any, info: Dict) -> Optional[DividendHistory]:
+    def _calc_dividend_history(
+        cls, stock: Any, info: Dict, symbol: str
+    ) -> Optional[DividendHistory]:
         """
         Calculate comprehensive dividend history metrics.
         
@@ -56,17 +58,16 @@ class StockService:
             
             # Fallback to history if dividends property fails
             if dividends is None or dividends.empty:
-                try:
-                    hist = stock.history(period="max")
-                    if "Dividends" in hist.columns:
+                from utils.yfinance_history import fetch_price_history
+
+                for period in ("max", "10y", "5y"):
+                    hist = fetch_price_history(symbol, period=period)
+                    if hist is not None and not hist.empty and "Dividends" in hist.columns:
                         dividends = hist["Dividends"][hist["Dividends"] > 0]
-                except Exception:
-                    try:
-                        hist = stock.history(period="10y")
-                        if "Dividends" in hist.columns:
-                            dividends = hist["Dividends"][hist["Dividends"] > 0]
-                    except Exception:
-                        return None
+                        if not dividends.empty:
+                            break
+                if dividends is None or dividends.empty:
+                    return None
             
             if dividends is None or dividends.empty:
                 return None
@@ -154,15 +155,16 @@ class StockService:
             return None
     
     @classmethod
-    def _calc_returns(cls, stock: Any) -> Dict[str, Optional[float]]:
+    def _calc_returns(cls, stock: Any, symbol: str) -> Dict[str, Optional[float]]:
         """Calculate price returns for various periods."""
+        from utils.yfinance_history import fetch_price_history
+
         returns = {"1y": None, "5y": None, "1y_total": None}
-        
+
         try:
-            hist_1y = stock.history(period="1y")
+            hist_1y = fetch_price_history(symbol, period="1y")
             if len(hist_1y) >= 200:
                 returns["1y"] = ((hist_1y["Close"].iloc[-1] / hist_1y["Close"].iloc[0]) - 1) * 100
-                # Estimate total return (price + dividends)
                 if "Dividends" in hist_1y.columns:
                     total_div = hist_1y["Dividends"].sum()
                     start_price = hist_1y["Close"].iloc[0]
@@ -170,14 +172,14 @@ class StockService:
                     returns["1y_total"] = ((end_price + total_div) / start_price - 1) * 100
         except Exception:
             pass
-        
+
         try:
-            hist_5y = stock.history(period="5y")
+            hist_5y = fetch_price_history(symbol, period="5y")
             if len(hist_5y) >= 1000:
                 returns["5y"] = ((hist_5y["Close"].iloc[-1] / hist_5y["Close"].iloc[0]) - 1) * 100
         except Exception:
             pass
-        
+
         return returns
     
     @classmethod
@@ -286,7 +288,7 @@ class StockService:
                 return None
             
             price = cls._safe_get(info, "currentPrice", "regularMarketPrice", default=0)
-            returns = cls._calc_returns(stock)
+            returns = cls._calc_returns(stock, symbol)
             derived = cls._calc_derived_metrics(info, price)
             
             # Build data object with all available metrics
@@ -300,7 +302,7 @@ class StockService:
                 dividend_yield_pct=cls._calc_dividend_yield(info, price),
                 dividend_rate=info.get("dividendRate"),
                 payout_ratio_pct=cls._to_percent(info.get("payoutRatio"), MAX_PAYOUT_RATIO_PCT),
-                dividend_history=cls._calc_dividend_history(stock, info),
+                dividend_history=cls._calc_dividend_history(stock, info, symbol),
                 dividend_coverage=derived.get("dividend_coverage"),
                 
                 # Price & valuation

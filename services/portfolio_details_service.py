@@ -135,6 +135,8 @@ class PortfolioDetailsService:
 
     def build_rows_with_cache(
         self,
+        *,
+        use_live_prices: bool = False,
     ) -> Tuple[List[PortfolioDetailRow], PortfolioAnalysisPreload]:
         holdings = self.store.list_holdings()
         symbols = [holding.symbol for holding in holdings]
@@ -149,22 +151,36 @@ class PortfolioDetailsService:
                 executor.submit(_fetch_statistics_stock, symbol, documents.get(symbol)): symbol
                 for symbol in symbols
             }
-            price_futures = {
-                executor.submit(self._fetch_latest_price, symbol): symbol
-                for symbol in symbols
-            }
+            price_futures = {}
+            if use_live_prices:
+                price_futures = {
+                    executor.submit(self._fetch_latest_price, symbol): symbol
+                    for symbol in symbols
+                }
             for future in as_completed(stats_futures):
                 symbol = stats_futures[future]
                 try:
                     stats_cache[symbol] = future.result()
                 except Exception:
                     stats_cache[symbol] = None
-            for future in as_completed(price_futures):
-                symbol = price_futures[future]
-                try:
-                    live_prices[symbol] = future.result()
-                except Exception:
-                    live_prices[symbol] = None
+            if use_live_prices:
+                for future in as_completed(price_futures):
+                    symbol = price_futures[future]
+                    try:
+                        live_prices[symbol] = future.result()
+                    except Exception:
+                        live_prices[symbol] = None
+
+        if not use_live_prices:
+            for symbol in symbols:
+                document = documents.get(symbol)
+                stats = stats_cache.get(symbol)
+                price = None
+                if document and document.current_price is not None:
+                    price = float(document.current_price)
+                elif stats and stats.price is not None:
+                    price = float(stats.price)
+                live_prices[symbol] = price
 
         for symbol in symbols:
             document = documents.get(symbol)
@@ -223,6 +239,7 @@ class PortfolioDetailsService:
                     dividend_pay_date=pay_date,
                     ex_dividend_date=ex_date_override,
                     has_db_stats=holding.symbol in documents,
+                    use_live_prices=use_live_prices,
                 )
             )
 
@@ -261,6 +278,8 @@ class PortfolioDetailsService:
         dividend_pay_date: Optional[date],
         ex_dividend_date: Optional[date],
         has_db_stats: bool,
+        *,
+        use_live_prices: bool = False,
     ) -> PortfolioDetailRow:
         current_price = live_price
         current_value = current_price * holding.shares if current_price is not None else None
@@ -304,12 +323,13 @@ class PortfolioDetailsService:
         score = ScoringService.calculate_score(stats) if stats else 0
         analyst_rating = self._format_analyst_rating(stats, score)
         computed_dividend = self._format_computed_dividend(dividend_per_share, dividend_yield)
+        price_label = "live market price" if use_live_prices else "cached price (analysed stocks)"
         if has_db_stats:
-            data_source = "live market price; statistics from vector db"
+            data_source = f"{price_label}; statistics from analysed stocks"
         elif stats and stats.data_sources:
-            data_source = f"live market price; statistics from {', '.join(stats.data_sources)}"
+            data_source = f"{price_label}; statistics from {', '.join(stats.data_sources)}"
         else:
-            data_source = "live market price; statistics from public api"
+            data_source = f"{price_label}; statistics from public api"
 
         return PortfolioDetailRow(
             company=stats.name if stats and stats.name else holding.symbol,

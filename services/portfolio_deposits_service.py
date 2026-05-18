@@ -4,6 +4,8 @@ Summaries and charts for monthly account deposits.
 
 from __future__ import annotations
 
+from utils.chart_theme import style_figure
+
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -122,7 +124,7 @@ class PortfolioDepositsService:
         )
         fig.update_yaxes(title_text="Deposit €", secondary_y=False)
         fig.update_yaxes(title_text="Portfolio €", secondary_y=True)
-        return fig
+        return style_figure(fig)
 
     def create_cumulative_chart(self, deposits: Optional[List[MonthlyDeposit]] = None):
         if not PLOTLY_AVAILABLE:
@@ -157,4 +159,4 @@ class PortfolioDepositsService:
             margin=dict(t=50, b=120),
             xaxis=dict(tickangle=-45),
         )
-        return fig
+        return style_figure(fig)
