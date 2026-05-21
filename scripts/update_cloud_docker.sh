@@ -58,6 +58,13 @@ if [[ "$SYNC_PORTFOLIO" == true ]] || [[ "$RUN_INGEST" == true ]]; then
   docker compose exec -T dividendscope python ingest_data.py --sync-portfolio
 fi
 
+PUBLIC_URL="${DIVIDENDSCOPE_PUBLIC_URL:-https://pulse-dividend.duckdns.org}"
+VM_IP="$(curl -sf -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip 2>/dev/null || echo '')"
 echo ""
-echo "Done. App: http://$(curl -sf -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip 2>/dev/null || echo 'YOUR_VM_IP'):8501"
+echo "Done."
+echo "  Public URL: ${PUBLIC_URL}"
+echo "  Local only: http://127.0.0.1:8501 (Caddy proxies :443 → here)"
+if [[ -n "$VM_IP" ]]; then
+  echo "  Direct IP (if firewall 8501 open): http://${VM_IP}:8501"
+fi
 echo "Logs: docker compose logs -f dividendscope"

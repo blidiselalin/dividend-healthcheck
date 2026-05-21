@@ -1,20 +1,34 @@
-# Persistent data: named volume "motion_dividendscope-persistent-data" → /data in the container
-#   /data/vectordb     ChromaDB (vector store)
-#   /data/portfolio.db SQLite (holdings, journal, deposits)
-# Survives: restart, rebuild (docker compose up --build), container recreate
-# Deleted only by: docker compose down -v   OR   docker volume rm ...
+# Production URL (DuckDNS + Caddy on host): https://pulse-dividend.duckdns.org
+# Streamlit binds localhost:8501 only; Caddy terminates HTTPS on 443 → 127.0.0.1:8501
+#
+# Persistent data: volume "dividendscope-persistent-data" → /data in the container
+#   /data/vectordb     ChromaDB
+#   /data/portfolio.db SQLite
+# Rebuild: docker compose up -d --build
+# Never run: docker compose down -v  (deletes the volume)
 
 services:
   dividendscope:
     build: .
+    image: dividend-healthcheck-dividendscope
     container_name: dividendscope
     restart: unless-stopped
     ports:
-      - "8501:8501"
+      - "127.0.0.1:8501:8501"
     environment:
       DIVIDENDSCOPE_DATA_DIR: /data
     volumes:
       - dividendscope-data:/data
+    command:
+      - streamlit
+      - run
+      - app.py
+      - --server.port=8501
+      - --server.address=0.0.0.0
+      - --server.headless=true
+      - --browser.gatherUsageStats=false
+      - --server.enableCORS=false
+      - --server.enableXsrfProtection=false
 
 volumes:
   dividendscope-data:

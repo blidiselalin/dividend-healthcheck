@@ -106,13 +106,34 @@ docker compose up -d --build
 docker compose ps
 ```
 
-Open in your browser:
+Streamlit listens on **`127.0.0.1:8501`** only (not public `:8501`). **Caddy** on the VM serves **HTTPS** on 443 and proxies to that port.
+
+Production URL (DuckDNS example):
 
 ```text
-http://EXTERNAL_IP:8501
+https://pulse-dividend.duckdns.org
 ```
 
-Replace `EXTERNAL_IP` with the VM’s external IP.
+Manual run (same flags as `docker compose`; image must be built first):
+
+```bash
+./deploy/gcp/docker-run.sh
+```
+
+Or:
+
+```bash
+docker compose build
+docker run -d --name dividendscope --restart unless-stopped \
+  -p 127.0.0.1:8501:8501 \
+  -e DIVIDENDSCOPE_DATA_DIR=/data \
+  -v dividendscope-persistent-data:/data \
+  dividend-healthcheck-dividendscope \
+  streamlit run app.py --server.port=8501 --server.address=0.0.0.0 \
+  --server.enableCORS=false --server.enableXsrfProtection=false
+```
+
+Direct IP (debug only, if firewall allows **8501**): `http://EXTERNAL_IP:8501`
 
 ### Persistent data (vector DB + SQLite)
 

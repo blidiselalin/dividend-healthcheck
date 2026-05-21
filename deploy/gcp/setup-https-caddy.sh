@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Install Caddy on the GCP VM and reverse-proxy HTTPS → Streamlit (localhost:8501).
-# Prereqs: DNS A-record for DOMAIN → this VM's static external IP; firewall tcp 80,443.
+# Prereqs: hostname points at this VM (DuckDNS or A-record); firewall tcp 80,443.
 #
 # Usage (on the VM):
+#   export DOMAIN=pulse-dividend.duckdns.org
 #   export DOMAIN=app.yourdomain.com
 #   curl -fsSL https://raw.githubusercontent.com/.../setup-https-caddy.sh | bash
 #   # or from repo:
