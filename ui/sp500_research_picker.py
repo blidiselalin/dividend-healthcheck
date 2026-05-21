@@ -27,13 +27,19 @@ def filter_sp500_symbols(
     symbols: List[str],
     query: str,
     *,
-    limit: int = 100,
+    limit: Optional[int] = None,
 ) -> List[str]:
-    """Match ticker substring (case-insensitive)."""
+    """
+    Match ticker substring (case-insensitive).
+
+    When ``limit`` is None and the query is empty, returns the full S&P list.
+    When searching, ``limit`` caps matches for UI responsiveness (default 200).
+    """
     needle = query.strip().upper()
     if not needle:
-        return symbols[:limit]
-    return [symbol for symbol in symbols if needle in symbol][:limit]
+        return symbols if limit is None else symbols[:limit]
+    cap = limit if limit is not None else 200
+    return [symbol for symbol in symbols if needle in symbol][:cap]
 
 
 def render_sp500_research_picker(*, key_prefix: str = "home") -> None:
@@ -61,6 +67,13 @@ def render_sp500_research_picker(*, key_prefix: str = "home") -> None:
         st.warning("No S&P tickers match that search.")
         return
 
+    if not search.strip():
+        st.caption(
+            f"Dropdown lists all **{len(filtered)}** S&P tickers (scroll or type above to narrow)."
+        )
+    elif len(filtered) >= 200:
+        st.caption(f"Showing first **{len(filtered)}** matches — type more characters to narrow.")
+
     default_symbol = filtered[0] if filtered else "KO"
     if default_symbol not in filtered:
         default_symbol = filtered[0]
@@ -70,7 +83,7 @@ def render_sp500_research_picker(*, key_prefix: str = "home") -> None:
         options=filtered,
         index=filtered.index(default_symbol) if default_symbol in filtered else 0,
         key=f"{key_prefix}_sp500_pick",
-        help="Results update as you type in the search box above.",
+        help="Full S&P 500 list when search is empty; type in the box above to filter.",
     )
 
     if st.button(

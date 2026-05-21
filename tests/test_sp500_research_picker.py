@@ -11,9 +11,15 @@ def test_filter_sp500_symbols_substring() -> None:
     assert filter_sp500_symbols(symbols, "AA") == ["AAPL"]
 
 
-def test_filter_sp500_symbols_empty_query_returns_head() -> None:
+def test_filter_sp500_symbols_empty_query_returns_all() -> None:
     symbols = ["KO", "PEP", "JNJ"]
+    assert filter_sp500_symbols(symbols, "") == symbols
     assert filter_sp500_symbols(symbols, "", limit=2) == ["KO", "PEP"]
+
+
+def test_filter_sp500_symbols_search_caps_matches() -> None:
+    symbols = [f"S{i}" for i in range(300)]
+    assert len(filter_sp500_symbols(symbols, "S", limit=50)) == 50
 
 
 def test_sp500_symbol_list_loads() -> None:

@@ -5,6 +5,7 @@ This module contains the main view classes optimized for dividend investors,
 with key metrics prominently displayed on the first page.
 """
 
+from datetime import datetime
 from typing import Optional
 
 import streamlit as st
@@ -255,7 +256,20 @@ class SingleStockView:
     ) -> None:
         """Render the report generation and export section."""
         st.subheader("📄 Research Report")
-        
+
+        sector_txt = data.sector if data.sector and data.sector != "N/A" else "—"
+        streak = data.dividend_history.consecutive_years if data.dividend_history else 0
+        yield_txt = (
+            f"{data.dividend_yield_pct:.2f}%"
+            if data.dividend_yield_pct is not None
+            else "—"
+        )
+        payout_txt = (
+            f"{data.payout_ratio_pct:.0f}% of earnings"
+            if data.payout_ratio_pct is not None
+            else "—"
+        )
+
         # Report preview in a styled container
         with st.container():
             st.markdown(
@@ -266,7 +280,7 @@ class SingleStockView:
                         📊 {data.name} ({symbol}) - Research Report
                     </h4>
                     <p style="color: #666; margin: 0 0 12px 0;">
-                        {data.dividend_tier} | {data.sector} | Generated {datetime.now().strftime('%B %d, %Y')}
+                        {data.dividend_tier} | {sector_txt} | Generated {datetime.now().strftime('%B %d, %Y')}
                     </p>
                 </div>
                 """,
@@ -287,14 +301,12 @@ class SingleStockView:
             """)
         
         with col2:
-            # Key metrics preview box
-            streak = data.dividend_history.consecutive_years if data.dividend_history else 0
             st.markdown("**Key Highlights:**")
             st.markdown(f"""
             - **Score:** {score}/100 ({rec.label})
-            - **Yield:** {data.dividend_yield_pct:.2f}% 
+            - **Yield:** {yield_txt}
             - **Streak:** {streak} years
-            - **Payout:** {data.payout_ratio_pct:.0f}% of earnings
+            - **Payout:** {payout_txt}
             """)
         
         st.markdown("")
