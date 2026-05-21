@@ -76,6 +76,7 @@ def _render_admin_users() -> None:
         rows.append(
             {
                 "Email": item.email,
+                "User id": item.id,
                 "Name": item.name or "—",
                 "Holdings": _holding_count_for_user(item.id),
                 "Active": "yes" if item.is_active else "no",

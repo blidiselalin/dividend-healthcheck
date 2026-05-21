@@ -43,6 +43,9 @@ fi
 
 echo ">>> Rebuild image and restart container (data volume preserved)"
 docker compose build --pull
+# Remove stale manual container (docker run --name dividendscope) so compose can recreate
+docker compose down --remove-orphans 2>/dev/null || true
+docker rm -f dividendscope 2>/dev/null || true
 docker compose up -d
 
 echo ">>> Container status"

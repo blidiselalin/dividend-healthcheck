@@ -152,6 +152,65 @@ Survives **restart**, **`docker compose up --build`**, and **VM reboot**.
 ./scripts/docker_volume_status.sh   # list vectordb size
 ```
 
+### Migrate your local portfolio to the cloud (one user, multi-user safe)
+
+Holdings live in **SQLite** (`portfolio.db`). With Google sign-in, each **registered** account has:
+
+| Store | Path |
+|--------|------|
+| Account registry | `/data/users.db` (email → user id) |
+| That user's portfolio | `/data/users/<user-id>/portfolio.db` |
+
+Other users on the same VM keep their own folders — migration **never** writes to all `/data/users/*`.
+
+#### Procedure when other users already exist
+
+1. **Register on the cloud** (creates your row in `users.db` and folder `/data/users/<id>/`):
+   - Open **https://pulse-dividend.duckdns.org**
+   - Sign in with the **same Google account** as on your Mac
+   - Sign out is optional; you only need one successful login
+
+2. **From your Mac** (configure `deploy.env` with GCP or `SSH_HOST`):
+
+```bash
+cp deploy.env.example deploy.env
+chmod +x scripts/migrate_portfolio_to_cloud.sh
+
+# See registered emails, user ids, and holdings (others listed but not touched)
+./scripts/migrate_portfolio_to_cloud.sh --list-users
+
+# Plan
+./scripts/migrate_portfolio_to_cloud.sh --email you@gmail.com --dry-run
+
+# Upload local ~/.dividendscope/data/portfolio.db to that user only
+./scripts/migrate_portfolio_to_cloud.sh --email you@gmail.com --sync-portfolio --yes
+```
+
+3. **Sign in again** on the cloud app — holdings should match local.
+
+**Admin sidebar** (Users table) shows **User id** for each registered account if you prefer `--user-id` instead of `--email`.
+
+Local DB default: `~/.dividendscope/data/portfolio.db`
+
+#### Safety
+
+- **`--email`** resolves exactly one user from `users.db` (recommended when several people use the app)
+- **`--user-id`** from the `REG` line in `--list-users` if you already know the folder name
+- **`--legacy-only`** updates only `/data/portfolio.db` (does not touch `/data/users/*`; admin first-login copy only)
+- Backs up target as `portfolio.db.bak.<timestamp>` before replace
+- Aborts if **that user's** cloud file has more holdings than local (`--force` to override)
+
+Optional in `deploy.env`: `MIGRATE_EMAIL=you@gmail.com`
+
+#### Manual copy on the VM (one path only)
+
+```bash
+# Get <user-id> from: docker exec dividendscope sqlite3 /data/users.db \
+#   "SELECT id, email FROM users;"
+docker cp ~/portfolio.db dividendscope:/data/users/<only-your-user-id>/portfolio.db
+docker compose restart dividendscope
+```
+
 ---
 
 ## Step 7 — Build the database (first time, ~15–25 min)
@@ -374,6 +433,7 @@ app.yourdomain.com {
 
 | Problem | Fix |
 |---------|-----|
+| `container name "/dividendscope" is already in use` | `docker rm -f dividendscope` then `docker compose up -d --build` (data volume is kept) |
 | Page does not load | Firewall rule tcp **8501**; VM running; `docker compose ps` |
 | Out of memory | Use **e2-small** or **e2-medium** |
 | Empty vector DB | Run ingest commands in Step 7 |
