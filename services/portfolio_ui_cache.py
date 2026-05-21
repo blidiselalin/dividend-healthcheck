@@ -6,14 +6,15 @@ Reload live market data only when the user clicks **Reload live data** in the si
 
 from __future__ import annotations
 
-import logging
 import pickle
 from dataclasses import asdict
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+from utils.logging_config import get_logger
+
+logger = get_logger("dividendscope.portfolio")
 
 def _cache_path() -> Path:
     try:
@@ -79,6 +80,11 @@ def save_session_cache() -> None:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         with cache_path.open("wb") as handle:
             pickle.dump(bundle, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        logger.info(
+            "Portfolio UI cache saved path=%s holdings=%d",
+            cache_path,
+            len(bundle.get("rows") or []),
+        )
     except Exception as exc:
         logger.warning("Could not save portfolio UI cache: %s", exc)
 
@@ -126,6 +132,12 @@ def hydrate_session_from_disk() -> bool:
         st.session_state["portfolio_details_time"] = bundle["portfolio_details_time"]
     st.session_state["portfolio_analysis_ready"] = bool(bundle.get("portfolio_analysis_ready"))
     st.session_state["portfolio_show_analysis"] = True
+    logger.info(
+        "Portfolio UI cache loaded path=%s holdings=%d saved_at=%s",
+        cache_path,
+        len(rows_payload),
+        bundle.get("saved_at", "?"),
+    )
     return True
 
 

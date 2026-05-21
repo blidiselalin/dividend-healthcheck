@@ -8,14 +8,14 @@ This service is designed to be the primary data source for the UI,
 eliminating the need for live API calls when the database is populated.
 """
 
-import logging
 from typing import Optional, List, Dict, Any
 from datetime import date, datetime
 
 from models.stock import StockData
 from utils.converters import document_to_stock_data
+from utils.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger("dividendscope.vectordb")
 
 # Import config for default paths
 try:

@@ -18,6 +18,9 @@ from services.scoring import ScoringService
 from services.stock_service import StockService
 from services.portfolio_analysis_preload import PortfolioAnalysisPreload, preload_portfolio_analysis
 from utils.converters import document_to_stock_data
+from utils.logging_config import get_logger
+
+logger = get_logger("dividendscope.portfolio")
 
 try:
     from data_ingestion.models import StockDocument
@@ -140,6 +143,14 @@ class PortfolioDetailsService:
     ) -> Tuple[List[PortfolioDetailRow], PortfolioAnalysisPreload]:
         holdings = self.store.list_holdings()
         symbols = [holding.symbol for holding in holdings]
+        if use_live_prices:
+            logger.info(
+                "Reloading portfolio market data (%d holdings): %s",
+                len(symbols),
+                ", ".join(symbols[:12]) + ("…" if len(symbols) > 12 else ""),
+            )
+        elif not symbols:
+            logger.info("Portfolio empty (no holdings in database)")
         documents = self._load_documents(symbols)
         stats_cache: Dict[str, Optional[StockData]] = {}
         live_prices: Dict[str, Optional[float]] = {}

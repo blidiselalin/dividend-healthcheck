@@ -4,13 +4,14 @@ Move legacy single-user portfolio files into the first Google account's folder.
 
 from __future__ import annotations
 
-import logging
 import shutil
 from pathlib import Path
 
 from config import DATA_DIR
+from utils.logging_config import get_logger
+from utils.portfolio_db import holding_count as _holding_count_fn
 
-logger = logging.getLogger(__name__)
+logger = get_logger("dividendscope.migration")
 
 LEGACY_PORTFOLIO_DB = DATA_DIR / "portfolio.db"
 LEGACY_SESSION_CACHE = DATA_DIR / "portfolio_ui_session.pkl"
@@ -18,16 +19,7 @@ MIGRATION_MARKER = DATA_DIR / ".legacy_portfolio_migrated"
 
 
 def _holding_count(db_path: Path) -> int:
-    if not db_path.is_file():
-        return 0
-    import sqlite3
-
-    try:
-        with sqlite3.connect(db_path) as connection:
-            row = connection.execute("SELECT COUNT(*) FROM holdings").fetchone()
-        return int(row[0]) if row else 0
-    except Exception:
-        return 0
+    return _holding_count_fn(db_path)
 
 
 def _copy_legacy_files(user_dir: Path) -> bool:

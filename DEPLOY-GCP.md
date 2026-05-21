@@ -295,8 +295,9 @@ chmod +x scripts/update_cloud_docker.sh
 ## Step 10 — Useful commands
 
 ```bash
-# Logs
-docker compose logs -f
+# Logs (auth, portfolio hydrate/reload, vector DB init → stdout)
+docker compose logs -f dividendscope
+# More detail: set DIVIDENDSCOPE_LOG_LEVEL=DEBUG in docker-compose.yml
 
 # Restart after git pull (same as update script)
 git pull

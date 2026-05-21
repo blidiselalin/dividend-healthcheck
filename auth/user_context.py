@@ -8,6 +8,10 @@ from pathlib import Path
 from typing import Optional
 
 from config import DATA_DIR
+from utils.logging_config import get_logger
+from utils.portfolio_db import holding_count
+
+logger = get_logger("dividendscope.auth")
 from auth.models import CurrentUser, sanitize_user_id
 
 from auth.demo_portfolio import ensure_demo_database, load_demo_ui_snapshot
@@ -197,26 +201,51 @@ def ensure_user_session() -> Optional[AppUser]:
 
     previous_id = st.session_state.get(_SESSION_USER_KEY)
     if previous_id and previous_id != user.id:
+        logger.info("User switched %s -> %s; clearing portfolio session", previous_id, user.id)
         clear_portfolio_session_state()
 
     registered = _register_user(user)
     if not registered.is_active:
+        logger.warning("User inactive: %s", user.email)
         return None
 
     user_dir = resolve_user_data_dir()
     db_path = user_dir / "portfolio.db"
+    session_changed = st.session_state.get(_SESSION_USER_KEY) != user.id
 
     if is_test_user(user):
+        if session_changed:
+            logger.info("Test user session: %s", user.email)
         ensure_demo_database(db_path)
         load_demo_ui_snapshot()
     else:
         store = UserStore()
         if user.is_admin or is_admin_email(user.email):
             if restore_owner_portfolio(user.id, user_dir):
+                logger.info(
+                    "Admin portfolio restored from legacy for %s (holdings=%d)",
+                    user.email,
+                    holding_count(db_path),
+                )
                 clear_portfolio_session_state()
         elif auth_required() and store.count_users() <= 1:
             if migrate_legacy_portfolio(user.id, user_dir):
+                logger.info(
+                    "Legacy portfolio migrated for %s (holdings=%d)",
+                    user.email,
+                    holding_count(db_path),
+                )
                 clear_portfolio_session_state()
+
+    if session_changed:
+        logger.info(
+            "User session ready id=%s email=%s db=%s holdings=%d admin=%s",
+            user.id,
+            user.email,
+            db_path,
+            holding_count(db_path),
+            user.is_admin,
+        )
 
     st.session_state[_SESSION_USER_KEY] = user.id
     st.session_state[_SESSION_EMAIL_KEY] = user.email

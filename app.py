@@ -9,6 +9,11 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(_ROOT))
 
+from utils.logging_config import configure_app_logging, get_logger
+
+configure_app_logging()
+logger = get_logger("dividendscope.app")
+
 import streamlit as st
 
 
@@ -22,6 +27,25 @@ def _bootstrap_secrets_env() -> None:
 
 
 _bootstrap_secrets_env()
+
+_PROCESS_BOOT_LOGGED = False
+
+
+def _log_process_boot() -> None:
+    global _PROCESS_BOOT_LOGGED
+    if _PROCESS_BOOT_LOGGED:
+        return
+    _PROCESS_BOOT_LOGGED = True
+    from config import DATA_DIR, is_cloud_runtime
+    from auth.settings import auth_required
+
+    logger.info(
+        "DividendScope process started data_dir=%s cloud=%s auth_required=%s",
+        DATA_DIR,
+        is_cloud_runtime(),
+        auth_required(),
+    )
+
 
 from auth.login_view import render_login_page
 from auth.settings import auth_required
@@ -66,11 +90,14 @@ def _require_authentication() -> bool:
         return True
 
     if not st.user.is_logged_in:
+        logger.debug("Auth: not signed in")
         render_login_page()
         return False
 
     registered = ensure_user_session()
     if registered is None:
+        email = getattr(st.user, "email", "") or "unknown"
+        logger.warning("Auth: access denied for %s", email)
         render_login_page(access_denied=True)
         return False
 
@@ -108,12 +135,15 @@ def _render_sidebar_footer() -> None:
 
 
 def main() -> None:
+    _log_process_boot()
     inject_app_theme()
 
     if not _require_authentication():
         st.stop()
 
-    hydrate_session_from_disk()
+    if hydrate_session_from_disk():
+        rows = st.session_state.get("portfolio_details_rows") or []
+        logger.info("Portfolio session hydrated from disk (%d holdings)", len(rows))
     st.session_state["db_price_refresh_stats"] = _startup_db_light()
 
     st.session_state["analysis_type"] = NAV_PORTFOLIO

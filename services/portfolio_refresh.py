@@ -8,7 +8,10 @@ from typing import Callable, Iterable, Optional, Set
 
 import streamlit as st
 
+from utils.logging_config import get_logger
 from services.portfolio_analysis_preload import PortfolioAnalysisPreload
+
+logger = get_logger("dividendscope.portfolio")
 from services.portfolio_details_service import PortfolioDetailsService
 from services.portfolio_management_service import SECTION_KEYS
 from services.portfolio_ui_cache import clear_session_cache
@@ -45,9 +48,11 @@ def reload_portfolio_session(
     else:
         invalidate_section_caches(["all"])
 
+    logger.info("Portfolio reload started (refresh_risks=%s)", refresh_risks)
     clear_session_cache()
     rows, preload = PortfolioDetailsService().build_rows_with_cache(use_live_prices=True)
     store_portfolio_payload(rows, preload)
+    logger.info("Portfolio reload finished (%d holdings)", len(rows))
     if refresh_risks:
         refresh_portfolio_risks(force=True, rows=rows, preload=preload)
     return preload
