@@ -72,6 +72,17 @@ class PortfolioManagementService:
             )
 
         try:
+            from services.shared_market_db import get_document
+
+            cached = get_document(normalized)
+            if cached is not None and cached.name and cached.name != normalized:
+                return SymbolValidation(
+                    normalized,
+                    True,
+                    "OK (shared S&P library)",
+                    company_name=cached.name,
+                )
+
             from data_ingestion.yfinance_enricher import YFinanceEnricher
 
             enricher = YFinanceEnricher(request_delay=0.2)
@@ -80,7 +91,7 @@ class PortfolioManagementService:
                 return SymbolValidation(
                     normalized,
                     False,
-                    f"Could not find market data for {normalized} on Yahoo Finance.",
+                    f"Could not find {normalized} in the shared library or Yahoo Finance.",
                 )
             return SymbolValidation(
                 normalized,

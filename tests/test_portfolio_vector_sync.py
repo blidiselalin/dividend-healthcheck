@@ -47,7 +47,11 @@ def test_company_name_for_prefers_holding_db(
         avg_cost_per_share=10.0,
         company_name="Custom Name Inc",
     )
-    monkeypatch.setattr(sync, "PortfolioStore", lambda db_path=None: portfolio_store)
+    monkeypatch.setattr(
+        sync,
+        "PortfolioStore",
+        lambda db_path=None, **kwargs: portfolio_store,
+    )
     assert sync._company_name_for("NEW") == "Custom Name Inc"
 
 
@@ -56,10 +60,10 @@ def test_collect_portfolio_symbols(
     journal_store: PurchaseJournalStore,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def _portfolio_store(db_path=None, seed=True):
+    def _portfolio_store(db_path=None, **kwargs):
         return portfolio_store
 
-    def _journal_store(db_path=None, seed=True):
+    def _journal_store(db_path=None, **kwargs):
         return journal_store
 
     monkeypatch.setattr(sync, "PortfolioStore", _portfolio_store)
@@ -76,7 +80,11 @@ def test_collect_portfolio_symbols_excludes_delisted(
     portfolio_store: PortfolioStore,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(sync, "PortfolioStore", lambda db_path=None: portfolio_store)
+    monkeypatch.setattr(
+        sync,
+        "PortfolioStore",
+        lambda db_path=None, **kwargs: portfolio_store,
+    )
     monkeypatch.setattr(
         sync,
         "PurchaseJournalStore",

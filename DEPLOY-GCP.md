@@ -139,10 +139,22 @@ Direct IP (debug only, if firewall allows **8501**): `http://EXTERNAL_IP:8501`
 
 Data is stored in Docker volume **`dividendscope-persistent-data`** (mounted at **`/data`** in the container):
 
-| Path | Contents |
-|------|----------|
-| `/data/vectordb` | ChromaDB |
-| `/data/portfolio.db` | SQLite portfolio data |
+| Path | Contents | Who sees it |
+|------|----------|-------------|
+| `/data/vectordb` | **Shared S&P library** — ChromaDB with historical prices, dividends, fundamentals | **All users** (read-only for the app) |
+| `/data/users/<id>/portfolio.db` | That user's holdings, journal, deposits | **That user only** |
+| `/data/portfolio.db` | Legacy single-user SQLite (optional; admin restore only) | Owner/admin migration |
+
+Populate the shared library once on the VM (survives rebuilds):
+
+```bash
+./scripts/update_cloud_docker.sh --ingest
+# or manually:
+docker compose exec -T dividendscope python ingest_data.py --ensure-sp500
+docker compose exec -T dividendscope python ingest_data.py --enrich-existing
+```
+
+Sidebar shows **Shared S&P library: N tickers · S&P X/500** when ingest completed.
 
 Survives **restart**, **`docker compose up --build`**, and **VM reboot**.
 

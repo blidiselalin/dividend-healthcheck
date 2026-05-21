@@ -7,7 +7,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional, Set
 
-from config import DELISTED_SYMBOLS, VECTORDB_DIR
+from config import DELISTED_SYMBOLS
+from services.shared_market_db import get_shared_vector_store
 from data_ingestion.models import DataSource, StockDocument
 from data_ingestion.sp500_universe import (
     get_sp500_symbols,
@@ -33,7 +34,7 @@ def _store() -> Optional["VectorStore"]:
     if not VECTOR_STORE_AVAILABLE:
         return None
     try:
-        return VectorStore(persist_directory=str(VECTORDB_DIR))
+        return get_shared_vector_store()
     except Exception as exc:
         logger.warning("Vector store unavailable: %s", exc)
         return None

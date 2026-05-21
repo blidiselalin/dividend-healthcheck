@@ -19,10 +19,16 @@ logger = get_logger("dividendscope.vectordb")
 
 # Import config for default paths
 try:
-    from config import VECTORDB_DIR
-    DEFAULT_VECTORDB_DIR = str(VECTORDB_DIR)
+    from services.shared_market_db import shared_market_db_path
+
+    DEFAULT_VECTORDB_DIR = str(shared_market_db_path())
 except ImportError:
-    DEFAULT_VECTORDB_DIR = "data/vectordb"
+    try:
+        from config import VECTORDB_DIR
+
+        DEFAULT_VECTORDB_DIR = str(VECTORDB_DIR)
+    except ImportError:
+        DEFAULT_VECTORDB_DIR = "data/vectordb"
 
 # Try to import vector store
 try:
@@ -54,7 +60,7 @@ class VectorDBService:
         
         if VECTOR_DB_AVAILABLE:
             try:
-                self._store = VectorStore(persist_directory=db_path)
+                self._store = VectorStore(persist_directory=self._db_path)
                 logger.info(f"VectorDBService initialized with {self._store.count()} documents")
             except Exception as e:
                 logger.error(f"Failed to initialize VectorStore: {e}")

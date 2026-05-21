@@ -47,8 +47,10 @@ def _resolve_data_dir() -> Path:
 
 DATA_DIR: Final[Path] = _resolve_data_dir()
 
-# Subdirectories
+# Subdirectories — shared by all users (not per-account)
 VECTORDB_DIR: Final[Path] = DATA_DIR / "vectordb"
+# Alias: S&P / analysed-stocks ChromaDB (historical prices, dividends, fundamentals)
+SHARED_MARKET_DB_DIR: Final[Path] = VECTORDB_DIR
 DOWNLOADS_DIR: Final[Path] = DATA_DIR / "downloads"
 REPORTS_DIR: Final[Path] = Path("reports")
 

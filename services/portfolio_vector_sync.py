@@ -11,28 +11,25 @@ from typing import Any, Dict, List, Optional, Set
 
 from config import DELISTED_SYMBOLS, VECTORDB_DIR
 from data_ingestion.models import DataSource, StockDocument
-from data_ingestion.portfolio_store import PORTFOLIO_SHARES, PortfolioStore
+from data_ingestion.portfolio_store import PortfolioStore
 from data_ingestion.purchase_journal_store import PurchaseJournalStore
 
 logger = logging.getLogger(__name__)
 
-_COMPANY_NAMES: Dict[str, str] = {
-    symbol.upper(): company for symbol, company, _shares in PORTFOLIO_SHARES
-}
-
 
 def _company_name_for(symbol: str) -> Optional[str]:
+    """Company name from the current user's holdings only."""
     symbol = symbol.upper()
-    for holding in PortfolioStore().list_holdings():
+    for holding in PortfolioStore(seed=False).list_holdings():
         if holding.symbol.upper() == symbol and holding.company_name:
             return holding.company_name
-    return _COMPANY_NAMES.get(symbol)
+    return None
 
 
 def collect_portfolio_symbols() -> Set[str]:
     """All tickers from holdings and purchase journal."""
     symbols: Set[str] = set()
-    for holding in PortfolioStore().list_holdings():
+    for holding in PortfolioStore(seed=False).list_holdings():
         symbols.add(holding.symbol.upper())
     for purchase in PurchaseJournalStore().list_purchases(portfolio_only=False):
         symbols.add(purchase.symbol.upper())
@@ -142,7 +139,8 @@ def sync_portfolio_to_vector_db(
 
     store = VectorStore(persist_directory=str(VECTORDB_DIR))
     holdings_by_symbol = {
-        holding.symbol.upper(): holding for holding in PortfolioStore().list_holdings()
+        holding.symbol.upper(): holding
+        for holding in PortfolioStore(seed=False).list_holdings()
     }
     purchases = _purchase_counts()
     to_store: List[StockDocument] = []

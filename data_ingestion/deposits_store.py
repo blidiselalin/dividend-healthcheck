@@ -23,12 +23,7 @@ def _default_db_path() -> Path:
 
 
 def _default_seed() -> bool:
-    try:
-        from auth.settings import auth_required
-
-        return not auth_required()
-    except Exception:
-        return True
+    return False
 
 
 DEPOSITS_DB_PATH = DATA_DIR / "portfolio.db"

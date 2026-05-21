@@ -15,7 +15,7 @@ logger = get_logger("dividendscope.auth")
 from auth.models import CurrentUser, sanitize_user_id
 
 from auth.demo_portfolio import ensure_demo_database, load_demo_ui_snapshot
-from auth.migration import migrate_legacy_portfolio, restore_owner_portfolio
+from auth.migration import restore_owner_portfolio
 from auth.settings import auth_required, dev_bypass_email, is_admin_email, is_email_allowed
 from auth.test_user import (
     is_test_user,
@@ -219,7 +219,6 @@ def ensure_user_session() -> Optional[AppUser]:
         ensure_demo_database(db_path)
         load_demo_ui_snapshot()
     else:
-        store = UserStore()
         if user.is_admin or is_admin_email(user.email):
             if restore_owner_portfolio(user.id, user_dir):
                 logger.info(
@@ -228,14 +227,8 @@ def ensure_user_session() -> Optional[AppUser]:
                     holding_count(db_path),
                 )
                 clear_portfolio_session_state()
-        elif auth_required() and store.count_users() <= 1:
-            if migrate_legacy_portfolio(user.id, user_dir):
-                logger.info(
-                    "Legacy portfolio migrated for %s (holdings=%d)",
-                    user.email,
-                    holding_count(db_path),
-                )
-                clear_portfolio_session_state()
+        # Legacy portfolio is not auto-copied on first login — use
+        # scripts/migrate_portfolio_to_cloud.sh so each user keeps their own data.
 
     if session_changed:
         logger.info(

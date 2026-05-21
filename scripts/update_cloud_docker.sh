@@ -8,7 +8,7 @@
 #
 # Options:
 #   --sync-portfolio   After restart, sync holdings → vector DB
-#   --ingest           Run ingest_data.py --enrich (slow; first-time or refresh)
+#   --ingest           Populate shared S&P vectordb + enrich (slow; first-time or refresh)
 #   --no-pull          Skip git pull (used when code was rsync'd from local)
 set -euo pipefail
 
@@ -52,12 +52,13 @@ echo ">>> Container status"
 docker compose ps
 
 if [[ "$RUN_INGEST" == true ]]; then
-  echo ">>> Ingest / enrich (may take 15–25 min)…"
-  docker compose exec -T dividendscope python ingest_data.py --enrich
+  echo ">>> Shared S&P library ingest (may take 30–90 min first time)…"
+  docker compose exec -T dividendscope python ingest_data.py --ensure-sp500
+  docker compose exec -T dividendscope python ingest_data.py --enrich-existing
 fi
 
-if [[ "$SYNC_PORTFOLIO" == true ]] || [[ "$RUN_INGEST" == true ]]; then
-  echo ">>> Sync portfolio → vector DB"
+if [[ "$SYNC_PORTFOLIO" == true ]]; then
+  echo ">>> Sync portfolio holdings → shared vector DB"
   docker compose exec -T dividendscope python ingest_data.py --sync-portfolio
 fi
 

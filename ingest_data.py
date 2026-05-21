@@ -74,21 +74,28 @@ def _downloads_have_ingestible_files(data_path: Path) -> bool:
 
 
 def _run_enrich_without_downloads(pipeline: DataIngestionPipeline) -> int:
-    """Docker/cloud path: no CSV downloads — sync portfolio and refresh yfinance on DB."""
+    """Docker/cloud path: populate shared S&P library and enrich (no CSV downloads)."""
     from services.portfolio_vector_sync import sync_portfolio_to_vector_db
+    from services.sp500_peers_service import coverage_stats, ensure_sp500_in_vectordb
 
-    print("No CSV/JSON files in downloads — using portfolio + existing vector DB.\n")
+    print("No CSV/JSON files in downloads — shared market DB + yfinance enrich.\n")
 
-    print("Step 1: Sync portfolio holdings → vector DB")
-    sync_stats = sync_portfolio_to_vector_db(enrich_missing=True)
-    print(f"  Holdings linked: {sync_stats.get('linked', 0)}")
-    print(f"  New documents:   {sync_stats.get('created', 0)}")
-    print(f"  Stored:          {sync_stats.get('stored', 0)}")
-    if sync_stats.get("still_missing"):
-        print(f"  Still missing:   {', '.join(sync_stats['still_missing'])}")
+    print("Step 1: Ensure S&P 500 symbols in shared analysed-stocks DB")
+
+    def sp500_progress(msg, current, total):
+        pct = (current / total) * 100 if total > 0 else 0
+        print(f"\r[{pct:5.1f}%] {msg}...", end="", flush=True)
+
+    sp500_stats = ensure_sp500_in_vectordb(progress_callback=sp500_progress)
+    print("\n")
+    after = coverage_stats()
+    print(
+        f"  S&P coverage: {after['analysed_sp500']}/{after['universe_total']} "
+        f"({after['pct_covered']:.0f}%) · new docs: {sp500_stats.get('created', 0)}"
+    )
     print()
 
-    print("Step 2: Enrich all documents in vector DB (yfinance)")
+    print("Step 2: Enrich all documents in shared vector DB (yfinance)")
 
     def progress_cb(msg, current, total):
         pct = (current / total) * 100 if total > 0 else 0
@@ -100,6 +107,12 @@ def _run_enrich_without_downloads(pipeline: DataIngestionPipeline) -> int:
     print(f"  Documents enriched: {stats.get('enriched', 0)}")
     print(f"  Errors: {stats.get('errors', 0)}")
     print(f"  Total documents: {stats.get('total_documents', 0)}")
+    print()
+
+    print("Step 3: Link current portfolio holdings → vector DB (optional)")
+    sync_stats = sync_portfolio_to_vector_db(enrich_missing=True)
+    print(f"  Holdings linked: {sync_stats.get('linked', 0)}")
+    print(f"  New documents:   {sync_stats.get('created', 0)}")
     return 0
 
 

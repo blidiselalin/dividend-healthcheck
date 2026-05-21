@@ -73,8 +73,8 @@ def _render_what_you_manage() -> None:
     with col2:
         st.markdown(
             """
-            **Research library**
-            - **Analysed stocks** — preloaded history for hundreds of names
+            **Research library (shared for all users)**
+            - **S&P analysed stocks** — one server-wide database of historical prices and dividends
             - Same-sector comparison against your other holdings
 
             **Watchlists** (after reload)
@@ -115,8 +115,8 @@ def _render_data_sources() -> None:
         - **{DATA_SOURCES['historical']}** — dividend and price history for trends and growth
 
         Your portfolio amounts (shares, deposits, purchases) stay **in your account only**.
-        Market history is shared from the analysed library; reload updates live prices
-        for your positions when you choose.
+        The **S&P historical library** (`/data/vectordb` on the server) is **shared by every user**;
+        reload updates live prices for your positions when you choose.
         """
     )
     st.caption(

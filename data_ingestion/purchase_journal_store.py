@@ -24,12 +24,7 @@ def _default_db_path() -> Path:
 
 
 def _default_seed() -> bool:
-    try:
-        from auth.settings import auth_required
-
-        return not auth_required()
-    except Exception:
-        return True
+    return False
 
 
 PURCHASE_JOURNAL_DB_PATH = DATA_DIR / "portfolio.db"
@@ -39,7 +34,7 @@ def portfolio_symbols(db_path: Optional[Path] = None) -> Set[str]:
     """Tickers currently in the portfolio holdings table."""
     from data_ingestion.portfolio_store import PortfolioStore
 
-    store = PortfolioStore(db_path=db_path, seed=False) if db_path else PortfolioStore()
+    store = PortfolioStore(db_path=db_path, seed=False) if db_path else PortfolioStore(seed=False)
     return {holding.symbol for holding in store.list_holdings()}
 
 
