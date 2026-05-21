@@ -263,7 +263,15 @@ def pick_portfolio_section() -> str:
 
 
 def portfolio_data_ready() -> bool:
-    return bool(st.session_state.get("portfolio_details_rows"))
+    """True when the UI may show holdings (demo session or real user with DB rows + cache)."""
+    from services.portfolio_session import is_demo_session, user_has_holdings_in_db
+
+    rows = bool(st.session_state.get("portfolio_details_rows"))
+    if is_demo_session():
+        return rows
+    if not user_has_holdings_in_db():
+        return False
+    return rows
 
 
 def render_portfolio_status_line() -> None:

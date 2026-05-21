@@ -12,6 +12,7 @@ import streamlit as st
 from services.portfolio_ui_cache import hydrate_session_from_disk
 from ui.portfolio_manage_panel import render_portfolio_manage_sidebar
 from ui.portfolio_risk_panel import _rebuild_attention_from_session, refresh_portfolio_risks
+from services.portfolio_session import user_has_holdings_in_db
 from ui.theme import portfolio_data_ready, sidebar_heading
 
 
@@ -34,8 +35,10 @@ def render_portfolio_sidebar() -> None:
         count = len(st.session_state.get("portfolio_details_rows") or [])
         when = loaded_at.strftime("%d %b %H:%M") if loaded_at else "cached"
         st.sidebar.caption(f"{count} holdings · updated {when}")
-    else:
+    elif user_has_holdings_in_db():
         st.sidebar.caption("First load ~1–2 min, then opens from cache.")
+    else:
+        st.sidebar.caption("No holdings yet — add a ticker under **Manage portfolio**.")
 
     if st.sidebar.button("Reload live data", type="primary", use_container_width=True):
         with st.spinner("Reloading…"):

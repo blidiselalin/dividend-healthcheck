@@ -42,7 +42,9 @@ from services.portfolio_attention_service import (
     PortfolioAttentionService,
     normalize_attention_summary,
 )
+from ui.dividend_timing_display import dividend_timing_legend, render_dividend_timing_dataframe
 from ui.portfolio_manage_panel import render_tab_refresh_button
+from services.dividend_timing import classify_dividend_timing
 from ui.portfolio_risk_panel import SESSION_SUMMARY_KEY, get_cached_attention_summary
 from services.portfolio_holding_detail_service import PortfolioHoldingDetailService
 from data_ingestion.sp500_universe import sectors_match
@@ -54,6 +56,7 @@ from ui.charts import show_chart
 from ui.theme import (
     PORTFOLIO_TAB_SCOPES,
     pick_portfolio_section,
+    portfolio_data_ready,
     render_portfolio_status_line,
 )
 
@@ -354,16 +357,23 @@ class PortfolioDetailsView:
             st.info("No dividend payments expected this month based on available history.")
 
         st.markdown(f"#### Paying this month ({current.label})")
+        dividend_timing_legend()
         if not current.holdings:
             st.caption("No holdings matched the current-month dividend schedule.")
         else:
+            today = calendar.reference_date
             payer_rows = []
             for item in current.holdings:
                 payer_rows.append(
                     {
                         "Ticker": item.symbol,
                         "Company": item.company,
-                        "Status": item.status.title(),
+                        "Timing": classify_dividend_timing(
+                            today=today,
+                            ex_date=item.ex_date,
+                            pay_date=item.payment_date,
+                            status=item.status,
+                        ),
                         "Ex-Date": item.ex_date,
                         "Pay Date": item.payment_date,
                         "Per Share": item.per_share,
@@ -372,20 +382,9 @@ class PortfolioDetailsView:
                     }
                 )
             payer_df = pd.DataFrame(payer_rows)
-            payer_selection = st.dataframe(
+            payer_selection = render_dividend_timing_dataframe(
                 payer_df,
-                width="stretch",
-                hide_index=True,
-                on_select="rerun",
-                selection_mode="single-row",
-                key="portfolio_monthly_payer_table",
-                column_config={
-                    "Per Share": st.column_config.NumberColumn(format="$%.4f"),
-                    "Shares": st.column_config.NumberColumn(format="%.0f"),
-                    "Expected Cash": st.column_config.NumberColumn(format="$%.2f"),
-                    "Ex-Date": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                    "Pay Date": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                },
+                table_key="portfolio_monthly_payer_table",
             )
             selected = getattr(getattr(payer_selection, "selection", None), "rows", None)
             if selected:
@@ -403,6 +402,12 @@ class PortfolioDetailsView:
                         {
                             "Ticker": item.symbol,
                             "Company": item.company,
+                            "Timing": classify_dividend_timing(
+                                today=calendar.reference_date,
+                                ex_date=item.ex_date,
+                                pay_date=item.payment_date,
+                                status="received",
+                            ),
                             "Pay Date": item.payment_date,
                             "Per Share": item.per_share,
                             "Shares": item.shares,
@@ -411,7 +416,11 @@ class PortfolioDetailsView:
                         for item in last.holdings
                     ]
                 )
-                st.dataframe(detail, width="stretch", hide_index=True)
+                render_dividend_timing_dataframe(
+                    detail,
+                    table_key="portfolio_last_month_dividends",
+                    on_select=False,
+                )
 
         with st.expander(f"Next month detail — {next_month.label} (expected)"):
             if not next_month.holdings:
@@ -422,14 +431,24 @@ class PortfolioDetailsView:
                         {
                             "Ticker": item.symbol,
                             "Company": item.company,
-                            "Status": item.status.title(),
+                            "Timing": classify_dividend_timing(
+                                today=calendar.reference_date,
+                                ex_date=item.ex_date,
+                                pay_date=item.payment_date,
+                                status=item.status,
+                            ),
                             "Expected Cash": item.expected_cash,
+                            "Ex-Date": item.ex_date,
                             "Pay Date": item.payment_date,
                         }
                         for item in next_month.holdings
                     ]
                 )
-                st.dataframe(detail, width="stretch", hide_index=True)
+                render_dividend_timing_dataframe(
+                    detail,
+                    table_key="portfolio_next_month_dividends",
+                    on_select=False,
+                )
 
     @classmethod
     def _render_zone_overview(
@@ -604,40 +623,59 @@ class PortfolioDetailsView:
         rows: List[PortfolioDetailRow],
         preload: PortfolioAnalysisPreload,
     ) -> None:
-        """Full-page dividend analysis for one holding."""
+        """Full-page dividend analysis for one holding or S&P research pick."""
+        research_mode = bool(st.session_state.get("portfolio_research_mode"))
         nav_tickers: List[str] = st.session_state.get("portfolio_nav_tickers") or [
             row.ticker for row in rows
         ]
         if not nav_tickers:
             st.session_state["portfolio_view_mode"] = PORTFOLIO_VIEW_OVERVIEW
+            st.session_state.pop("portfolio_research_mode", None)
             st.rerun()
 
-        selected_symbol = st.session_state.get("portfolio_selected_symbol")
+        selected_symbol = (st.session_state.get("portfolio_selected_symbol") or "").upper()
         if selected_symbol not in nav_tickers:
-            selected_symbol = nav_tickers[0]
+            selected_symbol = nav_tickers[0].upper()
             st.session_state["portfolio_selected_symbol"] = selected_symbol
 
         nav_bar = st.columns([1, 5, 2])
         with nav_bar[0]:
             if st.button("← Back to portfolio", type="primary", use_container_width=True):
                 st.session_state["portfolio_view_mode"] = PORTFOLIO_VIEW_OVERVIEW
+                st.session_state.pop("portfolio_research_mode", None)
                 st.rerun()
         with nav_bar[1]:
-            st.subheader(cls._label_for_symbol(rows, selected_symbol))
-            charts_ready = len(preload.yield_channels)
-            st.caption(
-                f"Full holding analysis · {charts_ready} of {len(preload.stock_data)} "
-                "holdings with preloaded charts"
-            )
+            if research_mode:
+                st.subheader(f"S&P research · {selected_symbol}")
+                st.caption(
+                    "Decision analysis from the shared market library — "
+                    "add the ticker under **Manage portfolio** to track a position."
+                )
+            else:
+                st.subheader(cls._label_for_symbol(rows, selected_symbol))
+                charts_ready = len(preload.yield_channels)
+                st.caption(
+                    f"Full holding analysis · {charts_ready} of {len(preload.stock_data)} "
+                    "holdings with preloaded charts"
+                )
         with nav_bar[2]:
+            nav_label = "Switch S&P ticker" if research_mode else "Switch holding"
             selected_symbol = st.selectbox(
-                "Switch holding",
+                nav_label,
                 options=nav_tickers,
                 index=nav_tickers.index(selected_symbol),
-                format_func=lambda symbol: cls._label_for_symbol(rows, symbol),
+                format_func=(
+                    (lambda symbol: symbol)
+                    if research_mode
+                    else (lambda symbol: cls._label_for_symbol(rows, symbol))
+                ),
                 key="portfolio_holding_nav_symbol",
             )
-            st.session_state["portfolio_selected_symbol"] = selected_symbol
+            st.session_state["portfolio_selected_symbol"] = selected_symbol.upper()
+
+        if research_mode:
+            cls._render_sp500_research_analysis(selected_symbol, preload)
+            return
 
         if not st.session_state.get("portfolio_analysis_ready"):
             st.info("Use **Reload live data** in the sidebar to preload dividend charts for every holding.")
@@ -651,14 +689,89 @@ class PortfolioDetailsView:
             vector_doc=preload.vector_docs.get(selected_symbol),
         )
 
-        focus_row = next((row for row in rows if row.ticker == selected_symbol), rows[0])
-        cls._render_portfolio_holding_comparison(
-            selected_symbol,
-            focus_row,
-            rows,
-            preload,
-            nav_tickers,
+        focus_row = next((row for row in rows if row.ticker == selected_symbol), None)
+        if focus_row is None and rows:
+            focus_row = rows[0]
+        if focus_row is not None:
+            cls._render_portfolio_holding_comparison(
+                selected_symbol,
+                focus_row,
+                rows,
+                preload,
+                nav_tickers,
+            )
+
+    @classmethod
+    def _render_sp500_research_analysis(
+        cls,
+        symbol: str,
+        preload: PortfolioAnalysisPreload,
+    ) -> None:
+        """Load and display analysis for a symbol chosen from the S&P list (not necessarily held)."""
+        from services.portfolio_details_service import get_stock_data
+        from services.shared_market_db import get_document
+        from services.sp500_peers_service import find_sector_peers
+        from services.yield_channel_chart import YieldChannelService
+        from data_ingestion.portfolio_store import PortfolioStore
+
+        symbol = symbol.upper()
+        with st.spinner(f"Loading analysis for {symbol}…"):
+            data = preload.stock_data.get(symbol) or get_stock_data(symbol)
+            vector_doc = preload.vector_docs.get(symbol) or get_document(symbol)
+            yield_channel = preload.yield_channels.get(symbol)
+            if yield_channel is None:
+                try:
+                    yield_channel = YieldChannelService().fetch_yield_channel_data(symbol)
+                except Exception:
+                    yield_channel = None
+
+        if not data:
+            st.error(
+                f"Could not load data for {symbol}. "
+                "Run S&P ingest on the server or check the ticker."
+            )
+            return
+
+        SingleStockView.render_analysis_for_symbol(
+            symbol,
+            show_sector=True,
+            data=data,
+            yield_channel_data=yield_channel,
+            vector_doc=vector_doc,
         )
+
+        portfolio_symbols = {
+            holding.symbol.upper()
+            for holding in PortfolioStore(seed=False).list_holdings()
+        }
+        if symbol in portfolio_symbols:
+            st.info(f"{symbol} is already in your portfolio — use **Holdings** for position context.")
+
+        peers = find_sector_peers(
+            sector=data.sector or "",
+            exclude_symbols=[symbol],
+            portfolio_symbols=portfolio_symbols,
+            max_peers=3,
+        )
+        if peers:
+            st.divider()
+            st.markdown("##### Compare with other S&P names (same sector)")
+            st.caption("From the shared library — not limited to your holdings.")
+            current_entry = cls._peer_dict_from_stock(data)
+            ranked = [current_entry] + peers
+            table_rows = [
+                UIComponents._build_comparison_row(
+                    peer,
+                    is_current=peer["symbol"].upper() == symbol.upper(),
+                )
+                for peer in ranked
+            ]
+            UIComponents._display_comparison_table(table_rows)
+
+        with st.expander("Pick another S&P ticker", expanded=False):
+            from ui.sp500_research_picker import render_sp500_research_picker
+
+            render_sp500_research_picker(key_prefix="research_inline")
 
     @staticmethod
     def _peer_dict_from_stock(data: StockData) -> Dict[str, Any]:
@@ -742,6 +855,26 @@ class PortfolioDetailsView:
                     _set_holding_selection(peer_symbol, nav_tickers=nav_tickers)
 
     @classmethod
+    def _render_dividend_timing_table(
+        cls,
+        rows: List[PortfolioDetailRow],
+        timing_df: pd.DataFrame,
+        *,
+        table_key: str,
+    ) -> None:
+        if timing_df.empty:
+            return
+        selection = render_dividend_timing_dataframe(
+            timing_df,
+            table_key=table_key,
+        )
+        selected_rows = getattr(getattr(selection, "selection", None), "rows", None)
+        if selected_rows:
+            ticker = timing_df.iloc[selected_rows[0]]["Ticker"]
+            nav = [row.ticker for row in rows]
+            _set_holding_selection(ticker, nav_tickers=nav)
+
+    @classmethod
     def _render_attention_table(
         cls,
         rows: List[PortfolioDetailRow],
@@ -808,19 +941,19 @@ class PortfolioDetailsView:
             st.warning("Attention data is not available yet. Refresh the risk scan in the sidebar.")
             return
 
-        st.markdown("##### Dividend attention")
+        st.markdown("##### Dividend calendar (upcoming)")
         st.caption(
-            "Upcoming ex-dates and expected dividend cash this month or next — "
-            "informational, not negative risk."
+            "Ex-dividend and payment dates coming up — informational only, not a risk score."
         )
         dividend_df = service.to_dataframe(summary, list_kind="dividend")
         if summary.dividend_total == 0:
-            st.success("No upcoming dividend events flagged.")
+            st.success("No upcoming ex-dates or payments in the next few weeks.")
         else:
             d1, d2 = st.columns(2)
-            d1.metric("Dividend events", summary.dividend_total)
-            d2.metric("Urgent timing", summary.dividend_high_count)
-            cls._render_attention_table(
+            d1.metric("Upcoming events", summary.dividend_total)
+            d2.metric("Ex-date within 3 weeks", summary.dividend_upcoming_ex_count)
+            dividend_timing_legend()
+            cls._render_dividend_timing_table(
                 rows, dividend_df, table_key="portfolio_dividend_attention_table"
             )
 
@@ -865,8 +998,8 @@ class PortfolioDetailsView:
         with st.expander("What triggers each list?"):
             st.markdown(
                 """
-                **Dividend attention** — ex-date within 3 weeks, or dividend cash
-                scheduled / expected this month or next.
+                **Dividend calendar** — upcoming ex-dates and payment dates (row colors,
+                not severity). Paid events are omitted from this list.
 
                 **Buy opportunities** — deep value / value yield zones, price below
                 fair-yield level, buy-rated analysts, dividend safety, and growth streak.
@@ -1526,6 +1659,10 @@ class PortfolioDetailsView:
             and st.session_state.get("portfolio_analysis_ready")
         ):
             st.markdown("##### 1. Monthly dividend calendar")
+            st.caption(
+                "Highlights **upcoming** ex-dates and payments vs **paid** cash — "
+                "notifications only, not risk severity."
+            )
             cls._render_monthly_dividend_exposure(rows, preload)
         else:
             st.info(
@@ -1973,7 +2110,21 @@ class PortfolioDetailsView:
 
     @classmethod
     def render(cls) -> None:
+        from services.portfolio_session import sync_portfolio_session_with_db
+        from ui.portfolio_home import render_empty_home, render_portfolio_home_header
+
+        sync_portfolio_session_with_db()
+
         if st.session_state.get("portfolio_view_mode") == PORTFOLIO_VIEW_HOLDING:
+            research_mode = bool(st.session_state.get("portfolio_research_mode"))
+            if research_mode:
+                rows = st.session_state.get("portfolio_details_rows") or []
+                cls._render_holding_focus(rows, _preload_from_session())
+                return
+            if not portfolio_data_ready():
+                st.session_state["portfolio_view_mode"] = PORTFOLIO_VIEW_OVERVIEW
+                render_empty_home()
+                return
             if "portfolio_details_rows" not in st.session_state:
                 st.info("Use **Reload live data** in the sidebar.")
                 return
@@ -1982,8 +2133,6 @@ class PortfolioDetailsView:
                 _preload_from_session(),
             )
             return
-
-        from ui.portfolio_home import render_portfolio_home_header
 
         rows_loaded = st.session_state.get("portfolio_details_rows")
         if not render_portfolio_home_header(rows_loaded):

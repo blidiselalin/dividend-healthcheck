@@ -11,6 +11,7 @@ import streamlit as st
 
 from services.portfolio_management_service import PortfolioManagementService
 from services.portfolio_refresh import reload_portfolio_session
+from services.portfolio_session import is_demo_session, user_has_holdings_in_db
 
 
 def _after_change(
@@ -34,7 +35,8 @@ def render_portfolio_manage_sidebar() -> None:
     """Portfolio management expander in the sidebar."""
     service = PortfolioManagementService()
 
-    with st.sidebar.expander("Manage portfolio", expanded=False):
+    expand_manage = is_demo_session() or not user_has_holdings_in_db()
+    with st.sidebar.expander("Manage portfolio", expanded=expand_manage):
         tab_add, tab_edit, tab_buy, tab_deposit = st.tabs(
             ["Add ticker", "Edit position", "Purchase", "Deposit"]
         )

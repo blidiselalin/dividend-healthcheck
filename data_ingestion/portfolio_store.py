@@ -62,8 +62,6 @@ class PortfolioStore:
         self.db_path = Path(db_path or _default_portfolio_db_path())
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
-        # seed kept for API compatibility; no built-in holdings to insert
-        _ = seed if seed is not None else _default_seed()
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)

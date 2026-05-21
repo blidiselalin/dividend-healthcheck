@@ -62,6 +62,7 @@ from ui.theme import (
     main_content_start,
 )
 from config import DATA_SOURCES
+from services.portfolio_session import sync_portfolio_session_with_db
 from services.portfolio_ui_cache import hydrate_session_from_disk
 
 
@@ -158,6 +159,7 @@ def main() -> None:
     if not _require_authentication():
         st.stop()
 
+    sync_portfolio_session_with_db()
     if hydrate_session_from_disk():
         rows = st.session_state.get("portfolio_details_rows") or []
         logger.info("Portfolio session hydrated from disk (%d holdings)", len(rows))

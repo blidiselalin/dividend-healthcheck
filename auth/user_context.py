@@ -163,6 +163,7 @@ def clear_portfolio_session_state() -> None:
         "portfolio_risk_refresh_in_progress",
         "portfolio_view_mode",
         "portfolio_selected_symbol",
+        "portfolio_research_mode",
         _SESSION_USER_KEY,
         _SESSION_EMAIL_KEY,
     ]
@@ -219,6 +220,11 @@ def ensure_user_session() -> Optional[AppUser]:
         ensure_demo_database(db_path)
         load_demo_ui_snapshot()
     else:
+        if holding_count(db_path) == 0:
+            clear_portfolio_session_state()
+            from services.portfolio_ui_cache import clear_session_cache
+
+            clear_session_cache()
         if user.is_admin or is_admin_email(user.email):
             if restore_owner_portfolio(user.id, user_dir):
                 logger.info(

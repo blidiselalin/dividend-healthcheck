@@ -152,14 +152,16 @@ def _render_risk_sidebar_content(summary: Optional[AttentionSummary] = None) -> 
             f"Dividend attention ({summary.dividend_total})",
             expanded=False,
         ):
-            st.dataframe(
+            from ui.dividend_timing_display import (
+                dividend_timing_legend,
+                render_dividend_timing_dataframe,
+            )
+
+            dividend_timing_legend()
+            render_dividend_timing_dataframe(
                 service.to_dataframe(summary, list_kind="dividend"),
-                width="stretch",
-                hide_index=True,
-                column_config={
-                    "Weight %": st.column_config.NumberColumn(format="%.2f%%"),
-                    "Profit %": st.column_config.NumberColumn(format="%+.2f%%"),
-                },
+                table_key="sidebar_dividend_timing",
+                on_select=False,
             )
 
     if summary.opportunity_total > 0:

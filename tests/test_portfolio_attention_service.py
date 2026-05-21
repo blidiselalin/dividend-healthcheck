@@ -111,6 +111,22 @@ def test_flags_upcoming_ex_dividend():
     assert summary.dividend_total >= 1
     assert summary.total == 0
     assert all(item.categories == ("Dividend",) for item in summary.dividend_items)
+    item = summary.dividend_items[0]
+    assert item.timing == "Upcoming ex-date"
+    assert "Severity" not in service.to_dataframe(summary, list_kind="dividend").columns
+    assert "Timing" in service.to_dataframe(summary, list_kind="dividend").columns
+
+
+def test_paid_dividend_not_listed():
+    service = PortfolioAttentionService()
+    row = _row(
+        ticker="VZ",
+        ex_dividend_date=date(2026, 4, 1),
+        dividend_pay_date=date(2026, 4, 15),
+    )
+    preload = PortfolioAnalysisPreload(stock_data={}, yield_channels={}, vector_docs={})
+    summary = service.build_summary([row], preload, reference_date=date(2026, 5, 13))
+    assert summary.dividend_total == 0
 
 
 def test_healthy_holding_not_flagged():

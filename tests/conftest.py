@@ -35,14 +35,19 @@ def deposits_store(temp_db: Path) -> DepositsStore:
 
 @pytest.fixture
 def store():
-    """Live vector database for integration-style accuracy tests."""
+    """Live ChromaDB for integration-style accuracy tests (skipped when unavailable)."""
     from data_ingestion.vector_store import VectorStore
 
     vector_store = VectorStore()
-    if vector_store.count() == 0:
-        import pytest
-
+    if getattr(vector_store, "_use_fallback", False):
+        pytest.skip("ChromaDB unavailable; accuracy tests require a real vector DB")
+    count = vector_store.count()
+    if count == 0:
         pytest.skip("Vector database is empty; run ingest to enable accuracy tests")
+    if count < 100:
+        pytest.skip(
+            f"Vector database has only {count} documents; run full ingest for accuracy tests"
+        )
     return vector_store
 
 

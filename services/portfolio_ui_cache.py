@@ -97,7 +97,12 @@ def hydrate_session_from_disk() -> bool:
     """
     import streamlit as st
 
+    from services.portfolio_session import is_demo_session, user_has_holdings_in_db
     from ui.portfolio_risk_panel import SESSION_CHECKED_AT_KEY, SESSION_SUMMARY_KEY
+
+    if not is_demo_session() and not user_has_holdings_in_db():
+        clear_session_cache()
+        return False
 
     if st.session_state.get("portfolio_details_rows"):
         return True

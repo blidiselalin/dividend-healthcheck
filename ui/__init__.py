@@ -1,6 +1,11 @@
-"""UI components and views for Dividend Kings Analysis."""
+"""UI components for DividendScope."""
 
 from .components import UIComponents
-from .views import FullAnalysisView, SingleStockView
+from .views import SingleStockView, get_service_status, get_stock_data
 
-__all__ = ["FullAnalysisView", "SingleStockView", "UIComponents"]
+__all__ = [
+    "UIComponents",
+    "SingleStockView",
+    "get_service_status",
+    "get_stock_data",
+]

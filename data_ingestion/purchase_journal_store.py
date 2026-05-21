@@ -11,9 +11,6 @@ from pathlib import Path
 from typing import List, Optional, Set
 
 from config import DATA_DIR
-from data_ingestion.purchase_journal_seed import PURCHASE_JOURNAL_SEED
-
-
 def _default_db_path() -> Path:
     try:
         from auth.user_context import resolve_portfolio_db_path
@@ -92,6 +89,8 @@ class PurchaseJournalStore:
             self._insert_seed(connection)
 
     def _insert_seed(self, connection: sqlite3.Connection) -> None:
+        from data_ingestion.purchase_journal_seed import PURCHASE_JOURNAL_SEED
+
         symbols = portfolio_symbols(self.db_path)
         rows = [
             (symbol, purchase_date, price_usd)
@@ -107,6 +106,8 @@ class PurchaseJournalStore:
         )
 
     def sync_seed(self) -> None:
+        from data_ingestion.purchase_journal_seed import PURCHASE_JOURNAL_SEED
+
         symbols = portfolio_symbols(self.db_path)
         with self._connect() as connection:
             for symbol, purchase_date, price_usd in PURCHASE_JOURNAL_SEED:

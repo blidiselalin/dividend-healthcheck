@@ -127,10 +127,16 @@ class PortfolioRiskMonitorService:
         payload = asdict(item)
         payload["categories"] = list(item.categories)
         payload["reasons"] = list(item.reasons)
+        if payload.get("ex_date") is not None:
+            payload["ex_date"] = payload["ex_date"].isoformat()
+        if payload.get("pay_date") is not None:
+            payload["pay_date"] = payload["pay_date"].isoformat()
         return payload
 
     @staticmethod
     def _item_from_store(data: Dict[str, Any]) -> AttentionItem:
+        ex_raw = data.get("ex_date")
+        pay_raw = data.get("pay_date")
         return AttentionItem(
             symbol=data["symbol"],
             company=data["company"],
@@ -140,4 +146,7 @@ class PortfolioRiskMonitorService:
             reasons=tuple(data.get("reasons", ())),
             portfolio_weight_pct=data.get("portfolio_weight_pct"),
             profit_pct=data.get("profit_pct"),
+            timing=data.get("timing"),
+            ex_date=date.fromisoformat(ex_raw) if ex_raw else None,
+            pay_date=date.fromisoformat(pay_raw) if pay_raw else None,
         )

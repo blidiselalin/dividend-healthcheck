@@ -44,12 +44,15 @@ NEGATIVE_CATEGORIES = frozenset({"Exposure", "Estimates", "News"})
 class AttentionItem:
     symbol: str
     company: str
-    severity: str  # high | medium | low
+    severity: str  # high | medium | low (risk / buy lists only)
     score: int
     categories: tuple[str, ...]
     reasons: tuple[str, ...]
     portfolio_weight_pct: Optional[float] = None
     profit_pct: Optional[float] = None
+    timing: Optional[str] = None  # dividend list: upcoming ex-date, paid, etc.
+    ex_date: Optional[date] = None
+    pay_date: Optional[date] = None
 
 
 @dataclass
@@ -84,8 +87,11 @@ class AttentionSummary:
         return sum(1 for item in self.opportunity_items if item.severity == "high")
 
     @property
-    def dividend_high_count(self) -> int:
-        return sum(1 for item in self.dividend_items if item.severity == "high")
+    def dividend_upcoming_ex_count(self) -> int:
+        from services.dividend_timing import TIMING_LABELS, UPCOMING_EX
+
+        label = TIMING_LABELS[UPCOMING_EX]
+        return sum(1 for item in self.dividend_items if item.timing == label)
 
     @property
     def by_category(self) -> Dict[str, int]:
@@ -231,17 +237,20 @@ class PortfolioAttentionService:
             )
             opportunity_flags = self._evaluate_buy_opportunity(row, preload=preload)
             if dividend_flags:
-                score, severity, reasons = dividend_flags
+                timing, reasons = dividend_flags
                 dividend_scored.append(
                     AttentionItem(
                         symbol=row.ticker,
                         company=row.company,
-                        severity=severity,
-                        score=score,
+                        severity="low",
+                        score=0,
                         categories=(DIVIDEND_CATEGORY,),
                         reasons=tuple(reasons),
                         portfolio_weight_pct=row.weight_pct,
                         profit_pct=row.profit_pct,
+                        timing=timing,
+                        ex_date=row.ex_dividend_date,
+                        pay_date=row.dividend_pay_date,
                     )
                 )
             if risk_flags:
@@ -292,36 +301,50 @@ class PortfolioAttentionService:
         current_payers: set[str],
         next_payers: set[str],
         scheduled_now: set[str],
-    ) -> Optional[tuple[int, str, List[str]]]:
-        score = 0
+    ) -> Optional[tuple[str, List[str]]]:
+        from services.dividend_timing import classify_dividend_timing
+
         reasons: List[str] = []
+        timing = classify_dividend_timing(
+            today=today,
+            ex_date=row.ex_dividend_date,
+            pay_date=row.dividend_pay_date,
+        )
 
         if row.ex_dividend_date:
             days_to_ex = (row.ex_dividend_date - today).days
-            if 0 <= days_to_ex <= 7:
-                score += 35
+            if days_to_ex > 0:
                 reasons.append(
                     f"Ex-dividend in {days_to_ex} day(s) ({row.ex_dividend_date:%d %b})"
                 )
-            elif 0 <= days_to_ex <= EX_DATE_SOON_DAYS:
-                score += 22
-                reasons.append(f"Ex-dividend within {days_to_ex} days")
+            elif days_to_ex == 0:
+                reasons.append(f"Ex-dividend today ({row.ex_dividend_date:%d %b})")
+            elif row.dividend_pay_date and row.dividend_pay_date > today:
+                reasons.append(
+                    f"Ex-date passed ({row.ex_dividend_date:%d %b}); "
+                    f"payment expected {row.dividend_pay_date:%d %b}"
+                )
+
+        if row.dividend_pay_date and row.dividend_pay_date > today:
+            if not any("payment" in r.lower() or "pay" in r.lower() for r in reasons):
+                reasons.append(f"Payment date {row.dividend_pay_date:%d %b}")
 
         if row.ticker in scheduled_now:
-            score += 18
-            reasons.append("Dividend payment scheduled or projected this month")
+            reasons.append("Payment scheduled or projected this month")
         elif row.ticker in current_payers and row.ticker not in scheduled_now:
-            score += 10
             reasons.append("Dividend cash expected this month")
         elif row.ticker in next_payers:
-            score += 8
             reasons.append("Dividend expected next month")
 
-        if score < 8 or not reasons:
+        from services.dividend_timing import TIMING_LABELS, PAID
+
+        if timing == TIMING_LABELS[PAID]:
             return None
 
-        severity = "high" if score >= 35 else "medium" if score >= 18 else "low"
-        return score, severity, reasons[:5]
+        if not reasons:
+            return None
+
+        return timing, reasons[:5]
 
     def _evaluate_risk_attention(
         self,
@@ -516,7 +539,20 @@ class PortfolioAttentionService:
 
         if list_kind == "dividend":
             items = summary.dividend_items
-        elif list_kind == "opportunity":
+            return pd.DataFrame(
+                [
+                    {
+                        "Ticker": item.symbol,
+                        "Company": item.company,
+                        "Timing": item.timing or "—",
+                        "Ex-Date": item.ex_date,
+                        "Pay Date": item.pay_date,
+                        "Details": " • ".join(item.reasons),
+                    }
+                    for item in items
+                ]
+            )
+        if list_kind == "opportunity":
             items = summary.opportunity_items
         else:
             items = summary.risk_items
