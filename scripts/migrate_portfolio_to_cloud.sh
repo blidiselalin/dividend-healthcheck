@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
-# Copy local portfolio.db to ONE registered cloud user (safe when multiple users exist).
+# Copy portfolio.db into Docker for ONE registered user (multi-user safe).
 #
-# Prerequisite: that person has signed in on the cloud app at least once (creates users.db row).
+# From your Mac (SSH + upload):
+#   ./scripts/migrate_portfolio_to_cloud.sh --email you@gmail.com --yes
 #
-# Typical flow (multiple users on server):
-#   1. Sign in on https://pulse-dividend.duckdns.org with YOUR Google account
-#   2. ./scripts/migrate_portfolio_to_cloud.sh --list-users
-#   3. ./scripts/migrate_portfolio_to_cloud.sh --email you@gmail.com --dry-run
-#   4. ./scripts/migrate_portfolio_to_cloud.sh --email you@gmail.com --sync-portfolio --yes
+# On the GCP VM (file already on the server):
+#   ./scripts/migrate_portfolio_to_cloud.sh --on-vm --local ~/portfolio.db --email you@gmail.com --yes
 #
-# Only the matched user's /data/users/<id>/portfolio.db is written; everyone else is unchanged.
+# Only the matched user's /data/users/<id>/portfolio.db is written; others are unchanged.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -39,26 +37,29 @@ SYNC_PORTFOLIO=false
 DRY_RUN=false
 FORCE=false
 ASSUME_YES=false
+ON_VM=false
 
 usage() {
-  sed -n '1,16p' "$0"
+  sed -n '1,12p' "$0"
   echo ""
   echo "Options:"
-  echo "  --email ADDR     Target registered user (looks up id in cloud users.db)"
-  echo "  --user-id ID     Target folder under /data/users/ (use id from --list-users)"
-  echo "  --legacy-only    Write /data/portfolio.db only; does not touch /data/users/*"
-  echo "  --local PATH     Local portfolio.db"
-  echo "  --list-users     Registry + holdings (use before migrate on multi-user servers)"
-  echo "  --sync-portfolio Run ingest --sync-portfolio after upload"
+  echo "  --on-vm          Run on this machine (GCP VM); use with --local PATH on the VM"
+  echo "  --email ADDR     Target registered user (from users.db)"
+  echo "  --user-id ID     Target /data/users/<id>/ (from --list-users)"
+  echo "  --legacy-only    /data/portfolio.db only; does not touch /data/users/*"
+  echo "  --local PATH     portfolio.db file (required on VM unless default exists)"
+  echo "  --list-users     Registry + holdings"
+  echo "  --sync-portfolio ingest --sync-portfolio after upload"
   echo "  --dry-run        Plan only"
-  echo "  --force          Replace even if cloud user has more holdings"
+  echo "  --force          Replace even if cloud has more holdings"
   echo "  --yes            Skip confirmation"
   echo ""
-  echo "deploy.env: MIGRATE_EMAIL=you@gmail.com (optional default for --email)"
+  echo "Mac: needs deploy.env (GCP_* or SSH_HOST). VM: --on-vm, no deploy.env required."
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --on-vm) ON_VM=true ;;
     --local) shift; LOCAL_DB="${1:?--local requires path}"; shift ;;
     --user-id) shift; USER_ID="${1:?--user-id requires id}"; shift ;;
     --email) shift; TARGET_EMAIL="${1:?--email requires address}"; shift ;;
@@ -88,13 +89,16 @@ _gcloud_ssh_target() {
   fi
 }
 
-_remote_exec() {
+# Run a shell snippet on the host where Docker runs (Mac → SSH; VM → local).
+_host_exec() {
   local cmd=$1
-  if [[ -n "$SSH_HOST" ]]; then
+  if [[ "$ON_VM" == true ]]; then
+    bash -lc "$cmd"
+  elif [[ -n "$SSH_HOST" ]]; then
     ssh -o BatchMode=yes "$SSH_HOST" "bash -lc $(printf '%q' "$cmd")"
   else
     if [[ -z "$GCP_INSTANCE" || -z "$GCP_ZONE" || -z "$GCP_PROJECT" ]]; then
-      echo "Set GCP_INSTANCE, GCP_ZONE, GCP_PROJECT in deploy.env or set SSH_HOST." >&2
+      echo "Set GCP_INSTANCE, GCP_ZONE, GCP_PROJECT in deploy.env, SSH_HOST, or use --on-vm on the VM." >&2
       exit 1
     fi
     gcloud compute ssh "$(_gcloud_ssh_target)" \
@@ -104,9 +108,55 @@ _remote_exec() {
   fi
 }
 
+_resolve_app_dir() {
+  if [[ "$ON_VM" == true ]]; then
+    if [[ -f "$ROOT/docker-compose.yml" ]]; then
+      echo "$ROOT"
+      return
+    fi
+    for d in "$HOME/dividend-healthcheck" "$HOME/dividend-king"; do
+      if [[ -f "$d/docker-compose.yml" ]]; then
+        echo "$d"
+        return
+      fi
+    done
+    echo "$ROOT"
+    return
+  fi
+  if [[ -n "$REMOTE_APP_FULL_PATH" ]]; then
+    echo "$REMOTE_APP_FULL_PATH"
+    return
+  fi
+  local rel="${REMOTE_APP_DIR#~/}"
+  rel="${rel#/}"
+  _host_exec "
+    for d in \"\$HOME/${rel}\" \"\$HOME/dividend-healthcheck\"; do
+      if [[ -f \"\$d/docker-compose.yml\" ]]; then
+        echo \"\$d\"
+        exit 0
+      fi
+    done
+    exit 1
+  " 2>/dev/null
+}
+
 _resolve_local_db() {
   if [[ -n "$LOCAL_DB" ]]; then
     echo "$LOCAL_DB"
+    return
+  fi
+  if [[ "$ON_VM" == true ]]; then
+    for path in \
+      "$ROOT/portfolio.db" \
+      "$HOME/portfolio.db" \
+      "$HOME/dividend-healthcheck/portfolio.db" \
+      "$HOME/.dividendscope/data/portfolio.db"; do
+      if [[ -f "$path" ]]; then
+        echo "$path"
+        return
+      fi
+    done
+    echo ""
     return
   fi
   for path in "$HOME/.dividendscope/data/portfolio.db" "$ROOT/data/portfolio.db"; do
@@ -140,25 +190,7 @@ _holding_count() {
   sqlite3 "$db" "SELECT COUNT(*) FROM holdings;" 2>/dev/null || echo 0
 }
 
-_resolve_remote_app_dir() {
-  if [[ -n "$REMOTE_APP_FULL_PATH" ]]; then
-    echo "$REMOTE_APP_FULL_PATH"
-    return
-  fi
-  local rel="${REMOTE_APP_DIR#~/}"
-  rel="${rel#/}"
-  _remote_exec "
-    for d in \"\$HOME/${rel}\" \"\$HOME/dividend-healthcheck\"; do
-      if [[ -f \"\$d/docker-compose.yml\" ]]; then
-        echo \"\$d\"
-        exit 0
-      fi
-    done
-    exit 1
-  " 2>/dev/null
-}
-
-_remote_list_users_script() {
+_list_users_script() {
   cat <<'REMOTE_LIST'
 docker exec __CONTAINER__ sh -c '
 holdings() {
@@ -183,10 +215,10 @@ if [ -f /data/users.db ]; then
     echo "REG|${uid}|${email}|holdings=${n}|folder=${folder}|active=${active}|admin=${admin}"
   done
 else
-  echo "REG|(users.db missing — no one has signed in yet)"
+  echo "REG|(users.db missing — sign in on the app once)"
 fi
 echo ""
-echo "=== Folders without registry (orphan — not matched by --email) ==="
+echo "=== Folders without registry (orphan) ==="
 if [ -d /data/users ]; then
   for d in /data/users/*/; do
     [ -d "$d" ] || continue
@@ -200,7 +232,7 @@ if [ -d /data/users ]; then
   done
 fi
 echo ""
-echo "=== Legacy shared file (admin migration only; does not change other users) ==="
+echo "=== Legacy /data/portfolio.db ==="
 if [ -f /data/portfolio.db ]; then
   n=$(holdings /data/portfolio.db)
   echo "LEGACY|/data/portfolio.db|holdings=${n}"
@@ -213,17 +245,17 @@ REMOTE_LIST
 
 _print_list_users() {
   local script
-  script=$(_remote_list_users_script)
+  script=$(_list_users_script)
   script="${script//__CONTAINER__/${CONTAINER}}"
   local out
-  out=$(_remote_exec "$script" 2>/dev/null) || {
+  out=$(_host_exec "$script" 2>/dev/null) || {
     echo "(Could not list — is container ${CONTAINER} running?)" >&2
     return 1
   }
   printf '%s\n' "$out" | while IFS= read -r line; do
     case "$line" in
       ===*) echo "$line" ;;
-      REG\|*) 
+      REG\|*)
         IFS='|' read -r _ uid email rest <<< "$line"
         printf '  %-28s %-32s %s\n' "$uid" "$email" "$rest"
         ;;
@@ -239,17 +271,23 @@ _print_list_users() {
     esac
   done
   echo ""
-  echo "Migrate ONE registered user: $0 --email you@gmail.com --dry-run"
+  if [[ "$ON_VM" == true ]]; then
+    echo "On VM: $0 --on-vm --local ~/portfolio.db --email you@gmail.com --dry-run"
+  else
+    echo "From Mac: $0 --email you@gmail.com --dry-run"
+  fi
 }
 
 _resolve_user_id_from_email() {
   local email_lower
   email_lower=$(echo "$1" | tr '[:upper:]' '[:lower:]' | xargs)
+  local escaped
+  escaped=$(printf '%s' "$email_lower" | sed "s/'/''/g")
   local script
   script="docker exec $(printf '%q' "$CONTAINER") sqlite3 /data/users.db \
-    \"SELECT id FROM users WHERE lower(email) = '$(printf '%s' "$email_lower" | sed "s/'/''/g")' LIMIT 2;\" 2>/dev/null"
+    \"SELECT id FROM users WHERE lower(email) = '${escaped}' LIMIT 2;\" 2>/dev/null"
   local ids
-  ids=$(_remote_exec "$script" 2>/dev/null || true)
+  ids=$(_host_exec "$script" 2>/dev/null || true)
   ids=$(echo "$ids" | sed '/^$/d')
   local count
   count=$(echo "$ids" | wc -l | tr -d ' ')
@@ -265,20 +303,21 @@ _resolve_user_id_from_email() {
 }
 
 if [[ "$LIST_USERS" == true ]]; then
+  [[ "$ON_VM" == true ]] && echo ">>> Mode: on VM (local Docker)"
   _print_list_users
   exit 0
 fi
 
-REMOTE_APP="$(_resolve_remote_app_dir)" || {
-  echo "Remote app dir not found. Set REMOTE_APP_FULL_PATH in deploy.env." >&2
+APP_DIR="$(_resolve_app_dir)" || {
+  echo "App directory not found." >&2
   exit 1
 }
 
 if [[ "$LEGACY_ONLY" != true && -z "$USER_ID" && -z "$TARGET_EMAIL" ]]; then
-  echo "Specify exactly one target (other users will not be modified):" >&2
+  echo "Specify one target (other users will not be modified):" >&2
   echo "  $0 --list-users" >&2
-  echo "  $0 --email you@gmail.com     # registered Google account (recommended)" >&2
-  echo "  $0 --user-id <folder-id>     # from REG line in --list-users" >&2
+  echo "  $0 --email you@gmail.com" >&2
+  echo "  $0 --user-id <folder-id>" >&2
   exit 1
 fi
 
@@ -288,23 +327,19 @@ if [[ -n "$TARGET_EMAIL" && -n "$USER_ID" ]]; then
 fi
 
 if [[ -n "$TARGET_EMAIL" ]]; then
-  echo ">>> Resolving cloud user id for: $TARGET_EMAIL"
-  resolved=$(_resolve_user_id_from_email "$TARGET_EMAIL") || resolve_code=$?
-  resolve_code=${resolve_code:-0}
+  echo ">>> Resolving user id for: $TARGET_EMAIL"
+  resolved=$(_resolve_user_id_from_email "$TARGET_EMAIL") || true
   if [[ "${resolved:-}" == "MULTIPLE" ]]; then
-    echo "Multiple users share this email in users.db — contact admin." >&2
+    echo "Multiple users share this email." >&2
     exit 1
   fi
   if [[ -z "${resolved:-}" ]]; then
-    echo "No registered user with email $TARGET_EMAIL on the cloud server." >&2
-    echo "" >&2
-    echo "That account must sign in once before migration:" >&2
-    echo "  https://pulse-dividend.duckdns.org" >&2
-    echo "Then run: $0 --list-users" >&2
+    echo "No registered user with email $TARGET_EMAIL." >&2
+    echo "Sign in once at https://pulse-dividend.duckdns.org then --list-users" >&2
     exit 1
   fi
   USER_ID="$resolved"
-  echo ">>> Matched registered user id: $USER_ID"
+  echo ">>> Matched user id: $USER_ID"
 fi
 
 if [[ -n "$USER_ID" ]] && [[ ! "$USER_ID" =~ ^[a-zA-Z0-9_-]+$ ]]; then
@@ -314,31 +349,35 @@ fi
 
 LOCAL_DB="$(_resolve_local_db)"
 if [[ ! -f "$LOCAL_DB" ]]; then
-  echo "Local portfolio.db not found. Use --local PATH" >&2
+  echo "portfolio.db not found." >&2
+  if [[ "$ON_VM" == true ]]; then
+    echo "Copy your Mac file to the VM first, e.g.:" >&2
+    echo "  scp ~/.dividendscope/data/portfolio.db USER@VM:~/portfolio.db" >&2
+    echo "Then: $0 --on-vm --local ~/portfolio.db --email you@gmail.com" >&2
+  else
+    echo "Use --local PATH" >&2
+  fi
   exit 1
 fi
 
+LOCAL_DB="$(cd "$(dirname "$LOCAL_DB")" && pwd)/$(basename "$LOCAL_DB")"
 LOCAL_HOLDINGS="$(_holding_count "$LOCAL_DB")"
 
 if [[ "$LEGACY_ONLY" == true ]]; then
   TARGET_PATH="/data/portfolio.db"
-  TARGET_LABEL="legacy /data/portfolio.db (users under /data/users/ unchanged)"
+  TARGET_LABEL="legacy /data/portfolio.db only"
 else
   TARGET_PATH="/data/users/${USER_ID}/portfolio.db"
-  if [[ -n "$TARGET_EMAIL" ]]; then
-    TARGET_LABEL="registered user ${TARGET_EMAIL} → ${TARGET_PATH}"
-  else
-    TARGET_LABEL="${TARGET_PATH}"
-  fi
+  TARGET_LABEL="${TARGET_PATH}${TARGET_EMAIL:+ ($TARGET_EMAIL)}"
 fi
 
-echo ">>> Local: $LOCAL_DB ($LOCAL_HOLDINGS holdings)"
-echo ">>> Target (only this file): $TARGET_LABEL"
-echo ">>> All other /data/users/* portfolios: unchanged"
+[[ "$ON_VM" == true ]] && echo ">>> Mode: on VM"
+echo ">>> Source file: $LOCAL_DB ($LOCAL_HOLDINGS holdings)"
+echo ">>> Target (only this): $TARGET_LABEL"
 
-REMOTE_CHECK="
+HOST_CHECK="
 set -e
-cd $(printf '%q' "$REMOTE_APP")
+cd $(printf '%q' "$APP_DIR")
 docker ps --format '{{.Names}}' | grep -qx $(printf '%q' "$CONTAINER")
 TARGET=$(printf '%q' "$TARGET_PATH")
 LOCAL_H=$LOCAL_HOLDINGS
@@ -347,34 +386,33 @@ count=0
 if docker exec $(printf '%q' "$CONTAINER") test -f \"\$TARGET\"; then
   count=\$(docker exec $(printf '%q' "$CONTAINER") sqlite3 \"\$TARGET\" 'SELECT COUNT(*) FROM holdings;' 2>/dev/null || echo 0)
 fi
-echo \"Remote holdings at target: \$count\"
+echo \"Holdings at target: \$count\"
 if [ \"\$FORCE\" != true ] && [ \"\$count\" -gt \"\$LOCAL_H\" ]; then
-  echo 'Abort: remote has more holdings than local. Use --force to replace.' >&2
+  echo 'Abort: target has more holdings than source. Use --force.' >&2
   exit 2
 fi
-nusers=\$(docker exec $(printf '%q' "$CONTAINER") sh -c 'ls -1 /data/users 2>/dev/null | wc -l' || echo 0)
-echo \"Other user folders on server: \$(( nusers > 0 ? nusers - 1 : 0 )) (not modified)\"
+echo 'Other /data/users/* folders will not be modified.'
 "
 
 set +e
-_remote_exec "$REMOTE_CHECK"
+_host_exec "$HOST_CHECK"
 check_code=$?
 set -e
 if [[ "$check_code" == 2 ]]; then
   exit 1
 fi
 if [[ "$check_code" != 0 ]]; then
-  echo "Remote check failed." >&2
+  echo "Check failed (is ${CONTAINER} running?)." >&2
   exit 1
 fi
 
 if [[ "$DRY_RUN" == true ]]; then
-  echo "Dry run complete — no files written."
+  echo "Dry run — no changes."
   exit 0
 fi
 
 if [[ "$ASSUME_YES" != true ]]; then
-  read -r -p "Overwrite ONLY this target? Other users unchanged. [y/N] " confirm
+  read -r -p "Overwrite ONLY $TARGET_PATH? [y/N] " confirm
   confirm=$(echo "$confirm" | tr '[:upper:]' '[:lower:]')
   if [[ "$confirm" != "y" && "$confirm" != "yes" ]]; then
     echo "Cancelled."
@@ -382,17 +420,30 @@ if [[ "$ASSUME_YES" != true ]]; then
   fi
 fi
 
-TMP_REMOTE="/tmp/dividendscope-portfolio-migrate-$$.db"
-if [[ -n "$SSH_HOST" ]]; then
-  scp -o BatchMode=yes "$LOCAL_DB" "${SSH_HOST}:${TMP_REMOTE}"
-else
-  gcloud compute scp "$LOCAL_DB" "$(_gcloud_ssh_target):${TMP_REMOTE}" \
-    --zone="$GCP_ZONE" --project="$GCP_PROJECT"
-fi
-
-_remote_exec "
+if [[ "$ON_VM" == true ]]; then
+  _host_exec "
 set -e
-cd $(printf '%q' "$REMOTE_APP")
+cd $(printf '%q' "$APP_DIR")
+TS=\$(date +%Y%m%d%H%M%S)
+TARGET=$(printf '%q' "$TARGET_PATH")
+SRC=$(printf '%q' "$LOCAL_DB")
+docker exec $(printf '%q' "$CONTAINER") mkdir -p \"\$(dirname \"\$TARGET\")\"
+docker exec $(printf '%q' "$CONTAINER") sh -c \"[ -f \\\"\$TARGET\\\" ] && cp \\\"\$TARGET\\\" \\\"\${TARGET}.bak.\${TS}\\\" || true\"
+docker cp \"\$SRC\" $(printf '%q' "$CONTAINER"):\$TARGET
+echo \"Wrote \$TARGET (backup \${TARGET}.bak.\${TS} if existed)\"
+docker compose restart $(printf '%q' "$CONTAINER") 2>/dev/null || docker restart $(printf '%q' "$CONTAINER")
+"
+else
+  TMP_REMOTE="/tmp/dividendscope-portfolio-migrate-$$.db"
+  if [[ -n "$SSH_HOST" ]]; then
+    scp -o BatchMode=yes "$LOCAL_DB" "${SSH_HOST}:${TMP_REMOTE}"
+  else
+    gcloud compute scp "$LOCAL_DB" "$(_gcloud_ssh_target):${TMP_REMOTE}" \
+      --zone="$GCP_ZONE" --project="$GCP_PROJECT"
+  fi
+  _host_exec "
+set -e
+cd $(printf '%q' "$APP_DIR")
 TS=\$(date +%Y%m%d%H%M%S)
 TARGET=$(printf '%q' "$TARGET_PATH")
 TMP=$(printf '%q' "$TMP_REMOTE")
@@ -400,16 +451,15 @@ docker exec $(printf '%q' "$CONTAINER") mkdir -p \"\$(dirname \"\$TARGET\")\"
 docker exec $(printf '%q' "$CONTAINER") sh -c \"[ -f \\\"\$TARGET\\\" ] && cp \\\"\$TARGET\\\" \\\"\${TARGET}.bak.\${TS}\\\" || true\"
 docker cp \"\$TMP\" $(printf '%q' "$CONTAINER"):\$TARGET
 rm -f \"\$TMP\"
-echo \"Wrote \$TARGET (backup: \${TARGET}.bak.\${TS} if existed)\"
+echo \"Wrote \$TARGET\"
 docker compose restart $(printf '%q' "$CONTAINER") 2>/dev/null || docker restart $(printf '%q' "$CONTAINER")
 "
+fi
 
 if [[ "$SYNC_PORTFOLIO" == true ]]; then
-  echo ">>> Syncing holdings to vector DB (shared library; does not change other users SQLite)..."
-  _remote_exec "cd $(printf '%q' "$REMOTE_APP") && docker compose exec -T $(printf '%q' "$CONTAINER") python ingest_data.py --sync-portfolio"
+  echo ">>> ingest --sync-portfolio"
+  _host_exec "cd $(printf '%q' "$APP_DIR") && docker compose exec -T $(printf '%q' "$CONTAINER") python ingest_data.py --sync-portfolio"
 fi
 
 echo ""
-echo "Done."
-echo "  Sign in as ${TARGET_EMAIL:-$USER_ID} on https://pulse-dividend.duckdns.org"
-echo "  Other registered users' portfolios were not modified."
+echo "Done. Sign in on https://pulse-dividend.duckdns.org as ${TARGET_EMAIL:-$USER_ID}."

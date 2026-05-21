@@ -170,19 +170,32 @@ Other users on the same VM keep their own folders — migration **never** writes
    - Sign in with the **same Google account** as on your Mac
    - Sign out is optional; you only need one successful login
 
-2. **From your Mac** (configure `deploy.env` with GCP or `SSH_HOST`):
+2. **Migrate** — from your **Mac** *or* **on the GCP VM** (same script):
+
+**Option A — from the VM** (recommended if you SSH there often):
+
+```bash
+# Once from Mac: copy portfolio.db to the VM
+scp ~/.dividendscope/data/portfolio.db YOU@VM_IP:~/portfolio.db
+
+# On the VM (SSH / browser terminal):
+cd ~/dividend-healthcheck
+git pull
+chmod +x scripts/migrate_portfolio_to_cloud.sh
+./scripts/migrate_portfolio_to_cloud.sh --on-vm --list-users
+./scripts/migrate_portfolio_to_cloud.sh --on-vm --local ~/portfolio.db --email you@gmail.com --dry-run
+./scripts/migrate_portfolio_to_cloud.sh --on-vm --local ~/portfolio.db --email you@gmail.com --sync-portfolio --yes
+```
+
+No `deploy.env` needed with `--on-vm`.
+
+**Option B — from your Mac** (configure `deploy.env` with GCP or `SSH_HOST`):
 
 ```bash
 cp deploy.env.example deploy.env
 chmod +x scripts/migrate_portfolio_to_cloud.sh
-
-# See registered emails, user ids, and holdings (others listed but not touched)
 ./scripts/migrate_portfolio_to_cloud.sh --list-users
-
-# Plan
 ./scripts/migrate_portfolio_to_cloud.sh --email you@gmail.com --dry-run
-
-# Upload local ~/.dividendscope/data/portfolio.db to that user only
 ./scripts/migrate_portfolio_to_cloud.sh --email you@gmail.com --sync-portfolio --yes
 ```
 
