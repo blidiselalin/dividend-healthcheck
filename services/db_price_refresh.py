@@ -31,25 +31,9 @@ def remove_delisted_from_vector_db(
 
 def _fetch_latest_price(symbol: str) -> Optional[float]:
     """Fetch the latest trade price from Yahoo Finance."""
-    try:
-        import yfinance as yf
+    from services.live_price import fetch_latest_market_price
 
-        ticker = yf.Ticker(symbol)
-        fast_info = getattr(ticker, "fast_info", None)
-        if fast_info:
-            for key in ("lastPrice", "regularMarketPrice", "previousClose"):
-                value = fast_info.get(key) if hasattr(fast_info, "get") else None
-                if value:
-                    return float(value)
-
-        history = ticker.history(period="5d", auto_adjust=True)
-        if history is not None and not history.empty and "Close" in history.columns:
-            closes = history["Close"].dropna()
-            if not closes.empty:
-                return float(closes.iloc[-1])
-    except Exception as exc:
-        logger.debug("Price fetch failed for %s: %s", symbol, exc)
-    return None
+    return fetch_latest_market_price(symbol)
 
 
 def _apply_latest_price(document, price: float) -> None:

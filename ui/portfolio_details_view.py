@@ -684,7 +684,7 @@ class PortfolioDetailsView:
         SingleStockView.render_analysis_for_symbol(
             selected_symbol,
             show_sector=False,
-            data=preload.stock_data.get(selected_symbol),
+            data=preload.stock_data.get(selected_symbol),  # live price applied in view
             yield_channel_data=preload.yield_channels.get(selected_symbol),
             vector_doc=preload.vector_docs.get(selected_symbol),
         )
@@ -716,7 +716,13 @@ class PortfolioDetailsView:
 
         symbol = symbol.upper()
         with st.spinner(f"Loading analysis for {symbol}…"):
-            data = preload.stock_data.get(symbol) or get_stock_data(symbol)
+            from services.live_price import apply_live_price
+
+            cached = preload.stock_data.get(symbol)
+            if cached is not None:
+                data = apply_live_price(cached)
+            else:
+                data = get_stock_data(symbol)
             vector_doc = preload.vector_docs.get(symbol) or get_document(symbol)
             yield_channel = preload.yield_channels.get(symbol)
             if yield_channel is None:

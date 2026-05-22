@@ -57,16 +57,15 @@ def _fetch_statistics_stock(symbol: str, document: Optional[StockDocument]) -> O
 
 def get_stock_data(symbol: str) -> Optional[StockData]:
     """Load statistics from the vector DB and refresh the latest market price."""
+    from services.live_price import apply_live_price
+
     service = PortfolioDetailsService()
     documents = service._load_documents([symbol])
     stats = _fetch_statistics_stock(symbol, documents.get(symbol))
     if not stats:
         return None
 
-    live_price = PortfolioDetailsService._fetch_latest_price(symbol)
-    if live_price is not None:
-        stats.price = live_price
-    return stats
+    return apply_live_price(stats)
 
 
 @dataclass(frozen=True)
@@ -455,25 +454,9 @@ class PortfolioDetailsService:
 
     @staticmethod
     def _fetch_latest_price(symbol: str) -> Optional[float]:
-        try:
-            ticker = yf.Ticker(symbol)
-            fast_info = getattr(ticker, "fast_info", None)
-            if fast_info:
-                for key in ("lastPrice", "regularMarketPrice", "previousClose"):
-                    value = fast_info.get(key)
-                    if value:
-                        return float(value)
-            history = ticker.history(period="5d", auto_adjust=True)
-        except Exception:
-            return None
+        from services.live_price import fetch_latest_market_price
 
-        if history is None or history.empty or "Close" not in history.columns:
-            return None
-
-        closes = history["Close"].dropna()
-        if closes.empty:
-            return None
-        return float(closes.iloc[-1])
+        return fetch_latest_market_price(symbol)
 
     @staticmethod
     def _price_snapshot_from_history(

@@ -53,6 +53,8 @@ def get_stock_data(symbol: str) -> Optional[StockData]:
     2. EnhancedStockService (API with DB enrichment)
     3. Basic StockService (API only)
     """
+    from services.live_price import apply_live_price
+
     # Try VectorDB first
     if VECTORDB_SERVICE_AVAILABLE:
         try:
@@ -60,17 +62,19 @@ def get_stock_data(symbol: str) -> Optional[StockData]:
             if vdb_service.is_available:
                 data = vdb_service.get_stock(symbol)
                 if data and vdb_service.is_data_complete(data):
-                    return data
+                    return apply_live_price(data)
         except Exception:
             pass
     
     # Fallback to enhanced service
     if ENHANCED_SERVICE_AVAILABLE:
         service = _get_enhanced_service()
-        return service.fetch(symbol)
+        data = service.fetch(symbol)
+        return apply_live_price(data) if data else None
     
     # Final fallback to basic service
-    return StockService.fetch(symbol)
+    data = StockService.fetch(symbol)
+    return apply_live_price(data) if data else None
 
 
 def get_service_status() -> dict:
@@ -157,6 +161,10 @@ class SingleStockView:
         if data is None:
             with st.spinner(f"Loading data for {symbol}..."):
                 data = get_stock_data(symbol)
+        else:
+            from services.live_price import apply_live_price
+
+            data = apply_live_price(data)
 
         if not data:
             st.error(f"Could not fetch data for {symbol}. Please verify the symbol.")

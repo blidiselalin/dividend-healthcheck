@@ -242,24 +242,9 @@ class EnhancedStockService:
     
     def _update_realtime_price(self, data: StockData) -> StockData:
         """Update only the real-time price from API (minimal API call)."""
-        try:
-            import yfinance as yf
-            
-            ticker = yf.Ticker(data.symbol)
-            info = ticker.fast_info
-            
-            if hasattr(info, "last_price") and info.last_price:
-                data.price = info.last_price
-                
-                if "Vector DB" in str(data.data_sources):
-                    data.data_sources.append("Price: Live")
-                else:
-                    data.data_sources = ["Vector DB", "Price: Live"]
-                    
-        except Exception as e:
-            logger.debug(f"Could not update real-time price for {data.symbol}: {e}")
-        
-        return data
+        from services.live_price import apply_live_price
+
+        return apply_live_price(data)
     
     # === Batch Operations (DB-first) ===
     
