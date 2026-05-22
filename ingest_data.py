@@ -205,6 +205,26 @@ Examples:
     )
 
     parser.add_argument(
+        "--hourly-update",
+        action="store_true",
+        help="Scheduled refresh: live prices, S&P catch-up, enrich stale documents",
+    )
+
+    parser.add_argument(
+        "--hourly-enrich-limit",
+        type=int,
+        default=40,
+        help="With --hourly-update, max stale symbols to enrich per run (default: 40)",
+    )
+
+    parser.add_argument(
+        "--hourly-stale-days",
+        type=int,
+        default=7,
+        help="With --hourly-update, re-enrich if last_updated older than N days (default: 7)",
+    )
+
+    parser.add_argument(
         "--remove-delisted",
         action="store_true",
         help="Remove delisted symbols (WBA, SJW, LANC, BF.B) from the vector DB",
@@ -329,6 +349,31 @@ Examples:
         print(f"  Total documents: {stats['total_documents']}")
         print(f"  Yield fixes: {stats['yield_fixes']}")
         print(f"  Payout ratio fixes: {stats['payout_fixes']}")
+        return 0
+
+    if args.hourly_update:
+        from services.hourly_market_update import run_hourly_market_update
+
+        print(f"\n{'='*50}")
+        print("  HOURLY MARKET UPDATE")
+        print(f"{'='*50}\n")
+
+        summary = run_hourly_market_update(
+            stale_days=args.hourly_stale_days,
+            enrich_limit=args.hourly_enrich_limit,
+        )
+        prices = summary.get("prices") or {}
+        sp500 = summary.get("sp500") or {}
+        enrich = summary.get("enrich") or {}
+
+        print("✓ Hourly update complete!")
+        print(f"  Prices updated:  {prices.get('updated', 0)} / {prices.get('total', 0)}")
+        print(f"  S&P new docs:    {sp500.get('created', 0)}")
+        print(
+            f"  Stale enriched:  {enrich.get('enriched', 0)} "
+            f"(candidates {enrich.get('candidates', 0)})"
+        )
+        print(f"  Elapsed:         {summary.get('elapsed_seconds', 0)}s")
         return 0
 
     if args.refresh_prices:

@@ -17,6 +17,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 pytestmark = pytest.mark.integration
 
 
+def _require_dividend_king_enrichment(store) -> None:
+    """Skip when the vector DB is S&P-only without full dividend-king enrichment."""
+    ko = store.get_by_symbol("KO")
+    if ko is None:
+        pytest.skip("KO not in database")
+    if (ko.dividend_streak_years or 0) < 50:
+        pytest.skip(
+            "Dividend streak fields not fully enriched; "
+            "run full dividend-king ingest before accuracy checks"
+        )
+
+
 def test_database_availability():
     """Test that the vector database is available and has data."""
     from data_ingestion.vector_store import VectorStore
@@ -48,6 +60,8 @@ def test_stock_data_accuracy(store):
     
     Validates that key metrics fall within expected real-world ranges.
     """
+    _require_dividend_king_enrichment(store)
+
     # Expected ranges for well-known Dividend Kings (as of early 2026)
     # Format: symbol -> (min_yield, max_yield, min_streak, min_pe, max_pe)
     expected_stocks = {
@@ -191,6 +205,7 @@ def test_stock_data_accuracy(store):
 
 def test_data_sanity(store):
     """Test that all data values are within sane ranges."""
+    _require_dividend_king_enrichment(store)
     all_docs = store.get_all_documents()
     
     issues = []

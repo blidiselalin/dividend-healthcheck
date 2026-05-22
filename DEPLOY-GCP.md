@@ -156,6 +156,28 @@ docker compose exec -T dividendscope python ingest_data.py --enrich-existing
 
 Sidebar shows **Shared S&P library: N tickers · S&P X/500** when ingest completed.
 
+### Hourly market refresh (cron)
+
+After the shared library exists, install an hourly job on the VM to refresh live prices and gradually re-enrich stale symbols (avoids hammering yfinance in one shot):
+
+```bash
+cd ~/dividend-healthcheck
+chmod +x scripts/hourly_market_refresh.sh scripts/install_hourly_cron.sh
+./scripts/install_hourly_cron.sh
+```
+
+This adds `0 * * * *` (every hour). Logs: `logs/hourly-market.log`.
+
+Manual run:
+
+```bash
+./scripts/hourly_market_refresh.sh
+# or inside the container:
+docker compose exec -T dividendscope python ingest_data.py --hourly-update
+```
+
+Each run: **refresh all prices** → add up to **5** missing S&P tickers → **enrich up to 40** documents older than 7 days (or quality &lt; 55%).
+
 Survives **restart**, **`docker compose up --build`**, and **VM reboot**.
 
 **Never run** `docker compose down -v` — `-v` deletes the volume and wipes the DB.
