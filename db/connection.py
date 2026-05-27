@@ -43,20 +43,34 @@ def _migration_path() -> Path:
     return Path(__file__).resolve().parent.parent / "migrations" / "001_initial.sql"
 
 
+def _migration_statements() -> list[str]:
+    """Split migration SQL into executable statements (ignore comment lines)."""
+    sql = _migration_path().read_text(encoding="utf-8")
+    lines = [
+        line
+        for line in sql.splitlines()
+        if line.strip() and not line.strip().startswith("--")
+    ]
+    statements: list[str] = []
+    for chunk in "\n".join(lines).split(";"):
+        statement = chunk.strip()
+        if statement:
+            statements.append(statement)
+    return statements
+
+
 def ensure_schema() -> None:
     """Apply SQL migrations once per process."""
     global _schema_ready
-    if not use_cloud_sql() or _schema_ready:
+    if not use_postgres_db() or _schema_ready:
         return
 
-    sql = _migration_path().read_text(encoding="utf-8")
+    statements = _migration_statements()
     with get_connection() as conn:
-        for statement in sql.split(";"):
-            chunk = statement.strip()
-            if chunk and not chunk.startswith("--"):
-                conn.execute(chunk)
+        for statement in statements:
+            conn.execute(statement)
     _schema_ready = True
-    logger.info("PostgreSQL schema ready")
+    logger.info("PostgreSQL schema ready (%s statements)", len(statements))
 
 
 def _get_pool():
@@ -282,13 +296,3 @@ def holding_count_for_user(user_id: Optional[str] = None) -> int:
 
     return holding_count(db_path)
 
-
-if __name__ == "__main__":
-    import sys
-
-    logging.basicConfig(level=logging.INFO)
-    if "--migrate" in sys.argv:
-        ensure_schema()
-        print("Schema applied.")
-    else:
-        print(f"cloud_sql={use_cloud_sql()} url={'set' if get_database_url() else 'unset'}")

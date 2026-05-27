@@ -52,7 +52,7 @@ docker rm -f dividendscope dividendscope-postgres 2>/dev/null || true
 docker compose up -d
 
 echo ">>> Apply PostgreSQL schema"
-docker compose exec -T dividendscope python -m db.connection --migrate
+docker compose exec -T dividendscope python -m db --migrate
 
 echo ">>> Container status"
 docker compose ps

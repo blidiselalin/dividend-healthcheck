@@ -1,5 +1,5 @@
 -- DividendScope unified schema (PostgreSQL — Docker or remote)
--- Apply: python -m db.connection --migrate
+-- Apply: python -m db --migrate
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
