@@ -1,11 +1,13 @@
 # Production URL (DuckDNS + Caddy on host): https://pulse-dividend.duckdns.org
 # Streamlit binds localhost:8501 only; Caddy terminates HTTPS on 443 → 127.0.0.1:8501
 #
-# PostgreSQL runs in Docker (service `postgres`) — all app data when DATABASE_URL is set.
-# Legacy file volume `/data` still used for session cache; optional Chroma fallback off-DB.
+# All persistent data lives on ONE Docker volume: dividendscope-persistent-data → /data
+#   /data/postgres/     PostgreSQL cluster (PGDATA)
+#   /data/vectordb/     legacy Chroma (optional import source)
+#   /data/users/        legacy SQLite (optional import source)
 #
 # Rebuild: docker compose up -d --build
-# Never run: docker compose down -v  (deletes postgres + app volumes)
+# Never run: docker compose down -v  (deletes the data volume)
 
 services:
   postgres:
@@ -16,8 +18,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-dividendscope}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dividendscope}
       POSTGRES_DB: ${POSTGRES_DB:-dividendscope}
+      PGDATA: /data/postgres
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - dividendscope-data:/data
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:
@@ -29,7 +32,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
-      start_period: 10s
+      start_period: 15s
 
   dividendscope:
     build: .
@@ -62,5 +65,3 @@ services:
 volumes:
   dividendscope-data:
     name: dividendscope-persistent-data
-  postgres-data:
-    name: dividendscope-postgres-data

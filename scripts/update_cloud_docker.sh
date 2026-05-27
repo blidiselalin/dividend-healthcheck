@@ -44,7 +44,7 @@ else
   echo ">>> Skip git pull (deployed tree already on host)"
 fi
 
-echo ">>> Rebuild image and restart containers (postgres + app volumes preserved)"
+echo ">>> Rebuild image and restart containers (volume dividendscope-persistent-data preserved)"
 docker compose build --pull
 # Remove stale manual container (docker run --name dividendscope) so compose can recreate
 docker compose down --remove-orphans 2>/dev/null || true

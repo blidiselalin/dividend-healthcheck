@@ -137,20 +137,32 @@ Direct IP (debug only, if firewall allows **8501**): `http://EXTERNAL_IP:8501`
 
 ### Persistent data
 
-Data is stored in Docker volumes:
+**One Docker volume** — `dividendscope-persistent-data` mounted at **`/data`** in both the app and Postgres containers:
 
-| Volume | Contents |
-|--------|----------|
-| **`dividendscope-postgres-data`** | **Primary** — users, portfolios, S&P `stock_documents` |
-| **`dividendscope-persistent-data`** | `/data` on the app container — legacy SQLite/Chroma (import once with `--migrate-files`), session cache |
-
-Legacy paths under `/data` (used only before Postgres migration or as import source):
-
-| Path | Contents |
-|------|----------|
-| `/data/vectordb` | Old ChromaDB S&P library |
-| `/data/users/<id>/portfolio.db` | Old per-user SQLite |
+| Path on volume | Contents |
+|----------------|----------|
+| **`/data/postgres/`** | **PostgreSQL** cluster (users, portfolios, S&P `stock_documents`) |
+| `/data/vectordb/` | Legacy Chroma (optional; import with `--migrate-files`) |
+| `/data/users/` | Legacy per-user SQLite |
 | `/data/portfolio.db` | Legacy single-user SQLite |
+
+Survives **`docker compose up --build`**, container recreate, and VM reboot.  
+**Never run** `docker compose down -v` — that deletes the volume.
+
+```bash
+./scripts/docker_volume_status.sh   # show /data/postgres size + legacy paths
+```
+
+**Upgrading from the old separate Postgres volume** (`dividendscope-postgres-data`):
+
+```bash
+docker compose down
+docker run --rm \
+  -v dividendscope-postgres-data:/from:ro \
+  -v dividendscope-persistent-data:/to \
+  alpine:3.19 sh -c 'mkdir -p /to/postgres && cp -a /from/. /to/postgres/'
+docker compose up -d
+```
 
 Populate the shared library once on the VM (survives rebuilds):
 
@@ -229,8 +241,8 @@ Or from your Mac into the running stack:
 | Per-user portfolio | `holdings`, `purchase_journal`, `monthly_deposits`, `net_dividends` (+ `user_id`) |
 | Shared S&P library | `stock_documents` (JSONB per symbol) |
 
-Postgres data persists in Docker volume **`dividendscope-postgres-data`**.  
-**Never run** `docker compose down -v` — that wipes Postgres and the app volume.
+Postgres uses the same volume as the app (`/data/postgres`).  
+**Never run** `docker compose down -v` — that wipes all data.
 
 Admin/debug (VM only, localhost):
 
