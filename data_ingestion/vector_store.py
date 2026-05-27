@@ -68,7 +68,7 @@ class VectorStore:
             self._pg_store = PostgresMarketStore()
             self.persist_directory = Path(persist_directory or DEFAULT_VECTORDB_DIR)
             self._use_fallback = False
-            logger.info("Market library using Cloud SQL (stock_documents)")
+            logger.info("Market library using PostgreSQL (stock_documents)")
             return
 
         if persist_directory is None:

@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class PostgresMarketStore:
-    """Persist StockDocument payloads as JSONB in Cloud SQL."""
+    """Persist StockDocument payloads as JSONB in PostgreSQL."""
 
     def add_document(self, document) -> str:
         return self.add_documents([document])[0]

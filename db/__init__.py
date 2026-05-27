@@ -1,4 +1,4 @@
-"""Cloud SQL PostgreSQL backend for DividendScope."""
+"""PostgreSQL backend for DividendScope."""
 
 from db.connection import (
     ensure_schema,

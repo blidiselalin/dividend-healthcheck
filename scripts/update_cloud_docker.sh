@@ -9,6 +9,7 @@
 # Options:
 #   --sync-portfolio   After restart, sync holdings → vector DB
 #   --ingest           Populate shared S&P vectordb + enrich (slow; first-time or refresh)
+#   --migrate-files    Import legacy SQLite/Chroma from /data into Postgres (one-time)
 #   --no-pull          Skip git pull (used when code was rsync'd from local)
 set -euo pipefail
 
@@ -17,14 +18,16 @@ cd "$ROOT"
 
 SYNC_PORTFOLIO=false
 RUN_INGEST=false
+MIGRATE_FILES=false
 SKIP_PULL=false
 for arg in "$@"; do
   case "$arg" in
     --sync-portfolio) SYNC_PORTFOLIO=true ;;
     --ingest) RUN_INGEST=true ;;
+    --migrate-files) MIGRATE_FILES=true ;;
     --no-pull) SKIP_PULL=true ;;
     -h|--help)
-      echo "Usage: $0 [--sync-portfolio] [--ingest] [--no-pull]"
+      echo "Usage: $0 [--sync-portfolio] [--ingest] [--migrate-files] [--no-pull]"
       exit 0
       ;;
     *)
@@ -41,15 +44,23 @@ else
   echo ">>> Skip git pull (deployed tree already on host)"
 fi
 
-echo ">>> Rebuild image and restart container (data volume preserved)"
+echo ">>> Rebuild image and restart containers (postgres + app volumes preserved)"
 docker compose build --pull
 # Remove stale manual container (docker run --name dividendscope) so compose can recreate
 docker compose down --remove-orphans 2>/dev/null || true
-docker rm -f dividendscope 2>/dev/null || true
+docker rm -f dividendscope dividendscope-postgres 2>/dev/null || true
 docker compose up -d
+
+echo ">>> Apply PostgreSQL schema"
+docker compose exec -T dividendscope python -m db.connection --migrate
 
 echo ">>> Container status"
 docker compose ps
+
+if [[ "$MIGRATE_FILES" == true ]]; then
+  echo ">>> Import legacy SQLite/Chroma from /data into PostgreSQL…"
+  docker compose exec -T dividendscope python scripts/migrate_to_cloud_sql.py --data-dir /data
+fi
 
 if [[ "$RUN_INGEST" == true ]]; then
   echo ">>> Shared S&P library ingest (may take 30–90 min first time)…"
@@ -72,3 +83,4 @@ if [[ -n "$VM_IP" ]]; then
   echo "  Direct IP (if firewall 8501 open): http://${VM_IP}:8501"
 fi
 echo "Logs: docker compose logs -f dividendscope"
+echo "Postgres: docker compose logs -f postgres"

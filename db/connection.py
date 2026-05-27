@@ -1,8 +1,9 @@
 """
-Database connection and schema management for Cloud SQL PostgreSQL.
+Database connection and schema management for PostgreSQL.
 
-When DATABASE_URL (or DIVIDENDSCOPE_DATABASE_URL) is set, all app data uses
-PostgreSQL. Otherwise stores fall back to local SQLite / ChromaDB files.
+When DATABASE_URL (or DIVIDENDSCOPE_DATABASE_URL) is set — including the
+default Docker Compose `postgres` service — all app data uses PostgreSQL.
+Otherwise stores fall back to local SQLite / ChromaDB files (Mac dev / tests).
 """
 
 from __future__ import annotations
@@ -29,7 +30,13 @@ def get_database_url() -> Optional[str]:
 
 
 def use_cloud_sql() -> bool:
+    """True when DATABASE_URL is set (Docker Postgres or any remote Postgres)."""
     return bool(get_database_url())
+
+
+def use_postgres_db() -> bool:
+    """Alias for use_cloud_sql()."""
+    return use_cloud_sql()
 
 
 def _migration_path() -> Path:
@@ -49,7 +56,7 @@ def ensure_schema() -> None:
             if chunk and not chunk.startswith("--"):
                 conn.execute(chunk)
     _schema_ready = True
-    logger.info("Cloud SQL schema ready")
+    logger.info("PostgreSQL schema ready")
 
 
 def _get_pool():
@@ -71,7 +78,7 @@ def _get_pool():
         kwargs={"row_factory": dict_row},
         open=True,
     )
-    logger.info("Cloud SQL connection pool initialized")
+    logger.info("PostgreSQL connection pool initialized")
     return _pool
 
 

@@ -1,4 +1,4 @@
-"""Patch portfolio-related stores for Cloud SQL user_id scoping."""
+"""Portfolio store helpers for PostgreSQL user_id scoping."""
 
 from __future__ import annotations
 

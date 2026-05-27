@@ -1,4 +1,4 @@
--- DividendScope unified schema (Cloud SQL PostgreSQL)
+-- DividendScope unified schema (PostgreSQL — Docker or remote)
 -- Apply: python -m db.connection --migrate
 
 CREATE TABLE IF NOT EXISTS users (

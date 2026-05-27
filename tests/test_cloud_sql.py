@@ -1,4 +1,4 @@
-"""Cloud SQL integration tests (local SQLite fallback unchanged)."""
+"""PostgreSQL integration tests (local SQLite fallback when DATABASE_URL unset)."""
 
 from db.connection import get_database_url, use_cloud_sql
 

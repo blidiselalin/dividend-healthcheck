@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """
-Migrate local SQLite + ChromaDB files into Cloud SQL PostgreSQL.
+Migrate local SQLite + ChromaDB files into PostgreSQL.
 
-Usage:
-  export DATABASE_URL=postgresql://user:pass@127.0.0.1:5432/dividendscope
-  python scripts/migrate_to_cloud_sql.py [--data-dir ~/.dividendscope/data]
+Usage (on VM with Docker Postgres running):
+  docker compose exec -T dividendscope python scripts/migrate_to_cloud_sql.py --data-dir /data
+
+From host with DATABASE_URL:
+  export DATABASE_URL=postgresql://dividendscope:pass@127.0.0.1:5432/dividendscope
+  python scripts/migrate_to_cloud_sql.py
 """
 
 from __future__ import annotations
@@ -199,7 +202,7 @@ def _import_market_library(data_dir: Path) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Migrate local files to Cloud SQL")
+    parser = argparse.ArgumentParser(description="Migrate local files to PostgreSQL")
     parser.add_argument(
         "--data-dir",
         type=Path,

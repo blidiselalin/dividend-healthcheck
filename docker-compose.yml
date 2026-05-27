@@ -1,27 +1,51 @@
 # Production URL (DuckDNS + Caddy on host): https://pulse-dividend.duckdns.org
 # Streamlit binds localhost:8501 only; Caddy terminates HTTPS on 443 → 127.0.0.1:8501
 #
-# Persistent data: volume "dividendscope-persistent-data" → /data in the container
-#   /data/vectordb     ChromaDB
-#   /data/portfolio.db SQLite
+# PostgreSQL runs in Docker (service `postgres`) — all app data when DATABASE_URL is set.
+# Legacy file volume `/data` still used for session cache; optional Chroma fallback off-DB.
+#
 # Rebuild: docker compose up -d --build
-# Never run: docker compose down -v  (deletes the volume)
+# Never run: docker compose down -v  (deletes postgres + app volumes)
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dividendscope-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dividendscope}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dividendscope}
+      POSTGRES_DB: ${POSTGRES_DB:-dividendscope}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-dividendscope} -d ${POSTGRES_DB:-dividendscope}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
   dividendscope:
     build: .
     image: dividend-healthcheck-dividendscope
     container_name: dividendscope
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "127.0.0.1:8501:8501"
     environment:
       DIVIDENDSCOPE_DATA_DIR: /data
       DIVIDENDSCOPE_LOG_LEVEL: INFO
       PYTHONUNBUFFERED: "1"
-      # Cloud SQL (via Auth Proxy service below). Example:
-      # DATABASE_URL: postgresql://app:secret@cloud-sql-proxy:5432/dividendscope
-      DATABASE_URL: ${DATABASE_URL:-}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dividendscope}:${POSTGRES_PASSWORD:-dividendscope}@postgres:5432/${POSTGRES_DB:-dividendscope}
     volumes:
       - dividendscope-data:/data
     command:
@@ -38,17 +62,5 @@ services:
 volumes:
   dividendscope-data:
     name: dividendscope-persistent-data
-
-# Uncomment to connect to Cloud SQL (set CLOUD_SQL_INSTANCE and DATABASE_URL):
-#
-# services:
-#   cloud-sql-proxy:
-#     image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.14.2
-#     restart: unless-stopped
-#     command:
-#       - "--structured-logs"
-#       - "--address=0.0.0.0"
-#       - "--port=5432"
-#       - "${CLOUD_SQL_INSTANCE}"
-#     ports:
-#       - "127.0.0.1:5432:5432"
+  postgres-data:
+    name: dividendscope-postgres-data

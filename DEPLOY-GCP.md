@@ -135,15 +135,22 @@ docker run -d --name dividendscope --restart unless-stopped \
 
 Direct IP (debug only, if firewall allows **8501**): `http://EXTERNAL_IP:8501`
 
-### Persistent data (vector DB + SQLite)
+### Persistent data
 
-Data is stored in Docker volume **`dividendscope-persistent-data`** (mounted at **`/data`** in the container):
+Data is stored in Docker volumes:
 
-| Path | Contents | Who sees it |
-|------|----------|-------------|
-| `/data/vectordb` | **Shared S&P library** — ChromaDB with historical prices, dividends, fundamentals | **All users** (read-only for the app) |
-| `/data/users/<id>/portfolio.db` | That user's holdings, journal, deposits | **That user only** |
-| `/data/portfolio.db` | Legacy single-user SQLite (optional; admin restore only) | Owner/admin migration |
+| Volume | Contents |
+|--------|----------|
+| **`dividendscope-postgres-data`** | **Primary** — users, portfolios, S&P `stock_documents` |
+| **`dividendscope-persistent-data`** | `/data` on the app container — legacy SQLite/Chroma (import once with `--migrate-files`), session cache |
+
+Legacy paths under `/data` (used only before Postgres migration or as import source):
+
+| Path | Contents |
+|------|----------|
+| `/data/vectordb` | Old ChromaDB S&P library |
+| `/data/users/<id>/portfolio.db` | Old per-user SQLite |
+| `/data/portfolio.db` | Legacy single-user SQLite |
 
 Populate the shared library once on the VM (survives rebuilds):
 
@@ -186,45 +193,52 @@ Survives **restart**, **`docker compose up --build`**, and **VM reboot**.
 ./scripts/docker_volume_status.sh   # list vectordb size
 ```
 
-### Cloud SQL (single PostgreSQL database — optional)
+### PostgreSQL database (Docker)
 
-Set **`DATABASE_URL`** to use **one Cloud SQL Postgres** instance for everything (users, portfolios, S&P market library). Local SQLite + ChromaDB remain the default when unset (Mac dev and tests).
+Production uses a **Postgres 16 container** in `docker-compose.yml` — no separate Cloud SQL instance.
 
-**1. Create Cloud SQL** (Postgres 15+, e.g. `db-f1-micro`).
-
-**2. On the VM — Auth Proxy + env** (see commented block in `docker-compose.yml`):
+**1. On the VM**, copy env and set a strong password:
 
 ```bash
-export CLOUD_SQL_INSTANCE="YOUR_PROJECT:us-central1:dividendscope-db"
-export DATABASE_URL="postgresql://app_user:PASSWORD@cloud-sql-proxy:5432/dividendscope"
+cd ~/dividend-healthcheck
+cp .env.example .env
+# edit .env → POSTGRES_PASSWORD=...
 ```
 
-Add to `.streamlit/secrets.toml` on the VM:
-
-```toml
-DATABASE_URL = "postgresql://app_user:PASSWORD@cloud-sql-proxy:5432/dividendscope"
-```
-
-**3. Apply schema and migrate existing files:**
-
-```bash
-python -m db.connection --migrate
-python scripts/migrate_to_cloud_sql.py --data-dir /data
-```
-
-**4. Rebuild app:**
+**2. Deploy** (starts `postgres` + app, applies schema on boot):
 
 ```bash
 ./scripts/update_cloud_docker.sh
 ```
 
-| Data | Cloud SQL table(s) |
+**3. One-time import** from legacy SQLite/Chroma files on `/data`:
+
+```bash
+docker compose exec -T dividendscope python scripts/migrate_to_cloud_sql.py --data-dir /data
+```
+
+Or from your Mac into the running stack:
+
+```bash
+./scripts/update_cloud_docker.sh --migrate-files
+```
+
+| Data | PostgreSQL table(s) |
 |------|---------------------|
 | Users & access requests | `users`, `access_requests` |
 | Per-user portfolio | `holdings`, `purchase_journal`, `monthly_deposits`, `net_dividends` (+ `user_id`) |
 | Shared S&P library | `stock_documents` (JSONB per symbol) |
 
-Hourly ingest and live prices work unchanged — they write to `stock_documents` when `DATABASE_URL` is set.
+Postgres data persists in Docker volume **`dividendscope-postgres-data`**.  
+**Never run** `docker compose down -v` — that wipes Postgres and the app volume.
+
+Admin/debug (VM only, localhost):
+
+```bash
+docker compose exec postgres psql -U dividendscope -d dividendscope -c '\dt'
+```
+
+Hourly ingest and live prices write to `stock_documents` automatically when the app starts with `DATABASE_URL` (default in compose).
 
 ### Migrate your local portfolio to the cloud (one user, multi-user safe)
 
