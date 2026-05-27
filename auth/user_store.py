@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from config import DATA_DIR
+from db.connection import migrate_portfolio_user_id, open_app_db, use_cloud_sql
 
 USERS_DB_PATH = DATA_DIR / "users.db"
 
@@ -31,8 +32,12 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _parse_dt(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+def _parse_dt(value) -> datetime:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
 
 
 class UserStore:
@@ -41,12 +46,12 @@ class UserStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.db_path)
-        connection.row_factory = sqlite3.Row
-        return connection
+    def _connect(self):
+        return open_app_db(self.db_path)
 
     def _ensure_schema(self) -> None:
+        if use_cloud_sql():
+            return
         with self._connect() as connection:
             connection.execute(
                 """
@@ -95,7 +100,7 @@ class UserStore:
         picture_url: Optional[str],
         is_admin: bool = False,
     ) -> AppUser:
-        from auth.migration import migrate_user_data_dir
+        from db.connection import migrate_portfolio_user_id
 
         now = _utc_now().isoformat()
         normalized_email = email.strip().lower()
@@ -112,11 +117,16 @@ class UserStore:
                 ).fetchone()
 
             if by_id:
+                admin_expr = (
+                    "GREATEST(is_admin, ?::boolean)"
+                    if connection.is_postgres
+                    else "MAX(is_admin, ?)"
+                )
                 connection.execute(
-                    """
+                    f"""
                     UPDATE users
                     SET email = ?, name = ?, picture_url = ?, last_login_at = ?,
-                        is_admin = MAX(is_admin, ?)
+                        is_admin = {admin_expr}
                     WHERE id = ?
                     """,
                     (email, name, picture_url, now, int(is_admin), user_id),
@@ -124,12 +134,17 @@ class UserStore:
             elif by_email:
                 old_id = str(by_email["id"])
                 if old_id != user_id:
-                    migrate_user_data_dir(old_id, user_id)
+                    migrate_portfolio_user_id(old_id, user_id)
+                    admin_expr = (
+                        "GREATEST(is_admin, ?::boolean)"
+                        if connection.is_postgres
+                        else "MAX(is_admin, ?)"
+                    )
                     connection.execute(
-                        """
+                        f"""
                         UPDATE users
                         SET id = ?, name = ?, picture_url = ?, last_login_at = ?,
-                            is_admin = MAX(is_admin, ?)
+                            is_admin = {admin_expr}
                         WHERE lower(email) = ?
                         """,
                         (
@@ -142,25 +157,41 @@ class UserStore:
                         ),
                     )
                 else:
+                    admin_expr = (
+                        "GREATEST(is_admin, ?::boolean)"
+                        if connection.is_postgres
+                        else "MAX(is_admin, ?)"
+                    )
                     connection.execute(
-                        """
+                        f"""
                         UPDATE users
                         SET name = ?, picture_url = ?, last_login_at = ?,
-                            is_admin = MAX(is_admin, ?)
+                            is_admin = {admin_expr}
                         WHERE id = ?
                         """,
                         (name, picture_url, now, int(is_admin), user_id),
                     )
             else:
-                connection.execute(
-                    """
-                    INSERT INTO users (
-                      id, email, name, picture_url, created_at, last_login_at,
-                      is_active, is_admin
-                    ) VALUES (?, ?, ?, ?, ?, ?, 1, ?)
-                    """,
-                    (user_id, email, name, picture_url, now, now, int(is_admin)),
-                )
+                if connection.is_postgres:
+                    connection.execute(
+                        """
+                        INSERT INTO users (
+                          id, email, name, picture_url, created_at, last_login_at,
+                          is_active, is_admin
+                        ) VALUES (?, ?, ?, ?, ?::timestamptz, ?::timestamptz, TRUE, ?)
+                        """,
+                        (user_id, email, name, picture_url, now, now, bool(is_admin)),
+                    )
+                else:
+                    connection.execute(
+                        """
+                        INSERT INTO users (
+                          id, email, name, picture_url, created_at, last_login_at,
+                          is_active, is_admin
+                        ) VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                        """,
+                        (user_id, email, name, picture_url, now, now, int(is_admin)),
+                    )
 
         user = self.get_by_id(user_id)
         if user is None:

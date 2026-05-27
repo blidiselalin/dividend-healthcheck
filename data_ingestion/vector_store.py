@@ -58,6 +58,19 @@ class VectorStore:
             persist_directory: Directory for persistent storage. Defaults to ~/.dividendscope/data/vectordb.
             embedding_model: Embedding model to use (default uses ChromaDB's built-in).
         """
+        from db.connection import use_cloud_sql
+
+        self._use_postgres = use_cloud_sql()
+        self._pg_store = None
+        if self._use_postgres:
+            from db.postgres_market_store import PostgresMarketStore
+
+            self._pg_store = PostgresMarketStore()
+            self.persist_directory = Path(persist_directory or DEFAULT_VECTORDB_DIR)
+            self._use_fallback = False
+            logger.info("Market library using Cloud SQL (stock_documents)")
+            return
+
         if persist_directory is None:
             persist_directory = DEFAULT_VECTORDB_DIR
         self.persist_directory = Path(persist_directory)
@@ -125,6 +138,8 @@ class VectorStore:
             logger.error(f"Error saving fallback store: {e}")
     
     def add_document(self, document: StockDocument) -> str:
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.add_document(document)
         """
         Add a document to the vector store.
         
@@ -170,6 +185,8 @@ class VectorStore:
             return doc_id
     
     def add_documents(self, documents: List[StockDocument]) -> List[str]:
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.add_documents(documents)
         """
         Add multiple documents to the vector store.
         
@@ -243,6 +260,8 @@ class VectorStore:
         n_results: int = 10,
         where: Optional[Dict[str, Any]] = None,
     ) -> List[SearchResult]:
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.search(query, n_results, where)
         """
         Search for documents by semantic similarity.
         
@@ -450,6 +469,8 @@ class VectorStore:
         )
     
     def get_by_symbol(self, symbol: str) -> Optional[StockDocument]:
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.get_by_symbol(symbol)
         """
         Get document by stock symbol.
         
@@ -521,6 +542,8 @@ class VectorStore:
             return None
     
     def get_dividend_kings(self, min_streak: int = 50) -> List[StockDocument]:
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.get_dividend_kings(min_streak)
         """
         Get all Dividend Kings (50+ years of increases).
         
@@ -553,6 +576,8 @@ class VectorStore:
             return []
     
     def get_by_sector(self, sector: str) -> List[StockDocument]:
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.get_by_sector(sector)
         """Get all documents in a sector."""
         if self._use_fallback:
             return [
@@ -577,6 +602,8 @@ class VectorStore:
             return []
     
     def count(self) -> int:
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.count()
         """Get total number of documents."""
         if self._use_fallback:
             return len(self._fallback_store)
@@ -587,6 +614,8 @@ class VectorStore:
             return len(self._fallback_store)
     
     def get_stats(self) -> Dict[str, Any]:
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.get_stats()
         """
         Get comprehensive statistics about the vector store.
         
@@ -651,6 +680,9 @@ class VectorStore:
         return stats
     
     def clear(self) -> None:
+        if getattr(self, "_use_postgres", False):
+            self._pg_store.clear()
+            return
         """Clear all documents from the store."""
         if self._use_fallback:
             self._fallback_store = {}
@@ -668,6 +700,8 @@ class VectorStore:
             logger.error(f"Error clearing store: {e}")
 
     def delete_symbols(self, symbols: List[str]) -> int:
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.delete_symbols(symbols)
         """
         Remove all documents for the given ticker symbols.
 
@@ -756,6 +790,8 @@ class VectorStore:
             return 0
     
     def get_all_documents(self) -> List[StockDocument]:
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.get_all_documents()
         """
         Get all documents from the store.
         

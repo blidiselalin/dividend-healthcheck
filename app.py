@@ -19,7 +19,7 @@ import streamlit as st
 
 def _bootstrap_secrets_env() -> None:
     try:
-        for key in ("DIVIDENDSCOPE_CLOUD", "DIVIDENDSCOPE_DATA_DIR"):
+        for key in ("DIVIDENDSCOPE_CLOUD", "DIVIDENDSCOPE_DATA_DIR", "DATABASE_URL", "DIVIDENDSCOPE_DATABASE_URL"):
             if key in st.secrets:
                 os.environ.setdefault(key, str(st.secrets[key]))
     except Exception:
@@ -27,6 +27,14 @@ def _bootstrap_secrets_env() -> None:
 
 
 _bootstrap_secrets_env()
+
+try:
+    from db.connection import ensure_schema, use_cloud_sql
+
+    if use_cloud_sql():
+        ensure_schema()
+except Exception:
+    pass
 
 _PROCESS_BOOT_LOGGED = False
 

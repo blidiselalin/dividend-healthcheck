@@ -186,6 +186,46 @@ Survives **restart**, **`docker compose up --build`**, and **VM reboot**.
 ./scripts/docker_volume_status.sh   # list vectordb size
 ```
 
+### Cloud SQL (single PostgreSQL database — optional)
+
+Set **`DATABASE_URL`** to use **one Cloud SQL Postgres** instance for everything (users, portfolios, S&P market library). Local SQLite + ChromaDB remain the default when unset (Mac dev and tests).
+
+**1. Create Cloud SQL** (Postgres 15+, e.g. `db-f1-micro`).
+
+**2. On the VM — Auth Proxy + env** (see commented block in `docker-compose.yml`):
+
+```bash
+export CLOUD_SQL_INSTANCE="YOUR_PROJECT:us-central1:dividendscope-db"
+export DATABASE_URL="postgresql://app_user:PASSWORD@cloud-sql-proxy:5432/dividendscope"
+```
+
+Add to `.streamlit/secrets.toml` on the VM:
+
+```toml
+DATABASE_URL = "postgresql://app_user:PASSWORD@cloud-sql-proxy:5432/dividendscope"
+```
+
+**3. Apply schema and migrate existing files:**
+
+```bash
+python -m db.connection --migrate
+python scripts/migrate_to_cloud_sql.py --data-dir /data
+```
+
+**4. Rebuild app:**
+
+```bash
+./scripts/update_cloud_docker.sh
+```
+
+| Data | Cloud SQL table(s) |
+|------|---------------------|
+| Users & access requests | `users`, `access_requests` |
+| Per-user portfolio | `holdings`, `purchase_journal`, `monthly_deposits`, `net_dividends` (+ `user_id`) |
+| Shared S&P library | `stock_documents` (JSONB per symbol) |
+
+Hourly ingest and live prices work unchanged — they write to `stock_documents` when `DATABASE_URL` is set.
+
 ### Migrate your local portfolio to the cloud (one user, multi-user safe)
 
 Holdings live in **SQLite** (`portfolio.db`). With Google sign-in, each **registered** account has:
@@ -401,16 +441,39 @@ Keep **8501** only if you still want direct IP access; for production, prefer **
 
 ### D. HTTPS reverse proxy (Caddy on the VM)
 
-SSH to the VM (Streamlit must already run on `localhost:8501` via Docker):
+**Production domain:** `https://pulse-dividend.duckdns.org/` (DuckDNS A record → VM static IP).
+
+SSH to the VM (Streamlit must run on `127.0.0.1:8501` via Docker):
 
 ```bash
 cd ~/dividend-healthcheck
-export DOMAIN=app.yourdomain.com
-chmod +x deploy/gcp/setup-https-caddy.sh
-sudo DOMAIN="$DOMAIN" ./deploy/gcp/setup-https-caddy.sh
+docker compose up -d --build
+sudo ./deploy/gcp/setup-https-caddy.sh
 ```
 
-Open **https://app.yourdomain.com** (no `:8501`).
+The script installs Caddy, **stops nginx** if it holds `:80`/`:443` (Ubuntu default welcome page), writes `/etc/caddy/Caddyfile`, and starts Caddy with automatic Let's Encrypt TLS.
+
+Verify from your laptop:
+
+```bash
+./scripts/verify_https_setup.sh
+# expect: Server: Caddy and Streamlit HTML (not nginx / 615-byte welcome page)
+```
+
+Open **https://pulse-dividend.duckdns.org/** (no `:8501`).
+
+Reference Caddyfile (also in `deploy/gcp/Caddyfile`):
+
+```text
+pulse-dividend.duckdns.org {
+    encode gzip
+    reverse_proxy localhost:8501 {
+        header_up Host {host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+    }
+}
+```
 
 ### E. Google OAuth redirect (required for login)
 
@@ -418,14 +481,14 @@ Open **https://app.yourdomain.com** (no `:8501`).
 2. **Authorized redirect URIs** → add:
 
    ```text
-   https://app.yourdomain.com/oauth2callback
+   https://pulse-dividend.duckdns.org/oauth2callback
    ```
 
 3. On the VM, edit secrets (not in git):
 
    ```toml
    [auth]
-   redirect_uri = "https://app.yourdomain.com/oauth2callback"
+   redirect_uri = "https://pulse-dividend.duckdns.org/oauth2callback"
    ```
 
 4. Rebuild/restart so Streamlit picks up secrets:
@@ -439,9 +502,11 @@ Open **https://app.yourdomain.com** (no `:8501`).
 | Step | Done when |
 |------|-----------|
 | Static IP reserved & attached to VM | IP unchanged after VM stop/start |
-| DNS A record | `dig +short app.yourdomain.com` = static IP |
-| Firewall 80, 443 | `curl -I https://app.yourdomain.com` returns 200/302 |
-| Caddy running | `sudo systemctl status caddy` active |
+| DuckDNS / DNS A record | `dig +short pulse-dividend.duckdns.org` = static IP (e.g. `35.224.4.144`) |
+| Firewall 80, 443 | `curl -I https://pulse-dividend.duckdns.org` returns 200/302 |
+| Caddy running (not nginx) | `curl -sI https://pulse-dividend.duckdns.org \| grep -i server` → `Caddy` |
+| Streamlit upstream | `curl -sI http://127.0.0.1:8501` on VM returns 200 |
+| OAuth redirect | `https://pulse-dividend.duckdns.org/oauth2callback` in Google Console + secrets |
 | OAuth redirect | Google login completes without redirect mismatch |
 
 ### Alternative — Cloudflare only (no Caddy)
@@ -454,13 +519,24 @@ Open **https://app.yourdomain.com** (no `:8501`).
 
 ## HTTPS (reference)
 
-Streamlit in Docker listens on **8501** (HTTP). Caddy terminates TLS on **443** and proxies to `localhost:8501`.
+Streamlit in Docker listens on **8501** (HTTP, bound to `127.0.0.1` only). **Caddy** terminates TLS on **443** and proxies to `localhost:8501`.
+
+If you see **`Server: nginx`** or a **615-byte** default page, nginx is still bound to `:80`/`:443` — run:
+
+```bash
+sudo ./deploy/gcp/setup-https-caddy.sh
+```
 
 Manual Caddyfile (`/etc/caddy/Caddyfile`):
 
 ```text
-app.yourdomain.com {
-    reverse_proxy localhost:8501
+pulse-dividend.duckdns.org {
+    encode gzip
+    reverse_proxy localhost:8501 {
+        header_up Host {host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+    }
 }
 ```
 
@@ -481,6 +557,8 @@ app.yourdomain.com {
 
 | Problem | Fix |
 |---------|-----|
+| `Server: nginx` on https://pulse-dividend.duckdns.org | Run `sudo ./deploy/gcp/setup-https-caddy.sh` on VM (stops nginx, starts Caddy) |
+| Default nginx welcome page (615 bytes) | Same — Caddy must proxy to `localhost:8501`, not nginx |
 | `container name "/dividendscope" is already in use` | `docker rm -f dividendscope` then `docker compose up -d --build` (data volume is kept) |
 | Page does not load | Firewall rule tcp **8501**; VM running; `docker compose ps` |
 | Out of memory | Use **e2-small** or **e2-medium** |

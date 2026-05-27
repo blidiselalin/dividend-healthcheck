@@ -19,6 +19,9 @@ services:
       DIVIDENDSCOPE_DATA_DIR: /data
       DIVIDENDSCOPE_LOG_LEVEL: INFO
       PYTHONUNBUFFERED: "1"
+      # Cloud SQL (via Auth Proxy service below). Example:
+      # DATABASE_URL: postgresql://app:secret@cloud-sql-proxy:5432/dividendscope
+      DATABASE_URL: ${DATABASE_URL:-}
     volumes:
       - dividendscope-data:/data
     command:
@@ -35,3 +38,17 @@ services:
 volumes:
   dividendscope-data:
     name: dividendscope-persistent-data
+
+# Uncomment to connect to Cloud SQL (set CLOUD_SQL_INSTANCE and DATABASE_URL):
+#
+# services:
+#   cloud-sql-proxy:
+#     image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.14.2
+#     restart: unless-stopped
+#     command:
+#       - "--structured-logs"
+#       - "--address=0.0.0.0"
+#       - "--port=5432"
+#       - "${CLOUD_SQL_INSTANCE}"
+#     ports:
+#       - "127.0.0.1:5432:5432"

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from config import DATA_DIR
+from db.connection import open_portfolio_db, use_cloud_sql
 
 
 def _default_portfolio_db_path() -> Path:
@@ -63,12 +64,12 @@ class PortfolioStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.db_path)
-        connection.row_factory = sqlite3.Row
-        return connection
+    def _connect(self):
+        return open_portfolio_db(self.db_path)
 
     def _ensure_schema(self) -> None:
+        if use_cloud_sql():
+            return
         with self._connect() as connection:
             connection.execute(
                 """
@@ -96,22 +97,36 @@ class PortfolioStore:
 
     def list_holdings(self) -> List[PortfolioHolding]:
         with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT
-                  symbol,
-                  shares,
-                  avg_cost_per_share,
-                  acquisition_value,
-                  commission,
-                  dividends_paid,
-                  estimated_avg_price,
-                  sort_order,
-                  company_name
-                FROM holdings
-                ORDER BY sort_order, symbol
-                """
-            ).fetchall()
+            if connection.is_postgres:
+                rows = connection.execute(
+                    """
+                    SELECT
+                      symbol, shares, avg_cost_per_share, acquisition_value,
+                      commission, dividends_paid, estimated_avg_price,
+                      sort_order, company_name
+                    FROM holdings
+                    WHERE user_id = ?
+                    ORDER BY sort_order, symbol
+                    """,
+                    (connection.user_id,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT
+                      symbol,
+                      shares,
+                      avg_cost_per_share,
+                      acquisition_value,
+                      commission,
+                      dividends_paid,
+                      estimated_avg_price,
+                      sort_order,
+                      company_name
+                    FROM holdings
+                    ORDER BY sort_order, symbol
+                    """
+                ).fetchall()
 
         return [
             PortfolioHolding(
@@ -138,7 +153,13 @@ class PortfolioStore:
     def holding_exists(self, symbol: str) -> bool:
         return self.get_holding(symbol) is not None
 
-    def _next_sort_order(self, connection: sqlite3.Connection) -> int:
+    def _next_sort_order(self, connection) -> int:
+        if connection.is_postgres:
+            row = connection.execute(
+                "SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order FROM holdings WHERE user_id = ?",
+                (connection.user_id,),
+            ).fetchone()
+            return int(row["next_order"])
         row = connection.execute(
             "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM holdings"
         ).fetchone()
@@ -168,56 +189,107 @@ class PortfolioStore:
         est = estimated_avg_price if estimated_avg_price is not None else avg_cost_per_share
 
         with self._connect() as connection:
-            existing = connection.execute(
-                "SELECT symbol FROM holdings WHERE symbol = ?",
-                (symbol,),
-            ).fetchone()
+            if connection.is_postgres:
+                existing = connection.execute(
+                    "SELECT symbol FROM holdings WHERE user_id = ? AND symbol = ?",
+                    (connection.user_id, symbol),
+                ).fetchone()
+            else:
+                existing = connection.execute(
+                    "SELECT symbol FROM holdings WHERE symbol = ?",
+                    (symbol,),
+                ).fetchone()
             if existing:
-                connection.execute(
-                    """
-                    UPDATE holdings SET
-                      shares = ?,
-                      avg_cost_per_share = ?,
-                      acquisition_value = ?,
-                      commission = ?,
-                      dividends_paid = ?,
-                      estimated_avg_price = ?,
-                      company_name = COALESCE(?, company_name)
-                    WHERE symbol = ?
-                    """,
-                    (
-                        shares,
-                        avg_cost_per_share,
-                        acquisition_value,
-                        commission,
-                        dividends_paid,
-                        est,
-                        company_name,
-                        symbol,
-                    ),
-                )
+                if connection.is_postgres:
+                    connection.execute(
+                        """
+                        UPDATE holdings SET
+                          shares = ?, avg_cost_per_share = ?, acquisition_value = ?,
+                          commission = ?, dividends_paid = ?, estimated_avg_price = ?,
+                          company_name = COALESCE(?, company_name)
+                        WHERE user_id = ? AND symbol = ?
+                        """,
+                        (
+                            shares,
+                            avg_cost_per_share,
+                            acquisition_value,
+                            commission,
+                            dividends_paid,
+                            est,
+                            company_name,
+                            connection.user_id,
+                            symbol,
+                        ),
+                    )
+                else:
+                    connection.execute(
+                        """
+                        UPDATE holdings SET
+                          shares = ?,
+                          avg_cost_per_share = ?,
+                          acquisition_value = ?,
+                          commission = ?,
+                          dividends_paid = ?,
+                          estimated_avg_price = ?,
+                          company_name = COALESCE(?, company_name)
+                        WHERE symbol = ?
+                        """,
+                        (
+                            shares,
+                            avg_cost_per_share,
+                            acquisition_value,
+                            commission,
+                            dividends_paid,
+                            est,
+                            company_name,
+                            symbol,
+                        ),
+                    )
             else:
                 sort_order = self._next_sort_order(connection)
-                connection.execute(
-                    """
-                    INSERT INTO holdings (
-                      symbol, shares, avg_cost_per_share, acquisition_value,
-                      commission, dividends_paid, estimated_avg_price,
-                      sort_order, company_name
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        symbol,
-                        shares,
-                        avg_cost_per_share,
-                        acquisition_value,
-                        commission,
-                        dividends_paid,
-                        est,
-                        sort_order,
-                        company_name,
-                    ),
-                )
+                if connection.is_postgres:
+                    connection.execute(
+                        """
+                        INSERT INTO holdings (
+                          user_id, symbol, shares, avg_cost_per_share, acquisition_value,
+                          commission, dividends_paid, estimated_avg_price,
+                          sort_order, company_name
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            connection.user_id,
+                            symbol,
+                            shares,
+                            avg_cost_per_share,
+                            acquisition_value,
+                            commission,
+                            dividends_paid,
+                            est,
+                            sort_order,
+                            company_name,
+                        ),
+                    )
+                else:
+                    connection.execute(
+                        """
+                        INSERT INTO holdings (
+                          symbol, shares, avg_cost_per_share, acquisition_value,
+                          commission, dividends_paid, estimated_avg_price,
+                          sort_order, company_name
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            symbol,
+                            shares,
+                            avg_cost_per_share,
+                            acquisition_value,
+                            commission,
+                            dividends_paid,
+                            est,
+                            sort_order,
+                            company_name,
+                        ),
+                    )
 
         holding = self.get_holding(symbol)
         if holding is None:
@@ -265,8 +337,14 @@ class PortfolioStore:
     def delete_holding(self, symbol: str) -> bool:
         symbol = symbol.strip().upper()
         with self._connect() as connection:
-            cursor = connection.execute(
-                "DELETE FROM holdings WHERE symbol = ?",
-                (symbol,),
-            )
+            if connection.is_postgres:
+                cursor = connection.execute(
+                    "DELETE FROM holdings WHERE user_id = ? AND symbol = ?",
+                    (connection.user_id, symbol),
+                )
+            else:
+                cursor = connection.execute(
+                    "DELETE FROM holdings WHERE symbol = ?",
+                    (symbol,),
+                )
             return cursor.rowcount > 0

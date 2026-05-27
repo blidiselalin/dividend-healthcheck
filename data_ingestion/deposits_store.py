@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from config import DATA_DIR
+from db.connection import open_portfolio_db, use_cloud_sql
 
 
 def _default_db_path() -> Path:
@@ -107,12 +108,12 @@ class DepositsStore:
         if do_seed:
             self._seed_if_empty()
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.db_path)
-        connection.row_factory = sqlite3.Row
-        return connection
+    def _connect(self):
+        return open_portfolio_db(self.db_path)
 
     def _ensure_schema(self) -> None:
+        if use_cloud_sql():
+            return
         with self._connect() as connection:
             connection.execute(
                 """
@@ -161,13 +162,24 @@ class DepositsStore:
 
     def list_deposits(self) -> List[MonthlyDeposit]:
         with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT year, month, label, deposit_eur, deposit_usd, portfolio_eur, sort_order
-                FROM monthly_deposits
-                ORDER BY sort_order
-                """
-            ).fetchall()
+            if connection.is_postgres:
+                rows = connection.execute(
+                    """
+                    SELECT year, month, label, deposit_eur, deposit_usd, portfolio_eur, sort_order
+                    FROM monthly_deposits
+                    WHERE user_id = ?
+                    ORDER BY sort_order
+                    """,
+                    (connection.user_id,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT year, month, label, deposit_eur, deposit_usd, portfolio_eur, sort_order
+                    FROM monthly_deposits
+                    ORDER BY sort_order
+                    """
+                ).fetchall()
 
         return [
             MonthlyDeposit(
@@ -193,52 +205,104 @@ class DepositsStore:
     ) -> MonthlyDeposit:
         period_key = f"{year:04d}-{month:02d}"
         with self._connect() as connection:
-            existing = connection.execute(
-                "SELECT sort_order FROM monthly_deposits WHERE period_key = ?",
-                (period_key,),
-            ).fetchone()
+            if connection.is_postgres:
+                existing = connection.execute(
+                    "SELECT sort_order FROM monthly_deposits WHERE user_id = ? AND period_key = ?",
+                    (connection.user_id, period_key),
+                ).fetchone()
+            else:
+                existing = connection.execute(
+                    "SELECT sort_order FROM monthly_deposits WHERE period_key = ?",
+                    (period_key,),
+                ).fetchone()
             if existing:
-                connection.execute(
-                    """
-                    UPDATE monthly_deposits SET
-                      year = ?, month = ?, label = ?,
-                      deposit_eur = ?, deposit_usd = ?, portfolio_eur = ?
-                    WHERE period_key = ?
-                    """,
-                    (
-                        year,
-                        month,
-                        label,
-                        deposit_eur,
-                        deposit_usd,
-                        portfolio_eur,
-                        period_key,
-                    ),
-                )
+                if connection.is_postgres:
+                    connection.execute(
+                        """
+                        UPDATE monthly_deposits SET
+                          year = ?, month = ?, label = ?,
+                          deposit_eur = ?, deposit_usd = ?, portfolio_eur = ?
+                        WHERE user_id = ? AND period_key = ?
+                        """,
+                        (
+                            year,
+                            month,
+                            label,
+                            deposit_eur,
+                            deposit_usd,
+                            portfolio_eur,
+                            connection.user_id,
+                            period_key,
+                        ),
+                    )
+                else:
+                    connection.execute(
+                        """
+                        UPDATE monthly_deposits SET
+                          year = ?, month = ?, label = ?,
+                          deposit_eur = ?, deposit_usd = ?, portfolio_eur = ?
+                        WHERE period_key = ?
+                        """,
+                        (
+                            year,
+                            month,
+                            label,
+                            deposit_eur,
+                            deposit_usd,
+                            portfolio_eur,
+                            period_key,
+                        ),
+                    )
                 sort_order = int(existing["sort_order"])
             else:
-                max_order = connection.execute(
-                    "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM monthly_deposits"
-                ).fetchone()[0]
-                sort_order = int(max_order)
-                connection.execute(
-                    """
-                    INSERT INTO monthly_deposits (
-                      period_key, year, month, label,
-                      deposit_eur, deposit_usd, portfolio_eur, sort_order
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        period_key,
-                        year,
-                        month,
-                        label,
-                        deposit_eur,
-                        deposit_usd,
-                        portfolio_eur,
-                        sort_order,
-                    ),
-                )
+                if connection.is_postgres:
+                    max_order = connection.execute(
+                        "SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order FROM monthly_deposits WHERE user_id = ?",
+                        (connection.user_id,),
+                    ).fetchone()
+                    sort_order = int(max_order["next_order"])
+                    connection.execute(
+                        """
+                        INSERT INTO monthly_deposits (
+                          user_id, period_key, year, month, label,
+                          deposit_eur, deposit_usd, portfolio_eur, sort_order
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            connection.user_id,
+                            period_key,
+                            year,
+                            month,
+                            label,
+                            deposit_eur,
+                            deposit_usd,
+                            portfolio_eur,
+                            sort_order,
+                        ),
+                    )
+                else:
+                    max_order = connection.execute(
+                        "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM monthly_deposits"
+                    ).fetchone()[0]
+                    sort_order = int(max_order)
+                    connection.execute(
+                        """
+                        INSERT INTO monthly_deposits (
+                          period_key, year, month, label,
+                          deposit_eur, deposit_usd, portfolio_eur, sort_order
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            period_key,
+                            year,
+                            month,
+                            label,
+                            deposit_eur,
+                            deposit_usd,
+                            portfolio_eur,
+                            sort_order,
+                        ),
+                    )
 
         for deposit in self.list_deposits():
             if deposit.period_key == period_key:
@@ -247,8 +311,14 @@ class DepositsStore:
 
     def delete_deposit(self, period_key: str) -> bool:
         with self._connect() as connection:
-            cursor = connection.execute(
-                "DELETE FROM monthly_deposits WHERE period_key = ?",
-                (period_key,),
-            )
+            if connection.is_postgres:
+                cursor = connection.execute(
+                    "DELETE FROM monthly_deposits WHERE user_id = ? AND period_key = ?",
+                    (connection.user_id, period_key),
+                )
+            else:
+                cursor = connection.execute(
+                    "DELETE FROM monthly_deposits WHERE period_key = ?",
+                    (period_key,),
+                )
             return cursor.rowcount > 0

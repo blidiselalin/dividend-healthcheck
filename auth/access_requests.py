@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from config import DATA_DIR
+from db.connection import open_app_db, use_cloud_sql
 
 REQUESTS_DB_PATH = DATA_DIR / "users.db"
 
@@ -40,10 +41,14 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _parse_dt(value: Optional[str]) -> Optional[datetime]:
+def _parse_dt(value) -> Optional[datetime]:
     if not value:
         return None
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
 
 
 class AccessRequestStore:
@@ -54,12 +59,12 @@ class AccessRequestStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.db_path)
-        connection.row_factory = sqlite3.Row
-        return connection
+    def _connect(self):
+        return open_app_db(self.db_path)
 
     def _ensure_schema(self) -> None:
+        if use_cloud_sql():
+            return
         with self._connect() as connection:
             connection.execute(
                 """

@@ -1,0 +1,14 @@
+# Production reverse proxy for DividendScope (Streamlit on localhost:8501).
+# Install with: sudo ./deploy/gcp/setup-https-caddy.sh
+
+pulse-dividend.duckdns.org {
+	encode gzip
+
+	reverse_proxy localhost:8501 {
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+	}
+}

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from config import DATA_DIR
+from db.connection import open_portfolio_db, use_cloud_sql
 
 
 def _default_db_path() -> Path:
@@ -135,12 +136,12 @@ class DividendIncomeStore:
             self._seed_if_empty()
             self.sync_seed()
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.db_path)
-        connection.row_factory = sqlite3.Row
-        return connection
+    def _connect(self):
+        return open_portfolio_db(self.db_path)
 
     def _ensure_schema(self) -> None:
+        if use_cloud_sql():
+            return
         with self._connect() as connection:
             connection.execute(
                 """
@@ -178,24 +179,45 @@ class DividendIncomeStore:
         with self._connect() as connection:
             for year, month, net_usd in DIVIDEND_NET_SEED:
                 key = f"{year:04d}-{month:02d}"
-                connection.execute(
-                    """
-                    INSERT INTO net_dividends (period_key, year, month, net_usd)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(period_key) DO UPDATE SET net_usd = excluded.net_usd
-                    """,
-                    (key, year, month, net_usd),
-                )
+                if connection.is_postgres:
+                    connection.execute(
+                        """
+                        INSERT INTO net_dividends (user_id, period_key, year, month, net_usd)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT (user_id, period_key) DO UPDATE SET net_usd = excluded.net_usd
+                        """,
+                        (connection.user_id, key, year, month, net_usd),
+                    )
+                else:
+                    connection.execute(
+                        """
+                        INSERT INTO net_dividends (period_key, year, month, net_usd)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(period_key) DO UPDATE SET net_usd = excluded.net_usd
+                        """,
+                        (key, year, month, net_usd),
+                    )
 
     def list_dividends(self) -> List[MonthlyNetDividend]:
         with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT year, month, net_usd
-                FROM net_dividends
-                ORDER BY year, month
-                """
-            ).fetchall()
+            if connection.is_postgres:
+                rows = connection.execute(
+                    """
+                    SELECT year, month, net_usd
+                    FROM net_dividends
+                    WHERE user_id = ?
+                    ORDER BY year, month
+                    """,
+                    (connection.user_id,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT year, month, net_usd
+                    FROM net_dividends
+                    ORDER BY year, month
+                    """
+                ).fetchall()
 
         records: List[MonthlyNetDividend] = []
         for row in rows:

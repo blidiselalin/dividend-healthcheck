@@ -7,6 +7,13 @@ from pathlib import Path
 
 
 def holding_count(db_path: Path) -> int:
+    try:
+        from db.connection import holding_count_for_user, use_cloud_sql
+
+        if use_cloud_sql():
+            return holding_count_for_user()
+    except Exception:
+        pass
     if not db_path.is_file():
         return 0
     try:

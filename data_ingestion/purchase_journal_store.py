@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import List, Optional, Set
 
 from config import DATA_DIR
+from db.connection import open_portfolio_db, use_cloud_sql
 def _default_db_path() -> Path:
     try:
         from auth.user_context import resolve_portfolio_db_path
@@ -62,12 +63,12 @@ class PurchaseJournalStore:
             self._seed_if_empty()
             self.sync_seed()
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.db_path)
-        connection.row_factory = sqlite3.Row
-        return connection
+    def _connect(self):
+        return open_portfolio_db(self.db_path)
 
     def _ensure_schema(self) -> None:
+        if use_cloud_sql():
+            return
         with self._connect() as connection:
             connection.execute(
                 """
@@ -125,13 +126,24 @@ class PurchaseJournalStore:
     def list_purchases(self, *, portfolio_only: bool = True) -> List[PurchaseRecord]:
         allowed = portfolio_symbols(self.db_path) if portfolio_only else None
         with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT id, symbol, purchase_date, price_usd
-                FROM purchase_journal
-                ORDER BY purchase_date, symbol, price_usd
-                """
-            ).fetchall()
+            if connection.is_postgres:
+                rows = connection.execute(
+                    """
+                    SELECT id, symbol, purchase_date, price_usd
+                    FROM purchase_journal
+                    WHERE user_id = ?
+                    ORDER BY purchase_date, symbol, price_usd
+                    """,
+                    (connection.user_id,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT id, symbol, purchase_date, price_usd
+                    FROM purchase_journal
+                    ORDER BY purchase_date, symbol, price_usd
+                    """
+                ).fetchall()
 
         records: List[PurchaseRecord] = []
         for row in rows:
@@ -161,31 +173,56 @@ class PurchaseJournalStore:
             raise ValueError("Price must be positive")
 
         with self._connect() as connection:
-            cursor = connection.execute(
-                """
-                INSERT INTO purchase_journal (symbol, purchase_date, price_usd)
-                VALUES (?, ?, ?)
-                ON CONFLICT(symbol, purchase_date, price_usd) DO NOTHING
-                """,
-                (symbol, purchase_date.isoformat(), price_usd),
-            )
-            if cursor.rowcount == 0:
+            if connection.is_postgres:
                 row = connection.execute(
                     """
-                    SELECT id, symbol, purchase_date, price_usd
-                    FROM purchase_journal
-                    WHERE symbol = ? AND purchase_date = ? AND price_usd = ?
+                    INSERT INTO purchase_journal (user_id, symbol, purchase_date, price_usd)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT (user_id, symbol, purchase_date, price_usd) DO NOTHING
+                    RETURNING id, symbol, purchase_date, price_usd
+                    """,
+                    (connection.user_id, symbol, purchase_date.isoformat(), price_usd),
+                ).fetchone()
+                if row is None:
+                    row = connection.execute(
+                        """
+                        SELECT id, symbol, purchase_date, price_usd
+                        FROM purchase_journal
+                        WHERE user_id = ? AND symbol = ? AND purchase_date = ? AND price_usd = ?
+                        """,
+                        (
+                            connection.user_id,
+                            symbol,
+                            purchase_date.isoformat(),
+                            price_usd,
+                        ),
+                    ).fetchone()
+            else:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO purchase_journal (symbol, purchase_date, price_usd)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(symbol, purchase_date, price_usd) DO NOTHING
                     """,
                     (symbol, purchase_date.isoformat(), price_usd),
-                ).fetchone()
-            else:
-                row = connection.execute(
-                    """
-                    SELECT id, symbol, purchase_date, price_usd
-                    FROM purchase_journal WHERE id = ?
-                    """,
-                    (cursor.lastrowid,),
-                ).fetchone()
+                )
+                if cursor.rowcount == 0:
+                    row = connection.execute(
+                        """
+                        SELECT id, symbol, purchase_date, price_usd
+                        FROM purchase_journal
+                        WHERE symbol = ? AND purchase_date = ? AND price_usd = ?
+                        """,
+                        (symbol, purchase_date.isoformat(), price_usd),
+                    ).fetchone()
+                else:
+                    row = connection.execute(
+                        """
+                        SELECT id, symbol, purchase_date, price_usd
+                        FROM purchase_journal WHERE id = ?
+                        """,
+                        (cursor.lastrowid,),
+                    ).fetchone()
 
         if row is None:
             raise RuntimeError("Failed to save purchase")
@@ -199,8 +236,14 @@ class PurchaseJournalStore:
 
     def delete_purchase(self, purchase_id: int) -> bool:
         with self._connect() as connection:
-            cursor = connection.execute(
-                "DELETE FROM purchase_journal WHERE id = ?",
-                (purchase_id,),
-            )
+            if connection.is_postgres:
+                cursor = connection.execute(
+                    "DELETE FROM purchase_journal WHERE user_id = ? AND id = ?",
+                    (connection.user_id, purchase_id),
+                )
+            else:
+                cursor = connection.execute(
+                    "DELETE FROM purchase_journal WHERE id = ?",
+                    (purchase_id,),
+                )
             return cursor.rowcount > 0
