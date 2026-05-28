@@ -22,6 +22,21 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 
+def _sqlite_has_table(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
+def _sqlite_rows(conn: sqlite3.Connection, table: str) -> list[sqlite3.Row]:
+    if not _sqlite_has_table(conn, table):
+        return []
+    conn.row_factory = sqlite3.Row
+    return conn.execute(f"SELECT * FROM {table}").fetchall()
+
+
 def _import_users(data_dir: Path) -> int:
     from auth.user_store import _parse_dt
     from db.connection import ensure_schema, get_connection, use_cloud_sql
@@ -69,7 +84,7 @@ def _import_users(data_dir: Path) -> int:
         if (data_dir / "users.db").is_file():
             with sqlite3.connect(data_dir / "users.db") as conn:
                 conn.row_factory = sqlite3.Row
-                for row in conn.execute("SELECT * FROM access_requests").fetchall():
+                for row in _sqlite_rows(conn, "access_requests"):
                     pg.execute(
                         """
                         INSERT INTO access_requests (
@@ -96,7 +111,7 @@ def _import_users(data_dir: Path) -> int:
     return count
 
 
-def _import_portfolio_db(db_path: Path, user_id: str) -> dict:
+def _import_portfolio_db(db_path: Path, user_id: str, *, data_dir: Path | None = None) -> dict:
     from db.connection import ensure_schema, get_connection
 
     ensure_schema()
@@ -115,7 +130,7 @@ def _import_portfolio_db(db_path: Path, user_id: str) -> dict:
                 """,
                 (user_id, f"{user_id}@users.local", user_id),
             )
-            for row in conn.execute("SELECT * FROM holdings").fetchall():
+            for row in _sqlite_rows(conn, "holdings"):
                 pg.execute(
                     """
                     INSERT INTO holdings (
@@ -141,7 +156,7 @@ def _import_portfolio_db(db_path: Path, user_id: str) -> dict:
                     ),
                 )
                 stats["holdings"] += 1
-            for row in conn.execute("SELECT * FROM purchase_journal").fetchall():
+            for row in _sqlite_rows(conn, "purchase_journal"):
                 pg.execute(
                     """
                     INSERT INTO purchase_journal (user_id, symbol, purchase_date, price_usd)
@@ -151,7 +166,7 @@ def _import_portfolio_db(db_path: Path, user_id: str) -> dict:
                     (user_id, row["symbol"], row["purchase_date"], row["price_usd"]),
                 )
                 stats["journal"] += 1
-            for row in conn.execute("SELECT * FROM monthly_deposits").fetchall():
+            for row in _sqlite_rows(conn, "monthly_deposits"):
                 pg.execute(
                     """
                     INSERT INTO monthly_deposits (
@@ -173,7 +188,13 @@ def _import_portfolio_db(db_path: Path, user_id: str) -> dict:
                     ),
                 )
                 stats["deposits"] += 1
-            for row in conn.execute("SELECT * FROM net_dividends").fetchall():
+            dividend_rows = _sqlite_rows(conn, "net_dividends")
+            if not dividend_rows and data_dir is not None:
+                legacy_path = data_dir / "portfolio.db"
+                if legacy_path.is_file() and legacy_path.resolve() != db_path.resolve():
+                    with sqlite3.connect(legacy_path) as legacy_conn:
+                        dividend_rows = _sqlite_rows(legacy_conn, "net_dividends")
+            for row in dividend_rows:
                 pg.execute(
                     """
                     INSERT INTO net_dividends (user_id, period_key, year, month, net_usd)
@@ -218,7 +239,7 @@ def main() -> int:
     total = {"holdings": 0, "journal": 0, "deposits": 0, "dividends": 0}
     legacy = data_dir / "portfolio.db"
     if legacy.is_file():
-        stats = _import_portfolio_db(legacy, "legacy-local")
+        stats = _import_portfolio_db(legacy, "legacy-local", data_dir=data_dir)
         for key in total:
             total[key] += stats[key]
         print(f"  legacy portfolio: {stats}")
@@ -229,7 +250,7 @@ def main() -> int:
             db_path = user_dir / "portfolio.db"
             if not db_path.is_file():
                 continue
-            stats = _import_portfolio_db(db_path, user_dir.name)
+            stats = _import_portfolio_db(db_path, user_dir.name, data_dir=data_dir)
             for key in total:
                 total[key] += stats[key]
             print(f"  user {user_dir.name}: {stats}")
