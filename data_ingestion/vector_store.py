@@ -792,22 +792,20 @@ class VectorStore:
     def get_all_documents(self) -> List[StockDocument]:
         if getattr(self, "_use_postgres", False):
             return self._pg_store.get_all_documents()
-        """
-        Get all documents from the store.
-        
-        Returns:
-            List of all StockDocuments.
-        """
+        return self._load_all_from_disk()
+
+    def _load_all_from_disk(self) -> List[StockDocument]:
+        """Read all documents from local ChromaDB or fallback JSON."""
         if self._use_fallback:
             return list(self._fallback_store.values())
-        
+
         try:
             results = self._collection.get()
             if results and results["metadatas"]:
                 return [self._metadata_to_document(meta) for meta in results["metadatas"]]
         except Exception as e:
             logger.error(f"Error getting all documents: {e}")
-        
+
         return []
     
     def consolidate_duplicates(self) -> Dict[str, Any]:
@@ -1059,3 +1057,42 @@ class VectorStore:
         apply_dividend_streak_to_document(best)
         
         return best
+
+
+def load_legacy_vectordb_documents(persist_directory: str | Path) -> List[StockDocument]:
+    """
+    Read stock documents from on-disk ChromaDB/fallback JSON.
+
+    Ignores DATABASE_URL so migration can import legacy /data/vectordb into PostgreSQL.
+    """
+    path = Path(persist_directory)
+    if not path.is_dir():
+        return []
+
+    fallback_file = path / "fallback_store.json"
+    store = object.__new__(VectorStore)
+    store._use_postgres = False
+    store._pg_store = None
+    store.persist_directory = path
+    store._fallback_store = {}
+    store._fallback_file = fallback_file
+    store._client = None
+    store._collection = None
+
+    if fallback_file.is_file():
+        store._use_fallback = True
+        store._init_fallback()
+        return store._load_all_from_disk()
+
+    if not CHROMADB_AVAILABLE:
+        logger.info("No ChromaDB at %s and chromadb package not installed", path)
+        return []
+
+    store._use_fallback = False
+    try:
+        store._init_chromadb()
+    except Exception as exc:
+        logger.warning("Could not open ChromaDB at %s: %s", path, exc)
+        return []
+
+    return store._load_all_from_disk()

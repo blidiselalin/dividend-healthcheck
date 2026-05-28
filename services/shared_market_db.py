@@ -82,15 +82,6 @@ def shared_market_db_status() -> Dict[str, Any]:
     return status
 
 
-def _dir_has_chroma_data(directory: Path) -> bool:
-    if not directory.is_dir():
-        return False
-    for name in ("chroma.sqlite3", "fallback_store.json"):
-        if (directory / name).exists():
-            return True
-    return any(directory.iterdir()) if directory.exists() else False
-
-
 def bootstrap_shared_market_db_from_bundle() -> bool:
     """
     Copy bundled ``data/vectordb`` into the runtime data dir when the volume is empty.
@@ -113,6 +104,58 @@ def bootstrap_shared_market_db_from_bundle() -> bool:
     reset_shared_vector_store_cache()
     logger.info("Bootstrapped shared market DB from %s → %s", bundle, target)
     return True
+
+
+def _dir_has_chroma_data(directory: Path) -> bool:
+    if not directory.is_dir():
+        return False
+    for name in ("chroma.sqlite3", "fallback_store.json"):
+        if (directory / name).exists():
+            return True
+    return any(directory.iterdir()) if directory.exists() else False
+
+
+def import_legacy_vectordb_to_postgres(source_dir: Path | None = None) -> int:
+    """Upsert all legacy Chroma/fallback documents into PostgreSQL stock_documents."""
+    from db.connection import use_cloud_sql
+
+    if not use_cloud_sql():
+        return 0
+
+    from data_ingestion.vector_store import load_legacy_vectordb_documents
+    from db.postgres_market_store import PostgresMarketStore
+
+    source = Path(source_dir or shared_market_db_path())
+    documents = load_legacy_vectordb_documents(source)
+    if not documents:
+        logger.info("No legacy market library documents at %s", source)
+        return 0
+
+    pg = PostgresMarketStore()
+    pg.add_documents(documents)
+    logger.info(
+        "Imported %s stock documents from %s into PostgreSQL (total=%s)",
+        len(documents),
+        source,
+        pg.count(),
+    )
+    return len(documents)
+
+
+def bootstrap_shared_market_db_to_postgres() -> int:
+    """Import legacy Chroma on disk when PostgreSQL stock_documents is empty."""
+    from db.connection import use_cloud_sql
+
+    if not use_cloud_sql():
+        return 0
+
+    from db.postgres_market_store import PostgresMarketStore
+
+    pg = PostgresMarketStore()
+    if pg.count() > 0:
+        return 0
+
+    return import_legacy_vectordb_to_postgres()
 
 
 def get_document(symbol: str):

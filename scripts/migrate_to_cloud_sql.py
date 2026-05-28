@@ -208,18 +208,33 @@ def _import_portfolio_db(db_path: Path, user_id: str, *, data_dir: Path | None =
 
 
 def _import_market_library(data_dir: Path) -> int:
-    from data_ingestion.vector_store import VectorStore
-    from db.postgres_market_store import PostgresMarketStore
+    from db.connection import use_cloud_sql
+    from services.shared_market_db import import_legacy_vectordb_to_postgres
 
-    store = VectorStore(persist_directory=str(data_dir / "vectordb"))
-    if getattr(store, "_use_postgres", False):
+    if not use_cloud_sql():
+        print("  market library: skipped (DATABASE_URL not set)")
         return 0
-    documents = store.get_all_documents()
-    if not documents:
+
+    vectordb_dir = data_dir / "vectordb"
+    imported = import_legacy_vectordb_to_postgres(vectordb_dir)
+    if imported:
+        return imported
+
+    if not _dir_has_vectordb_data(vectordb_dir):
+        print(f"  market library: no legacy data at {vectordb_dir}")
         return 0
-    pg = PostgresMarketStore()
-    pg.add_documents(documents)
-    return len(documents)
+
+    print(f"  market library: legacy data at {vectordb_dir} but no documents loaded")
+    return 0
+
+
+def _dir_has_vectordb_data(directory: Path) -> bool:
+    if not directory.is_dir():
+        return False
+    for name in ("chroma.sqlite3", "fallback_store.json"):
+        if (directory / name).is_file():
+            return True
+    return any(directory.iterdir())
 
 
 def main() -> int:
