@@ -26,6 +26,18 @@ def test_load_legacy_vectordb_documents_missing_dir(tmp_path: Path):
     assert load_legacy_vectordb_documents(tmp_path / "missing") == []
 
 
+def test_load_legacy_vectordb_documents_empty_chroma_scaffold(tmp_path: Path):
+    import chromadb
+    from chromadb.config import Settings
+
+    vdb = tmp_path / "vectordb"
+    vdb.mkdir()
+    client = chromadb.PersistentClient(path=str(vdb), settings=Settings(anonymized_telemetry=False))
+    client.get_or_create_collection("dividend_stocks")
+
+    assert load_legacy_vectordb_documents(vdb) == []
+
+
 def test_import_legacy_vectordb_to_postgres(tmp_path: Path):
     vdb = tmp_path / "vectordb"
     vdb.mkdir()

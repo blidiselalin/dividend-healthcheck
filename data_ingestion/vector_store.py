@@ -1059,6 +1059,42 @@ class VectorStore:
         return best
 
 
+def _find_chroma_roots(base: Path) -> list[Path]:
+    """Return directories that contain a ChromaDB persist folder."""
+    if not base.is_dir():
+        return []
+
+    roots: list[Path] = []
+    if (base / "chroma.sqlite3").is_file():
+        roots.append(base)
+    for child in sorted(base.iterdir()):
+        if child.is_dir() and (child / "chroma.sqlite3").is_file():
+            roots.append(child)
+    if not roots:
+        roots.append(base)
+    return roots
+
+
+def _pick_chroma_collection(collections: list[Any]) -> Any | None:
+    """Prefer the canonical collection; otherwise use the largest non-empty one."""
+    if not collections:
+        return None
+
+    preferred = VectorStore.COLLECTION_NAME
+    for collection in collections:
+        if collection.name == preferred and collection.count() > 0:
+            return collection
+
+    nonempty = [collection for collection in collections if collection.count() > 0]
+    if nonempty:
+        return max(nonempty, key=lambda collection: collection.count())
+
+    for collection in collections:
+        if collection.name == preferred:
+            return collection
+    return collections[0]
+
+
 def load_legacy_vectordb_documents(persist_directory: str | Path) -> List[StockDocument]:
     """
     Read stock documents from on-disk ChromaDB/fallback JSON.
@@ -1067,32 +1103,65 @@ def load_legacy_vectordb_documents(persist_directory: str | Path) -> List[StockD
     """
     path = Path(persist_directory)
     if not path.is_dir():
+        logger.debug("Legacy vectordb path missing: %s", path)
         return []
 
     fallback_file = path / "fallback_store.json"
-    store = object.__new__(VectorStore)
-    store._use_postgres = False
-    store._pg_store = None
-    store.persist_directory = path
-    store._fallback_store = {}
-    store._fallback_file = fallback_file
-    store._client = None
-    store._collection = None
-
     if fallback_file.is_file():
+        store = object.__new__(VectorStore)
+        store.persist_directory = path
+        store._fallback_store = {}
+        store._fallback_file = fallback_file
         store._use_fallback = True
         store._init_fallback()
-        return store._load_all_from_disk()
+        docs = list(store._fallback_store.values())
+        logger.info("Loaded %s documents from fallback_store.json at %s", len(docs), path)
+        return docs
 
     if not CHROMADB_AVAILABLE:
-        logger.info("No ChromaDB at %s and chromadb package not installed", path)
+        logger.warning("chromadb not installed; cannot read legacy vectordb at %s", path)
         return []
 
-    store._use_fallback = False
-    try:
-        store._init_chromadb()
-    except Exception as exc:
-        logger.warning("Could not open ChromaDB at %s: %s", path, exc)
-        return []
+    reader = object.__new__(VectorStore)
+    for root in _find_chroma_roots(path):
+        try:
+            client = chromadb.PersistentClient(
+                path=str(root),
+                settings=Settings(anonymized_telemetry=False),
+            )
+            collections = client.list_collections()
+            summary = [(collection.name, collection.count()) for collection in collections]
+            logger.info("ChromaDB at %s collections: %s", root, summary or "none")
 
-    return store._load_all_from_disk()
+            collection = _pick_chroma_collection(collections)
+            if collection is None:
+                continue
+
+            count = collection.count()
+            if count == 0:
+                logger.info("Chroma collection %r at %s is empty", collection.name, root)
+                continue
+
+            results = collection.get(include=["metadatas"])
+            metadatas = results.get("metadatas") if results else None
+            if not metadatas:
+                logger.warning("Chroma collection %r at %s returned no metadata", collection.name, root)
+                continue
+
+            docs = [
+                reader._metadata_to_document(metadata)
+                for metadata in metadatas
+                if metadata
+            ]
+            logger.info(
+                "Loaded %s documents from Chroma collection %r at %s",
+                len(docs),
+                collection.name,
+                root,
+            )
+            return docs
+        except Exception as exc:
+            logger.warning("Could not read ChromaDB at %s: %s", root, exc)
+
+    logger.info("No legacy market library documents at %s", path)
+    return []

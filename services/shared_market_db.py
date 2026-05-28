@@ -32,6 +32,26 @@ def shared_market_db_path() -> Path:
     return Path(SHARED_MARKET_DB_DIR)
 
 
+def legacy_vectordb_search_paths(*preferred: Path) -> list[Path]:
+    """Candidate on-disk Chroma locations, in priority order."""
+    ordered: list[Path] = []
+    seen: set[str] = set()
+    for raw in (*preferred, shared_market_db_path(), BUNDLED_MARKET_DB_DIR):
+        path = Path(raw)
+        key = str(path.resolve()) if path.exists() else str(path)
+        if key in seen or not path.is_dir():
+            continue
+        seen.add(key)
+        ordered.append(path)
+    return ordered
+
+
+def legacy_vectordb_document_count(directory: Path) -> int:
+    from data_ingestion.vector_store import load_legacy_vectordb_documents
+
+    return len(load_legacy_vectordb_documents(directory))
+
+
 def _vector_store_class():
     from data_ingestion.vector_store import VectorStore
 
@@ -92,9 +112,9 @@ def bootstrap_shared_market_db_from_bundle() -> bool:
     target = shared_market_db_path()
     bundle = BUNDLED_MARKET_DB_DIR
 
-    if _dir_has_chroma_data(target):
+    if legacy_vectordb_document_count(target) > 0:
         return False
-    if not _dir_has_chroma_data(bundle):
+    if legacy_vectordb_document_count(bundle) == 0:
         return False
 
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -106,17 +126,8 @@ def bootstrap_shared_market_db_from_bundle() -> bool:
     return True
 
 
-def _dir_has_chroma_data(directory: Path) -> bool:
-    if not directory.is_dir():
-        return False
-    for name in ("chroma.sqlite3", "fallback_store.json"):
-        if (directory / name).exists():
-            return True
-    return any(directory.iterdir()) if directory.exists() else False
-
-
 def import_legacy_vectordb_to_postgres(source_dir: Path | None = None) -> int:
-    """Upsert all legacy Chroma/fallback documents into PostgreSQL stock_documents."""
+    """Upsert legacy Chroma/fallback documents into PostgreSQL stock_documents."""
     from db.connection import use_cloud_sql
 
     if not use_cloud_sql():
@@ -125,21 +136,24 @@ def import_legacy_vectordb_to_postgres(source_dir: Path | None = None) -> int:
     from data_ingestion.vector_store import load_legacy_vectordb_documents
     from db.postgres_market_store import PostgresMarketStore
 
-    source = Path(source_dir or shared_market_db_path())
-    documents = load_legacy_vectordb_documents(source)
-    if not documents:
-        logger.info("No legacy market library documents at %s", source)
-        return 0
+    preferred = [Path(source_dir)] if source_dir else []
+    for source in legacy_vectordb_search_paths(*preferred):
+        documents = load_legacy_vectordb_documents(source)
+        if not documents:
+            logger.info("No legacy market library documents at %s", source)
+            continue
 
-    pg = PostgresMarketStore()
-    pg.add_documents(documents)
-    logger.info(
-        "Imported %s stock documents from %s into PostgreSQL (total=%s)",
-        len(documents),
-        source,
-        pg.count(),
-    )
-    return len(documents)
+        pg = PostgresMarketStore()
+        pg.add_documents(documents)
+        logger.info(
+            "Imported %s stock documents from %s into PostgreSQL (total=%s)",
+            len(documents),
+            source,
+            pg.count(),
+        )
+        return len(documents)
+
+    return 0
 
 
 def bootstrap_shared_market_db_to_postgres() -> int:

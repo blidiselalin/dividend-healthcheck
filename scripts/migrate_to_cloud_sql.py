@@ -215,26 +215,13 @@ def _import_market_library(data_dir: Path) -> int:
         print("  market library: skipped (DATABASE_URL not set)")
         return 0
 
-    vectordb_dir = data_dir / "vectordb"
-    imported = import_legacy_vectordb_to_postgres(vectordb_dir)
+    imported = import_legacy_vectordb_to_postgres(data_dir / "vectordb")
     if imported:
         return imported
 
-    if not _dir_has_vectordb_data(vectordb_dir):
-        print(f"  market library: no legacy data at {vectordb_dir}")
-        return 0
-
-    print(f"  market library: legacy data at {vectordb_dir} but no documents loaded")
+    print("  market library: 0 symbols (no readable Chroma/fallback data found)")
+    print("  market library: rebuild with ./scripts/update_cloud_docker.sh --ingest")
     return 0
-
-
-def _dir_has_vectordb_data(directory: Path) -> bool:
-    if not directory.is_dir():
-        return False
-    for name in ("chroma.sqlite3", "fallback_store.json"):
-        if (directory / name).is_file():
-            return True
-    return any(directory.iterdir())
 
 
 def main() -> int:
