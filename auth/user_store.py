@@ -40,6 +40,18 @@ def _parse_dt(value) -> datetime:
     return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
 
 
+def _admin_update_expr(*, is_postgres: bool) -> str:
+    """Preserve admin if either existing row or login grants admin."""
+    if is_postgres:
+        # Works for BOOLEAN columns and legacy SMALLINT/INTEGER from SQLite import.
+        return "(COALESCE(is_admin::int, 0) <> 0 OR ?::boolean)"
+    return "MAX(is_admin, ?)"
+
+
+def _bool_param(value: bool, *, is_postgres: bool):
+    return bool(value) if is_postgres else int(value)
+
+
 class UserStore:
     def __init__(self, db_path: Optional[Path] = None) -> None:
         self.db_path = Path(db_path or USERS_DB_PATH)
@@ -117,11 +129,7 @@ class UserStore:
                 ).fetchone()
 
             if by_id:
-                admin_expr = (
-                    "GREATEST(is_admin, ?::boolean)"
-                    if connection.is_postgres
-                    else "MAX(is_admin, ?)"
-                )
+                admin_expr = _admin_update_expr(is_postgres=connection.is_postgres)
                 connection.execute(
                     f"""
                     UPDATE users
@@ -129,17 +137,20 @@ class UserStore:
                         is_admin = {admin_expr}
                     WHERE id = ?
                     """,
-                    (email, name, picture_url, now, int(is_admin), user_id),
+                    (
+                        email,
+                        name,
+                        picture_url,
+                        now,
+                        _bool_param(is_admin, is_postgres=connection.is_postgres),
+                        user_id,
+                    ),
                 )
             elif by_email:
                 old_id = str(by_email["id"])
                 if old_id != user_id:
                     migrate_portfolio_user_id(old_id, user_id)
-                    admin_expr = (
-                        "GREATEST(is_admin, ?::boolean)"
-                        if connection.is_postgres
-                        else "MAX(is_admin, ?)"
-                    )
+                    admin_expr = _admin_update_expr(is_postgres=connection.is_postgres)
                     connection.execute(
                         f"""
                         UPDATE users
@@ -152,16 +163,12 @@ class UserStore:
                             name,
                             picture_url,
                             now,
-                            int(is_admin),
+                            _bool_param(is_admin, is_postgres=connection.is_postgres),
                             normalized_email,
                         ),
                     )
                 else:
-                    admin_expr = (
-                        "GREATEST(is_admin, ?::boolean)"
-                        if connection.is_postgres
-                        else "MAX(is_admin, ?)"
-                    )
+                    admin_expr = _admin_update_expr(is_postgres=connection.is_postgres)
                     connection.execute(
                         f"""
                         UPDATE users
@@ -169,7 +176,13 @@ class UserStore:
                             is_admin = {admin_expr}
                         WHERE id = ?
                         """,
-                        (name, picture_url, now, int(is_admin), user_id),
+                        (
+                            name,
+                            picture_url,
+                            now,
+                            _bool_param(is_admin, is_postgres=connection.is_postgres),
+                            user_id,
+                        ),
                     )
             else:
                 if connection.is_postgres:
@@ -190,7 +203,15 @@ class UserStore:
                           is_active, is_admin
                         ) VALUES (?, ?, ?, ?, ?, ?, 1, ?)
                         """,
-                        (user_id, email, name, picture_url, now, now, int(is_admin)),
+                        (
+                            user_id,
+                            email,
+                            name,
+                            picture_url,
+                            now,
+                            now,
+                            _bool_param(is_admin, is_postgres=False),
+                        ),
                     )
 
         user = self.get_by_id(user_id)
@@ -216,7 +237,10 @@ class UserStore:
         with self._connect() as connection:
             cursor = connection.execute(
                 "UPDATE users SET is_active = ? WHERE id = ?",
-                (int(active), user_id),
+                (
+                    _bool_param(active, is_postgres=connection.is_postgres),
+                    user_id,
+                ),
             )
         return cursor.rowcount > 0
 
@@ -224,7 +248,10 @@ class UserStore:
         with self._connect() as connection:
             cursor = connection.execute(
                 "UPDATE users SET is_admin = ? WHERE id = ?",
-                (int(admin), user_id),
+                (
+                    _bool_param(admin, is_postgres=connection.is_postgres),
+                    user_id,
+                ),
             )
         return cursor.rowcount > 0
 

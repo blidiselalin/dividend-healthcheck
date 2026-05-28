@@ -8,7 +8,12 @@ import pytest
 
 from auth.settings import is_email_allowed
 from auth.models import sanitize_user_id
-from auth.user_store import UserStore
+from auth.user_store import UserStore, _admin_update_expr
+
+
+def test_postgres_admin_update_expr():
+    assert "GREATEST" not in _admin_update_expr(is_postgres=True)
+    assert "is_admin::int" in _admin_update_expr(is_postgres=True)
 
 
 def test_sanitize_user_id():
