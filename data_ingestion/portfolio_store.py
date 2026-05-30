@@ -61,7 +61,8 @@ class PortfolioStore:
         seed: Optional[bool] = None,
     ) -> None:
         self.db_path = Path(db_path or _default_portfolio_db_path())
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        if not use_cloud_sql():
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
 
     def _connect(self):

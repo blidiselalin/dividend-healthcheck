@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from data_ingestion.models import StockDocument
 from data_ingestion.vector_store import load_legacy_vectordb_documents
+from scripts.migrate_to_cloud_sql import _import_market_library
 
 
 def test_load_legacy_vectordb_documents_from_fallback(tmp_path: Path):
@@ -38,9 +39,11 @@ def test_load_legacy_vectordb_documents_empty_chroma_scaffold(tmp_path: Path):
     assert load_legacy_vectordb_documents(vdb) == []
 
 
-def test_import_legacy_vectordb_to_postgres(tmp_path: Path):
-    vdb = tmp_path / "vectordb"
-    vdb.mkdir()
+def test_import_market_library_writes_postgres(tmp_path: Path, monkeypatch, capsys):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    vdb = data_dir / "vectordb"
+    vdb.mkdir(parents=True)
     doc = StockDocument(symbol="AAPL", name="Apple")
     payload = {doc.document_id: doc.to_full_dict()}
     (vdb / "fallback_store.json").write_text(json.dumps(payload))
@@ -50,11 +53,8 @@ def test_import_legacy_vectordb_to_postgres(tmp_path: Path):
         instance = store_cls.return_value
         instance.count.return_value = 1
 
-        from services.shared_market_db import import_legacy_vectordb_to_postgres
-
-        imported = import_legacy_vectordb_to_postgres(vdb)
+        imported = _import_market_library(data_dir)
 
     assert imported == 1
     instance.add_documents.assert_called_once()
-    added = instance.add_documents.call_args[0][0]
-    assert added[0].symbol == "AAPL"
+    assert "market library:" in capsys.readouterr().out

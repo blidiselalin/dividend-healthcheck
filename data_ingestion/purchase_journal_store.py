@@ -56,7 +56,8 @@ class PurchaseJournalStore:
         seed: Optional[bool] = None,
     ) -> None:
         self.db_path = Path(db_path or _default_db_path())
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        if not use_cloud_sql():
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
         do_seed = _default_seed() if seed is None else seed
         if do_seed:

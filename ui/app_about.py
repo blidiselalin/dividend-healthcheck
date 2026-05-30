@@ -115,7 +115,7 @@ def _render_data_sources() -> None:
         - **{DATA_SOURCES['historical']}** — dividend and price history for trends and growth
 
         Your portfolio amounts (shares, deposits, purchases) stay **in your account only**.
-        The **S&P historical library** (`/data/vectordb` on the server) is **shared by every user**;
+        The **S&P historical library** lives in **PostgreSQL** (`stock_documents`) and is **shared by every user**;
         reload updates live prices for your positions when you choose.
         """
     )

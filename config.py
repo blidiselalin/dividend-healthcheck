@@ -49,15 +49,22 @@ DATA_DIR: Final[Path] = _resolve_data_dir()
 
 # Subdirectories — shared by all users (not per-account)
 VECTORDB_DIR: Final[Path] = DATA_DIR / "vectordb"
-# Alias: S&P / analysed-stocks ChromaDB (historical prices, dividends, fundamentals)
 SHARED_MARKET_DB_DIR: Final[Path] = VECTORDB_DIR
 DOWNLOADS_DIR: Final[Path] = DATA_DIR / "downloads"
 REPORTS_DIR: Final[Path] = Path("reports")
 
-# Ensure directories exist
+
+def _database_url_configured() -> bool:
+    return bool(
+        (os.environ.get("DATABASE_URL") or os.environ.get("DIVIDENDSCOPE_DATABASE_URL") or "").strip()
+    )
+
+
+# Ensure directories exist (local Chroma only when not using Postgres)
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-VECTORDB_DIR.mkdir(parents=True, exist_ok=True)
 DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+if not _database_url_configured():
+    VECTORDB_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # =============================================================================

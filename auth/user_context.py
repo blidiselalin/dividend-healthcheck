@@ -234,7 +234,7 @@ def ensure_user_session() -> Optional[AppUser]:
                 )
                 clear_portfolio_session_state()
         # Legacy portfolio is not auto-copied on first login — use
-        # scripts/migrate_portfolio_to_cloud.sh so each user keeps their own data.
+        # Per-user portfolio data is stored in PostgreSQL when DATABASE_URL is set.
 
     if session_changed:
         logger.info(

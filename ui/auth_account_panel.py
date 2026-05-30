@@ -4,8 +4,6 @@ Sidebar account controls and admin user management.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import streamlit as st
 
 from auth.settings import auth_required, is_admin_email
@@ -17,23 +15,9 @@ from ui.theme import sidebar_heading
 
 
 def _holding_count_for_user(user_id: str) -> int:
-    db_path = Path("data") / "users" / user_id / "portfolio.db"
-    try:
-        from config import DATA_DIR
+    from db.connection import holding_count_for_user
 
-        db_path = DATA_DIR / "users" / user_id / "portfolio.db"
-    except ImportError:
-        pass
-    if not db_path.exists():
-        return 0
-    import sqlite3
-
-    try:
-        with sqlite3.connect(db_path) as connection:
-            row = connection.execute("SELECT COUNT(*) FROM holdings").fetchone()
-        return int(row[0]) if row else 0
-    except Exception:
-        return 0
+    return holding_count_for_user(user_id)
 
 
 def render_account_sidebar() -> None:

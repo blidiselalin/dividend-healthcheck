@@ -77,17 +77,13 @@ from services.portfolio_ui_cache import hydrate_session_from_disk
 @st.cache_resource(show_spinner=False)
 def _startup_db_light() -> dict:
     from config import is_cloud_runtime
-    from services.shared_market_db import (
-        bootstrap_shared_market_db_from_bundle,
-        shared_market_db_status,
-    )
+    from services.shared_market_db import shared_market_db_status
 
-    bootstrap_shared_market_db_from_bundle()
     market = shared_market_db_status()
     cov = market.get("sp500_coverage") or {}
     logger.info(
-        "Shared market DB path=%s documents=%d sp500=%s/%s",
-        market.get("path"),
+        "Shared market library storage=%s documents=%d sp500=%s/%s",
+        market.get("storage"),
         market.get("document_count", 0),
         cov.get("analysed_sp500", "?"),
         cov.get("universe_total", "?"),
@@ -129,9 +125,7 @@ def _require_authentication() -> bool:
 
 def _render_data_badge() -> None:
     """Compact analysed-stocks line (caption avoids large alert boxes clipping on scroll)."""
-    if not USE_ENHANCED_SERVICE:
-        st.sidebar.caption("Install chromadb for analysed stocks.")
-        return
+    from db.connection import use_cloud_sql
 
     status = get_service_status()
     doc_count = status.get("document_count", 0)
@@ -142,12 +136,24 @@ def _render_data_badge() -> None:
             if cov.get("universe_total")
             else ""
         )
-        st.sidebar.caption(f"Shared S&P library: {doc_count} tickers{sp}")
-    else:
+        storage = "PostgreSQL" if use_cloud_sql() else "local library"
+        st.sidebar.caption(f"Shared S&P library ({storage}): {doc_count} tickers{sp}")
+        return
+
+    if use_cloud_sql():
         st.sidebar.caption(
-            "Shared S&P library empty — on the server run: "
-            "docker compose exec dividendscope python ingest_data.py --ensure-sp500 --enrich-existing"
+            "Shared S&P library empty — run: "
+            "./scripts/update_cloud_docker.sh --ingest"
         )
+        return
+
+    if not USE_ENHANCED_SERVICE:
+        st.sidebar.caption("Install chromadb for analysed stocks.")
+        return
+
+    st.sidebar.caption(
+        "Shared S&P library empty — run: python ingest_data.py --ensure-sp500 --enrich-existing"
+    )
 
 
 def _render_sidebar_footer() -> None:

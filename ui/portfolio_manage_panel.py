@@ -42,7 +42,7 @@ def render_portfolio_manage_sidebar() -> None:
         )
 
         with tab_add:
-            st.caption("Adds a holding to SQLite and fetches market data into the analysed stocks.")
+            st.caption("Adds a holding to your portfolio and fetches market data into the shared library.")
             symbol = st.text_input("Ticker", key="pm_add_symbol", placeholder="e.g. VZ")
             shares = st.number_input("Shares", min_value=0.0, value=10.0, step=1.0, key="pm_add_shares")
             avg_cost = st.number_input(

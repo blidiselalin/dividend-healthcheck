@@ -208,20 +208,25 @@ def _import_portfolio_db(db_path: Path, user_id: str, *, data_dir: Path | None =
 
 
 def _import_market_library(data_dir: Path) -> int:
+    from data_ingestion.vector_store import load_legacy_vectordb_documents
     from db.connection import use_cloud_sql
-    from services.shared_market_db import import_legacy_vectordb_to_postgres
+    from db.postgres_market_store import PostgresMarketStore
 
     if not use_cloud_sql():
         print("  market library: skipped (DATABASE_URL not set)")
         return 0
 
-    imported = import_legacy_vectordb_to_postgres(data_dir / "vectordb")
-    if imported:
-        return imported
+    vectordb_dir = data_dir / "vectordb"
+    documents = load_legacy_vectordb_documents(vectordb_dir)
+    if not documents:
+        print("  market library: 0 symbols (no legacy Chroma data; run --ingest)")
+        return 0
 
-    print("  market library: 0 symbols (no readable Chroma/fallback data found)")
-    print("  market library: rebuild with ./scripts/update_cloud_docker.sh --ingest")
-    return 0
+    pg = PostgresMarketStore()
+    pg.add_documents(documents)
+    total = pg.count()
+    print(f"  market library: {len(documents)} symbols imported (PostgreSQL total={total})")
+    return len(documents)
 
 
 def main() -> int:

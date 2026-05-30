@@ -55,7 +55,8 @@ def _bool_param(value: bool, *, is_postgres: bool):
 class UserStore:
     def __init__(self, db_path: Optional[Path] = None) -> None:
         self.db_path = Path(db_path or USERS_DB_PATH)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        if not use_cloud_sql():
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
 
     def _connect(self):

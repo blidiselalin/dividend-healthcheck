@@ -22,6 +22,15 @@ def _holding_count(db_path: Path) -> int:
     return _holding_count_fn(db_path)
 
 
+def _postgres_only() -> bool:
+    try:
+        from db.connection import use_cloud_sql
+
+        return use_cloud_sql()
+    except Exception:
+        return False
+
+
 def _copy_legacy_files(user_dir: Path) -> bool:
     """Copy legacy portfolio.db and UI cache into a user directory."""
     user_dir.mkdir(parents=True, exist_ok=True)
@@ -45,6 +54,8 @@ def restore_owner_portfolio(user_id: str, user_dir: Path) -> bool:
 
     Runs when the user's DB is empty but the legacy shared portfolio still has holdings.
     """
+    if _postgres_only():
+        return False
     legacy_count = _holding_count(LEGACY_PORTFOLIO_DB)
     if legacy_count == 0:
         return False
@@ -73,6 +84,8 @@ def migrate_legacy_portfolio(user_id: str, user_dir: Path) -> bool:
 
     Returns True when a legacy database was copied.
     """
+    if _postgres_only():
+        return False
     user_dir.mkdir(parents=True, exist_ok=True)
     target_db = user_dir / "portfolio.db"
     legacy_count = _holding_count(LEGACY_PORTFOLIO_DB)
@@ -101,6 +114,8 @@ def migrate_user_data_dir(old_user_id: str, new_user_id: str) -> bool:
 
     Returns True when files were moved or merged into the new directory.
     """
+    if _postgres_only():
+        return False
     if not old_user_id or not new_user_id or old_user_id == new_user_id:
         return False
 

@@ -2,9 +2,9 @@
 # Streamlit binds localhost:8501 only; Caddy terminates HTTPS on 443 → 127.0.0.1:8501
 #
 # All persistent data lives on ONE Docker volume: dividendscope-persistent-data → /data
-#   /data/postgres/     PostgreSQL cluster (PGDATA)
-#   /data/vectordb/     legacy Chroma (optional import source)
-#   /data/users/        legacy SQLite (optional import source)
+#   /data/postgres/     PostgreSQL cluster (users, portfolios, stock_documents)
+#   /data/users/        legacy SQLite import source only (optional, one-time --migrate-files)
+#   /data/vectordb/     legacy Chroma import source only (optional, one-time --migrate-files)
 #
 # Rebuild: docker compose up -d --build
 # Never run: docker compose down -v  (deletes the data volume)

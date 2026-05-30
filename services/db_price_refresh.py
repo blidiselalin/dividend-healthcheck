@@ -1,5 +1,5 @@
 """
-Refresh latest market prices in the vector database.
+Refresh latest market prices in the shared market library (PostgreSQL or local Chroma).
 """
 
 from __future__ import annotations
@@ -12,21 +12,28 @@ from typing import Any, Dict, List, Optional, Set
 logger = logging.getLogger(__name__)
 
 
-def remove_delisted_from_vector_db(
+def remove_delisted_from_market_library(
     symbols: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """Delete delisted / broken-quote symbols from the vector database."""
-    from config import DELISTED_SYMBOLS, VECTORDB_DIR
-    from data_ingestion.vector_store import VectorStore
+    """Delete delisted / broken-quote symbols from the shared market library."""
+    from config import DELISTED_SYMBOLS
+    from services.shared_market_db import get_shared_vector_store
 
     targets = sorted(symbols or DELISTED_SYMBOLS)
-    store = VectorStore(persist_directory=str(VECTORDB_DIR))
+    store = get_shared_vector_store()
     removed = store.delete_symbols(targets)
     return {
         "symbols": targets,
         "removed": removed,
         "timestamp": datetime.now().isoformat(),
     }
+
+
+def remove_delisted_from_vector_db(
+    symbols: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Alias for ``remove_delisted_from_market_library``."""
+    return remove_delisted_from_market_library(symbols)
 
 
 def _fetch_latest_price(symbol: str) -> Optional[float]:
@@ -68,21 +75,19 @@ def _apply_latest_price(document, price: float) -> None:
 
 
 def _collect_symbols() -> List[str]:
-    """Symbols to refresh: all vector DB entries plus portfolio holdings."""
+    """Symbols to refresh: market library entries plus portfolio holdings."""
     from config import DELISTED_SYMBOLS
+    from services.shared_market_db import get_shared_vector_store
 
     symbols: Set[str] = set()
 
     try:
-        from config import VECTORDB_DIR
-        from data_ingestion.vector_store import VectorStore
-
-        store = VectorStore(persist_directory=str(VECTORDB_DIR))
+        store = get_shared_vector_store()
         for document in store.get_all_documents():
             if document.symbol:
                 symbols.add(document.symbol.upper())
     except Exception as exc:
-        logger.warning("Could not load vector DB symbols: %s", exc)
+        logger.warning("Could not load market library symbols: %s", exc)
 
     try:
         from data_ingestion.portfolio_store import PortfolioStore
@@ -95,19 +100,18 @@ def _collect_symbols() -> List[str]:
     return sorted(symbol for symbol in symbols if symbol not in DELISTED_SYMBOLS)
 
 
-def refresh_vector_db_prices(
+def refresh_market_library_prices(
     symbols: Optional[List[str]] = None,
     *,
     max_workers: int = 8,
 ) -> Dict[str, Any]:
     """
-    Pull latest prices and persist them on vector DB documents.
+    Pull latest prices and persist them on shared market library documents.
 
     Returns:
         Stats dict with updated, skipped, errors, and total counts.
     """
-    from config import VECTORDB_DIR
-    from data_ingestion.vector_store import VectorStore
+    from services.shared_market_db import get_shared_vector_store
 
     target_symbols = [symbol.upper() for symbol in (symbols or _collect_symbols())]
     stats: Dict[str, Any] = {
@@ -121,7 +125,7 @@ def refresh_vector_db_prices(
     if not target_symbols:
         return stats
 
-    store = VectorStore(persist_directory=str(VECTORDB_DIR))
+    store = get_shared_vector_store()
     documents = {
         document.symbol.upper(): document
         for document in store.get_all_documents()
@@ -158,6 +162,15 @@ def refresh_vector_db_prices(
 
     if modified:
         store.add_documents(modified)
-        logger.info("Updated prices for %s symbols in vector DB", len(modified))
+        logger.info("Updated prices for %s symbols in market library", len(modified))
 
     return stats
+
+
+def refresh_vector_db_prices(
+    symbols: Optional[List[str]] = None,
+    *,
+    max_workers: int = 8,
+) -> Dict[str, Any]:
+    """Alias for ``refresh_market_library_prices``."""
+    return refresh_market_library_prices(symbols, max_workers=max_workers)

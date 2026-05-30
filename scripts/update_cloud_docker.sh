@@ -7,9 +7,9 @@
 #   ./scripts/update_cloud_docker.sh
 #
 # Options:
-#   --sync-portfolio   After restart, sync holdings → vector DB
-#   --ingest           Populate shared S&P vectordb + enrich (slow; first-time or refresh)
-#   --migrate-files    Import legacy SQLite/Chroma from /data into Postgres (one-time)
+#   --sync-portfolio   After restart, sync holdings → PostgreSQL stock_documents
+#   --ingest           Populate shared S&P library in PostgreSQL (slow; first-time or refresh)
+#   --migrate-files    One-time import of legacy SQLite/Chroma files from /data into PostgreSQL
 #   --no-pull          Skip git pull (used when code was rsync'd from local)
 set -euo pipefail
 
@@ -69,7 +69,7 @@ if [[ "$RUN_INGEST" == true ]]; then
 fi
 
 if [[ "$SYNC_PORTFOLIO" == true ]]; then
-  echo ">>> Sync portfolio holdings → shared vector DB"
+  echo ">>> Sync portfolio holdings → PostgreSQL stock_documents"
   docker compose exec -T dividendscope python ingest_data.py --sync-portfolio
 fi
 

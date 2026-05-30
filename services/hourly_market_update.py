@@ -1,5 +1,8 @@
 """
 Scheduled market refresh: live prices plus batched yfinance enrich for stale symbols.
+
+All writes go through the shared market library store (PostgreSQL ``stock_documents``
+when ``DATABASE_URL`` is set).
 """
 
 from __future__ import annotations
@@ -18,15 +21,15 @@ def enrich_stale_documents(
     request_delay: float = 0.35,
 ) -> Dict[str, Any]:
     """
-    Re-enrich the oldest or lowest-quality documents in the shared vector DB.
+    Re-enrich the oldest or lowest-quality documents in the shared market library.
 
     Processes at most ``limit`` symbols per run so hourly cron stays within API limits.
     """
-    from config import DELISTED_SYMBOLS, VECTORDB_DIR
-    from data_ingestion.vector_store import VectorStore
+    from config import DELISTED_SYMBOLS
     from data_ingestion.yfinance_enricher import YFinanceEnricher
+    from services.shared_market_db import get_shared_vector_store
 
-    store = VectorStore(persist_directory=str(VECTORDB_DIR))
+    store = get_shared_vector_store()
     cutoff = datetime.now() - timedelta(days=max(1, stale_days))
 
     candidates: List[Any] = []
@@ -85,15 +88,17 @@ def run_hourly_market_update(
 ) -> Dict[str, Any]:
     """
     Hourly job: refresh prices, add a few missing S&P tickers, enrich stale documents.
+
+    Persists to PostgreSQL ``stock_documents`` when ``DATABASE_URL`` is configured.
     """
-    from services.db_price_refresh import refresh_vector_db_prices
+    from services.db_price_refresh import refresh_market_library_prices
     from services.sp500_peers_service import ensure_sp500_in_vectordb
 
     started = datetime.now()
     summary: Dict[str, Any] = {"started_at": started.isoformat()}
 
     logger.info("Hourly market update: refreshing prices")
-    summary["prices"] = refresh_vector_db_prices()
+    summary["prices"] = refresh_market_library_prices()
 
     logger.info("Hourly market update: S&P catch-up (limit=%s)", sp500_new_limit)
     summary["sp500"] = ensure_sp500_in_vectordb(limit=sp500_new_limit)

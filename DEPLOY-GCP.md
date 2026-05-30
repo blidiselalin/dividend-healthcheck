@@ -177,7 +177,7 @@ Sidebar shows **Shared S&P library: N tickers · S&P X/500** when ingest complet
 
 ### Hourly market refresh (cron)
 
-After the shared library exists, install an hourly job on the VM to refresh live prices and gradually re-enrich stale symbols (avoids hammering yfinance in one shot):
+After the shared library exists, install an hourly job on the VM to refresh live prices and gradually re-enrich stale symbols. All updates are written to **PostgreSQL** (`stock_documents`):
 
 ```bash
 cd ~/dividend-healthcheck
@@ -202,7 +202,7 @@ Survives **restart**, **`docker compose up --build`**, and **VM reboot**.
 **Never run** `docker compose down -v` — `-v` deletes the volume and wipes the DB.
 
 ```bash
-./scripts/docker_volume_status.sh   # list vectordb size
+./scripts/docker_volume_status.sh   # Postgres row counts + legacy paths
 ```
 
 ### PostgreSQL database (Docker)
@@ -252,76 +252,29 @@ docker compose exec postgres psql -U dividendscope -d dividendscope -c '\dt'
 
 Hourly ingest and live prices write to `stock_documents` automatically when the app starts with `DATABASE_URL` (default in compose).
 
-### Migrate your local portfolio to the cloud (one user, multi-user safe)
+### Migrate legacy local data to PostgreSQL (one-time)
 
-Holdings live in **SQLite** (`portfolio.db`). With Google sign-in, each **registered** account has:
+All runtime data lives in **PostgreSQL** when `DATABASE_URL` is set (default in Docker Compose).
 
-| Store | Path |
-|--------|------|
-| Account registry | `/data/users.db` (email → user id) |
-| That user's portfolio | `/data/users/<user-id>/portfolio.db` |
-
-Other users on the same VM keep their own folders — migration **never** writes to all `/data/users/*`.
-
-#### Procedure when other users already exist
-
-1. **Register on the cloud** (creates your row in `users.db` and folder `/data/users/<id>/`):
-   - Open **https://pulse-dividend.duckdns.org**
-   - Sign in with the **same Google account** as on your Mac
-   - Sign out is optional; you only need one successful login
-
-2. **Migrate** — from your **Mac** *or* **on the GCP VM** (same script):
-
-**Option A — from the VM** (recommended if you SSH there often):
+Legacy files on `/data` (SQLite, Chroma) are **import sources only** — use once, then rely on Postgres:
 
 ```bash
-# Once from Mac: copy portfolio.db to the VM
-scp ~/.dividendscope/data/portfolio.db YOU@VM_IP:~/portfolio.db
-
-# On the VM (SSH / browser terminal):
 cd ~/dividend-healthcheck
-git pull
-chmod +x scripts/migrate_portfolio_to_cloud.sh
-./scripts/migrate_portfolio_to_cloud.sh --on-vm --list-users
-./scripts/migrate_portfolio_to_cloud.sh --on-vm --local ~/portfolio.db --email you@gmail.com --dry-run
-./scripts/migrate_portfolio_to_cloud.sh --on-vm --local ~/portfolio.db --email you@gmail.com --sync-portfolio --yes
+./scripts/update_cloud_docker.sh --migrate-files
 ```
 
-No `deploy.env` needed with `--on-vm`.
+This imports `users.db`, per-user `portfolio.db`, and any readable Chroma at `/data/vectordb` into Postgres tables.
 
-**Option B — from your Mac** (configure `deploy.env` with GCP or `SSH_HOST`):
+Check row counts:
 
 ```bash
-cp deploy.env.example deploy.env
-chmod +x scripts/migrate_portfolio_to_cloud.sh
-./scripts/migrate_portfolio_to_cloud.sh --list-users
-./scripts/migrate_portfolio_to_cloud.sh --email you@gmail.com --dry-run
-./scripts/migrate_portfolio_to_cloud.sh --email you@gmail.com --sync-portfolio --yes
+./scripts/docker_volume_status.sh
 ```
 
-3. **Sign in again** on the cloud app — holdings should match local.
-
-**Admin sidebar** (Users table) shows **User id** for each registered account if you prefer `--user-id` instead of `--email`.
-
-Local DB default: `~/.dividendscope/data/portfolio.db`
-
-#### Safety
-
-- **`--email`** resolves exactly one user from `users.db` (recommended when several people use the app)
-- **`--user-id`** from the `REG` line in `--list-users` if you already know the folder name
-- **`--legacy-only`** updates only `/data/portfolio.db` (does not touch `/data/users/*`; admin first-login copy only)
-- Backs up target as `portfolio.db.bak.<timestamp>` before replace
-- Aborts if **that user's** cloud file has more holdings than local (`--force` to override)
-
-Optional in `deploy.env`: `MIGRATE_EMAIL=you@gmail.com`
-
-#### Manual copy on the VM (one path only)
+If the shared S&P library is empty after migrate, populate Postgres directly:
 
 ```bash
-# Get <user-id> from: docker exec dividendscope sqlite3 /data/users.db \
-#   "SELECT id, email FROM users;"
-docker cp ~/portfolio.db dividendscope:/data/users/<only-your-user-id>/portfolio.db
-docker compose restart dividendscope
+./scripts/update_cloud_docker.sh --ingest
 ```
 
 ---

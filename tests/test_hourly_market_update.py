@@ -25,9 +25,9 @@ def _doc(symbol: str, *, days_old: int = 10, quality: float = 40.0):
 
 
 @patch("data_ingestion.yfinance_enricher.YFinanceEnricher")
-@patch("data_ingestion.vector_store.VectorStore")
-def test_enrich_stale_documents_limits_batch(mock_store_cls, mock_enricher_cls):
-    store = mock_store_cls.return_value
+@patch("services.shared_market_db.get_shared_vector_store")
+def test_enrich_stale_documents_limits_batch(mock_get_store, mock_enricher_cls):
+    store = mock_get_store.return_value
     store.get_all_documents.return_value = [
         _doc("AAA", days_old=30),
         _doc("BBB", days_old=20),
@@ -49,7 +49,7 @@ def test_enrich_stale_documents_limits_batch(mock_store_cls, mock_enricher_cls):
 
 
 @patch("services.sp500_peers_service.ensure_sp500_in_vectordb")
-@patch("services.db_price_refresh.refresh_vector_db_prices")
+@patch("services.db_price_refresh.refresh_market_library_prices")
 def test_run_hourly_market_update_orchestration(mock_prices, mock_sp500):
     mock_prices.return_value = {"updated": 12, "total": 20}
     mock_sp500.return_value = {"created": 1, "errors": 0}

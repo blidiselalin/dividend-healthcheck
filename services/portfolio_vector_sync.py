@@ -9,7 +9,7 @@ from collections import Counter
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
-from config import DELISTED_SYMBOLS, VECTORDB_DIR
+from config import DELISTED_SYMBOLS
 from data_ingestion.models import DataSource, StockDocument
 from data_ingestion.portfolio_store import PortfolioStore
 from data_ingestion.purchase_journal_store import PurchaseJournalStore
@@ -117,7 +117,7 @@ def sync_portfolio_to_vector_db(
     Returns:
         Stats with linked, created, stored, still_missing, and errors counts.
     """
-    from data_ingestion.vector_store import VectorStore
+    from services.shared_market_db import get_shared_vector_store
 
     target_symbols = sorted(
         symbol.upper()
@@ -137,7 +137,7 @@ def sync_portfolio_to_vector_db(
     if not target_symbols:
         return stats
 
-    store = VectorStore(persist_directory=str(VECTORDB_DIR))
+    store = get_shared_vector_store()
     holdings_by_symbol = {
         holding.symbol.upper(): holding
         for holding in PortfolioStore(seed=False).list_holdings()

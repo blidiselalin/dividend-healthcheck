@@ -27,14 +27,9 @@ DEMO_DEPOSITS: List[Tuple[int, int, str, float, float, float]] = [
 
 
 def _holding_count(db_path: Path) -> int:
-    if not db_path.is_file():
-        return 0
-    try:
-        with sqlite3.connect(db_path) as connection:
-            row = connection.execute("SELECT COUNT(*) FROM holdings").fetchone()
-        return int(row[0]) if row else 0
-    except Exception:
-        return 0
+    from utils.portfolio_db import holding_count
+
+    return holding_count(db_path)
 
 
 def ensure_demo_database(db_path: Path) -> bool:
@@ -45,9 +40,11 @@ def ensure_demo_database(db_path: Path) -> bool:
     """
     from data_ingestion.deposits_store import DepositsStore
     from data_ingestion.portfolio_store import PortfolioStore
+    from db.connection import use_cloud_sql
 
     db_path = Path(db_path)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    if not use_cloud_sql():
+        db_path.parent.mkdir(parents=True, exist_ok=True)
 
     seeded = False
     store = PortfolioStore(db_path=db_path, seed=False)
