@@ -63,12 +63,19 @@ Never `date.fromisoformat(row["column"])` on DB rows.
 Runtime reads/writes go through:
 
 - `services.shared_market_db.get_shared_vector_store()` / `get_document()`
-- Not direct Chroma bootstrap or per-user vector paths in production.
+- Not direct `VectorStore(persist_directory=...)` or per-user vector paths in production code.
 
-### 5. Tests
+### 5. Holdings count
 
-- **Unit tests**: no `DATABASE_URL` (autouse `use_sqlite_backend` in `tests/conftest.py`).
-- **Integration tests**: `@pytest.mark.integration` + live Postgres in CI.
+- **Runtime (Postgres):** `db.connection.holding_count_for_user()`
+- **Explicit SQLite file (tests):** `utils.portfolio_db.sqlite_holding_count(path)` or `holding_count(path)` when path is a temp file
+- `holding_count(db_path)` routes to Postgres when cloud SQL is active and path is the current user's portfolio file
+
+### 6. Tests
+
+- **Unit tests**: `PYTEST_USE_SQLITE=1` (autouse in `tests/conftest.py`) — no live Postgres.
+- **Postgres mocks**: `@pytest.mark.postgres_mock` or `postgres_env` fixture (mock URL, not CI `:5432`).
+- **Integration tests**: `@pytest.mark.integration` + live Postgres in CI (separate job).
 - Pass explicit `tmp_path` / `db_path` into `create_portfolio_context(db_path=...)`.
 
 ## Safe change checklist
@@ -77,6 +84,7 @@ Runtime reads/writes go through:
 - [ ] Store `_ensure_schema` updated for SQLite dev fallback?
 - [ ] Date parsing uses `db.parsing`?
 - [ ] Portfolio flows use `create_portfolio_context` or injected stores?
+- [ ] Market reads use `shared_market_db`?
 - [ ] Unit tests pass without `DATABASE_URL`?
 - [ ] No new Chroma/SQLite runtime dependencies when `use_cloud_sql()`?
 

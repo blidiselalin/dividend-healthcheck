@@ -36,7 +36,9 @@ def test_price_refresh_uses_shared_store(postgres_env):
     mock_store = MagicMock()
     mock_store.get_all_documents.return_value = []
 
-    with patch("services.shared_market_db.get_shared_vector_store", return_value=mock_store):
+    with patch("services.shared_market_db.get_shared_vector_store", return_value=mock_store), patch(
+        "services.db_price_refresh._collect_symbols", return_value=[]
+    ):
         stats = refresh_market_library_prices(symbols=[])
 
     assert stats["total"] == 0

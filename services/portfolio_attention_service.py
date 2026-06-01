@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Dict, List, Optional, Sequence, TYPE_CHECKING
 
-from data_ingestion.portfolio_store import PortfolioStore
+from data_ingestion.portfolio_store import PortfolioHolding
 from services.portfolio_dividend_calendar import build_portfolio_dividend_calendar
 from services.portfolio_details_service import PortfolioDetailRow
 from services.portfolio_zone_overview import zone_to_category
@@ -199,7 +199,9 @@ class PortfolioAttentionService:
         news_by_symbol: Optional[Dict[str, "NewsSummary"]] = None,
     ) -> AttentionSummary:
         today = reference_date or date.today()
-        holdings = PortfolioStore().list_holdings()
+        from services.portfolio_context import create_portfolio_context
+
+        holdings = create_portfolio_context().portfolio.list_holdings()
         row_dates = {
             row.ticker: (row.ex_dividend_date, row.dividend_pay_date) for row in rows
         }

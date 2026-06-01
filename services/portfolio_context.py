@@ -46,6 +46,7 @@ def create_portfolio_context(db_path: Optional[Path] = None) -> PortfolioContext
     detail = PortfolioHoldingDetailService(
         journal=journal_service,
         portfolio=portfolio,
+        receipts=receipts,
     )
     return PortfolioContext(
         db_path=path,

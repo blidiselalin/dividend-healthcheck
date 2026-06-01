@@ -35,12 +35,9 @@ def _default_seed() -> bool:
     return False
 
 
-PORTFOLIO_DB_PATH = DATA_DIR / "portfolio.db"
-
-
 @dataclass(frozen=True)
 class PortfolioHolding:
-    """A single portfolio position stored in SQLite."""
+    """A single portfolio position."""
 
     symbol: str
     shares: float

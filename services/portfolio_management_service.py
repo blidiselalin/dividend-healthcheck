@@ -56,9 +56,11 @@ class PortfolioManagementService:
             self.journal = ctx.journal
             self.deposits = ctx.deposits
         else:
-            self.portfolio = portfolio or PortfolioStore()
-            self.journal = journal or PurchaseJournalStore()
-            self.deposits = deposits or DepositsStore()
+            anchor = portfolio or journal or deposits
+            path = anchor.db_path if anchor is not None else None
+            self.portfolio = portfolio or PortfolioStore(db_path=path, seed=False)
+            self.journal = journal or PurchaseJournalStore(db_path=path, seed=False)
+            self.deposits = deposits or DepositsStore(db_path=path, seed=False)
 
     @staticmethod
     def normalize_symbol(symbol: str) -> str:

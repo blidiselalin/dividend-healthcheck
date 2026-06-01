@@ -1,5 +1,5 @@
 """
-Keep Streamlit portfolio UI state aligned with the current user's SQLite holdings.
+Keep Streamlit portfolio UI state aligned with the current user's holdings.
 """
 
 from __future__ import annotations

@@ -14,10 +14,11 @@ Production uses **PostgreSQL** when `DATABASE_URL` is set (Docker Compose defaul
 ## Forbidden without explicit user request
 
 - Re-introducing Chroma or per-user SQLite as production storage
+- Direct `VectorStore(persist_directory=...)` in services/UI (use `shared_market_db`)
 - `date.fromisoformat(row[...])` on Postgres query results
 - Separate `PortfolioStore()` + `PurchaseJournalStore()` without shared `db_path`
 - Skipping migration SQL when adding tables/columns
-- Setting global `DATABASE_URL` in unit tests (use `tests/conftest.py` isolation)
+- Setting global `DATABASE_URL` in unit tests (use `PYTEST_USE_SQLITE` in `tests/conftest.py`)
 
 ## Read first
 

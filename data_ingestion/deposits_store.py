@@ -1,5 +1,5 @@
 """
-SQLite storage for monthly account deposits and portfolio value snapshots.
+Monthly account deposits and portfolio value snapshots (PostgreSQL or SQLite).
 """
 
 from __future__ import annotations

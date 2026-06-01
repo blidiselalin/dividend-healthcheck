@@ -49,10 +49,9 @@ def preload_portfolio_analysis(
 
     vector_store = None
     try:
-        from data_ingestion.vector_store import VectorStore
-        from config import VECTORDB_DIR
+        from services.shared_market_db import get_shared_vector_store
 
-        vector_store = VectorStore(persist_directory=str(VECTORDB_DIR))
+        vector_store = get_shared_vector_store()
     except Exception:
         pass
 

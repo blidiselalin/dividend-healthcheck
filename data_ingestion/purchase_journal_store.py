@@ -1,5 +1,5 @@
 """
-SQLite storage for stock purchase journal entries.
+Purchase journal storage (PostgreSQL per user, or SQLite file in local dev).
 """
 
 from __future__ import annotations
@@ -29,9 +29,6 @@ def _default_db_path() -> Path:
 
 def _default_seed() -> bool:
     return False
-
-
-PURCHASE_JOURNAL_DB_PATH = DATA_DIR / "portfolio.db"
 
 
 def portfolio_symbols(db_path: Optional[Path] = None) -> Set[str]:

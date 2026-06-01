@@ -20,9 +20,13 @@ def use_sqlite_backend(request, monkeypatch):
     if request.node.get_closest_marker("integration"):
         yield
         return
+    if request.node.get_closest_marker("postgres_mock"):
+        yield
+        return
 
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("DIVIDENDSCOPE_DATABASE_URL", raising=False)
+    monkeypatch.setenv("PYTEST_USE_SQLITE", "1")
 
     import db.connection as db
 

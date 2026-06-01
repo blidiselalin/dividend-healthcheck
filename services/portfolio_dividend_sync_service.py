@@ -33,14 +33,6 @@ def _load_documents(symbols: List[str]) -> Dict[str, Optional[StockDocument]]:
             documents[symbol] = get_document(symbol)
     except Exception as exc:
         logger.warning("Shared market library unavailable for dividend sync: %s", exc)
-        try:
-            from data_ingestion.vector_store import VectorStore
-
-            store = VectorStore()
-            for symbol in symbols:
-                documents[symbol] = store.get_by_symbol(symbol)
-        except Exception as inner:
-            logger.warning("Vector store fallback failed for dividend sync: %s", inner)
     return documents
 
 

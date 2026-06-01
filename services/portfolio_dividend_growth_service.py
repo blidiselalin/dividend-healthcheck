@@ -1,5 +1,5 @@
 """
-Portfolio-wide dividend history and growth since 2021 (from vector DB).
+Portfolio-wide dividend history and growth since 2021 (from the shared market library).
 """
 
 from __future__ import annotations
@@ -8,13 +8,11 @@ from utils.chart_theme import style_figure
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 import pandas as pd
 
-from config import VECTORDB_DIR
 from data_ingestion.portfolio_store import PortfolioStore
-from data_ingestion.vector_store import VectorStore
 
 try:
     import plotly.graph_objects as go
@@ -38,20 +36,22 @@ class SymbolDividendGrowth:
 
 
 class PortfolioDividendGrowthService:
-    """Annual dividend per share and portfolio cash from vector DB history."""
+    """Annual dividend per share and portfolio cash from market library history."""
 
     def __init__(
         self,
-        vector_store: Optional[VectorStore] = None,
+        vector_store: Optional[Any] = None,
         portfolio_store: Optional[PortfolioStore] = None,
     ) -> None:
         self._vector_store = vector_store
-        self.portfolio = portfolio_store or PortfolioStore()
+        self.portfolio = portfolio_store or PortfolioStore(seed=False)
 
     @property
-    def vector_store(self) -> VectorStore:
+    def vector_store(self):
         if self._vector_store is None:
-            self._vector_store = VectorStore(persist_directory=str(VECTORDB_DIR))
+            from services.shared_market_db import get_shared_vector_store
+
+            self._vector_store = get_shared_vector_store()
         return self._vector_store
 
     def _annual_dividends_from_history(

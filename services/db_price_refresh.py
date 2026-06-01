@@ -90,9 +90,9 @@ def _collect_symbols() -> List[str]:
         logger.warning("Could not load market library symbols: %s", exc)
 
     try:
-        from data_ingestion.portfolio_store import PortfolioStore
+        from services.portfolio_context import create_portfolio_context
 
-        for holding in PortfolioStore().list_holdings():
+        for holding in create_portfolio_context().portfolio.list_holdings():
             symbols.add(holding.symbol.upper())
     except Exception:
         pass

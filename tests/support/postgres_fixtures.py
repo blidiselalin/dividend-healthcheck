@@ -39,8 +39,15 @@ def postgres_reachable() -> bool:
 @pytest.fixture
 def postgres_env(monkeypatch):
     """Enable Postgres mode for tests that mock the database layer."""
-    monkeypatch.setenv("DATABASE_URL", "postgresql://dividendscope:test@127.0.0.1:5432/dividendscope")
+    monkeypatch.delenv("PYTEST_USE_SQLITE", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://mock:mock@127.0.0.1:59999/mockdb")
+    import db.connection as db
+
+    db._pool = None
+    db._schema_ready = False
     yield
+    db._pool = None
+    db._schema_ready = False
 
 
 @pytest.fixture(autouse=False)

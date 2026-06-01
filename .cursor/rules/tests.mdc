@@ -8,8 +8,8 @@ alwaysApply: false
 
 ## Isolation
 
-- Unit tests run **without** `DATABASE_URL` (`use_sqlite_backend` autouse in `conftest.py`).
-- Integration tests: `@pytest.mark.integration` + Postgres service in CI.
+- Unit tests run **without** `DATABASE_URL` (`PYTEST_USE_SQLITE=1` via autouse in `conftest.py`).
+- Tests that mock Postgres mode: `@pytest.mark.postgres_mock` (or `postgres_env` fixture).
 
 ## Portfolio tests
 

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING, Any
 
 import pandas as pd
 
@@ -79,9 +79,26 @@ class PortfolioHoldingDetailService:
         self,
         journal: Optional[PortfolioPurchaseJournalService] = None,
         portfolio: Optional[PortfolioStore] = None,
+        receipts: Optional[Any] = None,
     ) -> None:
-        self.journal = journal or PortfolioPurchaseJournalService()
-        self.portfolio = portfolio or PortfolioStore()
+        if journal is None and portfolio is None and receipts is None:
+            from services.portfolio_context import create_portfolio_context
+
+            ctx = create_portfolio_context()
+            self.journal = ctx.journal_service
+            self.portfolio = ctx.portfolio
+            self._receipts = ctx.receipts
+        else:
+            self.journal = journal or PortfolioPurchaseJournalService()
+            self.portfolio = portfolio or PortfolioStore(seed=False)
+            self._receipts = receipts
+
+    def _receipt_store(self):
+        if self._receipts is not None:
+            return self._receipts
+        from data_ingestion.dividend_receipt_store import DividendReceiptStore
+
+        return DividendReceiptStore(db_path=self.portfolio.db_path)
 
     def estimated_lots_for_symbol(self, symbol: str) -> List[EstimatedPurchaseLot]:
         return [
@@ -112,9 +129,7 @@ class PortfolioHoldingDetailService:
         return rows
 
     def stored_dividend_history(self, symbol: str) -> List[HoldingDividendRow]:
-        from data_ingestion.dividend_receipt_store import DividendReceiptStore
-
-        receipts = DividendReceiptStore().list_for_symbol(symbol)
+        receipts = self._receipt_store().list_for_symbol(symbol)
         return [
             HoldingDividendRow(
                 ex_date=receipt.ex_date,

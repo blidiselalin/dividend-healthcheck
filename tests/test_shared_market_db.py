@@ -5,6 +5,10 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 
+import pytest
+
+
+@pytest.mark.postgres_mock
 def test_shared_market_db_status_postgres(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://local/test")
 

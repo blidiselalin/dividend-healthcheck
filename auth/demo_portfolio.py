@@ -5,7 +5,6 @@ Small demo portfolio for the test user (no live API required for first paint).
 from __future__ import annotations
 
 import logging
-import sqlite3
 from pathlib import Path
 from typing import List, Tuple
 
@@ -26,10 +25,10 @@ DEMO_DEPOSITS: List[Tuple[int, int, str, float, float, float]] = [
 ]
 
 
-def _holding_count(db_path: Path) -> int:
-    from utils.portfolio_db import holding_count
+def _portfolio_context(db_path: Path):
+    from services.portfolio_context import create_portfolio_context
 
-    return holding_count(db_path)
+    return create_portfolio_context(db_path=db_path)
 
 
 def ensure_demo_database(db_path: Path) -> bool:
@@ -38,19 +37,19 @@ def ensure_demo_database(db_path: Path) -> bool:
 
     Returns True when seed data was written.
     """
-    from data_ingestion.deposits_store import DepositsStore
-    from data_ingestion.portfolio_store import PortfolioStore
     from db.connection import use_cloud_sql
+    from utils.portfolio_db import holding_count
 
     db_path = Path(db_path)
     if not use_cloud_sql():
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
+    ctx = _portfolio_context(db_path)
     seeded = False
-    store = PortfolioStore(db_path=db_path, seed=False)
-    if _holding_count(db_path) == 0:
-        for index, (symbol, company, shares, avg_cost) in enumerate(DEMO_HOLDINGS, start=1):
-            store.upsert_holding(
+
+    if holding_count(db_path) == 0:
+        for symbol, company, shares, avg_cost in DEMO_HOLDINGS:
+            ctx.portfolio.upsert_holding(
                 symbol,
                 shares=shares,
                 avg_cost_per_share=avg_cost,
@@ -59,33 +58,39 @@ def ensure_demo_database(db_path: Path) -> bool:
         seeded = True
         logger.info("Seeded demo holdings at %s", db_path)
 
-    deposits = DepositsStore(db_path=db_path, seed=False)
-    if not deposits.list_deposits():
-        with deposits._connect() as connection:
-            for index, (year, month, label, eur, usd, port) in enumerate(
-                DEMO_DEPOSITS, start=1
-            ):
-                period_key = f"{year:04d}-{month:02d}"
-                connection.execute(
-                    """
-                    INSERT OR IGNORE INTO monthly_deposits (
-                      period_key, year, month, label,
-                      deposit_eur, deposit_usd, portfolio_eur, sort_order
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (period_key, year, month, label, eur, usd, port, index),
-                )
+    if not ctx.deposits.list_deposits():
+        for year, month, label, eur, usd, port in DEMO_DEPOSITS:
+            ctx.deposits.upsert_deposit(
+                year=year,
+                month=month,
+                label=label,
+                deposit_eur=eur,
+                deposit_usd=usd,
+                portfolio_eur=port,
+            )
         seeded = True
 
     return seeded
 
 
 def reset_demo_database(db_path: Path) -> None:
-    """Remove test user's DB and session cache so the next login re-seeds."""
+    """Remove test user's portfolio data and session cache so the next login re-seeds."""
+    from db.connection import use_cloud_sql
+
     db_path = Path(db_path)
     cache = db_path.parent / "portfolio_ui_session.pkl"
-    if db_path.is_file():
+
+    if use_cloud_sql():
+        ctx = _portfolio_context(db_path)
+        for holding in list(ctx.portfolio.list_holdings()):
+            ctx.portfolio.delete_holding(holding.symbol)
+        for deposit in list(ctx.deposits.list_deposits()):
+            ctx.deposits.delete_deposit(deposit.period_key)
+        for purchase in list(ctx.journal.list_purchases(portfolio_only=False)):
+            ctx.journal.delete_purchase(purchase.id)
+    elif db_path.is_file():
         db_path.unlink()
+
     if cache.is_file():
         cache.unlink()
 

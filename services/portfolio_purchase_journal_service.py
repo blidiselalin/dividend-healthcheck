@@ -62,8 +62,17 @@ class PortfolioPurchaseJournalService:
         journal_store: Optional[PurchaseJournalStore] = None,
         portfolio_store: Optional[PortfolioStore] = None,
     ) -> None:
-        self.journal = journal_store or PurchaseJournalStore()
-        self.portfolio = portfolio_store or PortfolioStore()
+        if journal_store is None and portfolio_store is None:
+            from services.portfolio_context import create_portfolio_context
+
+            ctx = create_portfolio_context()
+            self.journal = ctx.journal
+            self.portfolio = ctx.portfolio
+        else:
+            anchor = journal_store or portfolio_store
+            path = anchor.db_path if anchor is not None else None
+            self.journal = journal_store or PurchaseJournalStore(db_path=path, seed=False)
+            self.portfolio = portfolio_store or PortfolioStore(db_path=path, seed=False)
 
     def list_purchases(self) -> List[PurchaseRecord]:
         return self.journal.list_purchases(portfolio_only=True)

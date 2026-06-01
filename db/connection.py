@@ -31,6 +31,8 @@ def get_database_url() -> Optional[str]:
 
 def use_cloud_sql() -> bool:
     """True when DATABASE_URL is set (Docker Postgres or any remote Postgres)."""
+    if os.environ.get("PYTEST_USE_SQLITE") == "1":
+        return False
     return bool(get_database_url())
 
 

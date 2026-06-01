@@ -24,8 +24,6 @@ logger = get_logger("dividendscope.portfolio")
 
 try:
     from data_ingestion.models import StockDocument
-    from data_ingestion.vector_store import VectorStore
-    from config import VECTORDB_DIR
     VECTOR_STORE_AVAILABLE = True
 except ImportError:
     VECTOR_STORE_AVAILABLE = False
@@ -123,13 +121,7 @@ class PortfolioDetailsService:
     """Merge portfolio holdings with market data for the details page."""
 
     def __init__(self, store: Optional[PortfolioStore] = None) -> None:
-        self.store = store or PortfolioStore()
-        self._vector_store: Optional[VectorStore] = None
-        if VECTOR_STORE_AVAILABLE:
-            try:
-                self._vector_store = VectorStore(persist_directory=str(VECTORDB_DIR))
-            except Exception:
-                self._vector_store = None
+        self.store = store or PortfolioStore(seed=False)
 
     def build_rows(self) -> List[PortfolioDetailRow]:
         rows, _ = self.build_rows_with_cache()
@@ -261,15 +253,14 @@ class PortfolioDetailsService:
         return rows, preload
 
     def _load_documents(self, symbols: List[str]) -> Dict[str, StockDocument]:
-        if not self._vector_store:
+        if not VECTOR_STORE_AVAILABLE:
             return {}
+
+        from services.shared_market_db import get_document
 
         documents: Dict[str, StockDocument] = {}
         for symbol in symbols:
-            try:
-                document = self._vector_store.get_by_symbol(symbol)
-            except Exception:
-                document = None
+            document = get_document(symbol)
             if document is not None:
                 documents[symbol] = document
         return documents

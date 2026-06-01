@@ -36,6 +36,7 @@ def test_migration_file_exists():
     assert _migration_path().is_file()
 
 
+@pytest.mark.postgres_mock
 def test_use_cloud_sql_matches_database_url(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("DIVIDENDSCOPE_DATABASE_URL", raising=False)
@@ -46,6 +47,7 @@ def test_use_cloud_sql_matches_database_url(monkeypatch):
     assert get_database_url() == "postgresql://local/test"
 
 
+@pytest.mark.postgres_mock
 def test_holding_count_for_user_postgres(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://local/test")
 
@@ -61,6 +63,7 @@ def test_holding_count_for_user_postgres(monkeypatch):
         assert holding_count_for_user("uid-1") == 7
 
 
+@pytest.mark.postgres_mock
 def test_migrate_portfolio_user_id_postgres(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://local/test")
 
