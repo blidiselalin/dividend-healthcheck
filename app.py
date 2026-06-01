@@ -71,7 +71,7 @@ from ui.theme import (
 )
 from config import DATA_SOURCES
 from services.portfolio_session import sync_portfolio_session_with_db
-from services.portfolio_ui_cache import hydrate_session_from_disk
+from services.portfolio_ui_cache import hydrate_session_from_disk, refresh_portfolio_after_library_update
 
 
 @st.cache_resource(show_spinner=False)
@@ -177,6 +177,9 @@ def main() -> None:
     if hydrate_session_from_disk():
         rows = st.session_state.get("portfolio_details_rows") or []
         logger.info("Portfolio session hydrated from disk (%d holdings)", len(rows))
+    elif refresh_portfolio_after_library_update():
+        rows = st.session_state.get("portfolio_details_rows") or []
+        logger.info("Portfolio session auto-reloaded after library update (%d holdings)", len(rows))
     st.session_state["db_price_refresh_stats"] = _startup_db_light()
 
     st.session_state["analysis_type"] = NAV_PORTFOLIO

@@ -11,6 +11,8 @@ from data_ingestion.deposits_store import DepositsStore
 from data_ingestion.portfolio_store import PortfolioStore
 from data_ingestion.purchase_journal_store import PurchaseJournalStore
 
+pytest_plugins = ["tests.support.postgres_fixtures"]
+
 
 @pytest.fixture
 def temp_db(tmp_path: Path) -> Path:

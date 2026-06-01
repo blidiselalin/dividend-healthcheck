@@ -280,4 +280,7 @@ def render_portfolio_status_line() -> None:
         return
     loaded_at = st.session_state.get("portfolio_details_time")
     if loaded_at:
-        st.caption(f"Prices from {loaded_at.strftime('%d %b %H:%M')} — use **Reload live data** to refresh")
+        st.caption(
+            f"Portfolio snapshot {loaded_at.strftime('%d %b %H:%M')} — "
+            "use **Reload live data** after ingest or hourly updates"
+        )

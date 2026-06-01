@@ -19,6 +19,21 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12"]
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dividendscope
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: dividendscope
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dividendscope -d dividendscope"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,7 +52,7 @@ jobs:
 
       - name: Run tests
         env:
-          # Isolated data dir so CI never touches a developer's local DB
+          DATABASE_URL: postgresql://dividendscope:test@127.0.0.1:5432/dividendscope
           DIVIDENDSCOPE_DATA_DIR: ${{ runner.temp }}/dividendscope-ci-data
         run: |
           python -m pytest tests/ -v --tb=short
