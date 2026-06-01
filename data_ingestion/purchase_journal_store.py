@@ -4,11 +4,14 @@ SQLite storage for stock purchase journal entries.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import List, Optional, Set
+
+logger = logging.getLogger(__name__)
 
 from config import DATA_DIR
 from db.connection import open_portfolio_db, use_cloud_sql
@@ -26,6 +29,25 @@ def _default_seed() -> bool:
 
 
 PURCHASE_JOURNAL_DB_PATH = DATA_DIR / "portfolio.db"
+
+
+def _parse_purchase_date(value) -> date:
+    """Parse DB purchase_date (ISO string, date, or datetime)."""
+    if value is None:
+        raise ValueError("purchase_date is null")
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value).strip()
+    if not text:
+        raise ValueError("purchase_date is empty")
+    # Accept "YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS" / ISO datetime
+    if "T" in text:
+        text = text.split("T", 1)[0]
+    elif " " in text:
+        text = text.split(" ", 1)[0]
+    return date.fromisoformat(text)
 
 
 def portfolio_symbols(db_path: Optional[Path] = None) -> Set[str]:
@@ -133,6 +155,8 @@ class PurchaseJournalStore:
                     SELECT id, symbol, purchase_date, price_usd
                     FROM purchase_journal
                     WHERE user_id = ?
+                      AND purchase_date IS NOT NULL
+                      AND TRIM(CAST(purchase_date AS TEXT)) <> ''
                     ORDER BY purchase_date, symbol, price_usd
                     """,
                     (connection.user_id,),
@@ -142,6 +166,8 @@ class PurchaseJournalStore:
                     """
                     SELECT id, symbol, purchase_date, price_usd
                     FROM purchase_journal
+                    WHERE purchase_date IS NOT NULL
+                      AND TRIM(purchase_date) <> ''
                     ORDER BY purchase_date, symbol, price_usd
                     """
                 ).fetchall()
@@ -151,12 +177,25 @@ class PurchaseJournalStore:
             symbol = row["symbol"]
             if allowed is not None and symbol not in allowed:
                 continue
+            try:
+                purchase_date = _parse_purchase_date(row["purchase_date"])
+                price_usd = float(row["price_usd"])
+            except (ValueError, TypeError) as exc:
+                logger.warning(
+                    "Skipping purchase_journal id=%s symbol=%s: %s (purchase_date=%r, price_usd=%r)",
+                    row.get("id"),
+                    symbol,
+                    exc,
+                    row.get("purchase_date"),
+                    row.get("price_usd"),
+                )
+                continue
             records.append(
                 PurchaseRecord(
                     id=int(row["id"]),
                     symbol=symbol,
-                    purchase_date=date.fromisoformat(row["purchase_date"]),
-                    price_usd=float(row["price_usd"]),
+                    purchase_date=purchase_date,
+                    price_usd=price_usd,
                 )
             )
         return records
@@ -231,7 +270,7 @@ class PurchaseJournalStore:
         return PurchaseRecord(
             id=int(row["id"]),
             symbol=row["symbol"],
-            purchase_date=date.fromisoformat(row["purchase_date"]),
+            purchase_date=_parse_purchase_date(row["purchase_date"]),
             price_usd=float(row["price_usd"]),
         )
 
