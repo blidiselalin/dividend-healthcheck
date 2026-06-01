@@ -128,24 +128,15 @@ class SingleStockView:
 
     @staticmethod
     def _render_header(data: StockData, rec: Recommendation) -> None:
-        """Render stock header with tier badge."""
+        """Company title only — score and figures live in Key highlights."""
+        del rec  # shown in display_key_highlights
         tier_badge = UIComponents.get_tier_badge(data.dividend_tier)
-        
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.header(f"{tier_badge} {data.name}")
-            streak = data.dividend_history.consecutive_years if data.dividend_history else 0
-            st.caption(
-                f"**{data.symbol}** • {data.sector} • "
-                f"{streak} years of dividend growth"
-            )
-        with col2:
-            if rec.score >= 65:
-                st.success(f"**{rec.label}**\n\nScore: {rec.score}")
-            elif rec.score >= 50:
-                st.warning(f"**{rec.label}**\n\nScore: {rec.score}")
-            else:
-                st.error(f"**{rec.label}**\n\nScore: {rec.score}")
+        streak = data.dividend_history.consecutive_years if data.dividend_history else 0
+        st.header(f"{tier_badge} {data.name}")
+        st.caption(
+            f"**{data.symbol}** · {data.sector} · "
+            f"{streak} years of consecutive dividend growth"
+        )
     
     @classmethod
     def render_analysis_for_symbol(
@@ -177,43 +168,8 @@ class SingleStockView:
 
         cls._render_header(data, rec)
 
-        from ui.analysis_evidence import render_analysis_evidence
-
-        portfolio_at = st.session_state.get("portfolio_details_time")
-
-        render_analysis_evidence(
-            symbol,
-            data=data,
-            vector_doc=vector_doc,
-            yield_channel_data=yield_channel_data,
-            portfolio_prices_at=portfolio_at,
-            expanded=True,
-        )
-        st.divider()
-
-        st.subheader("📊 Key Dividend Metrics")
-        UIComponents.display_prime_metrics(data, score)
-
-        st.divider()
-        UIComponents.display_quick_stats(data)
-
-        st.divider()
-        st.subheader("📋 Investment Analysis")
-        UIComponents.display_investment_thesis(pros, cons)
-        UIComponents.display_recommendation(rec.label, score, confidence)
-
-        st.divider()
-        with st.expander("📰 Latest News & Sentiment", expanded=True):
-            UIComponents.display_news_summary(symbol, days=7)
-
-        if show_sector and data.sector != "N/A":
-            st.divider()
-            with st.expander("🏭 Sector Comparison", expanded=True):
-                with st.spinner(f"Loading {data.sector} peers..."):
-                    sector_peers, external = SectorService.get_top_sector_peers(
-                        data, score, include_external=True
-                    )
-                UIComponents.display_sector_comparison(data, score, sector_peers, external)
+        st.subheader("Key highlights")
+        UIComponents.display_key_highlights(data, score, rec)
 
         st.divider()
         UIComponents.display_yield_channel_chart(
@@ -224,24 +180,44 @@ class SingleStockView:
         )
 
         st.divider()
-        st.subheader("📖 Detailed Analysis")
+        st.subheader("Investment view")
+        UIComponents.display_investment_thesis(pros, cons)
 
-        with st.expander("💰 Dividend Details"):
+        from ui.analysis_evidence import render_analysis_evidence
+
+        portfolio_at = st.session_state.get("portfolio_details_time")
+        render_analysis_evidence(
+            symbol,
+            data=data,
+            vector_doc=vector_doc,
+            yield_channel_data=yield_channel_data,
+            portfolio_prices_at=portfolio_at,
+            expanded=False,
+        )
+
+        with st.expander("More metrics", expanded=False):
             UIComponents.display_dividend_details(data)
-
-        with st.expander("📈 Valuation"):
+            st.divider()
             UIComponents.display_valuation_metrics(data)
-
-        with st.expander("🏦 Financial Health"):
+            st.divider()
             UIComponents.display_financial_health(data)
-
-        with st.expander("💹 Profitability"):
+            st.divider()
             UIComponents.display_profitability(data)
-
-        with st.expander("🎯 Performance & Analysts"):
+            st.divider()
             UIComponents.display_performance(data)
 
-        with st.expander("📦 Vector Database Data"):
+        with st.expander("News & sentiment", expanded=False):
+            UIComponents.display_news_summary(symbol, days=7)
+
+        if show_sector and data.sector != "N/A":
+            with st.expander("Sector comparison", expanded=False):
+                with st.spinner(f"Loading {data.sector} peers…"):
+                    sector_peers, external = SectorService.get_top_sector_peers(
+                        data, score, include_external=True
+                    )
+                UIComponents.display_sector_comparison(data, score, sector_peers, external)
+
+        with st.expander("Data sources & library record", expanded=False):
             UIComponents.display_vector_db_data(symbol, document=vector_doc)
 
         st.divider()

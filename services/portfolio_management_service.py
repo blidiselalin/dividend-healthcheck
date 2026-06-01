@@ -14,7 +14,9 @@ from config import DELISTED_SYMBOLS
 from data_ingestion.deposits_store import DepositsStore, MonthlyDeposit
 from data_ingestion.portfolio_store import PortfolioHolding, PortfolioStore
 from data_ingestion.purchase_journal_store import PurchaseJournalStore, PurchaseRecord
+from services.portfolio_context import create_portfolio_context
 from services.portfolio_vector_sync import sync_portfolio_to_vector_db
+from services.portfolio_dividend_sync_service import sync_received_dividends
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +50,15 @@ class PortfolioManagementService:
         journal: Optional[PurchaseJournalStore] = None,
         deposits: Optional[DepositsStore] = None,
     ) -> None:
-        self.portfolio = portfolio or PortfolioStore()
-        self.journal = journal or PurchaseJournalStore()
-        self.deposits = deposits or DepositsStore()
+        if portfolio is None and journal is None and deposits is None:
+            ctx = create_portfolio_context()
+            self.portfolio = ctx.portfolio
+            self.journal = ctx.journal
+            self.deposits = ctx.deposits
+        else:
+            self.portfolio = portfolio or PortfolioStore()
+            self.journal = journal or PurchaseJournalStore()
+            self.deposits = deposits or DepositsStore()
 
     @staticmethod
     def normalize_symbol(symbol: str) -> str:
@@ -145,6 +153,7 @@ class PortfolioManagementService:
                 enrich_missing=True,
                 symbols=[normalized],
             )
+        stats = sync_received_dividends(db_path=self.portfolio.db_path, symbols=[normalized])
         return {
             "holding": holding,
             "vector_sync": vector_stats,
@@ -159,11 +168,15 @@ class PortfolioManagementService:
         holding = self.portfolio.update_holding(symbol, **fields)
         if holding is not None:
             sync_portfolio_to_vector_db(enrich_missing=False, symbols=[holding.symbol])
+            sync_received_dividends(db_path=self.portfolio.db_path, symbols=[holding.symbol])
         return holding
 
     def remove_ticker(self, symbol: str) -> bool:
         normalized = self.normalize_symbol(symbol)
-        return self.portfolio.delete_holding(normalized)
+        removed = self.portfolio.delete_holding(normalized)
+        if removed:
+            sync_received_dividends(db_path=self.portfolio.db_path)
+        return removed
 
     def add_purchase(
         self,
@@ -176,6 +189,7 @@ class PortfolioManagementService:
             raise ValueError(f"Add {normalized} to holdings before logging purchases.")
         record = self.journal.add_purchase(normalized, purchase_date, price_usd)
         sync_portfolio_to_vector_db(enrich_missing=False, symbols=[normalized])
+        stats = sync_received_dividends(db_path=self.portfolio.db_path, symbols=[normalized])
         return record
 
     def add_deposit(

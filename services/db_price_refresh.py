@@ -113,7 +113,10 @@ def refresh_market_library_prices(
     """
     from services.shared_market_db import get_shared_vector_store
 
-    target_symbols = [symbol.upper() for symbol in (symbols or _collect_symbols())]
+    target_symbols = [
+        symbol.upper()
+        for symbol in (symbols if symbols is not None else _collect_symbols())
+    ]
     stats: Dict[str, Any] = {
         "total": len(target_symbols),
         "updated": 0,

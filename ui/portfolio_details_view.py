@@ -1690,8 +1690,8 @@ class PortfolioDetailsView:
         detail = service.detail_dataframe(records)
 
         st.caption(
-            "Cash received **after tax**: **10%** withholding through end of 2025, "
-            "**16%** from 2026. Estimated gross = Net ÷ (1 − tax rate)."
+            "Cash received **after tax**, auto-calculated from your holdings' dividend history. "
+            "**10%** withholding through end of 2025, **16%** from 2026."
         )
 
         c1, c2, c3, c4, c5, c6 = st.columns(6)

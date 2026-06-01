@@ -2,17 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 
 import pytest
 
 from data_ingestion.deposits_store import DepositsStore
 from data_ingestion.portfolio_store import PortfolioStore
-from data_ingestion.purchase_journal_store import (
-    PurchaseJournalStore,
-    _parse_purchase_date,
-    portfolio_symbols,
-)
+from data_ingestion.purchase_journal_store import PurchaseJournalStore, portfolio_symbols
 
 
 def test_portfolio_upsert_rejects_invalid_shares(portfolio_store: PortfolioStore) -> None:
@@ -54,20 +50,6 @@ def test_journal_list_portfolio_only(
     journal_store.add_purchase("OUT", date(2024, 1, 2), 2.0)
     portfolio_only = journal_store.list_purchases(portfolio_only=True)
     assert [p.symbol for p in portfolio_only] == ["IN"]
-
-
-def test_parse_purchase_date_accepts_common_formats() -> None:
-    assert _parse_purchase_date("2024-06-15") == date(2024, 6, 15)
-    assert _parse_purchase_date("2024-06-15T12:00:00") == date(2024, 6, 15)
-    assert _parse_purchase_date(date(2024, 1, 2)) == date(2024, 1, 2)
-    assert _parse_purchase_date(datetime(2024, 6, 15, 14, 30)) == date(2024, 6, 15)
-
-
-def test_parse_purchase_date_rejects_empty() -> None:
-    with pytest.raises(ValueError, match="empty"):
-        _parse_purchase_date("")
-    with pytest.raises(ValueError, match="null"):
-        _parse_purchase_date(None)
 
 
 def test_journal_delete_purchase(

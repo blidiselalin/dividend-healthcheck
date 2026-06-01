@@ -1,0 +1,90 @@
+# DividendScope — Agent Guide
+
+Read this before changing storage, portfolio logic, migrations, or tests.
+
+## Production architecture
+
+| Layer | Technology | Notes |
+|-------|------------|--------|
+| App | Streamlit (`app.py`) | HTTPS via host Caddy → `127.0.0.1:8501` |
+| Database | **PostgreSQL 16** (Docker) | `DATABASE_URL` set in compose — **source of truth** |
+| Market library | `stock_documents` (JSONB) | Shared S&P data; hourly refresh updates prices |
+| Legacy import | `/data/users/`, `/data/vectordb/` | **Import only** via `migrate_to_cloud_sql.py` — not runtime |
+
+**Do not** add runtime paths that write portfolio or market data to SQLite files or Chroma when `DATABASE_URL` is set.
+
+## Data ownership
+
+| Data | Tables / store | Scoped by |
+|------|----------------|-----------|
+| Users | `users`, `access_requests` | global |
+| Holdings | `holdings` | `user_id` |
+| Purchases | `purchase_journal` | `user_id` |
+| Deposits | `monthly_deposits` | `user_id` |
+| Net dividends (monthly) | `net_dividends` | `user_id` |
+| Dividend receipts | `dividend_receipts` | `user_id` + symbol |
+| Market docs | `stock_documents` | symbol (shared) |
+
+## Required patterns
+
+### 1. Portfolio stores share one path
+
+When code uses holdings + journal + dividends together, use:
+
+```python
+from services.portfolio_context import create_portfolio_context
+
+ctx = create_portfolio_context()
+ctx.portfolio.list_holdings()
+ctx.journal.list_purchases()
+```
+
+Never construct `PortfolioStore()` and `PurchaseJournalStore()` separately in the same flow unless they share an explicit `db_path`.
+
+### 2. Postgres date columns
+
+PostgreSQL returns `date` / `datetime` objects, not strings. Always parse with:
+
+```python
+from db.parsing import parse_date, parse_optional_date
+```
+
+Never `date.fromisoformat(row["column"])` on DB rows.
+
+### 3. Schema changes
+
+- Add `migrations/00N_description.sql` (incrementing).
+- `ensure_schema()` applies pending files tracked in `schema_migrations`.
+- Mirror SQLite `CREATE TABLE` in store `_ensure_schema()` for local dev/tests only.
+- Run `python -m db --migrate` on deploy (entrypoint does this).
+
+### 4. Market library access
+
+Runtime reads/writes go through:
+
+- `services.shared_market_db.get_shared_vector_store()` / `get_document()`
+- Not direct Chroma bootstrap or per-user vector paths in production.
+
+### 5. Tests
+
+- **Unit tests**: no `DATABASE_URL` (autouse `use_sqlite_backend` in `tests/conftest.py`).
+- **Integration tests**: `@pytest.mark.integration` + live Postgres in CI.
+- Pass explicit `tmp_path` / `db_path` into `create_portfolio_context(db_path=...)`.
+
+## Safe change checklist
+
+- [ ] Migrations added for Postgres schema changes?
+- [ ] Store `_ensure_schema` updated for SQLite dev fallback?
+- [ ] Date parsing uses `db.parsing`?
+- [ ] Portfolio flows use `create_portfolio_context` or injected stores?
+- [ ] Unit tests pass without `DATABASE_URL`?
+- [ ] No new Chroma/SQLite runtime dependencies when `use_cloud_sql()`?
+
+## Deploy (VM)
+
+```bash
+git pull && ./scripts/update_cloud_docker.sh
+python -m db --migrate   # if entrypoint did not run
+```
+
+See `DEPLOY-GCP.md` for full ops.

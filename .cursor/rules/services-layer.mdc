@@ -1,0 +1,34 @@
+---
+description: Service layer wiring and portfolio flows
+globs: services/**/*.py
+alwaysApply: false
+---
+
+# Services layer
+
+## Portfolio context
+
+Multi-table portfolio work must share one DB path:
+
+```python
+from services.portfolio_context import create_portfolio_context
+
+ctx = create_portfolio_context()
+# ctx.portfolio, ctx.journal, ctx.receipts, ctx.detail
+```
+
+Use in sync, management, and any flow combining holdings + journal + dividends.
+
+## Market library
+
+- Read: `services.shared_market_db.get_document(symbol)`
+- Write/refresh: `get_shared_vector_store()` — not raw Chroma paths in production.
+
+## Side effects
+
+- Portfolio mutations → `sync_received_dividends()` (dividend receipts + `dividends_paid`)
+- Holding changes → `sync_portfolio_to_vector_db()` for portfolio metadata overlay only
+
+## Logging
+
+Use `utils.logging_config.get_logger("dividendscope.<area>")` — avoid bare `print` in services.

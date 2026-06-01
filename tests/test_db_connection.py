@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from db.connection import (
+    _migration_path,
     _migration_statements,
     adapt_sql,
     get_database_url,
@@ -24,12 +25,18 @@ def test_adapt_sql_replaces_placeholders():
 
 def test_migration_statements_include_core_tables():
     statements = _migration_statements()
+    assert statements, "migration file should produce statements"
     joined = "\n".join(statements).upper()
-    for table in ("USERS", "HOLDINGS", "STOCK_DOCUMENTS", "NET_DIVIDENDS"):
+    assert "CREATE TABLE" in joined and "USERS" in joined
+    for table in ("HOLDINGS", "STOCK_DOCUMENTS", "NET_DIVIDENDS", "DIVIDEND_RECEIPTS"):
         assert table in joined
 
 
-def test_use_cloud_sql_follows_env(monkeypatch):
+def test_migration_file_exists():
+    assert _migration_path().is_file()
+
+
+def test_use_cloud_sql_matches_database_url(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("DIVIDENDSCOPE_DATABASE_URL", raising=False)
     assert use_cloud_sql() is False
@@ -65,7 +72,7 @@ def test_migrate_portfolio_user_id_postgres(monkeypatch):
 
     with patch("db.connection.get_connection", return_value=mock_cm):
         assert migrate_portfolio_user_id("old", "new") is True
-    assert mock_conn.execute.call_count == 4
+    assert mock_conn.execute.call_count == 5
 
 
 def test_open_app_db_sqlite_roundtrip(tmp_path: Path, monkeypatch):

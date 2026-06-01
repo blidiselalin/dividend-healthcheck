@@ -1,0 +1,25 @@
+---
+description: DividendScope production architecture and storage boundaries
+alwaysApply: true
+---
+
+# Architecture (do not break)
+
+Production uses **PostgreSQL** when `DATABASE_URL` is set (Docker Compose default).
+
+- **Portfolio data**: `holdings`, `purchase_journal`, `monthly_deposits`, `net_dividends`, `dividend_receipts` — per `user_id`.
+- **Market library**: `stock_documents` — shared JSONB; access via `services.shared_market_db`.
+- **Legacy** `/data/users/`, `/data/vectordb/`: import-only (`scripts/migrate_to_cloud_sql.py`), never runtime writes.
+
+## Forbidden without explicit user request
+
+- Re-introducing Chroma or per-user SQLite as production storage
+- `date.fromisoformat(row[...])` on Postgres query results
+- Separate `PortfolioStore()` + `PurchaseJournalStore()` without shared `db_path`
+- Skipping migration SQL when adding tables/columns
+- Setting global `DATABASE_URL` in unit tests (use `tests/conftest.py` isolation)
+
+## Read first
+
+- `AGENTS.md` — full agent guide
+- `DEPLOY-GCP.md` — VM deploy and volume layout

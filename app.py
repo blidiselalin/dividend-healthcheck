@@ -174,6 +174,11 @@ def main() -> None:
         st.stop()
 
     sync_portfolio_session_with_db()
+    from services.portfolio_dividend_sync_service import sync_received_dividends
+    from services.portfolio_session import is_demo_session, user_has_holdings_in_db
+
+    if not is_demo_session() and user_has_holdings_in_db():
+        sync_received_dividends()
     if hydrate_session_from_disk():
         rows = st.session_state.get("portfolio_details_rows") or []
         logger.info("Portfolio session hydrated from disk (%d holdings)", len(rows))

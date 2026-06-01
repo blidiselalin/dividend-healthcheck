@@ -238,7 +238,7 @@ Or from your Mac into the running stack:
 | Data | PostgreSQL table(s) |
 |------|---------------------|
 | Users & access requests | `users`, `access_requests` |
-| Per-user portfolio | `holdings`, `purchase_journal`, `monthly_deposits`, `net_dividends` (+ `user_id`) |
+| Per-user portfolio | `holdings`, `purchase_journal`, `monthly_deposits`, `net_dividends`, `dividend_receipts` (+ `user_id`) |
 | Shared S&P library | `stock_documents` (JSONB per symbol) |
 
 Postgres uses the same volume as the app (`/data/postgres`).  

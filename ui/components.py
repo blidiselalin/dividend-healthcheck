@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from models.stock import StockData
+from services.scoring import Recommendation
 from utils.formatting import (
     format_currency,
     format_percent,
@@ -79,8 +80,47 @@ class UIComponents:
         """Get badge emoji for dividend tier."""
         return TIER_BADGES.get(tier, "")
     
-    # === PRIME METRICS (Front Page) ===
-    
+    # === KEY HIGHLIGHTS (Front Page) ===
+
+    @staticmethod
+    def display_key_highlights(
+        data: StockData,
+        score: int,
+        rec: Recommendation,
+    ) -> None:
+        """Nine headline figures for dividend decisions — no duplicate sections below."""
+        dh = data.dividend_history
+        streak = dh.consecutive_years if dh else None
+        cagr_5y = dh.cagr_5y if dh else None
+        safety = data.dividend_safety_score
+        income_10k = (
+            f"${(data.dividend_yield_pct / 100) * 10000:,.0f}/yr"
+            if data.dividend_yield_pct
+            else "—"
+        )
+
+        r1 = st.columns(3)
+        r1[0].metric("Score", f"{score}/100", rec.label)
+        r1[1].metric("Yield", UIComponents.format_percent(data.dividend_yield_pct))
+        r1[2].metric(
+            "Dividend streak",
+            UIComponents.format_years(streak),
+            data.dividend_tier,
+        )
+
+        r2 = st.columns(3)
+        r2[0].metric("5Y div growth", UIComponents.format_percent(cagr_5y))
+        r2[1].metric("Payout ratio", UIComponents.format_percent(data.payout_ratio_pct, 0))
+        r2[2].metric(
+            "Safety",
+            f"{safety:.0f}/100" if safety is not None else "—",
+        )
+
+        r3 = st.columns(3)
+        r3[0].metric("Price", UIComponents.format_currency(data.price))
+        r3[1].metric("P/E", UIComponents.format_number(data.trailing_pe, 1))
+        r3[2].metric("Income on $10K", income_10k)
+
     @staticmethod
     def display_prime_metrics(data: StockData, score: int) -> None:
         """Display the 6 most important metrics for dividend investors.

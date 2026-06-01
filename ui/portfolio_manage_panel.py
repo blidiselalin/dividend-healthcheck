@@ -59,13 +59,6 @@ def render_portfolio_manage_sidebar() -> None:
                 step=0.01,
                 key="pm_add_comm",
             )
-            div_paid = st.number_input(
-                "Dividends received (USD)",
-                min_value=0.0,
-                value=0.0,
-                step=0.01,
-                key="pm_add_div",
-            )
             company = st.text_input(
                 "Company name (optional)",
                 key="pm_add_company",
@@ -84,7 +77,6 @@ def render_portfolio_manage_sidebar() -> None:
                             shares=shares,
                             avg_cost_per_share=avg_cost or 0.01,
                             commission=commission,
-                            dividends_paid=div_paid,
                             company_name=company.strip() or None,
                             skip_validation=skip_check,
                         )
@@ -129,12 +121,9 @@ def render_portfolio_manage_sidebar() -> None:
                     step=0.01,
                     key="pm_edit_comm",
                 )
-                new_div = st.number_input(
-                    "Dividends received",
-                    min_value=0.0,
-                    value=float(current.dividends_paid),
-                    step=0.01,
-                    key="pm_edit_div",
+                st.caption(
+                    f"Dividends received (auto): **${current.dividends_paid:,.2f}** — "
+                    "updated from market history when you reload portfolio data."
                 )
                 new_company = st.text_input(
                     "Company name",
@@ -150,7 +139,6 @@ def render_portfolio_manage_sidebar() -> None:
                                 shares=new_shares,
                                 avg_cost_per_share=new_avg,
                                 commission=new_comm,
-                                dividends_paid=new_div,
                                 company_name=new_company.strip() or None,
                             )
                             _after_change(f"Updated {pick}.")

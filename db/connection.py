@@ -39,13 +39,17 @@ def use_postgres_db() -> bool:
     return use_cloud_sql()
 
 
+def _migrations_dir() -> Path:
+    return Path(__file__).resolve().parent.parent / "migrations"
+
+
 def _migration_path() -> Path:
-    return Path(__file__).resolve().parent.parent / "migrations" / "001_initial.sql"
+    return _migrations_dir() / "001_initial.sql"
 
 
-def _migration_statements() -> list[str]:
-    """Split migration SQL into executable statements (ignore comment lines)."""
-    sql = _migration_path().read_text(encoding="utf-8")
+def _migration_statements_from_path(path: Path) -> list[str]:
+    """Split one migration file into executable statements (ignore comment lines)."""
+    sql = path.read_text(encoding="utf-8")
     lines = [
         line
         for line in sql.splitlines()
@@ -59,18 +63,42 @@ def _migration_statements() -> list[str]:
     return statements
 
 
+def _migration_statements() -> list[str]:
+    statements: list[str] = []
+    for path in sorted(_migrations_dir().glob("*.sql")):
+        statements.extend(_migration_statements_from_path(path))
+    return statements
+
+
 def ensure_schema() -> None:
-    """Apply SQL migrations once per process."""
+    """Apply pending SQL migrations once per process."""
     global _schema_ready
     if not use_postgres_db() or _schema_ready:
         return
 
-    statements = _migration_statements()
+    applied = 0
     with get_connection() as conn:
-        for statement in statements:
-            conn.execute(statement)
+        for path in sorted(_migrations_dir().glob("*.sql")):
+            version = path.stem
+            row = conn.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = %s",
+                (version,),
+            ).fetchone()
+            if row:
+                continue
+            for statement in _migration_statements_from_path(path):
+                conn.execute(statement)
+            conn.execute(
+                """
+                INSERT INTO schema_migrations (version)
+                VALUES (%s)
+                ON CONFLICT (version) DO NOTHING
+                """,
+                (version,),
+            )
+            applied += 1
     _schema_ready = True
-    logger.info("PostgreSQL schema ready (%s statements)", len(statements))
+    logger.info("PostgreSQL schema ready (%s new migration(s))", applied)
 
 
 def _get_pool():
@@ -265,6 +293,7 @@ def migrate_portfolio_user_id(old_user_id: str, new_user_id: str) -> bool:
         "purchase_journal",
         "monthly_deposits",
         "net_dividends",
+        "dividend_receipts",
     )
     moved = False
     with get_connection() as conn:

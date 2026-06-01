@@ -1,0 +1,34 @@
+---
+description: Postgres data layer and store conventions
+globs: data_ingestion/**/*.py,db/**/*.py,migrations/**/*.sql
+alwaysApply: false
+---
+
+# Data layer rules
+
+## Connections
+
+- Use `open_portfolio_db(path)` / `open_app_db(path)` from `db.connection`.
+- Check `use_cloud_sql()` before creating SQLite directories or `_ensure_schema` DDL.
+
+## Dates from DB rows
+
+```python
+# BAD — breaks on Postgres
+date.fromisoformat(row["purchase_date"])
+
+# GOOD
+from db.parsing import parse_date, parse_optional_date
+parse_date(row["purchase_date"])
+```
+
+## Schema changes
+
+1. New file: `migrations/00N_name.sql`
+2. Register in `schema_migrations` via `ensure_schema()` (automatic)
+3. Mirror table in store `_ensure_schema()` for SQLite dev/tests
+
+## Stores
+
+- Default `seed=False` for portfolio stores in app code.
+- Deletes on holdings must cascade related rows (`dividend_receipts`, etc.).

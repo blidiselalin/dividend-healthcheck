@@ -1,18 +1,6 @@
-#!/usr/bin/env python3
-"""
-Data Accuracy Test Suite for Dividend Stock Analytics.
-
-Validates that stored data in the vector database matches expected ranges
-and real-world values for key Dividend King stocks.
-"""
-
-import sys
-from pathlib import Path
+"""Optional integration tests for market library data quality (requires ingest)."""
 
 import pytest
-
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 pytestmark = pytest.mark.integration
 
@@ -262,72 +250,3 @@ def test_service_layer():
 
     stats = service.get_stats()
     assert stats["total_documents"] > 0
-
-
-def main():
-    """Run all tests."""
-    print("=" * 60)
-    print("  DIVIDEND STOCK DATA ACCURACY TESTS")
-    print("=" * 60)
-    print()
-    
-    all_passed = True
-    
-    # Test 1: Database availability
-    print("1. Testing database availability...")
-    try:
-        store = test_database_availability()
-    except Exception as e:
-        print(f"✗ Database test failed: {e}")
-        return 1
-    
-    # Test 2: Dividend Kings count
-    print("\n2. Testing Dividend Kings count...")
-    try:
-        kings = test_dividend_kings_count(store)
-    except AssertionError as e:
-        print(f"✗ {e}")
-        all_passed = False
-    
-    # Test 3: Data accuracy for specific stocks
-    print("\n3. Testing data accuracy for 10 stocks...")
-    try:
-        passed, failed, not_found = test_stock_data_accuracy(store)
-        if failed > 0:
-            all_passed = False
-    except Exception as e:
-        print(f"✗ Accuracy test failed: {e}")
-        all_passed = False
-    
-    # Test 4: Data sanity check
-    print("\n4. Testing data sanity (all stocks)...")
-    try:
-        if not test_data_sanity(store):
-            all_passed = False
-    except Exception as e:
-        print(f"✗ Sanity test failed: {e}")
-        all_passed = False
-    
-    # Test 5: Service layer
-    print("\n5. Testing VectorDBService...")
-    try:
-        if not test_service_layer():
-            all_passed = False
-    except Exception as e:
-        print(f"✗ Service test failed: {e}")
-        all_passed = False
-    
-    # Summary
-    print("\n" + "=" * 60)
-    if all_passed:
-        print("  ✓ ALL TESTS PASSED - Ready for commit")
-        print("=" * 60)
-        return 0
-    else:
-        print("  ✗ SOME TESTS FAILED - Review issues above")
-        print("=" * 60)
-        return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

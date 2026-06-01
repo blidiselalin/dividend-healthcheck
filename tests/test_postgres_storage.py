@@ -1,15 +1,10 @@
-"""Ensure production paths write to PostgreSQL, not local SQLite/Chroma."""
+"""Ensure production paths write to PostgreSQL, not local SQLite files."""
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-
-@pytest.fixture
-def postgres_env(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost/testdb")
 
 
 def test_vector_store_uses_postgres_when_database_url_set(postgres_env):

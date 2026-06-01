@@ -8,17 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from tests.support.postgres_fixtures import postgres_configured, reset_db_connection_state, skip_without_postgres
+from tests.support.postgres_fixtures import reset_db_connection_state
 
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.usefixtures("reset_db_connection_state"),
 ]
-
-
-@pytest.fixture(autouse=True)
-def _require_postgres(skip_without_postgres):
-    pass
 
 
 def test_schema_and_market_document_roundtrip(pg_user_id: str):

@@ -14,6 +14,25 @@ from data_ingestion.purchase_journal_store import PurchaseJournalStore
 pytest_plugins = ["tests.support.postgres_fixtures"]
 
 
+@pytest.fixture(autouse=True)
+def use_sqlite_backend(request, monkeypatch):
+    """Unit tests use isolated SQLite; integration tests keep DATABASE_URL."""
+    if request.node.get_closest_marker("integration"):
+        yield
+        return
+
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("DIVIDENDSCOPE_DATABASE_URL", raising=False)
+
+    import db.connection as db
+
+    db._pool = None
+    db._schema_ready = False
+    yield
+    db._pool = None
+    db._schema_ready = False
+
+
 @pytest.fixture
 def temp_db(tmp_path: Path) -> Path:
     """Isolated SQLite database path (holdings, journal, deposits share one file)."""
@@ -37,18 +56,23 @@ def deposits_store(temp_db: Path) -> DepositsStore:
 
 @pytest.fixture
 def store():
-    """Live ChromaDB for integration-style accuracy tests (skipped when unavailable)."""
+    """Shared market library for optional data-quality checks (skipped when empty)."""
     from data_ingestion.vector_store import VectorStore
+    from db.connection import use_cloud_sql
+    from tests.support.postgres_fixtures import postgres_reachable
+
+    if use_cloud_sql() and not postgres_reachable():
+        pytest.skip("PostgreSQL unavailable for market library checks")
 
     vector_store = VectorStore()
     if getattr(vector_store, "_use_fallback", False):
-        pytest.skip("ChromaDB unavailable; accuracy tests require a real vector DB")
+        pytest.skip("Local fallback store empty; run ingest for data-quality tests")
     count = vector_store.count()
     if count == 0:
-        pytest.skip("Vector database is empty; run ingest to enable accuracy tests")
+        pytest.skip("Market library is empty; run ingest to enable data-quality tests")
     if count < 100:
         pytest.skip(
-            f"Vector database has only {count} documents; run full ingest for accuracy tests"
+            f"Market library has only {count} documents; run full ingest for data-quality tests"
         )
     return vector_store
 

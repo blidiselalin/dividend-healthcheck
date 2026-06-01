@@ -111,13 +111,35 @@ class PortfolioHoldingDetailService:
             )
         return rows
 
+    def stored_dividend_history(self, symbol: str) -> List[HoldingDividendRow]:
+        from data_ingestion.dividend_receipt_store import DividendReceiptStore
+
+        receipts = DividendReceiptStore().list_for_symbol(symbol)
+        return [
+            HoldingDividendRow(
+                ex_date=receipt.ex_date,
+                pay_date=receipt.pay_date,
+                per_share_usd=receipt.per_share_usd,
+                shares_held=receipt.shares_held,
+                cash_usd=receipt.gross_usd,
+            )
+            for receipt in receipts
+        ]
+
     def dividend_history(
         self,
         symbol: str,
         document: Optional["StockDocument"],
         *,
         current_shares: float,
+        tracking_since: Optional[date] = None,
+        prefer_stored: bool = False,
     ) -> List[HoldingDividendRow]:
+        if prefer_stored:
+            stored = self.stored_dividend_history(symbol)
+            if stored:
+                return stored
+
         if not document or not document.dividend_history:
             return []
 
@@ -126,6 +148,8 @@ class PortfolioHoldingDetailService:
 
         rows: List[HoldingDividendRow] = []
         for record in sorted(document.dividend_history, key=lambda r: r.ex_date):
+            if not lots and tracking_since and record.ex_date < tracking_since:
+                continue
             pay = _cash_date(record)
             held = shares_as_of(lots, record.ex_date, fallback_shares=fallback)
             if held <= 0:
@@ -148,10 +172,11 @@ class PortfolioHoldingDetailService:
         document: Optional["StockDocument"],
         *,
         current_shares: float,
+        tracking_since: Optional[date] = None,
     ) -> HoldingDetailSummary:
         purchases = self.purchase_history(symbol)
         dividends = self.dividend_history(
-            symbol, document, current_shares=current_shares
+            symbol, document, current_shares=current_shares, tracking_since=tracking_since
         )
         return HoldingDetailSummary(
             symbol=symbol,
@@ -199,7 +224,8 @@ class PortfolioHoldingDetailService:
         current_shares: float,
     ) -> pd.DataFrame:
         rows = self.dividend_history(
-            symbol, document, current_shares=current_shares
+            symbol, document, current_shares=current_shares, tracking_since=tracking_since,
+            prefer_stored=True,
         )
         if not rows:
             return pd.DataFrame(

@@ -50,9 +50,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run tests
+      - name: Run unit tests
+        env:
+          DIVIDENDSCOPE_DATA_DIR: ${{ runner.temp }}/dividendscope-ci-data
+        run: |
+          python -m pytest tests/ -v --tb=short -m "not integration"
+
+      - name: Run Postgres integration tests
         env:
           DATABASE_URL: postgresql://dividendscope:test@127.0.0.1:5432/dividendscope
           DIVIDENDSCOPE_DATA_DIR: ${{ runner.temp }}/dividendscope-ci-data
         run: |
-          python -m pytest tests/ -v --tb=short
+          python -m pytest -m integration -v --tb=short

@@ -7,6 +7,8 @@ import uuid
 
 import pytest
 
+_postgres_reachable: bool | None = None
+
 
 def postgres_configured() -> bool:
     return bool(
@@ -14,12 +16,30 @@ def postgres_configured() -> bool:
     )
 
 
+def postgres_reachable() -> bool:
+    """Return True when DATABASE_URL points at a live server (cached per session)."""
+    global _postgres_reachable
+    if _postgres_reachable is not None:
+        return _postgres_reachable
+    if not postgres_configured():
+        _postgres_reachable = False
+        return False
+    url = os.environ.get("DATABASE_URL") or os.environ.get("DIVIDENDSCOPE_DATABASE_URL")
+    try:
+        import psycopg
+
+        with psycopg.connect(url, connect_timeout=2):
+            pass
+        _postgres_reachable = True
+    except Exception:
+        _postgres_reachable = False
+    return _postgres_reachable
+
+
 @pytest.fixture
 def postgres_env(monkeypatch):
-    """Ensure DATABASE_URL is set (CI provides it)."""
-    url = os.environ.get("DATABASE_URL") or os.environ.get("DIVIDENDSCOPE_DATABASE_URL")
-    if not url:
-        monkeypatch.setenv("DATABASE_URL", "postgresql://dividendscope:test@127.0.0.1:5432/dividendscope")
+    """Enable Postgres mode for tests that mock the database layer."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://dividendscope:test@127.0.0.1:5432/dividendscope")
     yield
 
 
@@ -42,5 +62,5 @@ def pg_user_id() -> str:
 
 @pytest.fixture
 def skip_without_postgres():
-    if not postgres_configured():
-        pytest.skip("DATABASE_URL not set — integration test requires PostgreSQL")
+    if not postgres_reachable():
+        pytest.skip("PostgreSQL unavailable — integration test requires a live DATABASE_URL")

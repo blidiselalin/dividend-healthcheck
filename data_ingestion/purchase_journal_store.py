@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import List, Optional, Set
 
@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 
 from config import DATA_DIR
 from db.connection import open_portfolio_db, use_cloud_sql
+from db.parsing import parse_date
+
+
 def _default_db_path() -> Path:
     try:
         from auth.user_context import resolve_portfolio_db_path
@@ -29,25 +32,6 @@ def _default_seed() -> bool:
 
 
 PURCHASE_JOURNAL_DB_PATH = DATA_DIR / "portfolio.db"
-
-
-def _parse_purchase_date(value) -> date:
-    """Parse DB purchase_date (ISO string, date, or datetime)."""
-    if value is None:
-        raise ValueError("purchase_date is null")
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    text = str(value).strip()
-    if not text:
-        raise ValueError("purchase_date is empty")
-    # Accept "YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS" / ISO datetime
-    if "T" in text:
-        text = text.split("T", 1)[0]
-    elif " " in text:
-        text = text.split(" ", 1)[0]
-    return date.fromisoformat(text)
 
 
 def portfolio_symbols(db_path: Optional[Path] = None) -> Set[str]:
@@ -178,7 +162,7 @@ class PurchaseJournalStore:
             if allowed is not None and symbol not in allowed:
                 continue
             try:
-                purchase_date = _parse_purchase_date(row["purchase_date"])
+                purchase_date = parse_date(row["purchase_date"])
                 price_usd = float(row["price_usd"])
             except (ValueError, TypeError) as exc:
                 logger.warning(
@@ -270,7 +254,7 @@ class PurchaseJournalStore:
         return PurchaseRecord(
             id=int(row["id"]),
             symbol=row["symbol"],
-            purchase_date=_parse_purchase_date(row["purchase_date"]),
+            purchase_date=parse_date(row["purchase_date"]),
             price_usd=float(row["price_usd"]),
         )
 

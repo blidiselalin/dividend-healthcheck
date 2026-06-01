@@ -1,0 +1,30 @@
+---
+description: Test isolation and integration test rules
+globs: tests/**/*.py,.github/workflows/*.yml
+alwaysApply: false
+---
+
+# Tests
+
+## Isolation
+
+- Unit tests run **without** `DATABASE_URL` (`use_sqlite_backend` autouse in `conftest.py`).
+- Integration tests: `@pytest.mark.integration` + Postgres service in CI.
+
+## Portfolio tests
+
+```python
+ctx = create_portfolio_context(db_path=tmp_path / "portfolio.db")
+```
+
+Never rely on default `PortfolioStore()` path when passing a temp DB to one store only.
+
+## CI
+
+- Unit: `pytest -m "not integration"`
+- Integration: `pytest -m integration` with `DATABASE_URL` set
+
+## Do not
+
+- Remove `use_sqlite_backend` without splitting CI jobs
+- Assert exact row counts against shared Postgres without unique `pg_user_id`

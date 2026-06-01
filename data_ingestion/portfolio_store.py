@@ -1,8 +1,8 @@
 """
-SQLite storage for portfolio holdings.
+Portfolio holdings storage (PostgreSQL per user, or SQLite file in local dev).
 
-Static position data (shares, cost basis, fees, dividends received) is kept
-locally while market metrics are resolved from the vector database and APIs.
+Static position data (shares, cost basis, fees, dividends received) lives here;
+market metrics come from stock_documents and live APIs.
 
 Holdings are never seeded from source code — each user starts with an empty
 portfolio (or data from migration / the UI). Use auth/demo_portfolio for the
@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import List, Optional
 
 from config import DATA_DIR
 from db.connection import open_portfolio_db, use_cloud_sql
+from db.parsing import parse_optional_date
 
 
 def _default_portfolio_db_path() -> Path:
@@ -49,6 +51,7 @@ class PortfolioHolding:
     estimated_avg_price: float
     sort_order: int
     company_name: Optional[str] = None
+    dividend_tracking_since: Optional[date] = None
 
 
 class PortfolioStore:
@@ -95,6 +98,10 @@ class PortfolioStore:
                 connection.execute(
                     "ALTER TABLE holdings ADD COLUMN company_name TEXT"
                 )
+            if "dividend_tracking_since" not in columns:
+                connection.execute(
+                    "ALTER TABLE holdings ADD COLUMN dividend_tracking_since TEXT"
+                )
 
     def list_holdings(self) -> List[PortfolioHolding]:
         with self._connect() as connection:
@@ -104,7 +111,7 @@ class PortfolioStore:
                     SELECT
                       symbol, shares, avg_cost_per_share, acquisition_value,
                       commission, dividends_paid, estimated_avg_price,
-                      sort_order, company_name
+                      sort_order, company_name, dividend_tracking_since
                     FROM holdings
                     WHERE user_id = ?
                     ORDER BY sort_order, symbol
@@ -123,7 +130,8 @@ class PortfolioStore:
                       dividends_paid,
                       estimated_avg_price,
                       sort_order,
-                      company_name
+                      company_name,
+                      dividend_tracking_since
                     FROM holdings
                     ORDER BY sort_order, symbol
                     """
@@ -140,6 +148,7 @@ class PortfolioStore:
                 estimated_avg_price=row["estimated_avg_price"] or 0.0,
                 sort_order=row["sort_order"],
                 company_name=row["company_name"],
+                dividend_tracking_since=parse_optional_date(row["dividend_tracking_since"]),
             )
             for row in rows
         ]
@@ -188,6 +197,7 @@ class PortfolioStore:
 
         acquisition_value = round(shares * avg_cost_per_share, 2)
         est = estimated_avg_price if estimated_avg_price is not None else avg_cost_per_share
+        tracking_since = date.today().isoformat()
 
         with self._connect() as connection:
             if connection.is_postgres:
@@ -254,8 +264,8 @@ class PortfolioStore:
                         INSERT INTO holdings (
                           user_id, symbol, shares, avg_cost_per_share, acquisition_value,
                           commission, dividends_paid, estimated_avg_price,
-                          sort_order, company_name
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          sort_order, company_name, dividend_tracking_since
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             connection.user_id,
@@ -268,6 +278,7 @@ class PortfolioStore:
                             est,
                             sort_order,
                             company_name,
+                            tracking_since,
                         ),
                     )
                 else:
@@ -276,8 +287,8 @@ class PortfolioStore:
                         INSERT INTO holdings (
                           symbol, shares, avg_cost_per_share, acquisition_value,
                           commission, dividends_paid, estimated_avg_price,
-                          sort_order, company_name
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          sort_order, company_name, dividend_tracking_since
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             symbol,
@@ -289,6 +300,7 @@ class PortfolioStore:
                             est,
                             sort_order,
                             company_name,
+                            tracking_since,
                         ),
                     )
 
@@ -337,6 +349,9 @@ class PortfolioStore:
 
     def delete_holding(self, symbol: str) -> bool:
         symbol = symbol.strip().upper()
+        from data_ingestion.dividend_receipt_store import DividendReceiptStore
+
+        DividendReceiptStore(db_path=self.db_path).delete_for_symbol(symbol)
         with self._connect() as connection:
             if connection.is_postgres:
                 cursor = connection.execute(
@@ -349,3 +364,21 @@ class PortfolioStore:
                     (symbol,),
                 )
             return cursor.rowcount > 0
+
+    def set_dividends_paid(self, symbol: str, dividends_paid: float) -> None:
+        """Update lifetime dividends received for a symbol (auto-sync)."""
+        symbol = symbol.strip().upper()
+        with self._connect() as connection:
+            if connection.is_postgres:
+                connection.execute(
+                    """
+                    UPDATE holdings SET dividends_paid = ?
+                    WHERE user_id = ? AND symbol = ?
+                    """,
+                    (round(dividends_paid, 2), connection.user_id, symbol),
+                )
+            else:
+                connection.execute(
+                    "UPDATE holdings SET dividends_paid = ? WHERE symbol = ?",
+                    (round(dividends_paid, 2), symbol),
+                )
