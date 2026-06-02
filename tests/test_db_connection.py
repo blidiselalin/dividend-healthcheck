@@ -101,27 +101,32 @@ def test_ensure_schema_bootstraps_schema_migrations_table(tmp_path: Path, monkey
     import db.connection as db
 
     monkeypatch.setenv("DATABASE_URL", "postgresql://local/test")
-    db._schema_ready = False
+    previous_schema_ready = db._schema_ready
+    try:
+        db._schema_ready = False
 
-    migration = tmp_path / "001_initial.sql"
-    migration.write_text(
-        "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY);",
-        encoding="utf-8",
-    )
+        migration = tmp_path / "001_initial.sql"
+        migration.write_text(
+            "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY);",
+            encoding="utf-8",
+        )
 
-    mock_conn = MagicMock()
-    mock_conn.execute.return_value.fetchone.return_value = None
-    mock_cm = MagicMock()
-    mock_cm.__enter__ = MagicMock(return_value=mock_conn)
-    mock_cm.__exit__ = MagicMock(return_value=False)
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchone.return_value = None
+        mock_cm = MagicMock()
+        mock_cm.__enter__ = MagicMock(return_value=mock_conn)
+        mock_cm.__exit__ = MagicMock(return_value=False)
 
-    with patch("db.connection.get_connection", return_value=mock_cm), patch(
-        "db.connection._migrations_dir", return_value=tmp_path
-    ):
-        ensure_schema()
+        with patch("db.connection.get_connection", return_value=mock_cm), patch(
+            "db.connection._migrations_dir", return_value=tmp_path
+        ):
+            ensure_schema()
 
-    executed_sql = [call.args[0] for call in mock_conn.execute.call_args_list]
-    assert any(
-        "CREATE TABLE IF NOT EXISTS schema_migrations" in sql for sql in executed_sql
-    )
-    db._schema_ready = False
+        executed_sql = [call.args[0] for call in mock_conn.execute.call_args_list]
+        assert any(
+            "CREATE TABLE IF NOT EXISTS schema_migrations" in sql
+            for sql in executed_sql
+        )
+        assert any("CREATE TABLE IF NOT EXISTS users" in sql for sql in executed_sql)
+    finally:
+        db._schema_ready = previous_schema_ready
