@@ -314,6 +314,30 @@ Rsyncs your local repo to the VM, rebuilds Docker, keeps `/data`. Use `./scripts
 
 ---
 
+## Step 8b — Deploy from GitHub Actions
+
+This repo includes **`.github/workflows/deploy-gcp.yml`** so you can deploy directly from GitHub to your GCP VM using the same VM command from this guide:
+
+```bash
+./scripts/update_cloud_docker.sh --sync-portfolio
+```
+
+Set these repository **Variables**:
+
+- `GCP_PROJECT_ID` (example: `my-project`)
+- `GCP_INSTANCE` (example: `dividendscope`)
+- `GCP_ZONE` (example: `us-central1-a`)
+- `GCP_SSH_USER` (optional; Linux user on the VM)
+- `GCP_REMOTE_APP_PATH` (optional; defaults to `~/dividend-healthcheck`)
+
+Set this repository **Secret**:
+
+- `GCP_SA_KEY` (service account JSON key with permission to SSH to the instance)
+
+Run it from **Actions → Deploy to GCP → Run workflow** and choose optional flags (`sync_portfolio`, `ingest`, `migrate_files`).
+
+---
+
 ## Step 9 — Update on the VM (SSH)
 
 On the VM (keeps volume `dividendscope-persistent-data` → `/data`):
