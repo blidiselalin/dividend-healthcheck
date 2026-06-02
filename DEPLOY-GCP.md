@@ -334,6 +334,8 @@ Set this repository **Secret**:
 
 - `GCP_SA_KEY` (service account JSON key with permission to SSH to the instance)
 
+Service account IAM should allow instance lookup + SSH execution on the target VM (for example: `compute.instances.get` and either OS Login permissions or Compute Instance Admin + IAP/SSH permissions, depending on your VM SSH setup).
+
 Run it from **Actions → Deploy to GCP → Run workflow** and choose optional flags (`sync_portfolio`, `ingest`, `migrate_files`).
 
 ---

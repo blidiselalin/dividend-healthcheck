@@ -79,13 +79,26 @@ jobs:
             exit 1
           fi
 
-          remote_app_path="${GCP_REMOTE_APP_PATH:-\$HOME/dividend-healthcheck}"
+          remote_app_path="${GCP_REMOTE_APP_PATH:-~/dividend-healthcheck}"
+          if [[ ! "${remote_app_path}" =~ ^[A-Za-z0-9_./~:-]+$ ]]; then
+            echo "Invalid GCP_REMOTE_APP_PATH. Allowed chars: A-Z a-z 0-9 _ . / ~ : -" >&2
+            exit 1
+          fi
+
+          deploy_cmd="./scripts/update_cloud_docker.sh"
+          if [[ -n "${DEPLOY_FLAGS:-}" ]]; then
+            deploy_cmd="${deploy_cmd} ${DEPLOY_FLAGS}"
+          fi
           target="${GCP_INSTANCE}"
           if [[ -n "${GCP_SSH_USER}" ]]; then
+            if [[ ! "${GCP_SSH_USER}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+              echo "Invalid GCP_SSH_USER. Allowed chars: A-Z a-z 0-9 . _ -" >&2
+              exit 1
+            fi
             target="${GCP_SSH_USER}@${GCP_INSTANCE}"
           fi
 
           gcloud compute ssh "${target}" \
             --project="${GCP_PROJECT_ID}" \
             --zone="${GCP_ZONE}" \
-            --command="cd ${remote_app_path} && chmod +x scripts/update_cloud_docker.sh && ./scripts/update_cloud_docker.sh${DEPLOY_FLAGS}"
+            --command="cd ${remote_app_path} && chmod +x scripts/update_cloud_docker.sh && ${deploy_cmd}"
