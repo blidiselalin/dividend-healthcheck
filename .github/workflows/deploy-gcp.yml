@@ -1,0 +1,104 @@
+name: Deploy to GCP
+
+on:
+  workflow_dispatch:
+    inputs:
+      sync_portfolio:
+        description: "Run portfolio sync after deploy"
+        required: false
+        type: boolean
+        default: true
+      ingest:
+        description: "Run shared S&P ingest after deploy (slow)"
+        required: false
+        type: boolean
+        default: false
+      migrate_files:
+        description: "Run one-time legacy file migration from /data"
+        required: false
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      sync_portfolio:
+        required: false
+        type: boolean
+        default: true
+      ingest:
+        required: false
+        type: boolean
+        default: false
+      migrate_files:
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build deploy flags
+        shell: bash
+        run: |
+          set -euo pipefail
+          flags=""
+          if [[ "${{ inputs.sync_portfolio }}" == "true" ]]; then
+            flags="${flags} --sync-portfolio"
+          fi
+          if [[ "${{ inputs.ingest }}" == "true" ]]; then
+            flags="${flags} --ingest"
+          fi
+          if [[ "${{ inputs.migrate_files }}" == "true" ]]; then
+            flags="${flags} --migrate-files"
+          fi
+          echo "DEPLOY_FLAGS=${flags}" >> "$GITHUB_ENV"
+
+      - name: Deploy on VM
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_INSTANCE: ${{ vars.GCP_INSTANCE }}
+          GCP_ZONE: ${{ vars.GCP_ZONE }}
+          GCP_SSH_USER: ${{ vars.GCP_SSH_USER }}
+          GCP_REMOTE_APP_PATH: ${{ vars.GCP_REMOTE_APP_PATH }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${GCP_PROJECT_ID}" || -z "${GCP_INSTANCE}" || -z "${GCP_ZONE}" ]]; then
+            echo "Missing required repository variables: GCP_PROJECT_ID, GCP_INSTANCE, GCP_ZONE" >&2
+            exit 1
+          fi
+
+          remote_app_path="${GCP_REMOTE_APP_PATH:-~/dividend-healthcheck}"
+          if [[ ! "${remote_app_path}" =~ ^[A-Za-z0-9_./~:-]+$ ]]; then
+            echo "Invalid GCP_REMOTE_APP_PATH. Allowed chars: A-Z a-z 0-9 _ . / ~ : -" >&2
+            exit 1
+          fi
+
+          deploy_cmd="./scripts/update_cloud_docker.sh"
+          if [[ -n "${DEPLOY_FLAGS:-}" ]]; then
+            deploy_cmd="${deploy_cmd} ${DEPLOY_FLAGS}"
+          fi
+          target="${GCP_INSTANCE}"
+          if [[ -n "${GCP_SSH_USER}" ]]; then
+            if [[ ! "${GCP_SSH_USER}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+              echo "Invalid GCP_SSH_USER. Allowed chars: A-Z a-z 0-9 . _ -" >&2
+              exit 1
+            fi
+            target="${GCP_SSH_USER}@${GCP_INSTANCE}"
+          fi
+
+          gcloud compute ssh "${target}" \
+            --project="${GCP_PROJECT_ID}" \
+            --zone="${GCP_ZONE}" \
+            --command="cd ${remote_app_path} && chmod +x scripts/update_cloud_docker.sh && ${deploy_cmd}"
