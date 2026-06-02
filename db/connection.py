@@ -80,6 +80,14 @@ def ensure_schema() -> None:
 
     applied = 0
     with get_connection() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+              version TEXT PRIMARY KEY,
+              applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        )
         for path in sorted(_migrations_dir().glob("*.sql")):
             version = path.stem
             row = conn.execute(

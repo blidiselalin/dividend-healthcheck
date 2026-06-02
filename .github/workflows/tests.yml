@@ -80,6 +80,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Apply PostgreSQL migrations
+        env:
+          DATABASE_URL: postgresql://dividendscope:test@127.0.0.1:5432/dividendscope
+        run: |
+          python -m db --migrate
+
       - name: Run Postgres integration tests
         env:
           DATABASE_URL: postgresql://dividendscope:test@127.0.0.1:5432/dividendscope

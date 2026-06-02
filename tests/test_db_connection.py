@@ -11,6 +11,7 @@ from db.connection import (
     _migration_path,
     _migration_statements,
     adapt_sql,
+    ensure_schema,
     get_database_url,
     holding_count_for_user,
     migrate_portfolio_user_id,
@@ -93,3 +94,34 @@ def test_open_app_db_sqlite_roundtrip(tmp_path: Path, monkeypatch):
     with open_app_db(db_path) as conn:
         row = conn.execute("SELECT email FROM users WHERE id = ?", ("u1",)).fetchone()
     assert row["email"] == "a@b.com"
+
+
+@pytest.mark.postgres_mock
+def test_ensure_schema_bootstraps_schema_migrations_table(tmp_path: Path, monkeypatch):
+    import db.connection as db
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://local/test")
+    db._schema_ready = False
+
+    migration = tmp_path / "001_initial.sql"
+    migration.write_text(
+        "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY);",
+        encoding="utf-8",
+    )
+
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.fetchone.return_value = None
+    mock_cm = MagicMock()
+    mock_cm.__enter__ = MagicMock(return_value=mock_conn)
+    mock_cm.__exit__ = MagicMock(return_value=False)
+
+    with patch("db.connection.get_connection", return_value=mock_cm), patch(
+        "db.connection._migrations_dir", return_value=tmp_path
+    ):
+        ensure_schema()
+
+    executed_sql = [call.args[0] for call in mock_conn.execute.call_args_list]
+    assert any(
+        "CREATE TABLE IF NOT EXISTS schema_migrations" in sql for sql in executed_sql
+    )
+    db._schema_ready = False
