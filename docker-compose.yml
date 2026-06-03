@@ -42,6 +42,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    env_file:
+      - .env
     ports:
       - "127.0.0.1:8501:8501"
     environment:
@@ -49,6 +51,7 @@ services:
       DIVIDENDSCOPE_LOG_LEVEL: INFO
       PYTHONUNBUFFERED: "1"
       DATABASE_URL: postgresql://${POSTGRES_USER:-dividendscope}:${POSTGRES_PASSWORD:-dividendscope}@postgres:5432/${POSTGRES_DB:-dividendscope}
+      SEC_EDGAR_USER_AGENT: ${SEC_EDGAR_USER_AGENT:-DividendScope/1.0 (edgar-data@dividendscope.local)}
     volumes:
       - dividendscope-data:/data
     command:

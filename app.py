@@ -81,6 +81,12 @@ def _startup_db_light() -> dict:
 
     market = shared_market_db_status()
     cov = market.get("sp500_coverage") or {}
+    try:
+        from data_ingestion.stock_enricher import log_provider_status
+
+        log_provider_status(logger)
+    except Exception:
+        pass
     logger.info(
         "Shared market library storage=%s documents=%d sp500=%s/%s",
         market.get("storage"),

@@ -10,6 +10,7 @@ alwaysApply: false
 
 - Unit tests run **without** `DATABASE_URL` (`PYTEST_USE_SQLITE=1` via autouse in `conftest.py`).
 - Tests that mock Postgres mode: `@pytest.mark.postgres_mock` (or `postgres_env` fixture).
+- Market back-compat: `tests/test_market_data_back_compat.py` (legacy `DataSource`, `YFinanceEnricher`, aliases).
 
 ## Portfolio tests
 

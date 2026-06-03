@@ -11,39 +11,7 @@ from data_ingestion.portfolio_store import PortfolioHolding, PortfolioStore
 from data_ingestion.purchase_journal_store import PurchaseJournalStore
 from services import portfolio_vector_sync as sync
 from services.portfolio_context import PortfolioContext
-
-
-from data_ingestion.deposits_store import DepositsStore
-from data_ingestion.dividend_income_store import DividendIncomeStore
-from data_ingestion.dividend_receipt_store import DividendReceiptStore
-from services.portfolio_holding_detail_service import PortfolioHoldingDetailService
-from services.portfolio_purchase_journal_service import PortfolioPurchaseJournalService
-
-
-def _context_from_stores(
-    portfolio_store: PortfolioStore,
-    journal_store: PurchaseJournalStore,
-) -> PortfolioContext:
-    return PortfolioContext(
-        db_path=portfolio_store.db_path,
-        portfolio=portfolio_store,
-        journal=journal_store,
-        deposits=DepositsStore(db_path=portfolio_store.db_path, seed=False),
-        dividends=DividendIncomeStore(db_path=portfolio_store.db_path, seed=False),
-        receipts=DividendReceiptStore(db_path=portfolio_store.db_path),
-        detail=PortfolioHoldingDetailService(
-            journal=PortfolioPurchaseJournalService(
-                journal_store=journal_store,
-                portfolio_store=portfolio_store,
-            ),
-            portfolio=portfolio_store,
-            receipts=DividendReceiptStore(db_path=portfolio_store.db_path),
-        ),
-        journal_service=PortfolioPurchaseJournalService(
-            journal_store=journal_store,
-            portfolio_store=portfolio_store,
-        ),
-    )
+from tests.support.market_fixtures import portfolio_context_from_stores
 
 
 def test_apply_portfolio_fields_sets_metadata() -> None:
@@ -82,7 +50,7 @@ def test_company_name_for_prefers_holding_db(
         avg_cost_per_share=10.0,
         company_name="Custom Name Inc",
     )
-    ctx = _context_from_stores(portfolio_store, journal_store)
+    ctx = portfolio_context_from_stores(portfolio_store, journal_store)
     monkeypatch.setattr(
         sync,
         "create_portfolio_context",
@@ -96,7 +64,7 @@ def test_collect_portfolio_symbols(
     journal_store: PurchaseJournalStore,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    ctx = _context_from_stores(portfolio_store, journal_store)
+    ctx = portfolio_context_from_stores(portfolio_store, journal_store)
     monkeypatch.setattr(
         sync,
         "create_portfolio_context",
@@ -115,7 +83,7 @@ def test_collect_portfolio_symbols_excludes_delisted(
     journal_store: PurchaseJournalStore,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    ctx = _context_from_stores(portfolio_store, journal_store)
+    ctx = portfolio_context_from_stores(portfolio_store, journal_store)
     monkeypatch.setattr(
         sync,
         "create_portfolio_context",

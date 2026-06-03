@@ -22,7 +22,7 @@ Use in sync, management, and any flow combining holdings + journal + dividends.
 ## Market library
 
 - Read: `services.shared_market_db.get_document(symbol)`
-- Write/refresh: `get_shared_vector_store()` — not raw `VectorStore(persist_directory=...)` in services
+- Enrich: `data_ingestion.stock_enricher.create_stock_enricher()` — not ad-hoc `YFinanceEnricher()` in new code
 
 ## Side effects
 

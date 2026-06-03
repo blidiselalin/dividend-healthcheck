@@ -26,10 +26,9 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Try to import yfinance enricher
+# Try to import multi-source enricher
 try:
-    from .yfinance_enricher import YFinanceEnricher
-    ENRICHER_AVAILABLE = True
+    from .stock_enricher import ENRICHER_AVAILABLE, create_stock_enricher
 except ImportError:
     ENRICHER_AVAILABLE = False
 
@@ -145,10 +144,10 @@ class DataIngestionPipeline:
         except ImportError:
             pass
         
-        # Step 3: Enrich with yfinance if requested
+        # Step 3: Enrich with market data APIs if requested
         if enrich_with_yfinance and ENRICHER_AVAILABLE:
-            logger.info("Enriching documents with yfinance data...")
-            enricher = YFinanceEnricher(request_delay=0.3)
+            logger.info("Enriching documents with market data (Yahoo, SEC EDGAR, Stooq)...")
+            enricher = create_stock_enricher(request_delay=0.3)
             
             def enrich_progress(current, total):
                 if progress_callback:
@@ -204,11 +203,11 @@ class DataIngestionPipeline:
             Statistics dict.
         """
         if not ENRICHER_AVAILABLE:
-            logger.error("YFinanceEnricher not available")
+            logger.error("Stock enricher not available")
             return {"error": "enricher_not_available"}
-        
+
         stats = defaultdict(int)
-        enricher = YFinanceEnricher(request_delay=0.3)
+        enricher = create_stock_enricher(request_delay=0.3)
         
         # Get documents to enrich
         if symbols:

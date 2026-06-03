@@ -1,8 +1,9 @@
 """
 yfinance-based data enricher for StockDocument.
 
-Fetches comprehensive financial data from yfinance to populate
-all fields in StockDocument for complete offline operation.
+Legacy enricher used for dividend streak / CAGR / history post-processing.
+Prefer ``data_ingestion.stock_enricher.create_stock_enricher()`` for new code
+(Yahoo + SEC EDGAR + Stooq; all free, no API keys).
 """
 
 import logging

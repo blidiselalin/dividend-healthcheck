@@ -26,7 +26,7 @@ def enrich_stale_documents(
     Processes at most ``limit`` symbols per run so hourly cron stays within API limits.
     """
     from config import DELISTED_SYMBOLS
-    from data_ingestion.yfinance_enricher import YFinanceEnricher
+    from data_ingestion.stock_enricher import create_stock_enricher
     from services.shared_market_db import get_shared_vector_store
 
     store = get_shared_vector_store()
@@ -62,7 +62,7 @@ def enrich_stale_documents(
     if not batch:
         return stats
 
-    enricher = YFinanceEnricher(request_delay=request_delay)
+    enricher = create_stock_enricher(request_delay=request_delay)
     enriched: List[Any] = []
     for document in batch:
         stats["processed"] += 1

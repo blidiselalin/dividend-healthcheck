@@ -18,6 +18,7 @@ Analyze elite Dividend Kings (50+ years of consecutive increases), assess divide
 - [Using the UI](#using-the-ui)
 - [Project Structure](#project-structure)
 - [Configuration](#configuration)
+- [Market data sources](#market-data-sources)
 - [Features Reference](#features-reference)
 - [Data Download & Ingestion CLI](#data-download--ingestion-cli)
 - [Scoring Framework](#scoring-framework)
@@ -31,9 +32,9 @@ Analyze elite Dividend Kings (50+ years of consecutive increases), assess divide
 |---|---|---|
 | **Python** | 3.10 or higher | [Download](https://www.python.org/downloads/) |
 | **pip** | Latest recommended | Comes with Python |
-| Internet access | — | Required for live market data (yfinance) |
+| Internet access | — | Required for live market data (Yahoo / optional APIs) |
 
-> **No API keys required.** DividendScope uses only public data sources.
+> **No API keys required.** Market data uses Yahoo Finance, SEC EDGAR, and Stooq — all free public sources.
 
 ---
 
@@ -170,10 +171,12 @@ dividend-healthcheck/
 │
 ├── data_ingestion/                # Vector database pipeline
 │   ├── models.py                  # StockDocument, DividendRecord schemas
+│   ├── stock_enricher.py          # Multi-source enrich entry (Yahoo + SEC + Stooq)
+│   ├── providers/                 # Yahoo, SEC EDGAR, Stooq adapters + StockSnapshot
 │   ├── downloaders.py             # StockQuote.io + Nasdaq CSV parsers
 │   ├── fetch_stockquote.py        # StockQuote.io automated fetcher
 │   ├── fetch_nasdaq.py            # Nasdaq historical data fetcher
-│   ├── yfinance_enricher.py       # Enriches documents with live yfinance data
+│   ├── yfinance_enricher.py       # Legacy yfinance post-processing (streaks, CAGR)
 │   ├── vector_store.py            # ChromaDB wrapper (search, get, upsert)
 │   └── pipeline.py                # Ingestion orchestration and CLI logic
 │
@@ -216,6 +219,33 @@ API_TIMEOUT_SECONDS = 30
 
 # Data freshness — how many days before re-fetching from API
 DEFAULT_STALENESS_DAYS = 7
+```
+
+---
+
+## Market data sources
+
+Enrichment runs through `data_ingestion/stock_enricher.py` in priority order:
+
+| Source | API key? | Fills gaps in |
+|--------|----------|----------------|
+| **Yahoo Finance** (yfinance) | No | Price, dividends, fundamentals, history |
+| **SEC EDGAR** | No | Company name, sector (SIC), margins, ROE, debt/equity from filings |
+| **Stooq** | No | Daily OHLCV history and 52-week range when Yahoo history fails |
+
+Providers only fill **missing** fields; nothing is overwritten.
+
+SEC requests require a descriptive `User-Agent` header (SEC policy, not a secret). Default is built in; override for production:
+
+```bash
+export SEC_EDGAR_USER_AGENT="DividendScope/1.0 (you@yourdomain.com)"
+```
+
+Check active providers:
+
+```python
+from data_ingestion.stock_enricher import provider_status
+print(provider_status())
 ```
 
 ---

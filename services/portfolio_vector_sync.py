@@ -91,20 +91,19 @@ def _fetch_or_create_document(
         )
 
     try:
-        from data_ingestion.yfinance_enricher import YFinanceEnricher
+        from data_ingestion.stock_enricher import create_stock_enricher
 
-        enricher = YFinanceEnricher(request_delay=0.35)
-        document = enricher.fetch_document(symbol)
+        document = create_stock_enricher(request_delay=0.35).fetch_document(symbol)
         if document is not None:
-            document.source = DataSource.YAHOO
-        return document
+            return document
     except Exception as exc:
-        logger.warning("Could not enrich %s for vector DB: %s", symbol, exc)
-        return StockDocument(
-            symbol=symbol,
-            name=_company_name_for(symbol, ctx) or symbol,
-            source=DataSource.MANUAL,
-        )
+        logger.warning("Market data enrich failed for %s: %s", symbol, exc)
+
+    return StockDocument(
+        symbol=symbol,
+        name=_company_name_for(symbol, ctx) or symbol,
+        source=DataSource.MANUAL,
+    )
 
 
 def sync_portfolio_to_vector_db(

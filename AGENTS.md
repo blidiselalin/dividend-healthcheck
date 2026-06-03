@@ -63,7 +63,7 @@ Never `date.fromisoformat(row["column"])` on DB rows.
 Runtime reads/writes go through:
 
 - `services.shared_market_db.get_shared_vector_store()` / `get_document()`
-- Not direct `VectorStore(persist_directory=...)` or per-user vector paths in production code.
+- Enrichment: `data_ingestion.stock_enricher.create_stock_enricher()` (Yahoo + SEC EDGAR + Stooq, no API keys)
 
 ### 5. Holdings count
 
@@ -84,7 +84,7 @@ Runtime reads/writes go through:
 - [ ] Store `_ensure_schema` updated for SQLite dev fallback?
 - [ ] Date parsing uses `db.parsing`?
 - [ ] Portfolio flows use `create_portfolio_context` or injected stores?
-- [ ] Market reads use `shared_market_db`?
+- [ ] Market reads use `shared_market_db`; enrichment uses `create_stock_enricher()`?
 - [ ] Unit tests pass without `DATABASE_URL`?
 - [ ] No new Chroma/SQLite runtime dependencies when `use_cloud_sql()`?
 

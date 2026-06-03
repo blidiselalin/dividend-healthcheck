@@ -108,12 +108,12 @@ def ensure_sp500_in_vectordb(
         return stats
 
     try:
-        from data_ingestion.yfinance_enricher import YFinanceEnricher
+        from data_ingestion.stock_enricher import create_stock_enricher
     except ImportError:
         stats["errors"] = len(missing)
         return stats
 
-    enricher = YFinanceEnricher(request_delay=request_delay)
+    enricher = create_stock_enricher(request_delay=request_delay)
     total = len(missing)
     batch: List[StockDocument] = []
 

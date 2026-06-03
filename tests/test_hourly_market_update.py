@@ -24,9 +24,9 @@ def _doc(symbol: str, *, days_old: int = 10, quality: float = 40.0):
     return doc
 
 
-@patch("data_ingestion.yfinance_enricher.YFinanceEnricher")
+@patch("data_ingestion.stock_enricher.create_stock_enricher")
 @patch("services.shared_market_db.get_shared_vector_store")
-def test_enrich_stale_documents_limits_batch(mock_get_store, mock_enricher_cls):
+def test_enrich_stale_documents_limits_batch(mock_get_store, mock_create_enricher):
     store = mock_get_store.return_value
     store.get_all_documents.return_value = [
         _doc("AAA", days_old=30),
@@ -36,7 +36,7 @@ def test_enrich_stale_documents_limits_batch(mock_get_store, mock_enricher_cls):
     ]
 
     enriched_doc = MagicMock()
-    enricher = mock_enricher_cls.return_value
+    enricher = mock_create_enricher.return_value
     enricher.enrich_document.side_effect = lambda d: enriched_doc
 
     stats = enrich_stale_documents(stale_days=7, limit=2)

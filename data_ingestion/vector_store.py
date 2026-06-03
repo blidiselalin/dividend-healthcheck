@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-from .models import StockDocument, SearchResult, DataSource, PriceHistory, DividendRecord
+from .models import StockDocument, SearchResult, DataSource, PriceHistory, DividendRecord, parse_data_source
 
 # Import config for default paths and constants
 try:
@@ -456,7 +456,7 @@ class VectorStore:
             price_history=price_history,
             dividend_history=dividend_history,
             # Metadata
-            source=DataSource(metadata.get("source", "manual")),
+            source=parse_data_source(metadata.get("source")),
             data_quality=metadata.get("data_quality", 0),
             description=metadata.get("description", ""),
             notes=metadata.get("notes", ""),

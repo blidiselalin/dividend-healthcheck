@@ -93,15 +93,15 @@ class PortfolioManagementService:
                     company_name=cached.name,
                 )
 
-            from data_ingestion.yfinance_enricher import YFinanceEnricher
+            from data_ingestion.stock_enricher import create_stock_enricher
 
-            enricher = YFinanceEnricher(request_delay=0.2)
+            enricher = create_stock_enricher(request_delay=0.2)
             document = enricher.fetch_document(normalized)
             if document is None or not document.name or document.name == normalized:
                 return SymbolValidation(
                     normalized,
                     False,
-                    f"Could not find {normalized} in the shared library or Yahoo Finance.",
+                    f"Could not find {normalized} in the shared library or market data APIs.",
                 )
             return SymbolValidation(
                 normalized,

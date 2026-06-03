@@ -18,7 +18,22 @@ class DataSource(Enum):
     STOCKQUOTE_IO = "stockquote.io"
     NASDAQ = "nasdaq.com"
     YAHOO = "yahoo"
+    FINNHUB = "finnhub"  # legacy stored metadata; no longer in default enrich chain
+    FMP = "fmp"  # legacy stored metadata; no longer in default enrich chain
+    ALPHAVANTAGE = "alphavantage"
+    SEC_EDGAR = "sec_edgar"
+    STOOQ = "stooq"
     MANUAL = "manual"
+
+
+def parse_data_source(value: Optional[str]) -> DataSource:
+    """Parse stored source strings; unknown values fall back to MANUAL."""
+    if not value:
+        return DataSource.MANUAL
+    try:
+        return DataSource(str(value).strip().lower())
+    except ValueError:
+        return DataSource.MANUAL
 
 
 @dataclass
@@ -482,7 +497,7 @@ class StockDocument:
             price_history=price_history,
             dividend_history=dividend_history,
             # Metadata
-            source=DataSource(data.get("source", "manual")),
+            source=parse_data_source(data.get("source")),
             last_updated=datetime.fromisoformat(data["last_updated"]) if data.get("last_updated") else datetime.now(),
             data_quality=data.get("data_quality", 0.0),
             description=data.get("description", ""),
