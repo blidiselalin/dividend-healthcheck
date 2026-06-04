@@ -35,6 +35,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   deploy:
@@ -43,7 +44,8 @@ jobs:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          workload_identity_provider: projects/639168550894/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-actions-sa@dividendscope.iam.gserviceaccount.com
 
       - name: Set up gcloud CLI
         uses: google-github-actions/setup-gcloud@v2
