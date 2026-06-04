@@ -13,7 +13,7 @@ from services.portfolio_analysis_preload import PortfolioAnalysisPreload
 
 logger = get_logger("dividendscope.portfolio")
 from services.portfolio_details_service import PortfolioDetailsService
-from services.portfolio_dividend_sync_service import sync_received_dividends
+from services.portfolio_dividend_sync_service import maybe_sync_received_dividends
 from services.portfolio_management_service import SECTION_KEYS
 from services.portfolio_ui_cache import clear_session_cache
 from ui.portfolio_risk_panel import refresh_portfolio_risks, store_portfolio_payload
@@ -51,8 +51,11 @@ def reload_portfolio_session(
 
     logger.info("Portfolio reload started (refresh_risks=%s)", refresh_risks)
     clear_session_cache()
-    sync_received_dividends()
-    rows, preload = PortfolioDetailsService().build_rows_with_cache(use_live_prices=True)
+    maybe_sync_received_dividends(force=True)
+    rows, preload = PortfolioDetailsService().build_rows_with_cache(
+        use_live_prices=True,
+        preload_analysis=True,
+    )
     store_portfolio_payload(rows, preload)
     logger.info("Portfolio reload finished (%d holdings)", len(rows))
     if refresh_risks:

@@ -86,7 +86,22 @@ def get_service_status() -> dict:
         "document_count": 0,
         "dividend_kings": 0,
     }
-    
+
+    try:
+        from services.shared_market_db import shared_market_db_status
+
+        market = shared_market_db_status()
+        doc_count = int(market.get("document_count") or 0)
+        if doc_count > 0:
+            status["mode"] = "Analysed-stocks-first"
+            status["vector_db_available"] = True
+            status["is_db_primary"] = True
+            status["document_count"] = doc_count
+            status["sp500_coverage"] = market.get("sp500_coverage")
+            return status
+    except Exception:
+        pass
+
     if VECTORDB_SERVICE_AVAILABLE:
         try:
             vdb_service = get_vectordb_service()

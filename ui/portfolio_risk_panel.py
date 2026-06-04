@@ -27,6 +27,8 @@ SESSION_REFRESHING_KEY = "portfolio_risk_refresh_in_progress"
 def store_portfolio_payload(
     rows: List[PortfolioDetailRow],
     preload: PortfolioAnalysisPreload,
+    *,
+    analysis_ready: bool = True,
 ) -> None:
     """Keep portfolio session state in sync with the risk monitor."""
     st.session_state["portfolio_details_rows"] = list(rows)
@@ -34,7 +36,7 @@ def store_portfolio_payload(
     st.session_state["portfolio_yield_cache"] = preload.yield_channels
     st.session_state["portfolio_vector_docs"] = preload.vector_docs
     st.session_state["portfolio_details_time"] = datetime.now()
-    st.session_state["portfolio_analysis_ready"] = True
+    st.session_state["portfolio_analysis_ready"] = analysis_ready
     st.session_state["portfolio_show_analysis"] = True
     save_session_cache()
 

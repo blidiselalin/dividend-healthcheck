@@ -259,12 +259,20 @@ class YieldChannelService:
         """Initialize with optional vector store for DB-first data."""
         self._vector_store = vector_store
         
-        # Try to connect to vector store if not provided
-        if self._vector_store is None and VECTOR_DB_AVAILABLE:
+        # Shared market library (Postgres or local Chroma)
+        if self._vector_store is None:
             try:
-                self._vector_store = VectorStore()
+                from services.shared_market_db import get_shared_vector_store
+
+                self._vector_store = get_shared_vector_store()
             except Exception as e:
-                logger.debug(f"Could not initialize VectorStore: {e}")
+                if VECTOR_DB_AVAILABLE:
+                    try:
+                        self._vector_store = VectorStore()
+                    except Exception as inner:
+                        logger.debug("Could not initialize VectorStore: %s", inner)
+                else:
+                    logger.debug("Shared market library unavailable: %s", e)
     
     def fetch_yield_channel_data(
         self,
@@ -341,10 +349,15 @@ class YieldChannelService:
 
             hist = self._prepare_history_frame(hist)
 
-            # Get dividend data - prefer DB data if available and substantial
-            if db_dividend_history and len(db_dividend_history) >= 20:
-                hist = self._integrate_db_dividends(hist, db_dividend_history)
-            elif "Dividends" not in hist.columns or hist["Dividends"].sum() == 0:
+            # Dividends: analysed-library prices have no payouts; align DB/yfinance to trading days
+            hist = self._ensure_dividends_on_history(
+                hist,
+                symbol,
+                db_dividend_history,
+                db_doc=db_doc,
+            )
+            if "Dividends" not in hist.columns or float(hist["Dividends"].sum()) == 0:
+                logger.debug("%s: no dividend payments on price history", symbol)
                 return None
             
             # Calculate trailing 12-month dividend
@@ -456,33 +469,129 @@ class YieldChannelService:
         weekly = hist.resample("W-FRI").agg(agg)
         return weekly.dropna(subset=["Close", "Yield", "Div_TTM"])
 
-    def _integrate_db_dividends(self, hist: pd.DataFrame, db_dividends: List) -> pd.DataFrame:
-        """Integrate vector DB dividend data into price history."""
+    @staticmethod
+    def _dividend_series_from_records(db_dividends: List) -> pd.Series:
+        """Build a payment series from analysed-library dividend records."""
+        if not DEPS_AVAILABLE or not db_dividends:
+            return pd.Series(dtype=float)
+
+        totals: Dict[pd.Timestamp, float] = {}
+        for div in db_dividends:
+            ex_raw = None
+            amount = None
+            if isinstance(div, dict):
+                ex_raw = div.get("ex_date")
+                amount = div.get("amount")
+            elif hasattr(div, "ex_date") and hasattr(div, "amount"):
+                ex_raw = div.ex_date
+                amount = div.amount
+            if ex_raw is None or amount is None:
+                continue
+            try:
+                if isinstance(ex_raw, str):
+                    ex_date = date.fromisoformat(ex_raw[:10])
+                elif isinstance(ex_raw, date):
+                    ex_date = ex_raw
+                elif hasattr(ex_raw, "date"):
+                    ex_date = ex_raw.date()
+                else:
+                    continue
+                value = float(amount)
+            except (TypeError, ValueError):
+                continue
+            if value <= 0:
+                continue
+            key = pd.Timestamp(ex_date)
+            totals[key] = totals.get(key, 0.0) + value
+
+        if not totals:
+            return pd.Series(dtype=float)
+        return pd.Series(totals).sort_index()
+
+    @staticmethod
+    def _dividend_payment_count(frame: pd.DataFrame) -> int:
+        if frame is None or frame.empty or "Dividends" not in frame.columns:
+            return 0
+        return int((pd.to_numeric(frame["Dividends"], errors="coerce").fillna(0) > 0).sum())
+
+    @staticmethod
+    def _dividend_series_from_document(doc: Any, *, years: int = 10) -> pd.Series:
+        """Use stored dividend_history or estimate quarterly payouts from yield metadata."""
+        if not DEPS_AVAILABLE or doc is None:
+            return pd.Series(dtype=float)
+
+        history = getattr(doc, "dividend_history", None) or []
+        if len(history) >= 3:
+            return YieldChannelService._dividend_series_from_records(history)
+
+        price = getattr(doc, "current_price", None)
+        div_yield = getattr(doc, "dividend_yield", None)
         try:
-            # Build dividend series from DB
-            div_data = {}
-            for div in db_dividends:
-                if hasattr(div, 'ex_date') and hasattr(div, 'amount'):
-                    div_date = div.ex_date if isinstance(div.ex_date, date) else div.ex_date.date()
-                    div_data[div_date] = div.amount
-            
-            if not div_data:
-                return hist
-            
-            # Create a dividend series matching the index
-            hist["DB_Dividends"] = 0.0
-            for idx in hist.index:
-                idx_date = idx.date() if hasattr(idx, 'date') else idx
-                if idx_date in div_data:
-                    hist.loc[idx, "DB_Dividends"] = div_data[idx_date]
-            
-            # Use DB dividends if they provide better coverage
-            if hist["DB_Dividends"].sum() > hist.get("Dividends", pd.Series([0])).sum():
-                hist["Dividends"] = hist["DB_Dividends"]
-            
+            price_f = float(price) if price is not None else 0.0
+            yield_f = float(div_yield) if div_yield is not None else 0.0
+        except (TypeError, ValueError):
+            return pd.Series(dtype=float)
+        if price_f <= 0 or yield_f <= 0:
+            return pd.Series(dtype=float)
+
+        quarterly = price_f * (yield_f / 100.0) / 4.0
+        if quarterly <= 0:
+            return pd.Series(dtype=float)
+
+        today = date.today()
+        payments: Dict[pd.Timestamp, float] = {}
+        for quarter in range(years * 4):
+            month = today.month - (quarter * 3)
+            year = today.year
+            while month <= 0:
+                month += 12
+                year -= 1
+            day = 15
+            try:
+                pay_date = date(year, month, day)
+            except ValueError:
+                pay_date = date(year, month, 28)
+            payments[pd.Timestamp(pay_date)] = quarterly
+        return pd.Series(payments).sort_index()
+
+    def _ensure_dividends_on_history(
+        self,
+        hist: pd.DataFrame,
+        symbol: str,
+        db_dividend_history: Optional[List],
+        *,
+        db_doc: Any = None,
+    ) -> pd.DataFrame:
+        """Merge yfinance, library, and document dividends onto the price index."""
+        from utils.yfinance_history import align_dividends_to_price_index, fetch_dividend_series
+
+        frame = self._prepare_history_frame(hist)
+        min_payments = 8
+
+        yf_series = fetch_dividend_series(symbol)
+        if not yf_series.empty:
+            frame = align_dividends_to_price_index(frame, yf_series)
+
+        if self._dividend_payment_count(frame) < min_payments and db_dividend_history:
+            db_series = self._dividend_series_from_records(db_dividend_history)
+            if not db_series.empty:
+                frame = align_dividends_to_price_index(frame, db_series)
+
+        if self._dividend_payment_count(frame) < min_payments and db_doc is not None:
+            doc_series = self._dividend_series_from_document(db_doc)
+            if not doc_series.empty:
+                frame = align_dividends_to_price_index(frame, doc_series)
+
+        return frame
+
+    def _integrate_db_dividends(self, hist: pd.DataFrame, db_dividends: List) -> pd.DataFrame:
+        """Integrate vector DB dividend data into price history (legacy entry point)."""
+        series = self._dividend_series_from_records(db_dividends)
+        if series.empty:
             return hist
-        except Exception:
-            return hist
+        from utils.yfinance_history import align_dividends_to_price_index
+
+        return align_dividends_to_price_index(hist, series)
     
     def _calculate_ttm_dividend(self, hist: pd.DataFrame) -> Optional[pd.DataFrame]:
         """Calculate trailing 12-month dividend at each point."""
@@ -494,8 +603,8 @@ class YieldChannelService:
             if dividends.sum() == 0:
                 return None
             
-            # Rolling 252 trading days (~1 year)
-            hist["Div_TTM"] = dividends.rolling(window=252, min_periods=63).sum()
+            # Rolling 252 trading days (~1 year); lower min_periods for sparse payout rows
+            hist["Div_TTM"] = dividends.rolling(window=252, min_periods=42).sum()
             
             # Fill gaps
             hist["Div_TTM"] = hist["Div_TTM"].ffill().bfill()

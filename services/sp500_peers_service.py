@@ -59,17 +59,20 @@ def coverage_stats(*, force: bool = False) -> Dict[str, Any]:
             "pct_covered": 0.0,
         }
 
-    analysed_symbols = {
-        doc.symbol.upper() for doc in store.get_all_documents() if doc.symbol
-    }
-    sp500_analysed = analysed_symbols & universe
     total = store.count()
+    if hasattr(store, "count_symbols_in"):
+        analysed_sp500_count = store.count_symbols_in(list(universe))
+    else:
+        analysed_symbols = {
+            doc.symbol.upper() for doc in store.get_all_documents() if doc.symbol
+        }
+        analysed_sp500_count = len(analysed_symbols & universe)
     universe_total = len(universe)
     result = {
         "universe_total": universe_total,
-        "analysed_sp500": len(sp500_analysed),
+        "analysed_sp500": analysed_sp500_count,
         "analysed_total": total,
-        "pct_covered": (len(sp500_analysed) / universe_total * 100) if universe_total else 0.0,
+        "pct_covered": (analysed_sp500_count / universe_total * 100) if universe_total else 0.0,
     }
     _coverage_cache = result
     return dict(result)

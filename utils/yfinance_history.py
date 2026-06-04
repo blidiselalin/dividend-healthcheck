@@ -196,3 +196,88 @@ def fetch_price_history_with_fallback(
             return library, "analysed_library"
 
     return pd.DataFrame(), "none"
+
+
+def fetch_dividend_series(symbol: str) -> "pd.Series":
+    """
+    Cash dividend payments indexed by ex-date (empty Series on failure).
+    """
+    if not YFINANCE_AVAILABLE:
+        return pd.Series(dtype=float)
+
+    from data_ingestion.sp500_universe import yahoo_ticker
+
+    sym = yahoo_ticker(symbol)
+    ticker = yf.Ticker(sym)
+    with suppress_yfinance_noise():
+        try:
+            divs = ticker.dividends
+            if divs is not None and not divs.empty:
+                cleaned = divs[divs > 0].astype(float)
+                if not cleaned.empty:
+                    return cleaned.sort_index()
+        except Exception as exc:
+            logger.debug("%s ticker.dividends failed: %s", sym, exc)
+
+        frame = fetch_price_history(sym, years=10)
+        if frame is not None and not frame.empty and "Dividends" in frame.columns:
+            payments = frame["Dividends"]
+            payments = payments[payments > 0].astype(float)
+            if not payments.empty:
+                return payments.sort_index()
+
+    return pd.Series(dtype=float)
+
+
+def _to_naive_datetime_index(index: Any) -> "pd.DatetimeIndex":
+    """Normalize index for merge (strip timezones, sort)."""
+    idx = pd.DatetimeIndex(index)
+    if idx.tz is not None:
+        idx = idx.tz_localize(None)
+    return idx.sort_values()
+
+
+def align_dividends_to_price_index(
+    hist: "pd.DataFrame",
+    dividend_series: "pd.Series",
+) -> "pd.DataFrame":
+    """
+    Map each dividend to the first trading day on or after its ex-date.
+
+    Works for analysed-library price rows (no embedded dividends) and yfinance OHLCV.
+    """
+    if not YFINANCE_AVAILABLE or hist is None or hist.empty:
+        return hist
+    if dividend_series is None or dividend_series.empty:
+        return hist
+
+    frame = hist.copy()
+    frame.index = _to_naive_datetime_index(frame.index)
+    if "Dividends" not in frame.columns:
+        frame["Dividends"] = 0.0
+    payments = pd.to_numeric(frame["Dividends"], errors="coerce").fillna(0.0)
+
+    divs = dividend_series.copy()
+    divs.index = _to_naive_datetime_index(divs.index)
+    divs = divs.astype(float)
+    divs = divs[divs > 0]
+    if divs.empty:
+        return frame
+    divs = divs.groupby(level=0).sum().sort_index()
+
+    for ex, amount in divs.items():
+        try:
+            value = float(amount)
+        except (TypeError, ValueError):
+            continue
+        if value <= 0:
+            continue
+        ex_ts = pd.Timestamp(ex).normalize()
+        position = payments.index.searchsorted(ex_ts, side="left")
+        if position >= len(payments):
+            continue
+        target = payments.index[position]
+        payments.loc[target] = float(payments.loc[target]) + value
+
+    frame["Dividends"] = payments
+    return frame

@@ -131,6 +131,7 @@ class PortfolioDetailsService:
         self,
         *,
         use_live_prices: bool = False,
+        preload_analysis: bool = True,
     ) -> Tuple[List[PortfolioDetailRow], PortfolioAnalysisPreload]:
         holdings = self.store.list_holdings()
         symbols = [holding.symbol for holding in holdings]
@@ -245,11 +246,18 @@ class PortfolioDetailsService:
                 )
             )
 
-        preload = preload_portfolio_analysis(
-            symbols,
-            resolved_stock_cache,
-            documents,
-        )
+        if preload_analysis:
+            preload = preload_portfolio_analysis(
+                symbols,
+                resolved_stock_cache,
+                documents,
+            )
+        else:
+            preload = PortfolioAnalysisPreload(
+                stock_data=dict(resolved_stock_cache),
+                yield_channels={},
+                vector_docs=dict(documents),
+            )
         return rows, preload
 
     def _load_documents(self, symbols: List[str]) -> Dict[str, StockDocument]:

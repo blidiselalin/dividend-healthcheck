@@ -36,6 +36,36 @@ def _load_documents(symbols: List[str]) -> Dict[str, Optional[StockDocument]]:
     return documents
 
 
+def maybe_sync_received_dividends(
+    *,
+    force: bool = False,
+    db_path: Optional[Path] = None,
+    symbols: Optional[List[str]] = None,
+) -> Optional[DividendSyncStats]:
+    """
+    Sync paid dividends when stale or forced (skips work on every app rerun).
+
+    Returns None when skipped.
+    """
+    if not force:
+        try:
+            from services.portfolio_ui_cache import should_sync_dividends_on_startup
+
+            if not should_sync_dividends_on_startup():
+                logger.debug("Dividend sync skipped (recently completed)")
+                return None
+        except Exception:
+            pass
+    stats = sync_received_dividends(db_path=db_path, symbols=symbols)
+    try:
+        from services.portfolio_ui_cache import mark_dividend_sync_completed
+
+        mark_dividend_sync_completed()
+    except Exception:
+        pass
+    return stats
+
+
 def sync_received_dividends(
     *,
     db_path: Optional[Path] = None,

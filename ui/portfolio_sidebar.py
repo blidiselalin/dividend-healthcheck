@@ -36,7 +36,10 @@ def render_portfolio_sidebar() -> None:
         when = loaded_at.strftime("%d %b %H:%M") if loaded_at else "cached"
         st.sidebar.caption(f"{count} holdings · updated {when}")
     elif user_has_holdings_in_db():
-        st.sidebar.caption("First load ~1–2 min, then opens from cache.")
+        if st.session_state.get("portfolio_fast_loaded"):
+            st.sidebar.caption("Loading charts in background…")
+        else:
+            st.sidebar.caption("Loading from library… use **Reload live data** for fresh prices.")
     else:
         st.sidebar.caption("No holdings yet — add a ticker under **Manage portfolio**.")
 

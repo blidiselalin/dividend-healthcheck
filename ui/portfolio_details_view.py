@@ -97,6 +97,16 @@ def _preload_from_session() -> PortfolioAnalysisPreload:
     )
 
 
+def _ensure_yield_preload_if_needed() -> None:
+    """Load yield-channel charts after a fast library-only portfolio open."""
+    if not st.session_state.get("portfolio_fast_loaded"):
+        return
+    from services.portfolio_ui_cache import ensure_portfolio_yield_preload
+
+    with st.spinner("Loading yield charts…"):
+        ensure_portfolio_yield_preload()
+
+
 class PortfolioDetailsView:
     """Render the full portfolio details table."""
 
@@ -1110,6 +1120,9 @@ class PortfolioDetailsView:
         compact: bool = False,
     ) -> None:
         """High-level portfolio dashboard with monthly evolution since inception."""
+        _ensure_yield_preload_if_needed()
+        if preload is None or st.session_state.get("portfolio_fast_loaded"):
+            preload = _preload_from_session()
         service = PortfolioDashboardService()
         deposits = service.list_deposits()
         holdings_snapshot = (
@@ -1963,6 +1976,8 @@ class PortfolioDetailsView:
         preload: PortfolioAnalysisPreload,
         loaded_at: datetime,
     ) -> None:
+        _ensure_yield_preload_if_needed()
+        preload = _preload_from_session()
         ready = st.session_state.get("portfolio_analysis_ready", False)
         chart_count = len(preload.yield_channels)
         st.caption(

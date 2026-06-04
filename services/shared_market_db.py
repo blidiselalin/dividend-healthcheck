@@ -58,7 +58,7 @@ def document_count() -> int:
         return 0
 
 
-def shared_market_db_status() -> Dict[str, Any]:
+def shared_market_db_status(*, include_coverage: bool = True) -> Dict[str, Any]:
     """Status for UI and startup logs (same for every logged-in user)."""
     from db.connection import use_cloud_sql
 
@@ -71,7 +71,7 @@ def shared_market_db_status() -> Dict[str, Any]:
         "populated": count > 0,
         "sp500_coverage": None,
     }
-    if count > 0:
+    if count > 0 and include_coverage:
         try:
             from services.sp500_peers_service import coverage_stats
 

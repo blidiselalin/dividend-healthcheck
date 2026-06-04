@@ -601,6 +601,27 @@ class VectorStore:
             logger.error(f"Error getting sector {sector}: {e}")
             return []
     
+    def count_symbols_in(self, symbols) -> int:
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.count_symbols_in(list(symbols))
+        """Count documents whose symbol is in the given set."""
+        if self._use_fallback:
+            wanted = {str(s).upper() for s in symbols if s}
+            return sum(1 for doc in self._fallback_store.values() if doc.symbol.upper() in wanted)
+        try:
+            results = self._collection.get(include=["metadatas"])
+            if not results or not results.get("metadatas"):
+                return 0
+            wanted = {str(s).upper() for s in symbols if s}
+            count = 0
+            for metadata in results["metadatas"]:
+                symbol = (metadata or {}).get("symbol") or ""
+                if symbol.upper() in wanted:
+                    count += 1
+            return count
+        except Exception:
+            return 0
+
     def count(self) -> int:
         if getattr(self, "_use_postgres", False):
             return self._pg_store.count()

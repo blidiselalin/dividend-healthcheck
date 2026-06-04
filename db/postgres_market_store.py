@@ -127,6 +127,21 @@ class PostgresMarketStore:
             row = conn.execute("SELECT COUNT(*) AS count FROM stock_documents").fetchone()
         return int(row["count"]) if row else 0
 
+    def count_symbols_in(self, symbols: List[str]) -> int:
+        """Count how many of the given tickers exist in the library (no full-table scan)."""
+        from db.connection import ensure_schema, get_connection
+
+        if not symbols:
+            return 0
+        ensure_schema()
+        targets = [symbol.upper() for symbol in symbols if symbol]
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS count FROM stock_documents WHERE symbol = ANY(%s)",
+                (targets,),
+            ).fetchone()
+        return int(row["count"]) if row else 0
+
     def delete_symbols(self, symbols: List[str]) -> int:
         from db.connection import ensure_schema, get_connection
 

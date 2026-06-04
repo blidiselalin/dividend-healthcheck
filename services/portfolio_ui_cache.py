@@ -20,6 +20,9 @@ logger = get_logger("dividendscope.portfolio")
 # Discard cached portfolio snapshots older than this (or when library is newer).
 MAX_PORTFOLIO_CACHE_AGE = timedelta(hours=24)
 
+# Dividend receipt sync is heavy (history per holding); run at most this often on app open.
+DIVIDEND_SYNC_INTERVAL = timedelta(hours=6)
+
 def _cache_path() -> Path:
     try:
         from auth.user_context import resolve_user_session_cache_path
@@ -209,6 +212,107 @@ def hydrate_session_from_disk() -> bool:
         cache_path,
         len(rows_payload),
         bundle.get("saved_at", "?"),
+    )
+    return True
+
+
+def _dividend_sync_meta_path() -> Path:
+    return _cache_path().parent / "dividend_sync_at.txt"
+
+
+def should_sync_dividends_on_startup() -> bool:
+    """True when paid-dividend sync should run (not run on every Streamlit rerun)."""
+    path = _dividend_sync_meta_path()
+    if not path.is_file():
+        return True
+    try:
+        saved = datetime.fromisoformat(path.read_text(encoding="utf-8").strip())
+    except (TypeError, ValueError, OSError):
+        return True
+    return datetime.now() - saved > DIVIDEND_SYNC_INTERVAL
+
+
+def mark_dividend_sync_completed() -> None:
+    path = _dividend_sync_meta_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            datetime.now().isoformat(timespec="seconds"),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        logger.debug("Could not write dividend sync timestamp: %s", exc)
+
+
+def warm_portfolio_session_from_db(*, preload_charts: bool = False) -> bool:
+    """
+    Build holdings from the shared library without live prices when the session is empty.
+
+    Returns True when rows were loaded into session_state.
+    """
+    import streamlit as st
+
+    from services.portfolio_session import is_demo_session, user_has_holdings_in_db
+    from ui.portfolio_risk_panel import store_portfolio_payload
+
+    if st.session_state.get("portfolio_details_rows"):
+        return True
+    if is_demo_session() or not user_has_holdings_in_db():
+        return False
+
+    try:
+        from services.portfolio_details_service import PortfolioDetailsService
+
+        rows, preload = PortfolioDetailsService().build_rows_with_cache(
+            use_live_prices=False,
+            preload_analysis=preload_charts,
+        )
+    except Exception as exc:
+        logger.warning("Fast portfolio load failed: %s", exc)
+        return False
+
+    if not rows:
+        return False
+
+    store_portfolio_payload(
+        rows,
+        preload,
+        analysis_ready=preload_charts,
+    )
+    st.session_state["portfolio_fast_loaded"] = not preload_charts
+    logger.info("Portfolio fast-loaded from library (%d holdings)", len(rows))
+    return True
+
+
+def ensure_portfolio_yield_preload() -> bool:
+    """Load yield-channel charts when the table was fast-loaded without them."""
+    import streamlit as st
+
+    if st.session_state.get("portfolio_analysis_ready"):
+        return False
+    rows = st.session_state.get("portfolio_details_rows")
+    if not rows:
+        return False
+
+    from services.portfolio_analysis_preload import preload_portfolio_analysis
+    from services.portfolio_details_service import PortfolioDetailsService
+
+    symbols = [row.ticker for row in rows]
+    stock_cache = st.session_state.get("portfolio_stock_cache") or {}
+    vector_docs = st.session_state.get("portfolio_vector_docs") or {}
+    if not vector_docs:
+        vector_docs = PortfolioDetailsService()._load_documents(symbols)
+
+    preload = preload_portfolio_analysis(symbols, stock_cache, vector_docs)
+    st.session_state["portfolio_yield_cache"] = preload.yield_channels
+    st.session_state["portfolio_stock_cache"] = preload.stock_data
+    st.session_state["portfolio_vector_docs"] = preload.vector_docs
+    st.session_state["portfolio_analysis_ready"] = True
+    st.session_state.pop("portfolio_fast_loaded", None)
+    save_session_cache()
+    logger.info(
+        "Portfolio yield charts preloaded (%d channels)",
+        len(preload.yield_channels),
     )
     return True
 

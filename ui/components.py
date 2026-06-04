@@ -680,7 +680,10 @@ class UIComponents:
             data = channel_data
 
         if data is None:
-            st.warning(f"Insufficient dividend history for {symbol} yield channel analysis")
+            st.warning(
+                f"Insufficient dividend history for {symbol} yield channel analysis. "
+                "Try **Reload live data** in the sidebar, or re-enrich this symbol in the shared library."
+            )
             return False
         
         from ui.charts import show_chart
