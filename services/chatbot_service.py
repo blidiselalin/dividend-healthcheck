@@ -146,10 +146,14 @@ def _pair_conversation_history(
     """Build BlenderBot past_user_inputs / generated_responses from chat history."""
     past_user: List[str] = []
     past_bot: List[str] = []
+    seen_user = False
     for msg in messages:
         if msg.role == "user":
+            seen_user = True
             past_user.append(msg.content)
-        elif msg.role == "assistant" and msg.content != WELCOME_MESSAGE:
+        elif msg.role == "assistant":
+            if msg.content == WELCOME_MESSAGE or not seen_user:
+                continue
             past_bot.append(msg.content)
     # BlenderBot expects equal-length prior turns; trim to last 3 exchanges
     while len(past_bot) < len(past_user) - 1:
