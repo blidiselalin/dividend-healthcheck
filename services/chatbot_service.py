@@ -241,7 +241,7 @@ def match_session_reply(message: str) -> Optional[str]:
     if snap and snap.library_count:
         tokens = _TICKER_RE.findall(text.upper())
         if tokens and not snap.tickers:
-            symbol = tokens[0]
+            symbol = next((t for t in tokens if len(t) > 1), tokens[0])
             return (
                 f"To analyse **{symbol}**, use S&P research from the app home/examples, or add it under "
                 "**Manage portfolio** then **Reload live data**. The library has "
