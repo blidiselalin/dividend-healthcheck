@@ -80,7 +80,7 @@ Runtime reads/writes go through:
 
 ## In-app assistant (chatbot)
 
-- UI: `ui/chatbot_widget.py` — sidebar **Assistant** expander (`st.chat_message` / `st.chat_input`).
+- UI: `ui/chatbot_widget.py` — sidebar **Assistant** expander (`st.chat_message` + text form; no audio input).
 - Logic: `services/chatbot_service.py` — curated FAQ first, optional Hugging Face **server-side** (`HUGGINGFACE_API_KEY` / `HF_TOKEN`).
 - Do **not** call inference APIs from `components.html` / browser JS (CORS, token exposure).
 - Disable UI: `DIVIDENDSCOPE_CHATBOT_ENABLED=0`.
