@@ -7,15 +7,19 @@ from unittest.mock import MagicMock, patch
 from services.chatbot_service import (
     WELCOME_MESSAGE,
     ChatMessage,
+    SessionPortfolioSnapshot,
     build_session_context,
     coerce_chat_prompt,
+    format_assistant_reply,
     generate_reply,
     huggingface_configured,
     is_chatbot_enabled,
     match_local_faq,
+    match_session_reply,
     reply_via_huggingface,
     _bot_turn_for_history,
     _pair_conversation_history,
+    _session_portfolio_snapshot,
 )
 
 
@@ -52,8 +56,44 @@ def test_generate_reply_uses_faq_without_network(monkeypatch):
 def test_generate_reply_fallback_without_hf(monkeypatch):
     monkeypatch.delenv("HUGGINGFACE_API_KEY", raising=False)
     monkeypatch.delenv("HF_TOKEN", raising=False)
+    reply = generate_reply("quantum physics entanglement", [], show_hf_tip_on_fallback=True)
+    assert "didn't match" in reply.lower()
+    assert "HUGGINGFACE" in reply
+
+
+def test_generate_reply_fallback_no_hf_tip_by_default(monkeypatch):
+    monkeypatch.delenv("HUGGINGFACE_API_KEY", raising=False)
     reply = generate_reply("quantum physics entanglement", [])
-    assert "didn't find" in reply.lower() or "HUGGINGFACE" in reply
+    assert "HUGGINGFACE" not in reply
+
+
+def test_match_session_reply_portfolio():
+    import services.chatbot_service as mod
+
+    snap = SessionPortfolioSnapshot(2, ("ABBV", "KO"), 510)
+    original = mod._session_portfolio_snapshot
+    mod._session_portfolio_snapshot = lambda: snap
+    try:
+        answer = match_session_reply("what is in my portfolio?")
+        assert answer is not None
+        assert "2" in answer and "ABBV" in answer
+    finally:
+        mod._session_portfolio_snapshot = original
+
+
+def test_match_session_reply_ticker():
+    snap = SessionPortfolioSnapshot(46, ("ABBV", "ADM"), 510)
+    import services.chatbot_service as mod
+
+    original = mod._session_portfolio_snapshot
+    mod._session_portfolio_snapshot = lambda: snap
+    try:
+        answer = match_session_reply("tell me about ABBV yield")
+        assert answer is not None
+        assert "ABBV" in answer
+        assert "yield" in answer.lower()
+    finally:
+        mod._session_portfolio_snapshot = original
 
 
 def test_pair_conversation_history_aligns_turns():
@@ -129,3 +169,9 @@ def test_pair_conversation_skips_welcome_message():
 def test_generate_reply_empty_message():
     reply = generate_reply("   ", [])
     assert "enter a message" in reply.lower()
+
+
+def test_format_assistant_reply_includes_disclaimer():
+    text = format_assistant_reply("Hello", show_hf_tip=False)
+    assert "Educational only" in text
+    assert "Hello" in text
