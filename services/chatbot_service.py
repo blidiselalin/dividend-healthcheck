@@ -140,6 +140,30 @@ def match_local_faq(message: str) -> Optional[str]:
     return None
 
 
+def _bot_turn_for_history(content: str) -> str:
+    """Trim disclaimer/markdown noise before sending prior turns to BlenderBot."""
+    text = (content or "").strip()
+    if not text or text == WELCOME_MESSAGE:
+        return ""
+    if DISCLAIMER in text:
+        text = text.split(DISCLAIMER, 1)[0].strip()
+    return text
+
+
+def coerce_chat_prompt(raw: object) -> str:
+    """Normalize st.chat_input return value (str, dict, or ChatInputValue)."""
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        return raw.strip()
+    if isinstance(raw, dict):
+        return str(raw.get("text") or "").strip()
+    text = getattr(raw, "text", None)
+    if text is not None:
+        return str(text).strip()
+    return str(raw).strip()
+
+
 def _pair_conversation_history(
     messages: Sequence[ChatMessage],
 ) -> Tuple[List[str], List[str]]:
@@ -152,9 +176,11 @@ def _pair_conversation_history(
             seen_user = True
             past_user.append(msg.content)
         elif msg.role == "assistant":
-            if msg.content == WELCOME_MESSAGE or not seen_user:
+            if not seen_user:
                 continue
-            past_bot.append(msg.content)
+            turn = _bot_turn_for_history(msg.content)
+            if turn:
+                past_bot.append(turn)
     # BlenderBot expects equal-length prior turns; trim to last 3 exchanges
     while len(past_bot) < len(past_user) - 1:
         past_bot.insert(0, "")
@@ -276,9 +302,6 @@ def generate_reply(user_message: str, messages: Sequence[ChatMessage]) -> str:
         return f"{local}\n\n{DISCLAIMER}"
 
     session_context = build_session_context()
-    if len(text) < 120 and session_context:
-        # Short general questions still benefit from session hint before LLM
-        pass
 
     llm_reply = reply_via_huggingface(text, messages)
     if llm_reply:

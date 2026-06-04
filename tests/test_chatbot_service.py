@@ -5,13 +5,16 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from services.chatbot_service import (
+    WELCOME_MESSAGE,
     ChatMessage,
     build_session_context,
+    coerce_chat_prompt,
     generate_reply,
     huggingface_configured,
     is_chatbot_enabled,
     match_local_faq,
     reply_via_huggingface,
+    _bot_turn_for_history,
     _pair_conversation_history,
 )
 
@@ -93,3 +96,36 @@ def test_huggingface_configured(monkeypatch):
 
 def test_build_session_context_without_streamlit():
     assert build_session_context() == ""
+
+
+def test_coerce_chat_prompt_string_and_dict():
+    assert coerce_chat_prompt("  hello  ") == "hello"
+    assert coerce_chat_prompt({"text": "yield zones"}) == "yield zones"
+    assert coerce_chat_prompt(None) == ""
+
+
+def test_bot_turn_for_history_strips_disclaimer():
+    from services.chatbot_service import DISCLAIMER
+
+    raw = f"Use Reload live data.\n\n{DISCLAIMER}"
+    assert _bot_turn_for_history(raw) == "Use Reload live data."
+    assert _bot_turn_for_history(WELCOME_MESSAGE) == ""
+
+
+def test_pair_conversation_skips_welcome_message():
+    from services.chatbot_service import DISCLAIMER
+
+    messages = [
+        ChatMessage("assistant", WELCOME_MESSAGE),
+        ChatMessage("user", "Hi"),
+        ChatMessage("assistant", f"Hello there.\n\n{DISCLAIMER}"),
+        ChatMessage("user", "Thanks"),
+    ]
+    past_user, past_bot = _pair_conversation_history(messages)
+    assert past_user == ["Hi"]
+    assert past_bot == ["Hello there."]
+
+
+def test_generate_reply_empty_message():
+    reply = generate_reply("   ", [])
+    assert "enter a message" in reply.lower()
