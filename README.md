@@ -114,6 +114,7 @@ streamlit run app.py
 |---|---|
 | **Analysis Mode** | Switch between Single Stock and All Dividend Kings |
 | **Data Source** | Shows whether DB or live API is active |
+| **Assistant** | In-app chat (FAQ for navigation and dividends; optional `HUGGINGFACE_API_KEY` on the server for broader replies) |
 
 ### Single Stock Analysis
 

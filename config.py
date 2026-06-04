@@ -221,3 +221,7 @@ DEFAULT_STALENESS_DAYS: Final[int] = 7
 
 # Portfolio risk scan: only refreshed when the user clicks Reload / Refresh (not on a timer).
 PORTFOLIO_RISK_REFRESH_SECONDS: Final[int] = 86400 * 365
+
+# In-app assistant (sidebar chat). Optional HUGGINGFACE_API_KEY for LLM fallback.
+CHATBOT_ENABLED_DEFAULT: Final[bool] = True
+CHATBOT_HF_MODEL_DEFAULT: Final[str] = "facebook/blenderbot-400M-distill"
