@@ -68,9 +68,7 @@ def test_maybe_sync_runs_when_forced():
         "services.portfolio_dividend_sync_service.sync_received_dividends",
         return_value=stats,
     ) as sync:
-        with patch(
-            "services.portfolio_dividend_sync_service.mark_dividend_sync_completed"
-        ):
+        with patch("services.portfolio_ui_cache.mark_dividend_sync_completed"):
             result = maybe_sync_received_dividends(force=True)
     assert result == stats
     sync.assert_called_once()

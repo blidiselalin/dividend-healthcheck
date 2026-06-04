@@ -96,8 +96,9 @@ def test_align_dividends_maps_ex_date_to_next_trading_day():
 
 @patch("utils.yfinance_history.fetch_dividend_series", return_value=pd.Series(dtype=float))
 def test_ensure_dividends_uses_library_records_without_exact_date_match(mock_yf_divs):
-    index = pd.date_range("2019-01-02", periods=260, freq="B")
-    hist = pd.DataFrame({"Close": [150.0] * 260, "Dividends": [0.0] * 260}, index=index)
+    # ~2 years of business days so 2019 and 2020 ex-dates all map to trading rows
+    index = pd.date_range("2019-01-02", periods=520, freq="B")
+    hist = pd.DataFrame({"Close": [150.0] * 520, "Dividends": [0.0] * 520}, index=index)
     records = [
         DividendRecord(ex_date=date(2019, 2, 14), payment_date=None, amount=1.07),
         DividendRecord(ex_date=date(2019, 5, 15), payment_date=None, amount=1.07),
