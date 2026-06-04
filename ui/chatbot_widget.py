@@ -44,6 +44,36 @@ def _render_chat_messages() -> None:
             st.markdown(content)
 
 
+def _coerce_chat_prompt(raw: object) -> str:
+    """Normalize st.chat_input return value (str or multimodal dict)."""
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        return raw.strip()
+    if isinstance(raw, dict):
+        return str(raw.get("text") or "").strip()
+    text = getattr(raw, "text", None)
+    if text is not None:
+        return str(text).strip()
+    return str(raw).strip()
+
+
+def _sidebar_chat_input(placeholder: str, *, key: str) -> object:
+    """
+    Sidebar chat input without audio recording (avoids WaveSurfer container errors
+    when the widget is inside a collapsed expander).
+    """
+    try:
+        return st.sidebar.chat_input(
+            placeholder,
+            key=key,
+            accept_audio=False,
+        )
+    except TypeError:
+        # Streamlit < 1.40 without accept_audio
+        return st.sidebar.chat_input(placeholder, key=key)
+
+
 def _handle_user_prompt(prompt: str) -> None:
     from services.chatbot_service import ChatMessage
 
@@ -75,15 +105,17 @@ def render_chatbot_widget() -> None:
     hf_note = " · AI replies enabled" if huggingface_configured() else " · FAQ mode"
     with st.sidebar.expander(f"Assistant{hf_note}", expanded=False):
         _render_chat_messages()
-
         if st.button("Clear chat", use_container_width=True, key="ds_chat_clear"):
             st.session_state[SESSION_MESSAGES_KEY] = initial_messages()
             st.rerun()
 
-        prompt = st.chat_input(
-            "Ask about the app or dividends…",
-            key=CHAT_INPUT_KEY,
-        )
-        if prompt:
-            _handle_user_prompt(prompt)
-            st.rerun()
+    # Input lives outside the expander so Streamlit's audio UI (WaveSurfer) always
+    # has a stable DOM container; accept_audio=False disables recording entirely.
+    raw_prompt = _sidebar_chat_input(
+        "Ask about the app or dividends…",
+        key=CHAT_INPUT_KEY,
+    )
+    prompt = _coerce_chat_prompt(raw_prompt)
+    if prompt:
+        _handle_user_prompt(prompt)
+        st.rerun()
