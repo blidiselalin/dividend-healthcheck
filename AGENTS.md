@@ -78,6 +78,14 @@ Runtime reads/writes go through:
 - **Integration tests**: `@pytest.mark.integration` + live Postgres in CI (separate job).
 - Pass explicit `tmp_path` / `db_path` into `create_portfolio_context(db_path=...)`.
 
+## In-app assistant (chatbot)
+
+- UI: `ui/chatbot_widget.py` — sidebar **Assistant** expander (`st.chat_message` / `st.chat_input`).
+- Logic: `services/chatbot_service.py` — curated FAQ first, optional Hugging Face **server-side** (`HUGGINGFACE_API_KEY` / `HF_TOKEN`).
+- Do **not** call inference APIs from `components.html` / browser JS (CORS, token exposure).
+- Disable UI: `DIVIDENDSCOPE_CHATBOT_ENABLED=0`.
+- Tests: `tests/test_chatbot_service.py`.
+
 ## Safe change checklist
 
 - [ ] Migrations added for Postgres schema changes?
@@ -87,6 +95,7 @@ Runtime reads/writes go through:
 - [ ] Market reads use `shared_market_db`; enrichment uses `create_stock_enricher()`?
 - [ ] Unit tests pass without `DATABASE_URL`?
 - [ ] No new Chroma/SQLite runtime dependencies when `use_cloud_sql()`?
+- [ ] Chatbot changes keep replies server-side and include educational disclaimer?
 
 ## Deploy (VM)
 

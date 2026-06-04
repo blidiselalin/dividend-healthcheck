@@ -19,7 +19,16 @@ import streamlit as st
 
 def _bootstrap_secrets_env() -> None:
     try:
-        for key in ("DIVIDENDSCOPE_CLOUD", "DIVIDENDSCOPE_DATA_DIR", "DATABASE_URL", "DIVIDENDSCOPE_DATABASE_URL"):
+        for key in (
+            "DIVIDENDSCOPE_CLOUD",
+            "DIVIDENDSCOPE_DATA_DIR",
+            "DATABASE_URL",
+            "DIVIDENDSCOPE_DATABASE_URL",
+            "HUGGINGFACE_API_KEY",
+            "HF_TOKEN",
+            "DIVIDENDSCOPE_CHATBOT_ENABLED",
+            "DIVIDENDSCOPE_CHATBOT_MODEL",
+        ):
             if key in st.secrets:
                 os.environ.setdefault(key, str(st.secrets[key]))
     except Exception:
@@ -223,10 +232,10 @@ def main() -> None:
     st.session_state["analysis_type"] = NAV_PORTFOLIO
     render_portfolio_sidebar()
     render_account_sidebar()
+    render_chatbot_widget()
     main_content_start()
     PortfolioDetailsView.render()
     _render_sidebar_footer()
-    render_chatbot_widget()
 
 
 if __name__ == "__main__":
