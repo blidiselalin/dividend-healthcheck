@@ -1,6 +1,6 @@
 """
 Floating chatbot widget — bottom-right corner chat box powered by
-HuggingFace free Inference API (microsoft/DialoGPT-small).
+HuggingFace free Inference API (facebook/blenderbot-400M-distill).
 """
 
 from __future__ import annotations
@@ -196,20 +196,22 @@ async function sendMessage() {
   const typing = appendMessage('Thinking...', 'ds-typing');
 
   try {
-    const past = chatHistory.slice(-4).join('\\n');
     const response = await fetch(HF_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        inputs: { past_user_inputs: chatHistory.slice(0, -1).slice(-3), generated_responses: [], text: text },
-        parameters: { max_length: 200 }
+        inputs: {
+          past_user_inputs: chatHistory.slice(0, -1).slice(-3),
+          generated_responses: [],
+          text: text
+        }
       })
     });
     typing.remove();
 
     if (response.ok) {
       const data = await response.json();
-      const reply = data.generated_text || data[0]?.generated_text || "I'm not sure how to answer that. Try asking about dividends or portfolio strategies!";
+      const reply = data.generated_text || "I'm not sure how to answer that. Try asking about dividends or portfolio strategies!";
       appendMessage(reply, 'ds-bot-msg');
     } else if (response.status === 503) {
       appendMessage("Model is loading, please try again in a moment...", 'ds-bot-msg');
