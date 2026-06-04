@@ -69,6 +69,7 @@ from ui.theme import (
     inject_app_theme,
     main_content_start,
 )
+from ui.chatbot_widget import render_chatbot_widget
 from config import DATA_SOURCES
 from services.portfolio_session import sync_portfolio_session_with_db
 from services.portfolio_ui_cache import (
@@ -225,6 +226,7 @@ def main() -> None:
     main_content_start()
     PortfolioDetailsView.render()
     _render_sidebar_footer()
+    render_chatbot_widget()
 
 
 if __name__ == "__main__":
