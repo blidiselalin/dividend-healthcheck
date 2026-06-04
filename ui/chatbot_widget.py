@@ -69,8 +69,11 @@ def _handle_user_prompt(prompt: str) -> None:
         for m in st.session_state[SESSION_MESSAGES_KEY][:-1]
         if m.get("role") in ("user", "assistant") and m.get("content")
     ]
+    show_hf_tip = not st.session_state.get("chat_assistant_hf_tip_shown")
     try:
-        reply = generate_reply(text, history)
+        reply = generate_reply(text, history, show_hf_tip_on_fallback=show_hf_tip)
+        if show_hf_tip and "HUGGINGFACE_API_KEY" in reply:
+            st.session_state["chat_assistant_hf_tip_shown"] = True
     except Exception as exc:
         logger.warning("Assistant reply failed: %s", exc, exc_info=True)
         reply = ERROR_REPLY

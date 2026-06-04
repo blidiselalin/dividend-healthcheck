@@ -3,23 +3,25 @@ DividendScope in-app assistant — server-side replies (no browser API keys).
 
 Priority:
 1. Curated app/portfolio FAQ (deterministic, no network)
-2. Optional Hugging Face Inference API when HUGGINGFACE_API_KEY or HF_TOKEN is set
-3. Safe fallback with guidance
+2. Session-aware answers (holdings loaded, ticker mentions)
+3. Optional Hugging Face Inference API when HUGGINGFACE_API_KEY or HF_TOKEN is set
+4. Short fallback with examples (no repeated HF tip every turn)
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
 WELCOME_MESSAGE = (
-    "Hi! I'm the **DividendScope assistant**. I can explain how to use this app "
-    "(holdings, yield channels, dividend sync) and general dividend concepts. "
-    "I don't provide personalized investment advice."
+    "Hi! I'm the **DividendScope assistant**. Ask how to use the app, name a ticker "
+    "(e.g. **ABBV**), or try: *reload live data*, *yield channels*, *my portfolio*. "
+    "I explain features and concepts — not personalized buy/sell advice."
 )
 
 DISCLAIMER = (
@@ -29,6 +31,8 @@ DISCLAIMER = (
 
 HF_MODEL_DEFAULT = "facebook/blenderbot-400M-distill"
 HF_INFERENCE_URL_TEMPLATE = "https://api-inference.huggingface.co/models/{model}"
+
+_TICKER_RE = re.compile(r"\b[A-Z]{1,5}\b")
 
 # (keyword substrings, answer markdown)
 _APP_FAQ: Sequence[Tuple[Tuple[str, ...], str]] = (
@@ -70,6 +74,21 @@ _APP_FAQ: Sequence[Tuple[Tuple[str, ...], str]] = (
         "Start under **Manage portfolio**, then **Reload live data**. Explore **Holdings**, **Dividends**, "
         "and the dashboard tabs. Use the examples on the home page for a guided tour.",
     ),
+    (
+        ("risk", "watchlist", "attention", "buy zone"),
+        "After **Reload live data**, use **Refresh watchlists** for buy/risk lists from cached analysis. "
+        "Yield zones on **Holdings** show green (historically high yield) vs red (expensive).",
+    ),
+    (
+        ("dividend yield", "what is yield", "yield mean"),
+        "**Dividend yield** = annual dividend per share ÷ price. In this app, yield **channels** compare "
+        "today's yield to the stock's own history to spot relatively cheap or rich prices — not a buy signal alone.",
+    ),
+    (
+        ("dashboard", "overview", "performance"),
+        "The **Dashboard** tab shows capital deposited, portfolio value, and evolution over time. "
+        "Load holdings first with **Reload live data** if numbers look empty.",
+    ),
 )
 
 
@@ -77,6 +96,13 @@ _APP_FAQ: Sequence[Tuple[Tuple[str, ...], str]] = (
 class ChatMessage:
     role: str  # "user" | "assistant"
     content: str
+
+
+@dataclass(frozen=True)
+class SessionPortfolioSnapshot:
+    holding_count: int
+    tickers: Tuple[str, ...]
+    library_count: int
 
 
 def is_chatbot_enabled() -> bool:
@@ -101,32 +127,51 @@ def _huggingface_model() -> str:
     return (os.environ.get("DIVIDENDSCOPE_CHATBOT_MODEL") or HF_MODEL_DEFAULT).strip()
 
 
-def build_session_context() -> str:
-    """Lightweight hints from Streamlit session (no extra DB round-trips)."""
+def _session_portfolio_snapshot() -> Optional[SessionPortfolioSnapshot]:
     try:
         import streamlit as st
     except Exception:
-        return ""
+        return None
 
-    parts: List[str] = []
     rows = st.session_state.get("portfolio_details_rows") or []
-    if rows:
-        tickers = [getattr(r, "ticker", "") for r in rows[:10]]
-        tickers = [t for t in tickers if t]
-        if tickers:
-            suffix = "…" if len(rows) > len(tickers) else ""
-            parts.append(
-                f"Portfolio session: {len(rows)} holdings ({', '.join(tickers)}{suffix})."
-            )
-    elif st.session_state.get("portfolio_fast_loaded"):
-        parts.append("Portfolio session: fast-loaded from library; charts may still be loading.")
-
+    tickers = tuple(
+        t for t in (getattr(r, "ticker", "") or "" for r in rows) if t
+    )
     market = st.session_state.get("market_db_status") or {}
-    doc_count = int(market.get("document_count") or 0)
-    if doc_count > 0:
-        parts.append(f"Shared market library: {doc_count} analysed tickers.")
+    library_count = int(market.get("document_count") or 0)
+    if not tickers and not st.session_state.get("portfolio_fast_loaded"):
+        return None
+    return SessionPortfolioSnapshot(
+        holding_count=len(rows),
+        tickers=tickers,
+        library_count=library_count,
+    )
 
-    return " ".join(parts)
+
+def build_session_context() -> str:
+    """One-line session hint (legacy helper)."""
+    snap = _session_portfolio_snapshot()
+    if snap is None:
+        return ""
+    parts: List[str] = []
+    if snap.holding_count:
+        sample = ", ".join(snap.tickers[:10])
+        suffix = "…" if snap.holding_count > len(snap.tickers[:10]) else ""
+        parts.append(f"{snap.holding_count} holdings ({sample}{suffix})")
+    if snap.library_count > 0:
+        parts.append(f"{snap.library_count} analysed tickers in library")
+    return "; ".join(parts)
+
+
+def format_assistant_reply(body: str, *, show_hf_tip: bool = False) -> str:
+    """Append disclaimer; optional one-time HF setup hint."""
+    parts = [body.strip()]
+    if show_hf_tip and not huggingface_configured():
+        parts.append(
+            "_Optional: set `HUGGINGFACE_API_KEY` on the server for broader chit-chat beyond app help._"
+        )
+    parts.append(DISCLAIMER)
+    return "\n\n".join(parts)
 
 
 def match_local_faq(message: str) -> Optional[str]:
@@ -137,6 +182,72 @@ def match_local_faq(message: str) -> Optional[str]:
     for keywords, answer in _APP_FAQ:
         if any(keyword in text for keyword in keywords):
             return answer
+    return None
+
+
+def match_session_reply(message: str) -> Optional[str]:
+    """Answers that use the current portfolio session (no LLM)."""
+    text = (message or "").strip()
+    lower = text.lower()
+    snap = _session_portfolio_snapshot()
+
+    if any(g in lower for g in ("hello", "hi ", "hi!", "hey", "thanks", "thank you")):
+        if snap and snap.holding_count:
+            return (
+                f"Hello! You have **{snap.holding_count}** holdings loaded — ask about a ticker "
+                f"(e.g. **{snap.tickers[0]}**), **yield channels**, or **dividend sync**."
+            )
+        return (
+            "Hello! Add holdings under **Manage portfolio**, then **Reload live data**. "
+            "Ask me about yield channels, dividends, or the shared S&P library."
+        )
+
+    if snap and snap.holding_count:
+        if any(
+            phrase in lower
+            for phrase in (
+                "my portfolio",
+                "my holdings",
+                "how many holdings",
+                "how many stocks",
+                "what do i own",
+                "list holdings",
+                "show portfolio",
+            )
+        ):
+            sample = ", ".join(snap.tickers[:12])
+            more = f" (+{snap.holding_count - 12} more)" if snap.holding_count > 12 else ""
+            lib = (
+                f" The shared library has **{snap.library_count}** analysed tickers."
+                if snap.library_count
+                else ""
+            )
+            return (
+                f"Your session has **{snap.holding_count}** holdings: {sample}{more}.{lib} "
+                "Use the **Holdings** table to compare positions, **Dividends** for income, "
+                "or open a ticker for yield-channel detail."
+            )
+
+        mentioned = [t for t in _TICKER_RE.findall(text.upper()) if t in snap.tickers]
+        if mentioned:
+            symbol = mentioned[0]
+            return (
+                f"**{symbol}** is in your portfolio. In **Holdings**, filter or open **{symbol}** "
+                "for fundamentals, yield channels (vs its own history), and same-sector peers. "
+                "If the yield chart is missing, use **Reload live data**."
+            )
+
+    # Ticker in library but not held — still helpful
+    if snap and snap.library_count:
+        tokens = _TICKER_RE.findall(text.upper())
+        if tokens and not snap.tickers:
+            symbol = tokens[0]
+            return (
+                f"To analyse **{symbol}**, use S&P research from the app home/examples, or add it under "
+                "**Manage portfolio** then **Reload live data**. The library has "
+                f"**{snap.library_count}** enriched tickers."
+            )
+
     return None
 
 
@@ -181,7 +292,6 @@ def _pair_conversation_history(
             turn = _bot_turn_for_history(msg.content)
             if turn:
                 past_bot.append(turn)
-    # BlenderBot expects equal-length prior turns; trim to last 3 exchanges
     while len(past_bot) < len(past_user) - 1:
         past_bot.insert(0, "")
     while len(past_user) > len(past_bot) + 1:
@@ -201,9 +311,7 @@ def reply_via_huggingface(
     model: Optional[str] = None,
     timeout: int = 25,
 ) -> Optional[str]:
-    """
-    Call Hugging Face Inference API from the server (avoids browser CORS and exposes no token).
-    """
+    """Call Hugging Face Inference API from the server."""
     api_token = token or _huggingface_token()
     if not api_token:
         return None
@@ -268,46 +376,50 @@ def reply_via_huggingface(
     return None
 
 
-def fallback_reply(user_message: str, *, session_context: str = "") -> str:
-    """Default when FAQ and optional LLM do not apply."""
-    lines = [
-        "I didn't find a specific app answer for that.",
-        "Try asking about **Reload live data**, **yield channels**, **Manage portfolio**, or **dividend sync**.",
-    ]
-    if session_context:
-        lines.append(f"_{session_context}_")
-    if not huggingface_configured():
-        lines.append(
-            "_Tip: set `HUGGINGFACE_API_KEY` on the server for broader conversational replies._"
+def fallback_reply(user_message: str) -> str:
+    """Short default when no FAQ/session/LLM match."""
+    snap = _session_portfolio_snapshot()
+    if snap and snap.holding_count:
+        lead = (
+            f"I didn't match that to a specific feature. With **{snap.holding_count}** holdings loaded, "
+            f"try **{snap.tickers[0]}** (ticker name), **yield channels**, **Reload live data**, or **Dividends**."
         )
-    lines.append(DISCLAIMER)
-    return "\n\n".join(lines)
+    else:
+        lead = (
+            "I didn't match that to a specific feature. Try **Manage portfolio**, "
+            "**Reload live data**, **yield channels**, or **dividend sync**."
+        )
+    return lead
 
 
-def generate_reply(user_message: str, messages: Sequence[ChatMessage]) -> str:
+def generate_reply(
+    user_message: str,
+    messages: Sequence[ChatMessage],
+    *,
+    show_hf_tip_on_fallback: bool = False,
+) -> str:
     """
     Produce the assistant reply for a user turn.
 
-    App FAQ answers are preferred so help stays accurate; optional HF fills general chat.
+    App FAQ and session-aware answers are preferred; optional HF fills general chat.
     """
     text = (user_message or "").strip()
     if not text:
         return "Please enter a message."
 
-    local = match_local_faq(text)
-    if local:
-        ctx = build_session_context()
-        if ctx:
-            return f"{local}\n\n_{ctx}_\n\n{DISCLAIMER}"
-        return f"{local}\n\n{DISCLAIMER}"
-
-    session_context = build_session_context()
+    for matcher in (match_local_faq, match_session_reply):
+        answer = matcher(text)
+        if answer:
+            return format_assistant_reply(answer)
 
     llm_reply = reply_via_huggingface(text, messages)
     if llm_reply:
-        return f"{llm_reply}\n\n{DISCLAIMER}"
+        return format_assistant_reply(llm_reply)
 
-    return fallback_reply(text, session_context=session_context)
+    return format_assistant_reply(
+        fallback_reply(text),
+        show_hf_tip=show_hf_tip_on_fallback,
+    )
 
 
 def initial_messages() -> List[Dict[str, str]]:
