@@ -156,7 +156,7 @@ def build_session_context() -> str:
     parts: List[str] = []
     if snap.holding_count:
         sample = ", ".join(snap.tickers[:10])
-        suffix = "…" if snap.holding_count > len(snap.tickers[:10]) else ""
+        suffix = "…" if len(snap.tickers) > 10 else ""
         parts.append(f"{snap.holding_count} holdings ({sample}{suffix})")
     if snap.library_count > 0:
         parts.append(f"{snap.library_count} analysed tickers in library")
