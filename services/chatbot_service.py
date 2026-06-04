@@ -191,7 +191,7 @@ def match_session_reply(message: str) -> Optional[str]:
     lower = text.lower()
     snap = _session_portfolio_snapshot()
 
-    if any(g in lower for g in ("hello", "hi ", "hi!", "hey", "thanks", "thank you")):
+    if re.search(r"\b(hello|hi|hey|thanks)\b", lower) or "thank you" in lower:
         if snap and snap.holding_count:
             return (
                 f"Hello! You have **{snap.holding_count}** holdings loaded — ask about a ticker "
