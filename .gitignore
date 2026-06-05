@@ -5,6 +5,7 @@ __pycache__/
 *.so
 .Python
 .venv/
+.test-venv/
 venv/
 venv3.12/
 ENV/

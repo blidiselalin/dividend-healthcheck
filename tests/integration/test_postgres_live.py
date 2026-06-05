@@ -170,6 +170,62 @@ def test_migrate_script_users_and_portfolio(tmp_path: Path, pg_user_id: str):
     assert int(row["count"]) == 1
 
 
+def test_db_admin_validate_and_query(pg_user_id: str):
+    from datetime import date
+
+    from data_ingestion.models import DividendRecord, PriceHistory, StockDocument
+    from db.connection import ensure_schema, get_connection, use_cloud_sql
+    from db.postgres_market_store import PostgresMarketStore
+    from services.db_admin_service import (
+        inspect_stock_symbol,
+        run_readonly_query,
+        validate_all_tables,
+    )
+
+    assert use_cloud_sql()
+    ensure_schema()
+
+    doc = StockDocument(symbol="ADMINT", name="Admin Test", sector="Technology")
+    doc.price_history = [
+        PriceHistory(
+            date=date(2020, 1, 2),
+            open=100.0,
+            high=101.0,
+            low=99.0,
+            close=100.0,
+            volume=1_000_000,
+        )
+    ] * 300
+    doc.dividend_history = [
+        DividendRecord(
+            ex_date=date(2020, m, 1),
+            payment_date=date(2020, m, 15),
+            amount=0.5,
+        )
+        for m in range(1, 5)
+    ]
+    store = PostgresMarketStore()
+    store.add_documents([doc])
+
+    checks = validate_all_tables()
+    stock = next(c for c in checks if c.name == "stock_documents")
+    assert stock.row_count >= 1
+
+    probe = inspect_stock_symbol("ADMINT")
+    assert probe["ok"] is True
+    assert probe["price_points"] == 300
+    assert probe["dividend_payments"] == 4
+
+    result = run_readonly_query(
+        "SELECT symbol FROM stock_documents WHERE symbol = 'ADMINT'"
+    )
+    assert result.ok is True
+    assert result.rows[0]["symbol"] == "ADMINT"
+
+    with get_connection() as conn:
+        conn.execute("DELETE FROM stock_documents WHERE symbol = %s", ("ADMINT",))
+
+
 def test_market_library_migration_from_fallback_json(tmp_path: Path):
     from data_ingestion.models import StockDocument
     from db.connection import ensure_schema, use_cloud_sql
