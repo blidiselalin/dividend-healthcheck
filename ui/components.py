@@ -685,9 +685,8 @@ class UIComponents:
         if data is None:
             st.warning(
                 f"Insufficient dividend history for **{symbol}** yield channel analysis "
-                "(needs ~5+ years of dividends and prices in the shared library). "
-                "Try **Reload live data**, or re-enrich this symbol: "
-                "`./scripts/update_cloud_docker.sh --ingest`."
+                "(needs ~5+ years of dividend and price history). "
+                "Try **Reload live data** or choose another symbol."
             )
             return False
         
