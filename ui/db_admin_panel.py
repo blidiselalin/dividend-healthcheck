@@ -102,6 +102,10 @@ def _render_overview_tab() -> None:
 
 def _render_tables_tab() -> None:
     tables = list_managed_tables()
+    if not tables:
+        render_notice("No tables found in the configured database.", kind="info")
+        return
+
     counts = table_row_counts(tables)
     rows = [{"Table": name, "Rows": counts.get(name, "—")} for name in tables]
     st.dataframe(rows, width="stretch", hide_index=True)
