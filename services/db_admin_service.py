@@ -521,8 +521,7 @@ def run_readonly_query(
             ensure_schema()
             with get_connection() as conn:
                 conn.execute(
-                    "SET LOCAL statement_timeout = %s",
-                    (f"{_QUERY_TIMEOUT_MS}ms",),
+                    f"SET LOCAL statement_timeout = {_QUERY_TIMEOUT_MS}",
                 )
                 cur = conn.execute(limited_sql)
                 rows = cur.fetchall()
