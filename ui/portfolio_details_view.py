@@ -726,10 +726,10 @@ class PortfolioDetailsView:
         with st.spinner(f"Loading analysis for {symbol}…"):
             from services.stock_analysis_service import load_independent_stock_analysis
 
-            cached_doc = preload.vector_docs.get(symbol) or get_document(symbol)
             analysis = load_independent_stock_analysis(
                 symbol,
                 document=cached_doc,
+                include_yield_channel=preload.yield_channels.get(symbol) is None,
             )
             if analysis is None:
                 data = None
