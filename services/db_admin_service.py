@@ -520,8 +520,10 @@ def run_readonly_query(
         if use_cloud_sql():
             ensure_schema()
             with get_connection() as conn:
+                timeout_ms = max(1, int(_QUERY_TIMEOUT_MS))
+                # PostgreSQL SET LOCAL does not accept bind parameters for timeout values.
                 conn.execute(
-                    f"SET LOCAL statement_timeout = {_QUERY_TIMEOUT_MS}",
+                    f"SET LOCAL statement_timeout = {timeout_ms}",
                 )
                 cur = conn.execute(limited_sql)
                 rows = cur.fetchall()
