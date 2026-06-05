@@ -553,7 +553,9 @@ class UIComponents:
             return
         
         try:
-            service = YieldChannelService()
+            from services.yield_channel_chart import _default_yield_channel_service
+
+            service = _default_yield_channel_service()
             data = service.fetch_yield_channel_data(symbol, years=10)
             if data is None:
                 st.caption(f"Insufficient data for {symbol}")
@@ -670,8 +672,9 @@ class UIComponents:
             st.info("📊 Yield channel charts require `plotly` package. Install with: `pip install plotly`")
             return False
         
-        # Use the enhanced service
-        service = YieldChannelService()
+        from services.yield_channel_chart import _default_yield_channel_service
+
+        service = _default_yield_channel_service()
 
         if channel_data is None:
             with st.spinner(f"Analyzing {years}-year dividend yield history..."):
@@ -681,8 +684,10 @@ class UIComponents:
 
         if data is None:
             st.warning(
-                f"Insufficient dividend history for {symbol} yield channel analysis. "
-                "Try **Reload live data** in the sidebar, or re-enrich this symbol in the shared library."
+                f"Insufficient dividend history for **{symbol}** yield channel analysis "
+                "(needs ~5+ years of dividends and prices in the shared library). "
+                "Try **Reload live data**, or re-enrich this symbol: "
+                "`./scripts/update_cloud_docker.sh --ingest`."
             )
             return False
         

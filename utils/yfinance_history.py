@@ -172,13 +172,28 @@ def fetch_price_history_with_fallback(
     years: int = 10,
     document: Any = None,
     min_rows: int = 100,
+    prefer_library: bool = False,
 ) -> tuple["pd.DataFrame", str]:
     """
-    Fetch history from yfinance, else analysed-stock price_history.
+    Fetch OHLCV history from yfinance and/or analysed-stock price_history.
 
-    Returns (dataframe, source_label) where source_label is
-    'yfinance', 'analysed_library', or 'none'.
+    When ``prefer_library`` is True and the document has enough rows, use the
+    shared library first so prices align with stored dividend_history.
+
+    Returns (dataframe, source_label): 'yfinance', 'analysed_library', or 'none'.
     """
+    if prefer_library and document is not None:
+        library = history_dataframe_from_document(
+            document, years=years, min_rows=min_rows
+        )
+        if library is not None and not library.empty and len(library) >= min_rows:
+            logger.debug(
+                "%s: using analysed-library price history (%d rows)",
+                symbol,
+                len(library),
+            )
+            return library, "analysed_library"
+
     frame = fetch_price_history(symbol, years=years)
     if frame is not None and not frame.empty and len(frame) >= min_rows:
         return frame, "yfinance"
@@ -196,6 +211,136 @@ def fetch_price_history_with_fallback(
             return library, "analysed_library"
 
     return pd.DataFrame(), "none"
+
+
+def dividend_series_from_records(records: Any) -> "pd.Series":
+    """Cash dividends indexed by ex-date from library DividendRecord rows."""
+    if not YFINANCE_AVAILABLE or not records:
+        return pd.Series(dtype=float)
+
+    totals: dict = {}
+    for div in records:
+        ex_raw = None
+        amount = None
+        if isinstance(div, dict):
+            ex_raw = div.get("ex_date")
+            amount = div.get("amount")
+        elif hasattr(div, "ex_date") and hasattr(div, "amount"):
+            ex_raw = div.ex_date
+            amount = div.amount
+        if ex_raw is None or amount is None:
+            continue
+        try:
+            if isinstance(ex_raw, str):
+                ex_date = date.fromisoformat(ex_raw[:10])
+            elif isinstance(ex_raw, date):
+                ex_date = ex_raw
+            elif hasattr(ex_raw, "date"):
+                ex_date = ex_raw.date()
+            else:
+                continue
+            value = float(amount)
+        except (TypeError, ValueError):
+            continue
+        if value <= 0:
+            continue
+        key = pd.Timestamp(ex_date)
+        totals[key] = totals.get(key, 0.0) + value
+
+    if not totals:
+        return pd.Series(dtype=float)
+    return pd.Series(totals).sort_index()
+
+
+def dividend_series_from_document(document: Any, *, years: int = 10) -> "pd.Series":
+    """Dividend payments from a StockDocument (history, else yield metadata estimate)."""
+    if document is None:
+        return pd.Series(dtype=float)
+
+    history = getattr(document, "dividend_history", None) or []
+    if len(history) >= 3:
+        return dividend_series_from_records(history)
+
+    price = getattr(document, "current_price", None)
+    div_yield = getattr(document, "dividend_yield", None)
+    try:
+        price_f = float(price) if price is not None else 0.0
+        yield_f = float(div_yield) if div_yield is not None else 0.0
+    except (TypeError, ValueError):
+        return pd.Series(dtype=float)
+    if price_f <= 0 or yield_f <= 0:
+        return pd.Series(dtype=float)
+
+    quarterly = price_f * (yield_f / 100.0) / 4.0
+    if quarterly <= 0:
+        return pd.Series(dtype=float)
+
+    today = date.today()
+    payments: dict = {}
+    for quarter in range(years * 4):
+        month = today.month - (quarter * 3)
+        year = today.year
+        while month <= 0:
+            month += 12
+            year -= 1
+        try:
+            pay_date = date(year, month, 15)
+        except ValueError:
+            pay_date = date(year, month, 28)
+        payments[pd.Timestamp(pay_date)] = quarterly
+    return pd.Series(payments).sort_index()
+
+
+def merge_dividend_series(*series: "pd.Series") -> "pd.Series":
+    """Combine payment series without double-counting the same ex-date."""
+    frames = [s for s in series if s is not None and not s.empty]
+    if not frames:
+        return pd.Series(dtype=float)
+    combined = pd.concat(frames)
+    combined.index = _to_naive_datetime_index(combined.index)
+    return combined.groupby(level=0).max().sort_index()
+
+
+def compute_ttm_from_payment_series(
+    hist: "pd.DataFrame",
+    payment_series: "pd.Series",
+    *,
+    min_rows: int = 60,
+) -> Optional["pd.DataFrame"]:
+    """
+    Trailing 12-month dividend at each price date from ex-date payments.
+
+    More reliable than rolling sparse daily Dividends columns (e.g. INTU, newer payers).
+    """
+    if not YFINANCE_AVAILABLE or hist is None or hist.empty or payment_series is None:
+        return None
+    if payment_series.empty:
+        return None
+
+    frame = hist.copy()
+    frame.index = _to_naive_datetime_index(frame.index)
+    frame["Close"] = pd.to_numeric(frame["Close"], errors="coerce")
+    frame = frame.dropna(subset=["Close"])
+    frame = frame[frame["Close"] > 0]
+    if frame.empty:
+        return None
+
+    payments = payment_series.copy()
+    payments.index = _to_naive_datetime_index(payments.index)
+    payments = payments.astype(float)
+    payments = payments[payments > 0].sort_index()
+    if payments.empty:
+        return None
+
+    ttm_values = []
+    for ts in frame.index:
+        start = ts - pd.Timedelta(days=365)
+        window = payments[(payments.index > start) & (payments.index <= ts)]
+        ttm_values.append(float(window.sum()))
+
+    frame["Div_TTM"] = ttm_values
+    frame = frame[frame["Div_TTM"] > 0]
+    return frame if len(frame) >= min_rows else None
 
 
 def fetch_dividend_series(symbol: str) -> "pd.Series":
