@@ -47,18 +47,25 @@ def test_fetch_latest_market_price_reads_fast_info(mock_ticker_cls):
     assert fetch_latest_market_price("INTU") == 307.07
 
 
-@patch("services.live_price.apply_live_price")
-@patch("services.portfolio_details_service._fetch_statistics_stock")
-@patch("services.portfolio_details_service.PortfolioDetailsService._load_documents")
-def test_get_stock_data_applies_live_price(mock_docs, mock_stats, mock_apply):
+@patch("services.stock_analysis_service.load_independent_stock_analysis")
+def test_get_stock_data_delegates_to_independent_analysis(mock_load):
     from services.portfolio_details_service import get_stock_data
+    from services.stock_analysis_service import IndependentStockAnalysis
 
-    stale = _stock(price=393.0)
-    mock_docs.return_value = {"INTU": MagicMock()}
-    mock_stats.return_value = stale
-    mock_apply.side_effect = lambda data: setattr(data, "price", 307.07) or data
+    stale = _stock(price=307.07)
+    mock_load.return_value = IndependentStockAnalysis(
+        symbol="INTU",
+        stock_data=stale,
+        document=None,
+        yield_channel=None,
+        price_history_points=200,
+        dividend_history_points=4,
+        dividend_yield_source="history",
+        history_summary={"library_hit": True},
+    )
 
     data = get_stock_data("INTU")
 
-    mock_apply.assert_called_once_with(stale)
+    mock_load.assert_called_once_with("INTU")
+    assert data is stale
     assert data.price == 307.07

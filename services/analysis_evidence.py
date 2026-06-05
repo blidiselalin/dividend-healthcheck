@@ -110,6 +110,10 @@ def build_evidence_rows(
         rows.append(
             ("Dividend payment history interval", fmt_range(d_start, d_end, d_count))
         )
+        if data is not None:
+            yield_source = getattr(data, "_yield_source", None)
+            if yield_source:
+                rows.append(("Dividend yield source", str(yield_source)))
     else:
         rows.append(
             (
