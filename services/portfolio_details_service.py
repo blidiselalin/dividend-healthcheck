@@ -17,7 +17,6 @@ from models.stock import StockData
 from services.scoring import ScoringService
 from services.stock_service import StockService
 from services.portfolio_analysis_preload import PortfolioAnalysisPreload, preload_portfolio_analysis
-from utils.converters import document_to_stock_data
 from utils.logging_config import get_logger
 
 logger = get_logger("dividendscope.portfolio")
@@ -39,7 +38,9 @@ except ImportError:
 def _fetch_statistics_stock(symbol: str, document: Optional[StockDocument]) -> Optional[StockData]:
     """Load valuation and dividend statistics from the vector DB when available."""
     if document is not None:
-        return document_to_stock_data(document)
+        from services.stock_analysis_service import stock_data_from_document
+
+        return stock_data_from_document(document, apply_live_price=False)
 
     if ENHANCED_SERVICE_AVAILABLE:
         global _enhanced_service
@@ -54,16 +55,11 @@ def _fetch_statistics_stock(symbol: str, document: Optional[StockDocument]) -> O
 
 
 def get_stock_data(symbol: str) -> Optional[StockData]:
-    """Load statistics from the vector DB and refresh the latest market price."""
-    from services.live_price import apply_live_price
+    """Load independent stock analysis from the shared library (history-first)."""
+    from services.stock_analysis_service import load_independent_stock_analysis
 
-    service = PortfolioDetailsService()
-    documents = service._load_documents([symbol])
-    stats = _fetch_statistics_stock(symbol, documents.get(symbol))
-    if not stats:
-        return None
-
-    return apply_live_price(stats)
+    analysis = load_independent_stock_analysis(symbol)
+    return analysis.stock_data if analysis else None
 
 
 @dataclass(frozen=True)
@@ -225,6 +221,12 @@ class PortfolioDetailsService:
             if stats is not None:
                 if live_price is not None:
                     stats.price = live_price
+                document = documents.get(holding.symbol)
+                if document is not None:
+                    from utils.stock_history_enrichment import enrich_stock_data_from_history
+
+                    stats, yield_source = enrich_stock_data_from_history(stats, document)
+                    stats._yield_source = yield_source  # type: ignore[attr-defined]
                 resolved_stock_cache[holding.symbol] = stats
             prices = price_cache[holding.symbol]
             pfcf, pay_date, ex_date_override = market_cache[holding.symbol]

@@ -718,32 +718,29 @@ class PortfolioDetailsView:
         preload: PortfolioAnalysisPreload,
     ) -> None:
         """Load and display analysis for a symbol chosen from the S&P list (not necessarily held)."""
-        from services.portfolio_details_service import get_stock_data
         from services.shared_market_db import get_document
         from services.sp500_peers_service import find_sector_peers
-        from services.yield_channel_chart import YieldChannelService
         from data_ingestion.portfolio_store import PortfolioStore
 
         symbol = symbol.upper()
         with st.spinner(f"Loading analysis for {symbol}…"):
-            from services.live_price import apply_live_price
+            from services.stock_analysis_service import load_independent_stock_analysis
 
-            cached = preload.stock_data.get(symbol)
-            if cached is not None:
-                data = apply_live_price(cached)
+            analysis = load_independent_stock_analysis(
+                symbol,
+                document=cached_doc,
+                include_yield_channel=preload.yield_channels.get(symbol) is None,
+            )
+            if analysis is None:
+                data = None
+                vector_doc = cached_doc
+                yield_channel = None
             else:
-                data = get_stock_data(symbol)
-            vector_doc = preload.vector_docs.get(symbol) or get_document(symbol)
-            yield_channel = preload.yield_channels.get(symbol)
-            if yield_channel is None:
-                try:
-                    from services.yield_channel_chart import _default_yield_channel_service
-
-                    yield_channel = _default_yield_channel_service().fetch_yield_channel_data(
-                        symbol
-                    )
-                except Exception:
-                    yield_channel = None
+                data = analysis.stock_data
+                vector_doc = analysis.document or cached_doc
+                yield_channel = (
+                    preload.yield_channels.get(symbol) or analysis.yield_channel
+                )
 
         if not data:
             st.error(

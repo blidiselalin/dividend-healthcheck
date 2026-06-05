@@ -46,33 +46,28 @@ except ImportError:
 
 def get_stock_data(symbol: str) -> Optional[StockData]:
     """
-    Get stock data, prioritizing VectorDB service.
-    
-    Order of preference:
-    1. VectorDB service (if data is complete)
-    2. EnhancedStockService (API with DB enrichment)
-    3. Basic StockService (API only)
+    Load stock data for single-stock analysis.
+
+    Uses the shared library (price/dividend history in stock_documents) first,
+    then falls back to enhanced or basic API services.
     """
+    try:
+        from services.stock_analysis_service import load_independent_stock_analysis
+
+        analysis = load_independent_stock_analysis(symbol, include_yield_channel=False)
+        if analysis is not None:
+            return analysis.stock_data
+    except Exception:
+        pass
+
     from services.live_price import apply_live_price
 
-    # Try VectorDB first
-    if VECTORDB_SERVICE_AVAILABLE:
-        try:
-            vdb_service = get_vectordb_service()
-            if vdb_service.is_available:
-                data = vdb_service.get_stock(symbol)
-                if data and vdb_service.is_data_complete(data):
-                    return apply_live_price(data)
-        except Exception:
-            pass
-    
-    # Fallback to enhanced service
     if ENHANCED_SERVICE_AVAILABLE:
         service = _get_enhanced_service()
         data = service.fetch(symbol)
-        return apply_live_price(data) if data else None
-    
-    # Final fallback to basic service
+        if data:
+            return apply_live_price(data)
+
     data = StockService.fetch(symbol)
     return apply_live_price(data) if data else None
 

@@ -11,6 +11,17 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+_STOCK_DOCUMENT_COLUMNS = """
+  symbol,
+  document,
+  sector,
+  dividend_streak_years,
+  dividend_yield,
+  data_quality,
+  last_updated,
+  source
+"""
+
 
 class PostgresMarketStore:
     """Persist StockDocument payloads as JSONB in PostgreSQL."""
@@ -63,61 +74,65 @@ class PostgresMarketStore:
         return ids
 
     def get_by_symbol(self, symbol: str):
-        from data_ingestion.models import StockDocument
         from db.connection import ensure_schema, get_connection
 
         ensure_schema()
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT document FROM stock_documents WHERE symbol = %s",
+                f"""
+                SELECT {_STOCK_DOCUMENT_COLUMNS}
+                FROM stock_documents
+                WHERE symbol = %s
+                """,
                 (symbol.upper(),),
             ).fetchone()
-        if not row:
-            return None
-        return StockDocument.from_dict(dict(row["document"]))
+        return _document_from_row(row)
 
     def get_all_documents(self) -> List[Any]:
-        from data_ingestion.models import StockDocument
         from db.connection import ensure_schema, get_connection
 
         ensure_schema()
         with get_connection() as conn:
             rows = conn.execute(
-                "SELECT document FROM stock_documents ORDER BY symbol"
+                f"""
+                SELECT {_STOCK_DOCUMENT_COLUMNS}
+                FROM stock_documents
+                ORDER BY symbol
+                """
             ).fetchall()
-        return [StockDocument.from_dict(dict(row["document"])) for row in rows]
+        return [_document_from_row(row) for row in rows if row]
 
     def get_dividend_kings(self, min_streak: int = 50) -> List[Any]:
-        from data_ingestion.models import StockDocument
         from db.connection import ensure_schema, get_connection
 
         ensure_schema()
         with get_connection() as conn:
             rows = conn.execute(
-                """
-                SELECT document FROM stock_documents
+                f"""
+                SELECT {_STOCK_DOCUMENT_COLUMNS}
+                FROM stock_documents
                 WHERE dividend_streak_years >= %s
                 ORDER BY dividend_streak_years DESC
                 """,
                 (min_streak,),
             ).fetchall()
-        return [StockDocument.from_dict(dict(row["document"])) for row in rows]
+        return [_document_from_row(row) for row in rows if row]
 
     def get_by_sector(self, sector: str) -> List[Any]:
-        from data_ingestion.models import StockDocument
         from db.connection import ensure_schema, get_connection
 
         ensure_schema()
         with get_connection() as conn:
             rows = conn.execute(
-                """
-                SELECT document FROM stock_documents
+                f"""
+                SELECT {_STOCK_DOCUMENT_COLUMNS}
+                FROM stock_documents
                 WHERE lower(sector) = lower(%s)
                 ORDER BY symbol
                 """,
                 (sector,),
             ).fetchall()
-        return [StockDocument.from_dict(dict(row["document"])) for row in rows]
+        return [_document_from_row(row) for row in rows if row]
 
     def count(self) -> int:
         from db.connection import ensure_schema, get_connection
@@ -204,6 +219,47 @@ class PostgresMarketStore:
                 results.append(SearchResult(document=doc, score=score / max(len(terms), 1)))
         results.sort(key=lambda item: item.score, reverse=True)
         return results[:n_results]
+
+
+def _document_from_row(row: Any):
+    """Merge JSONB document with indexed stock_documents table columns."""
+    from data_ingestion.models import StockDocument, parse_data_source
+
+    if not row:
+        return None
+
+    payload = row["document"]
+    if not isinstance(payload, dict):
+        payload = dict(payload)
+    doc = StockDocument.from_dict(payload)
+
+    sector = row.get("sector")
+    if sector and (not doc.sector or doc.sector == "Unknown"):
+        doc.sector = sector
+
+    if doc.dividend_streak_years is None and row.get("dividend_streak_years") is not None:
+        doc.dividend_streak_years = int(row["dividend_streak_years"])
+
+    if doc.dividend_yield is None and row.get("dividend_yield") is not None:
+        doc.dividend_yield = float(row["dividend_yield"])
+
+    if doc.data_quality in (None, 0.0) and row.get("data_quality") is not None:
+        doc.data_quality = float(row["data_quality"])
+
+    if row.get("last_updated") is not None:
+        raw_updated = row["last_updated"]
+        if isinstance(raw_updated, datetime):
+            doc.last_updated = raw_updated
+        elif isinstance(raw_updated, str):
+            try:
+                doc.last_updated = datetime.fromisoformat(raw_updated.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+
+    if row.get("source") and doc.source.value == "manual":
+        doc.source = parse_data_source(str(row["source"]))
+
+    return doc
 
 
 def _json_default(value: Any) -> Any:
