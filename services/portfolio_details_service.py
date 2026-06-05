@@ -225,7 +225,8 @@ class PortfolioDetailsService:
                 if document is not None:
                     from utils.stock_history_enrichment import enrich_stock_data_from_history
 
-                    stats, _ = enrich_stock_data_from_history(stats, document)
+                    stats, yield_source = enrich_stock_data_from_history(stats, document)
+                    stats._yield_source = yield_source  # type: ignore[attr-defined]
                 resolved_stock_cache[holding.symbol] = stats
             prices = price_cache[holding.symbol]
             pfcf, pay_date, ex_date_override = market_cache[holding.symbol]
