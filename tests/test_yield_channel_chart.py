@@ -95,7 +95,7 @@ def test_align_dividends_maps_ex_date_to_next_trading_day():
 
 
 @patch("utils.yfinance_history.fetch_dividend_series", return_value=pd.Series(dtype=float))
-def test_ensure_dividends_uses_library_records_without_exact_date_match(mock_yf_divs):
+def test_ensure_dividends_prefers_library_without_yfinance(mock_yf_divs):
     # ~2 years of business days so 2019 and 2020 ex-dates all map to trading rows
     index = pd.date_range("2019-01-02", periods=520, freq="B")
     hist = pd.DataFrame({"Close": [150.0] * 520, "Dividends": [0.0] * 520}, index=index)
@@ -113,7 +113,7 @@ def test_ensure_dividends_uses_library_records_without_exact_date_match(mock_yf_
     merged = service._ensure_dividends_on_history(hist, "ABBV", records)
     assert merged["Dividends"].sum() > 0
     assert service._dividend_payment_count(merged) >= 8
-    mock_yf_divs.assert_called_once()
+    mock_yf_divs.assert_not_called()
 
 
 def test_align_dividends_handles_timezone_aware_ex_dates():

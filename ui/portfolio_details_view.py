@@ -737,7 +737,11 @@ class PortfolioDetailsView:
             yield_channel = preload.yield_channels.get(symbol)
             if yield_channel is None:
                 try:
-                    yield_channel = YieldChannelService().fetch_yield_channel_data(symbol)
+                    from services.yield_channel_chart import _default_yield_channel_service
+
+                    yield_channel = _default_yield_channel_service().fetch_yield_channel_data(
+                        symbol
+                    )
                 except Exception:
                     yield_channel = None
 

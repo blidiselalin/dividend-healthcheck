@@ -6,9 +6,14 @@ from __future__ import annotations
 
 import streamlit as st
 
-from auth.settings import auth_required, is_admin_email
+from auth.settings import auth_required
 from auth.test_user import is_test_user, sign_out_test_user, test_user_session_active
-from auth.user_context import clear_portfolio_session_state, current_user, ensure_user_session
+from auth.user_context import (
+    clear_portfolio_session_state,
+    current_user,
+    ensure_user_session,
+    is_app_admin,
+)
 from auth.user_store import UserStore
 from ui.access_request_panel import render_admin_access_requests
 from ui.theme import sidebar_heading
@@ -42,7 +47,7 @@ def render_account_sidebar() -> None:
         st.logout()
 
     registered = ensure_user_session()
-    if registered and (registered.is_admin or is_admin_email(user.email)):
+    if registered and is_app_admin(user, registered):
         render_admin_access_requests()
         _render_admin_users()
 

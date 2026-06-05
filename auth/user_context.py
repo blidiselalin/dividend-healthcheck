@@ -127,6 +127,20 @@ def current_user_id() -> Optional[str]:
     return user.id if user else None
 
 
+def is_app_admin(
+    user: Optional[CurrentUser] = None,
+    registered: Optional[AppUser] = None,
+) -> bool:
+    """True when the user may use admin tools (DB admin flag or configured admin email)."""
+    user = user or current_user()
+    if user is None:
+        return False
+    if is_admin_email(user.email):
+        return True
+    reg = registered if registered is not None else ensure_user_session()
+    return bool(reg and reg.is_admin)
+
+
 def resolve_user_data_dir() -> Path:
     user = current_user()
     if user and uses_per_user_storage():

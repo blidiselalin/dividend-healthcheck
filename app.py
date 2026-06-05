@@ -232,8 +232,14 @@ def main() -> None:
     st.session_state["analysis_type"] = NAV_PORTFOLIO
     render_portfolio_sidebar()
     render_account_sidebar()
+    from ui.db_admin_panel import render_db_admin_if_active, render_db_admin_sidebar_entry
+
+    render_db_admin_sidebar_entry()
     render_chatbot_widget()
     main_content_start()
+    if render_db_admin_if_active():
+        _render_sidebar_footer()
+        return
     PortfolioDetailsView.render()
     _render_sidebar_footer()
 
