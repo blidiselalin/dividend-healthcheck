@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from psycopg import sql as pg_sql
+
 from db.connection import ensure_schema, get_connection, open_app_db, open_portfolio_db, use_cloud_sql
 
 MANAGED_TABLES: Tuple[str, ...] = (
@@ -531,7 +533,7 @@ def run_readonly_query(
                     )
                 # PostgreSQL SET LOCAL does not accept bind parameters for timeout values.
                 conn.execute(
-                    f"SET LOCAL statement_timeout = {timeout_ms}",
+                    pg_sql.SQL("SET LOCAL statement_timeout = {}").format(pg_sql.Literal(timeout_ms))
                 )
                 cur = conn.execute(limited_sql)
                 rows = cur.fetchall()
