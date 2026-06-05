@@ -332,13 +332,11 @@ def compute_ttm_from_payment_series(
     if payments.empty:
         return None
 
-    ttm_values = []
-    for ts in frame.index:
-        start = ts - pd.Timedelta(days=365)
-        window = payments[(payments.index > start) & (payments.index <= ts)]
-        ttm_values.append(float(window.sum()))
-
-    frame["Div_TTM"] = ttm_values
+    cumulative = payments.cumsum()
+    paid_to_date = cumulative.reindex(frame.index, method="ffill").fillna(0.0)
+    window_start = frame.index - pd.Timedelta(days=365)
+    paid_before_window = cumulative.reindex(window_start, method="ffill").fillna(0.0)
+    frame["Div_TTM"] = (paid_to_date.to_numpy() - paid_before_window.to_numpy()).astype(float)
     frame = frame[frame["Div_TTM"] > 0]
     return frame if len(frame) >= min_rows else None
 

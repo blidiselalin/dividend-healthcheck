@@ -158,10 +158,13 @@ def _render_sql_tab() -> None:
         key="admin_db_preset",
     )
     if preset_name != "(custom)":
-        st.session_state["admin_db_sql_draft"] = presets[preset_name]
+        preset_sql = presets[preset_name]
+        st.session_state["admin_db_sql_draft"] = preset_sql
+        st.session_state["admin_db_sql_input"] = preset_sql
+    elif "admin_db_sql_input" not in st.session_state:
+        st.session_state["admin_db_sql_input"] = st.session_state.get("admin_db_sql_draft", "")
     sql = st.text_area(
         "SELECT query",
-        value=st.session_state.get("admin_db_sql_draft", ""),
         height=220,
         key="admin_db_sql_input",
         placeholder="SELECT symbol, last_updated FROM stock_documents LIMIT 10",

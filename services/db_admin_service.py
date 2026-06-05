@@ -48,6 +48,7 @@ _FORBIDDEN_SQL = re.compile(
 
 _DEFAULT_ROW_LIMIT = 500
 _MAX_ROW_LIMIT = 2000
+_QUERY_TIMEOUT_MS = 4000
 
 
 @dataclass(frozen=True)
@@ -519,6 +520,10 @@ def run_readonly_query(
         if use_cloud_sql():
             ensure_schema()
             with get_connection() as conn:
+                conn.execute(
+                    "SET LOCAL statement_timeout = %s",
+                    (f"{_QUERY_TIMEOUT_MS}ms",),
+                )
                 cur = conn.execute(limited_sql)
                 rows = cur.fetchall()
                 if rows and isinstance(rows[0], dict):
