@@ -1046,15 +1046,33 @@ class UIComponents:
         try:
             doc = document
             if doc is None:
+                try:
+                    from services.shared_market_db import get_document
+
+                    doc = get_document(symbol.upper())
+                except Exception:
+                    doc = None
+            if doc is None:
                 store = VectorStore()
                 doc = store.get_by_symbol(symbol.upper())
-            
+
             if doc is None:
                 st.info(
-                    f"📭 No data found for **{symbol}** in the vector database. "
-                    f"Run `python ingest_data.py --enrich` to populate."
+                    f"📭 No data found for **{symbol}** in the shared library. "
+                    "Run `./scripts/update_cloud_docker.sh --ingest` or "
+                    "`python ingest_data.py --ensure-sp500 --enrich-existing`."
                 )
                 return False
+
+            price_hist_count = len(doc.price_history) if doc.price_history else 0
+            div_hist_count = len(doc.dividend_history) if doc.dividend_history else 0
+            if price_hist_count == 0 and div_hist_count == 0:
+                st.warning(
+                    f"Library record exists for **{symbol}**, but **price and dividend "
+                    f"history are empty**. Run enrichment on the server:\n\n"
+                    f"`python ingest_data.py --enrich-existing` or "
+                    f"`./scripts/update_cloud_docker.sh --ingest`"
+                )
             
             # Header
             st.markdown(f"### 📦 Vector Database: {doc.symbol}")
@@ -1138,10 +1156,6 @@ class UIComponents:
             
             # === HISTORICAL DATA SUMMARY ===
             st.markdown("#### 📊 Historical Data")
-            
-            # Price history summary
-            price_hist_count = len(doc.price_history) if doc.price_history else 0
-            div_hist_count = len(doc.dividend_history) if doc.dividend_history else 0
             
             hist_info = [
                 ("Price History Records", f"{price_hist_count:,} days"),
