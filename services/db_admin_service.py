@@ -96,7 +96,9 @@ def is_safe_select_sql(sql: str) -> Tuple[bool, str]:
 def _apply_row_limit(sql: str, limit: int) -> Tuple[str, bool]:
     """Append LIMIT when missing; return (sql, was_truncated_by_us)."""
     body = sql.strip().rstrip(";")
-    if re.search(r"\blimit\s+\d+", body, re.IGNORECASE):
+    # Only treat LIMIT as present when it appears at the end of the statement.
+    # Nested LIMITs in subqueries should not disable the outer safety cap.
+    if re.search(r"\blimit\s+\d+(\s+offset\s+\d+)?\s*$", body, re.IGNORECASE):
         return body, False
     return f"{body} LIMIT {limit}", True
 
