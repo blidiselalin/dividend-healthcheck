@@ -47,10 +47,8 @@ def enrich_stock_data_from_history(
     """
     Fill missing dividend rate/yield from library dividend_history.
 
-    Returns (stock, yield_source) where yield_source is metadata, history, or unchanged.
+    Returns (stock, yield_source) where yield_source is "metadata" or "history".
     """
-    if document is None:
-        return stock, "metadata"
 
     from utils.converters import _build_dividend_history
     from utils.dividend_amounts import resolve_annual_dividend_per_share
