@@ -685,7 +685,7 @@ class UIComponents:
         if data is None:
             st.warning(
                 f"Insufficient dividend history for **{symbol}** yield channel analysis "
-                "(needs ~5+ years of dividend and price history from library and live fallback sources). "
+                "(needs ~5+ years of dividend and price history from library or live fallback sources). "
                 "Try **Reload live data** or choose another symbol with a longer history."
             )
             return False
