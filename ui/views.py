@@ -57,6 +57,7 @@ def get_stock_data(symbol: str) -> Optional[StockData]:
         analysis = load_independent_stock_analysis(symbol, include_yield_channel=False)
         if analysis is not None:
             return analysis.stock_data
+    except Exception:
         pass
 
     from services.live_price import apply_live_price
