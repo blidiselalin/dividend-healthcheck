@@ -533,7 +533,9 @@ def run_readonly_query(
                     )
                 # PostgreSQL SET LOCAL does not accept bind parameters for timeout values.
                 conn.execute(
-                    pg_sql.SQL("SET LOCAL statement_timeout = {}").format(pg_sql.Literal(timeout_ms))
+                    pg_sql.SQL("SET LOCAL statement_timeout = {}").format(
+                        pg_sql.Literal(f"{timeout_ms}ms")
+                    )
                 )
                 cur = conn.execute(limited_sql)
                 rows = cur.fetchall()
