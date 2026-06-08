@@ -7,6 +7,6 @@ python -c "
 from db.connection import use_cloud_sql
 if use_cloud_sql():
     from db.postgres_market_history_store import PostgresMarketHistoryStore
-    PostgresMarketHistoryStore().backfill_from_document_jsonb(limit=120)
+    PostgresMarketHistoryStore().sync_pending_from_jsonb(limit=250)
 " 2>/dev/null || true
 exec "$@"

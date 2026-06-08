@@ -291,7 +291,12 @@ Examples:
         "--sync-history-limit",
         type=int,
         default=500,
-        help="With --sync-history-tables, max symbols per run (default: 500)",
+        help="With --sync-history-tables, max pending symbols per run (default: 500)",
+    )
+    parser.add_argument(
+        "--sync-history-all",
+        action="store_true",
+        help="With --sync-history-tables, scan first N symbols alphabetically (ignore pending filter)",
     )
 
     parser.add_argument(
@@ -557,11 +562,15 @@ Examples:
         stats = PostgresMarketHistoryStore().backfill_from_document_jsonb(
             symbols=symbols,
             limit=max(1, args.sync_history_limit),
+            pending_only=not getattr(args, "sync_history_all", False),
         )
         print("History table sync complete!")
+        print(f"  Pending:   {stats.get('pending', stats.get('processed', 0))}")
         print(f"  Processed: {stats.get('processed', 0)}")
         print(f"  Synced:    {stats.get('synced', 0)}")
         print(f"  Skipped:   {stats.get('skipped', 0)}")
+        if stats.get("synced", 0) > 0 and not symbols and stats.get("pending", 0) >= args.sync_history_limit:
+            print("  Tip: re-run until Pending/Synced drop (or use --sync-history-all)")
         return 0
 
     # Handle backfill-history action

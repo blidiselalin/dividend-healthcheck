@@ -112,6 +112,21 @@ def render_admin_market_update_controls() -> None:
             st.toast("Backfill already running")
         st.rerun()
 
+    if st.sidebar.button(
+        "Sync history tables",
+        use_container_width=True,
+        help="Copy JSONB price/dividend arrays into stock_price_history / stock_dividend_history",
+        key="admin_sync_history_tables",
+    ):
+        from services.deferred_startup import schedule_history_table_sync
+
+        job_id = schedule_history_table_sync(limit=200)
+        if job_id:
+            st.toast("History table sync started in the background")
+        else:
+            st.toast("Sync already running")
+        st.rerun()
+
     summary = st.session_state.get("last_hourly_update_summary")
     if summary:
         enrich = summary.get("enrich") or {}

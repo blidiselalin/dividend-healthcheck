@@ -193,22 +193,25 @@ class PostgresMarketHistoryStore:
         with get_connection() as connection:
             return _fetch(connection)
 
-    def attach_history_to_document(self, document: Any) -> Any:
-        """Prefer normalized tables when they have more rows than JSONB arrays."""
+    def attach_history_to_document(self, document: Any, *, conn: Any = None) -> Any:
+        """Load price/dividend series from normalized tables when available."""
         symbol = (getattr(document, "symbol", None) or "").upper()
         if not symbol:
             return document
 
+        json_prices = getattr(document, "price_history", None) or []
+        json_divs = getattr(document, "dividend_history", None) or []
+
         try:
-            table_prices = self.load_price_history(symbol)
-            table_divs = self.load_dividend_history(symbol)
+            table_prices = self.load_price_history(symbol, conn=conn)
+            table_divs = self.load_dividend_history(symbol, conn=conn)
         except Exception as exc:
             logger.debug("History table load failed for %s: %s", symbol, exc)
             return document
 
-        if len(table_prices) > len(getattr(document, "price_history", None) or []):
+        if table_prices and len(table_prices) >= len(json_prices):
             document.price_history = table_prices
-        if len(table_divs) > len(getattr(document, "dividend_history", None) or []):
+        if table_divs and len(table_divs) >= len(json_divs):
             document.dividend_history = table_divs
         return document
 
@@ -294,57 +297,139 @@ class PostgresMarketHistoryStore:
         *,
         symbols: Optional[Sequence[str]] = None,
         limit: int = 200,
+        pending_only: bool = True,
     ) -> Dict[str, int]:
-        """Copy ``price_history`` / ``dividend_history`` from JSONB into history tables."""
+        """
+        Copy ``price_history`` / ``dividend_history`` from JSONB into history tables.
+
+        When ``symbols`` is omitted and ``pending_only`` is true (default), only symbols
+        whose JSONB history is ahead of the normalized tables are processed.
+        """
+        if symbols:
+            return self._sync_symbols(list(symbols))
+        if pending_only:
+            return self.sync_pending_from_jsonb(limit=limit)
+        return self._sync_batch(limit=limit)
+
+    def sync_pending_from_jsonb(self, *, limit: int = 500) -> Dict[str, int]:
+        """Sync symbols where JSONB has more history rows than normalized tables."""
         from db.connection import ensure_schema, get_connection
-        from utils.stock_document_history import hydrate_document_history
 
         ensure_schema()
-        stats = {"processed": 0, "synced": 0, "skipped": 0}
+        stats = {"processed": 0, "synced": 0, "skipped": 0, "pending": 0}
 
         with get_connection() as conn:
-            if symbols:
-                targets = [symbol.upper() for symbol in symbols]
-                rows = conn.execute(
-                    """
-                    SELECT symbol, document
-                    FROM stock_documents
-                    WHERE symbol = ANY(%s)
-                    ORDER BY symbol
-                    """,
-                    (targets,),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    """
-                    SELECT symbol, document
-                    FROM stock_documents
-                    ORDER BY symbol
-                    LIMIT %s
-                    """,
-                    (max(1, limit),),
-                ).fetchall()
+            rows = conn.execute(
+                """
+                WITH price_counts AS (
+                  SELECT symbol, COUNT(*) AS n FROM stock_price_history GROUP BY symbol
+                ),
+                div_counts AS (
+                  SELECT symbol, COUNT(*) AS n FROM stock_dividend_history GROUP BY symbol
+                )
+                SELECT
+                  s.symbol,
+                  s.document,
+                  jsonb_array_length(COALESCE(s.document->'price_history', '[]'::jsonb)) AS json_prices,
+                  jsonb_array_length(COALESCE(s.document->'dividend_history', '[]'::jsonb)) AS json_divs,
+                  COALESCE(p.n, 0) AS table_prices,
+                  COALESCE(d.n, 0) AS table_divs
+                FROM stock_documents s
+                LEFT JOIN price_counts p ON p.symbol = s.symbol
+                LEFT JOIN div_counts d ON d.symbol = s.symbol
+                WHERE jsonb_array_length(COALESCE(s.document->'price_history', '[]'::jsonb)) > COALESCE(p.n, 0)
+                   OR jsonb_array_length(COALESCE(s.document->'dividend_history', '[]'::jsonb)) > COALESCE(d.n, 0)
+                   OR (
+                     COALESCE(p.n, 0) = 0
+                     AND (
+                       jsonb_array_length(COALESCE(s.document->'price_history', '[]'::jsonb)) > 0
+                       OR NULLIF(s.document->>'price_history_json', '') IS NOT NULL
+                     )
+                   )
+                   OR (
+                     COALESCE(d.n, 0) = 0
+                     AND (
+                       jsonb_array_length(COALESCE(s.document->'dividend_history', '[]'::jsonb)) > 0
+                       OR NULLIF(s.document->>'dividend_history_json', '') IS NOT NULL
+                     )
+                   )
+                ORDER BY
+                  (jsonb_array_length(COALESCE(s.document->'price_history', '[]'::jsonb)) - COALESCE(p.n, 0))
+                  + (jsonb_array_length(COALESCE(s.document->'dividend_history', '[]'::jsonb)) - COALESCE(d.n, 0)) DESC,
+                  s.symbol
+                LIMIT %s
+                """,
+                (max(1, limit),),
+            ).fetchall()
 
-            from data_ingestion.models import StockDocument
-
-            for row in rows:
-                stats["processed"] += 1
-                payload = row["document"]
-                if not isinstance(payload, dict):
-                    payload = dict(payload)
-                doc = StockDocument.from_dict(payload)
-                doc.symbol = row["symbol"]
-                doc = hydrate_document_history(doc)
-                if not doc.price_history and not doc.dividend_history:
-                    stats["skipped"] += 1
-                    continue
-                self.upsert_document_history(doc, conn=conn)
-                stats["synced"] += 1
+            stats["pending"] = len(rows)
+            stats.update(self._sync_rows(rows, conn))
 
         logger.info(
-            "History table backfill: processed=%s synced=%s skipped=%s",
+            "History table sync (pending): pending=%s processed=%s synced=%s skipped=%s",
+            stats["pending"],
             stats["processed"],
             stats["synced"],
             stats["skipped"],
         )
+        return stats
+
+    def _sync_batch(self, *, limit: int) -> Dict[str, int]:
+        from db.connection import ensure_schema, get_connection
+
+        ensure_schema()
+        with get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT symbol, document
+                FROM stock_documents
+                ORDER BY symbol
+                LIMIT %s
+                """,
+                (max(1, limit),),
+            ).fetchall()
+            stats = {"processed": 0, "synced": 0, "skipped": 0, "pending": len(rows)}
+            stats.update(self._sync_rows(rows, conn))
+        return stats
+
+    def _sync_symbols(self, symbols: Sequence[str]) -> Dict[str, int]:
+        from db.connection import ensure_schema, get_connection
+
+        ensure_schema()
+        targets = [symbol.upper() for symbol in symbols if symbol]
+        stats = {"processed": 0, "synced": 0, "skipped": 0, "pending": len(targets)}
+        if not targets:
+            return stats
+
+        with get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT symbol, document
+                FROM stock_documents
+                WHERE symbol = ANY(%s)
+                ORDER BY symbol
+                """,
+                (targets,),
+            ).fetchall()
+            stats.update(self._sync_rows(rows, conn))
+        return stats
+
+    def _sync_rows(self, rows: Sequence[Any], conn: Any) -> Dict[str, int]:
+        from data_ingestion.models import StockDocument
+        from utils.stock_document_history import hydrate_document_history
+
+        stats = {"processed": 0, "synced": 0, "skipped": 0}
+        for row in rows:
+            stats["processed"] += 1
+            payload = row["document"]
+            if not isinstance(payload, dict):
+                payload = dict(payload)
+            doc = StockDocument.from_dict(payload)
+            doc.symbol = row["symbol"]
+            doc = hydrate_document_history(doc)
+            if not doc.price_history and not doc.dividend_history:
+                stats["skipped"] += 1
+                continue
+            self.upsert_document_history(doc, conn=conn)
+            stats["synced"] += 1
         return stats

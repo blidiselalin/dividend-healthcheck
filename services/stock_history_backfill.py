@@ -104,6 +104,17 @@ def backfill_thin_history(
 
     if enriched:
         store.add_documents(enriched)
+        try:
+            from db.connection import use_cloud_sql
+
+            if use_cloud_sql():
+                from db.postgres_market_history_store import PostgresMarketHistoryStore
+
+                PostgresMarketHistoryStore().sync_pending_from_jsonb(
+                    limit=max(len(enriched), 10),
+                )
+        except Exception as exc:
+            logger.debug("History table sync after backfill skipped: %s", exc)
         logger.info(
             "History backfill stored %d documents (%d yield-ready)",
             len(enriched),

@@ -112,9 +112,11 @@ stock_dividend_history   ← ex-date payments (yield charts, monthly exposure)
 | 2. Legacy import | One-time if `/data/vectordb` exists | `./scripts/update_cloud_docker.sh --migrate-files` |
 | 3. S&P populate | Empty library or refresh | `ingest_data.py --ensure-sp500 --enrich-existing` |
 | 4. History enrich | Thin rows (<252 prices or <4 dividends) | `ingest_data.py --backfill-history --backfill-limit 120` |
-| 5. JSONB → tables | After import or when tables empty | `ingest_data.py --sync-history-tables --sync-history-limit 500` |
+| 5. JSONB → tables | Symbols where tables lag JSONB (pending sync) | `ingest_data.py --sync-history-tables` (repeat until synced=0) |
 
-**Automatic on container start:** schema migrate → auto Chroma import (if needed) → sync up to 120 symbols from JSONB into history tables.
+**Automatic on container start:** schema migrate → auto Chroma import → sync up to **250 pending** symbols from JSONB into history tables.
+
+**Admin UI:** Sidebar → **Sync history tables** (background job).
 
 **Runtime reads:** `get_by_symbol()` merges `stock_documents` with history tables (prefers tables when richer). Yield charts and yearly exposure use `price_history` / `dividend_history` on the loaded document.
 

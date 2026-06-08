@@ -25,6 +25,7 @@ JOB_LIVE_RELOAD = "live_reload"
 JOB_COVERAGE_STATS = "coverage_stats"
 JOB_HOURLY_UPDATE = "hourly_market_update"
 JOB_HISTORY_BACKFILL = "history_backfill"
+JOB_HISTORY_TABLE_SYNC = "history_table_sync"
 
 
 def apply_background_results() -> List[str]:
@@ -39,6 +40,7 @@ def apply_background_results() -> List[str]:
         JOB_COVERAGE_STATS: _apply_coverage_stats,
         JOB_HOURLY_UPDATE: _apply_hourly_update,
         JOB_HISTORY_BACKFILL: _apply_history_backfill,
+        JOB_HISTORY_TABLE_SYNC: _apply_history_table_sync,
     }
     applied_kinds = apply_completed_jobs(handlers)
     if applied_kinds:
@@ -217,6 +219,29 @@ def schedule_history_backfill(*, limit: int = 40) -> Optional[str]:
     )
 
 
+def schedule_history_table_sync(*, limit: int = 200) -> Optional[str]:
+    """Admin-triggered JSONB → normalized history table sync."""
+    from auth.user_context import is_app_admin
+
+    if not is_app_admin():
+        return None
+
+    def _worker(progress: ProgressCallback) -> Dict[str, Any]:
+        from db.postgres_market_history_store import PostgresMarketHistoryStore
+
+        progress(0.05, "Finding symbols pending history sync…")
+        stats = PostgresMarketHistoryStore().sync_pending_from_jsonb(limit=limit)
+        progress(1.0, f"Synced {stats.get('synced', 0)} symbols")
+        return stats
+
+    return start_job(
+        JOB_HISTORY_TABLE_SYNC,
+        "Syncing history tables",
+        _worker,
+        admin_only=True,
+    )
+
+
 def schedule_hourly_market_update(*, enrich_limit: int = 40) -> Optional[str]:
     """Admin-triggered hourly market refresh (prices + stale enrich)."""
     from auth.user_context import is_app_admin
@@ -323,6 +348,23 @@ def _apply_coverage_stats(result: Dict[str, Any]) -> None:
     status = dict(st.session_state.get("market_db_status") or {})
     status["sp500_coverage"] = result
     st.session_state["market_db_status"] = status
+
+
+def _apply_history_table_sync(result: Dict[str, Any]) -> None:
+    import streamlit as st
+
+    st.session_state["last_history_table_sync_summary"] = result
+    try:
+        from ui.sidebar_progress_panel import _cached_thin_history_summary
+
+        _cached_thin_history_summary.clear()
+    except Exception:
+        pass
+    logger.info(
+        "Background history table sync: synced=%s pending=%s",
+        result.get("synced"),
+        result.get("pending"),
+    )
 
 
 def _apply_history_backfill(result: Dict[str, Any]) -> None:

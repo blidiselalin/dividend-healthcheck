@@ -296,6 +296,7 @@ def import_legacy_market_library(
         PostgresMarketHistoryStore().backfill_from_document_jsonb(
             symbols=[doc.symbol for doc in to_write if getattr(doc, "symbol", None)],
             limit=max(len(to_write), 1),
+            pending_only=False,
         )
     except Exception as exc:
         logger.warning("Post-import history table sync failed: %s", exc)

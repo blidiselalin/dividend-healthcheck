@@ -81,6 +81,7 @@ class PostgresMarketStore:
         from db.connection import ensure_schema, get_connection
 
         ensure_schema()
+        sym = symbol.upper()
         with get_connection() as conn:
             row = conn.execute(
                 f"""
@@ -88,9 +89,11 @@ class PostgresMarketStore:
                 FROM stock_documents
                 WHERE symbol = %s
                 """,
-                (symbol.upper(),),
+                (sym,),
             ).fetchone()
-        return _document_from_row(row)
+            if not row:
+                return None
+            return _document_from_row(row, conn=conn)
 
     def get_all_documents(self) -> List[Any]:
         from db.connection import ensure_schema, get_connection
@@ -231,7 +234,7 @@ class PostgresMarketStore:
         return results[:n_results]
 
 
-def _document_from_row(row: Any):
+def _document_from_row(row: Any, *, conn: Any = None):
     """Merge JSONB document with indexed stock_documents table columns."""
     from data_ingestion.models import StockDocument, parse_data_source
     from utils.stock_document_history import hydrate_document_history
@@ -271,12 +274,13 @@ def _document_from_row(row: Any):
     if row.get("source") and doc.source.value == "manual":
         doc.source = parse_data_source(str(row["source"]))
 
-    try:
-        from db.postgres_market_history_store import PostgresMarketHistoryStore
+    if conn is not None:
+        try:
+            from db.postgres_market_history_store import PostgresMarketHistoryStore
 
-        doc = PostgresMarketHistoryStore().attach_history_to_document(doc)
-    except Exception:
-        pass
+            doc = PostgresMarketHistoryStore().attach_history_to_document(doc, conn=conn)
+        except Exception:
+            pass
 
     return doc
 

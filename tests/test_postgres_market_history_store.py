@@ -43,7 +43,7 @@ def test_upsert_document_history_writes_price_and_dividend_rows():
     assert "stock_dividend_history" in sql_calls
 
 
-def test_attach_history_prefers_table_rows():
+def test_attach_history_uses_table_when_equal_or_richer():
     doc = StockDocument(symbol="AAPL", name="Apple")
     doc.price_history = []
 
