@@ -27,6 +27,8 @@ _CACHE_MAX_AGE_DAYS = 30
 _MIN_SYMBOLS = 400
 _WIKI_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 _USER_AGENT = "DividendScope/1.0 (local portfolio analytics; +https://github.com/)"
+# Committed repo copy (503 symbols) — used when DATA_DIR cache is empty (CI, fresh installs).
+_BUNDLED_REPO_PATH = Path(__file__).resolve().parent.parent / "data" / "sp500_symbols.json"
 
 # Last-resort only — normal path uses data/sp500_symbols.json (503 names, committed).
 _FALLBACK_SYMBOLS: List[str] = [
@@ -151,6 +153,31 @@ def load_cached_symbols(
         return None
 
 
+def _bundled_symbol_paths() -> List[Path]:
+    """User cache under DATA_DIR, then committed repo ``data/sp500_symbols.json``."""
+    seen: set[str] = set()
+    paths: List[Path] = []
+    for path in (DEFAULT_CACHE_PATH, _BUNDLED_REPO_PATH):
+        key = str(path.resolve()) if path.exists() else str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        paths.append(path)
+    return paths
+
+
+def _load_bundled_sp500(*, require_full: bool = True) -> Optional[List[str]]:
+    """Load bundled list from cache file or repo without Wikipedia."""
+    for path in _bundled_symbol_paths():
+        bundled = load_cached_symbols(path, enforce_ttl=False)
+        if not bundled:
+            continue
+        if require_full and len(bundled) < _MIN_SYMBOLS:
+            continue
+        return bundled
+    return None
+
+
 def save_cached_symbols(symbols: List[str], cache_path: Path = DEFAULT_CACHE_PATH) -> None:
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -175,8 +202,9 @@ def get_sp500_symbols(*, refresh: bool = False) -> List[str]:
         cached = load_cached_symbols(cache_path, enforce_ttl=True)
         if cached:
             return cached
-        bundled = load_cached_symbols(cache_path, enforce_ttl=False)
-        if bundled and len(bundled) >= _MIN_SYMBOLS:
+        bundled = _load_bundled_sp500()
+        if bundled:
+            logger.info("Using bundled S&P 500 list (%s symbols)", len(bundled))
             return bundled
 
     try:
@@ -191,7 +219,7 @@ def get_sp500_symbols(*, refresh: bool = False) -> List[str]:
     except Exception as exc:
         logger.warning("S&P 500 Wikipedia fetch failed: %s", exc)
 
-    bundled = load_cached_symbols(cache_path, enforce_ttl=False)
+    bundled = _load_bundled_sp500(require_full=False)
     if bundled and len(bundled) >= _MIN_SYMBOLS:
         logger.info("Using bundled S&P 500 list (%s symbols)", len(bundled))
         return bundled

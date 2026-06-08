@@ -8,7 +8,7 @@
 #
 # Options:
 #   --sync-portfolio   After restart, sync holdings → PostgreSQL stock_documents
-#   --ingest           Populate shared S&P library in PostgreSQL (slow; first-time or refresh)
+#   --ingest           Populate shared S&P library + backfill history + sync history tables
 #   --migrate-files    One-time import of legacy SQLite/Chroma files from /data into PostgreSQL
 #   --no-pull          Skip git pull (used when code was rsync'd from local)
 set -euo pipefail
@@ -67,6 +67,8 @@ docker compose exec -T dividendscope python scripts/auto_import_market_library.p
 if [[ "$MIGRATE_FILES" == true ]]; then
   echo ">>> Full legacy import (SQLite + Chroma → PostgreSQL)…"
   docker compose exec -T dividendscope python scripts/migrate_to_cloud_sql.py --data-dir /data --force-market
+  echo ">>> Sync JSONB history into stock_price_history / stock_dividend_history…"
+  docker compose exec -T dividendscope python ingest_data.py --sync-history-tables --sync-history-limit 500
 fi
 
 echo ">>> Container status"
@@ -78,6 +80,8 @@ if [[ "$RUN_INGEST" == true ]]; then
   docker compose exec -T dividendscope python ingest_data.py --enrich-existing
   echo ">>> Backfill price/dividend history for yield channels (batched)…"
   docker compose exec -T dividendscope python ingest_data.py --backfill-history --backfill-limit 120
+  echo ">>> Sync enriched history into normalized tables…"
+  docker compose exec -T dividendscope python ingest_data.py --sync-history-tables --sync-history-limit 500
 fi
 
 if [[ "$SYNC_PORTFOLIO" == true ]]; then

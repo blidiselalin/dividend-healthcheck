@@ -90,13 +90,43 @@ Runtime reads/writes go through:
 - Disable UI: `DIVIDENDSCOPE_CHATBOT_ENABLED=0`.
 - Tests: `tests/test_chatbot_service.py`.
 
+## Market data migration pipeline (PostgreSQL)
+
+One shared library, three layers. Legacy Chroma stored time series inside each document; Postgres splits them.
+
+```
+Legacy Chroma / fallback_store.json
+        │  migrate_to_cloud_sql.py / auto_import_market_library.py
+        ▼
+stock_documents          ← aggregated fundamentals (JSONB + indexed columns)
+        │  enrich / backfill / hourly update (yfinance)
+        │  add_documents() dual-writes history arrays in JSONB
+        ▼
+stock_price_history      ← daily OHLCV (yield charts)
+stock_dividend_history   ← ex-date payments (yield charts, monthly exposure)
+```
+
+| Step | When | Command |
+|------|------|---------|
+| 1. Schema | Every deploy / container start | `python -m db --migrate` (entrypoint) |
+| 2. Legacy import | One-time if `/data/vectordb` exists | `./scripts/update_cloud_docker.sh --migrate-files` |
+| 3. S&P populate | Empty library or refresh | `ingest_data.py --ensure-sp500 --enrich-existing` |
+| 4. History enrich | Thin rows (<252 prices or <4 dividends) | `ingest_data.py --backfill-history --backfill-limit 120` |
+| 5. JSONB → tables | After import or when tables empty | `ingest_data.py --sync-history-tables --sync-history-limit 500` |
+
+**Automatic on container start:** schema migrate → auto Chroma import (if needed) → sync up to 120 symbols from JSONB into history tables.
+
+**Runtime reads:** `get_by_symbol()` merges `stock_documents` with history tables (prefers tables when richer). Yield charts and yearly exposure use `price_history` / `dividend_history` on the loaded document.
+
+**Admin validation:** Database admin → Run validation; symbol probe shows counts from `GREATEST(jsonb, table)`.
+
 ## Safe change checklist
 
 - [ ] Migrations added for Postgres schema changes?
 - [ ] Store `_ensure_schema` updated for SQLite dev fallback?
 - [ ] Date parsing uses `db.parsing`?
 - [ ] Portfolio flows use `create_portfolio_context` or injected stores?
-- [ ] Market reads use `shared_market_db`; enrichment uses `create_stock_enricher()`?
+- [ ] History dual-write via `PostgresMarketStore.add_documents()` or `PostgresMarketHistoryStore`?
 - [ ] Unit tests pass without `DATABASE_URL`?
 - [ ] No new Chroma/SQLite runtime dependencies when `use_cloud_sql()`?
 - [ ] Chatbot changes keep replies server-side and include educational disclaimer?

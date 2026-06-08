@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -224,6 +224,53 @@ def test_db_admin_validate_and_query(pg_user_id: str):
 
     with get_connection() as conn:
         conn.execute("DELETE FROM stock_documents WHERE symbol = %s", ("ADMINT",))
+
+
+def test_history_tables_populated_on_add_documents():
+    """Migration 003 tables receive rows when documents are written."""
+    from data_ingestion.models import DividendRecord, PriceHistory, StockDocument
+    from db.connection import ensure_schema, get_connection, use_cloud_sql
+    from db.postgres_market_store import PostgresMarketStore
+
+    assert use_cloud_sql()
+    ensure_schema()
+
+    doc = StockDocument(symbol="HISTT", name="History Table Test")
+    doc.price_history = [
+        PriceHistory(
+            date=date(2024, 1, d),
+            open=100.0,
+            high=101.0,
+            low=99.0,
+            close=100.0,
+            volume=1000,
+        )
+        for d in range(1, 11)
+    ]
+    doc.dividend_history = [
+        DividendRecord(ex_date=date(2024, m, 1), payment_date=date(2024, m, 15), amount=0.5)
+        for m in range(1, 5)
+    ]
+
+    PostgresMarketStore().add_documents([doc])
+
+    with get_connection() as conn:
+        price_count = conn.execute(
+            "SELECT COUNT(*) AS n FROM stock_price_history WHERE symbol = 'HISTT'"
+        ).fetchone()["n"]
+        div_count = conn.execute(
+            "SELECT COUNT(*) AS n FROM stock_dividend_history WHERE symbol = 'HISTT'"
+        ).fetchone()["n"]
+
+    assert price_count == 10
+    assert div_count == 4
+
+    loaded = PostgresMarketStore().get_by_symbol("HISTT")
+    assert loaded is not None
+    assert len(loaded.price_history) == 10
+    assert len(loaded.dividend_history) == 4
+
+    PostgresMarketStore().delete_symbols(["HISTT"])
 
 
 def test_market_library_migration_from_fallback_json(tmp_path: Path):

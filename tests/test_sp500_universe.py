@@ -30,3 +30,12 @@ def test_get_sp500_symbols_returns_list():
 def test_bundled_list_not_minimal_fallback():
     symbols = get_sp500_symbols()
     assert len(symbols) > len(_FALLBACK_SYMBOLS)
+
+
+def test_load_bundled_sp500_uses_repo_file_when_data_dir_empty(tmp_path, monkeypatch):
+    from data_ingestion import sp500_universe as mod
+
+    monkeypatch.setattr(mod, "DEFAULT_CACHE_PATH", tmp_path / "missing" / "sp500_symbols.json")
+    bundled = mod._load_bundled_sp500()
+    assert bundled is not None
+    assert len(bundled) >= 400
