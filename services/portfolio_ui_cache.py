@@ -11,7 +11,9 @@ import pickle
 from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
+
+from services.background_jobs import ProgressCallback
 
 from utils.logging_config import get_logger
 
@@ -284,6 +286,80 @@ def warm_portfolio_session_from_db(*, preload_charts: bool = False) -> bool:
     return True
 
 
+def compute_yield_preload_payload(
+    symbols: List[str],
+    stock_cache: Dict[str, Any],
+    vector_docs: Dict[str, Any],
+    *,
+    progress_callback: Optional[ProgressCallback] = None,
+) -> Dict[str, Any]:
+    """Build yield-channel preload payload (safe to run off the UI thread)."""
+    from services.portfolio_analysis_preload import preload_portfolio_analysis
+    from services.portfolio_details_service import PortfolioDetailsService
+
+    docs = dict(vector_docs)
+    if not docs and symbols:
+        docs = PortfolioDetailsService()._load_documents(symbols)
+
+    preload = preload_portfolio_analysis(
+        symbols,
+        stock_cache,
+        docs,
+        progress_callback=progress_callback,
+    )
+    return {
+        "yield_channels": preload.yield_channels,
+        "stock_data": preload.stock_data,
+        "vector_docs": preload.vector_docs,
+    }
+
+
+def compute_fast_portfolio_payload(
+    *,
+    progress_callback: Optional[ProgressCallback] = None,
+) -> Dict[str, Any]:
+    """Library-only portfolio rows without live prices (background-safe)."""
+    from services.portfolio_details_service import PortfolioDetailsService
+
+    if progress_callback:
+        progress_callback(0.2, "Reading holdings…")
+    rows, preload = PortfolioDetailsService().build_rows_with_cache(
+        use_live_prices=False,
+        preload_analysis=False,
+    )
+    if progress_callback:
+        progress_callback(0.9, f"{len(rows)} holdings ready")
+    return {
+        "rows": rows,
+        "preload": preload,
+        "analysis_ready": False,
+        "fast_loaded": True,
+    }
+
+
+def compute_live_portfolio_payload(
+    *,
+    progress_callback: Optional[ProgressCallback] = None,
+) -> Dict[str, Any]:
+    """Full live portfolio reload (background-safe)."""
+    from services.portfolio_details_service import PortfolioDetailsService
+
+    if progress_callback:
+        progress_callback(0.1, "Fetching live prices…")
+    rows, preload = PortfolioDetailsService().build_rows_with_cache(
+        use_live_prices=True,
+        preload_analysis=True,
+    )
+    if progress_callback:
+        progress_callback(0.95, f"{len(rows)} holdings refreshed")
+    return {
+        "rows": rows,
+        "preload": preload,
+        "analysis_ready": True,
+        "fast_loaded": False,
+    }
+
+
 def ensure_portfolio_yield_preload() -> bool:
     """Load yield-channel charts when the table was fast-loaded without them."""
     import streamlit as st
@@ -294,25 +370,19 @@ def ensure_portfolio_yield_preload() -> bool:
     if not rows:
         return False
 
-    from services.portfolio_analysis_preload import preload_portfolio_analysis
-    from services.portfolio_details_service import PortfolioDetailsService
-
     symbols = [row.ticker for row in rows]
     stock_cache = st.session_state.get("portfolio_stock_cache") or {}
     vector_docs = st.session_state.get("portfolio_vector_docs") or {}
-    if not vector_docs:
-        vector_docs = PortfolioDetailsService()._load_documents(symbols)
-
-    preload = preload_portfolio_analysis(symbols, stock_cache, vector_docs)
-    st.session_state["portfolio_yield_cache"] = preload.yield_channels
-    st.session_state["portfolio_stock_cache"] = preload.stock_data
-    st.session_state["portfolio_vector_docs"] = preload.vector_docs
+    payload = compute_yield_preload_payload(symbols, stock_cache, vector_docs)
+    st.session_state["portfolio_yield_cache"] = payload["yield_channels"]
+    st.session_state["portfolio_stock_cache"] = payload["stock_data"]
+    st.session_state["portfolio_vector_docs"] = payload["vector_docs"]
     st.session_state["portfolio_analysis_ready"] = True
     st.session_state.pop("portfolio_fast_loaded", None)
     save_session_cache()
     logger.info(
         "Portfolio yield charts preloaded (%d channels)",
-        len(preload.yield_channels),
+        len(payload["yield_channels"]),
     )
     return True
 

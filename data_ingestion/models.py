@@ -418,13 +418,16 @@ class StockDocument:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "StockDocument":
         """Create document from dictionary."""
+        from utils.stock_document_history import parse_history_payload
+
+        price_raw, div_raw = parse_history_payload(data)
         price_history = [
-            PriceHistory.from_dict(p) 
-            for p in data.get("price_history", [])
+            PriceHistory.from_dict(p)
+            for p in price_raw
         ]
         dividend_history = [
-            DividendRecord.from_dict(d) 
-            for d in data.get("dividend_history", [])
+            DividendRecord.from_dict(d)
+            for d in div_raw
         ]
         
         # Parse ex_dividend_date if present

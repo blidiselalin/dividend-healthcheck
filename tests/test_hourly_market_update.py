@@ -16,11 +16,20 @@ _spec.loader.exec_module(_hourly)
 enrich_stale_documents = _hourly.enrich_stale_documents
 
 
-def _doc(symbol: str, *, days_old: int = 10, quality: float = 40.0):
+def _doc(
+    symbol: str,
+    *,
+    days_old: int = 10,
+    quality: float = 40.0,
+    price_points: int = 0,
+    div_points: int = 0,
+):
     doc = MagicMock()
     doc.symbol = symbol
     doc.last_updated = datetime.now() - timedelta(days=days_old)
     doc.data_quality = quality
+    doc.price_history = [object()] * price_points
+    doc.dividend_history = [object()] * div_points
     return doc
 
 
@@ -32,7 +41,7 @@ def test_enrich_stale_documents_limits_batch(mock_get_store, mock_create_enriche
         _doc("AAA", days_old=30),
         _doc("BBB", days_old=20),
         _doc("CCC", days_old=15),
-        _doc("FRESH", days_old=1, quality=90.0),
+        _doc("FRESH", days_old=1, quality=90.0, price_points=300, div_points=4),
     ]
 
     enriched_doc = MagicMock()

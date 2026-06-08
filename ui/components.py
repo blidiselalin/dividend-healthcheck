@@ -651,6 +651,7 @@ class UIComponents:
         years: int = 10,
         *,
         channel_data=None,
+        vector_doc=None,
         show_header: bool = True,
     ) -> bool:
         """
@@ -683,10 +684,35 @@ class UIComponents:
             data = channel_data
 
         if data is None:
+            from utils.yield_history_tables import yearly_dividend_per_share_table
+
+            doc = vector_doc
+            if doc is None:
+                try:
+                    from services.shared_market_db import get_document
+
+                    doc = get_document(symbol.upper())
+                except Exception:
+                    doc = None
+
+            yearly = yearly_dividend_per_share_table(doc) if doc is not None else pd.DataFrame()
+            if not yearly.empty:
+                st.warning(
+                    f"Full **{years}-year yield channel** needs more price/dividend history "
+                    f"for **{symbol}**. Showing annual dividend per share from the library below."
+                )
+                st.markdown("#### Annual dividend per share (library history)")
+                st.dataframe(yearly, hide_index=True, width="stretch")
+                st.caption(
+                    "Run `python ingest_data.py --backfill-history` or **Backfill thin history** "
+                    "in the admin sidebar to populate price series for the yield chart."
+                )
+                return False
+
             st.warning(
                 f"Insufficient dividend history for **{symbol}** yield channel analysis "
                 "(needs ~5+ years of dividend and price history from library or live fallback sources). "
-                "Try **Reload live data** or choose another symbol with a longer history."
+                "Try **Reload live data**, **Backfill thin history**, or choose another symbol."
             )
             return False
         
@@ -746,6 +772,25 @@ class UIComponents:
         fig = service.create_yield_channel_chart(data, height=480, show_annotations=False)
         if fig:
             show_chart(fig, key=f"yield_channel_{symbol}")
+
+        from utils.yield_history_tables import yearly_yield_exposure_table
+
+        yearly = yearly_yield_exposure_table(data)
+        if not yearly.empty:
+            st.markdown("#### Historical yield exposure (by year)")
+            st.caption(
+                "Trailing dividend yield and price at each year-end — the data behind the chart above."
+            )
+            st.dataframe(
+                yearly,
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    "Avg yield %": st.column_config.NumberColumn(format="%.2f"),
+                    "Year-end price $": st.column_config.NumberColumn(format="$%.2f"),
+                    "Trailing div $": st.column_config.NumberColumn(format="$%.2f"),
+                },
+            )
 
         st.markdown("#### Price targets at today’s dividend")
         zone_to_label = {
@@ -1046,15 +1091,34 @@ class UIComponents:
         try:
             doc = document
             if doc is None:
+                try:
+                    from services.shared_market_db import get_document
+
+                    doc = get_document(symbol.upper())
+                except Exception:
+                    doc = None
+            if doc is None:
                 store = VectorStore()
                 doc = store.get_by_symbol(symbol.upper())
-            
+
             if doc is None:
                 st.info(
-                    f"📭 No data found for **{symbol}** in the vector database. "
-                    f"Run `python ingest_data.py --enrich` to populate."
+                    f"📭 No data found for **{symbol}** in the shared library. "
+                    "Run `./scripts/update_cloud_docker.sh --ingest` or "
+                    "`python ingest_data.py --ensure-sp500 --enrich-existing`."
                 )
                 return False
+
+            price_hist_count = len(doc.price_history) if doc.price_history else 0
+            div_hist_count = len(doc.dividend_history) if doc.dividend_history else 0
+            if price_hist_count == 0 and div_hist_count == 0:
+                st.warning(
+                    f"Library record exists for **{symbol}**, but **price and dividend "
+                    f"history are empty**. Run enrichment on the server:\n\n"
+                    f"`python ingest_data.py --backfill-history` or "
+                    f"`python ingest_data.py --enrich-existing` or "
+                    f"`./scripts/update_cloud_docker.sh --ingest`"
+                )
             
             # Header
             st.markdown(f"### 📦 Vector Database: {doc.symbol}")
@@ -1139,10 +1203,6 @@ class UIComponents:
             # === HISTORICAL DATA SUMMARY ===
             st.markdown("#### 📊 Historical Data")
             
-            # Price history summary
-            price_hist_count = len(doc.price_history) if doc.price_history else 0
-            div_hist_count = len(doc.dividend_history) if doc.dividend_history else 0
-            
             hist_info = [
                 ("Price History Records", f"{price_hist_count:,} days"),
                 ("Dividend History Records", f"{div_hist_count:,} payments"),
@@ -1166,6 +1226,20 @@ class UIComponents:
                 # Calculate annual dividend from history
                 annual_total = sum(d.amount for d in doc.dividend_history[-4:])
                 hist_info.append(("Last 4 Dividends Total", f"${annual_total:.2f}"))
+
+                from utils.yield_history_tables import yearly_dividend_per_share_table
+
+                yearly_div = yearly_dividend_per_share_table(doc)
+                if not yearly_div.empty:
+                    st.markdown("#### 📅 Annual dividend per share (yearly)")
+                    st.dataframe(
+                        yearly_div,
+                        hide_index=True,
+                        width="stretch",
+                        column_config={
+                            "Dividend / share $": st.column_config.NumberColumn(format="$%.4f"),
+                        },
+                    )
             
             hist_df = pd.DataFrame(hist_info, columns=["Data", "Value"])
             st.dataframe(

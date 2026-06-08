@@ -97,14 +97,51 @@ def _preload_from_session() -> PortfolioAnalysisPreload:
     )
 
 
+def _resolve_holding_analysis(
+    symbol: str,
+    preload: PortfolioAnalysisPreload,
+) -> tuple[Optional[StockData], Optional[Any], Optional[Any]]:
+    """
+    Resolve stock data, library document, and yield channel for one holding.
+
+    Uses session preload when available; falls back to independent library analysis
+    so charts and data-exposure panels work before background preload finishes.
+    """
+    from data_ingestion.models import StockDocument
+    from services.shared_market_db import get_document
+    from services.stock_analysis_service import load_independent_stock_analysis
+
+    sym = symbol.upper()
+    vector_doc: Optional[StockDocument] = preload.vector_docs.get(sym) or get_document(sym)
+    stock_data = preload.stock_data.get(sym)
+    yield_channel = preload.yield_channels.get(sym)
+
+    if stock_data is not None and yield_channel is not None and vector_doc is not None:
+        if vector_doc.dividend_history or vector_doc.price_history:
+            return stock_data, vector_doc, yield_channel
+
+    analysis = load_independent_stock_analysis(
+        sym,
+        document=vector_doc,
+        include_yield_channel=yield_channel is None,
+    )
+    if analysis is None:
+        return stock_data, vector_doc, yield_channel
+
+    return (
+        analysis.stock_data or stock_data,
+        analysis.document or vector_doc,
+        yield_channel or analysis.yield_channel,
+    )
+
+
 def _ensure_yield_preload_if_needed() -> None:
-    """Load yield-channel charts after a fast library-only portfolio open."""
+    """Schedule yield-channel preload in the background after a fast library open."""
     if not st.session_state.get("portfolio_fast_loaded"):
         return
-    from services.portfolio_ui_cache import ensure_portfolio_yield_preload
+    from services.deferred_startup import schedule_yield_preload_if_needed
 
-    with st.spinner("Loading yield charts…"):
-        ensure_portfolio_yield_preload()
+    schedule_yield_preload_if_needed()
 
 
 class PortfolioDetailsView:
@@ -688,15 +725,29 @@ class PortfolioDetailsView:
             return
 
         if not st.session_state.get("portfolio_analysis_ready"):
-            st.info("Use **Reload live data** in the sidebar to preload dividend charts for every holding.")
+            st.caption(
+                "Yield charts are loading in the background — analysis below uses the "
+                "shared library and live fallback where needed."
+            )
+
+        stock_data, vector_doc, yield_channel = _resolve_holding_analysis(
+            selected_symbol,
+            preload,
+        )
+        if stock_data is None:
+            st.error(
+                f"Could not load analysis for **{selected_symbol}**. "
+                "Run **Backfill thin history** (admin) or "
+                "`python ingest_data.py --backfill-history` on the server."
+            )
             return
 
         SingleStockView.render_analysis_for_symbol(
             selected_symbol,
             show_sector=False,
-            data=preload.stock_data.get(selected_symbol),  # live price applied in view
-            yield_channel_data=preload.yield_channels.get(selected_symbol),
-            vector_doc=preload.vector_docs.get(selected_symbol),
+            data=stock_data,
+            yield_channel_data=yield_channel,
+            vector_doc=vector_doc,
         )
 
         focus_row = next((row for row in rows if row.ticker == selected_symbol), None)
@@ -726,6 +777,7 @@ class PortfolioDetailsView:
         with st.spinner(f"Loading analysis for {symbol}…"):
             from services.stock_analysis_service import load_independent_stock_analysis
 
+            cached_doc = preload.vector_docs.get(symbol) or get_document(symbol)
             analysis = load_independent_stock_analysis(
                 symbol,
                 document=cached_doc,
@@ -1567,7 +1619,7 @@ class PortfolioDetailsView:
         if not growth_data:
             st.info(
                 "No dividend history in the database for current positions. "
-                "Run `python ingest_data.py --enrich-existing`."
+                "Run `python ingest_data.py --backfill-history` or **Backfill thin history** (admin)."
             )
             return
 
@@ -1673,11 +1725,7 @@ class PortfolioDetailsView:
     ) -> None:
         """Monthly dividend calendar plus net cash received (after tax)."""
 
-        if (
-            rows
-            and preload
-            and st.session_state.get("portfolio_analysis_ready")
-        ):
+        if rows and preload:
             st.markdown("##### 1. Monthly dividend calendar")
             st.caption(
                 "Highlights **upcoming** ex-dates and payments vs **paid** cash — "

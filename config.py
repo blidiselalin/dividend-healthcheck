@@ -219,6 +219,10 @@ DATA_SOURCES: Final[Dict[str, str]] = {
 MAX_HISTORY_YEARS: Final[int] = 10
 DEFAULT_STALENESS_DAYS: Final[int] = 7
 
+# Yield channel + library history tables (≈1 trading year of daily prices).
+MIN_YIELD_PRICE_POINTS: Final[int] = 252
+MIN_YIELD_DIVIDEND_PAYMENTS: Final[int] = 4
+
 # Portfolio risk scan: only refreshed when the user clicks Reload / Refresh (not on a timer).
 PORTFOLIO_RISK_REFRESH_SECONDS: Final[int] = 86400 * 365
 

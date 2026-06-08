@@ -12,6 +12,8 @@
 # Options:
 #   --sync-portfolio   Run ingest --sync-portfolio after restart
 #   --ingest           Run ingest --enrich (slow)
+#   --migrate-files    Import legacy SQLite + Chroma from /data into PostgreSQL
+#   --include-vectordb   When rsyncing, include data/vectordb/ (large; needed for Chroma import)
 #   --git              Force git pull on VM instead of rsync
 #   --rsync            Force rsync (default)
 set -euo pipefail
@@ -35,10 +37,14 @@ DEPLOY_METHOD="${DEPLOY_METHOD:-rsync}"
 
 SYNC_PORTFOLIO=false
 RUN_INGEST=false
+MIGRATE_FILES=false
+INCLUDE_VECTORDB=false
 for arg in "$@"; do
   case "$arg" in
     --sync-portfolio) SYNC_PORTFOLIO=true ;;
     --ingest) RUN_INGEST=true ;;
+    --migrate-files) MIGRATE_FILES=true ;;
+    --include-vectordb) INCLUDE_VECTORDB=true ;;
     --git) DEPLOY_METHOD=git ;;
     --rsync) DEPLOY_METHOD=rsync ;;
     -h|--help)
@@ -138,6 +144,11 @@ _rsync_to_remote() {
   fi
 
   echo ">>> Rsync local project → ${target}"
+  local exclude_vectordb=(--exclude 'data/vectordb/')
+  if [[ "$INCLUDE_VECTORDB" == true ]]; then
+    exclude_vectordb=()
+    echo ">>> Including data/vectordb/ in rsync (legacy Chroma import source)"
+  fi
   rsync -avz --delete \
     --exclude '.venv/' \
     --exclude 'venv/' \
@@ -146,7 +157,7 @@ _rsync_to_remote() {
     --exclude '.git/' \
     --exclude '.cursor/' \
     --exclude 'data/downloads/' \
-    --exclude 'data/vectordb/' \
+    "${exclude_vectordb[@]}" \
     --exclude 'data/portfolio.db' \
     --exclude 'data/*.db' \
     --exclude '.env' \
@@ -161,6 +172,7 @@ _build_remote_flags() {
   local flags=""
   [[ "$SYNC_PORTFOLIO" == true ]] && flags+=" --sync-portfolio"
   [[ "$RUN_INGEST" == true ]] && flags+=" --ingest"
+  [[ "$MIGRATE_FILES" == true ]] && flags+=" --migrate-files"
   printf '%s' "$flags"
 }
 

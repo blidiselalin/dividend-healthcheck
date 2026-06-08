@@ -65,6 +65,37 @@ def test_pipeline_empty_run_enrich_falls_back_to_enrich_existing(tmp_path: Path)
     assert stats == expected
 
 
+def test_enrich_existing_uses_all_documents_not_dividend_kings(tmp_path: Path) -> None:
+    """Symbols without dividend_streak_years must still be enriched."""
+    stub = StockDocument(symbol="INTU", name="Intuit")
+    stub.dividend_streak_years = None
+
+    mock_store = MagicMock()
+    mock_store.get_all_documents.return_value = [stub]
+    mock_store.count.return_value = 1
+
+    pipeline = DataIngestionPipeline(
+        data_dir=str(tmp_path / "downloads"),
+        vectordb_dir=str(tmp_path / "vectordb"),
+    )
+    pipeline.vector_store = mock_store
+
+    enriched = StockDocument(symbol="INTU", name="Intuit")
+    enriched.dividend_streak_years = 5
+    mock_enricher = MagicMock()
+    mock_enricher.enrich_document.return_value = enriched
+
+    with patch("data_ingestion.pipeline.ENRICHER_AVAILABLE", True), patch(
+        "data_ingestion.pipeline.create_stock_enricher", return_value=mock_enricher
+    ):
+        stats = pipeline.enrich_existing()
+
+    mock_store.get_all_documents.assert_called_once()
+    mock_store.get_dividend_kings.assert_not_called()
+    assert stats["enriched"] == 1
+    mock_store.add_documents.assert_called_once()
+
+
 def test_vector_store_fallback_add_and_get(tmp_path: Path) -> None:
     store = VectorStore(persist_directory=str(tmp_path / "fallback_vdb"))
     if not store._use_fallback:

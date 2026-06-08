@@ -216,18 +216,27 @@ class DataIngestionPipeline:
             ]
             documents = [d for d in documents if d is not None]
         else:
-            # Get all documents from vector store
-            all_docs = []
+            # All library rows — do not use get_dividend_kings(); NULL streak
+            # symbols would be skipped and never receive price/dividend history.
             try:
                 from config import DELISTED_SYMBOLS
             except ImportError:
                 DELISTED_SYMBOLS = frozenset()
-            for doc in self.vector_store.get_dividend_kings(min_streak=0):
-                if doc.symbol.upper() in DELISTED_SYMBOLS:
-                    continue
-                if doc.data_quality < min_quality or min_quality == 0:
-                    all_docs.append(doc)
-            documents = all_docs
+            documents = [
+                doc
+                for doc in self.vector_store.get_all_documents()
+                if doc.symbol.upper() not in DELISTED_SYMBOLS
+                and (doc.data_quality < min_quality or min_quality == 0)
+            ]
+            from utils.stock_document_history import history_is_thin
+
+            documents.sort(
+                key=lambda doc: (
+                    0 if history_is_thin(doc) else 1,
+                    len(doc.price_history or []),
+                    len(doc.dividend_history or []),
+                )
+            )
         
         total = len(documents)
         logger.info(f"Enriching {total} documents with yfinance data...")
