@@ -24,6 +24,10 @@ Read this before changing storage, portfolio logic, migrations, or tests.
 | Net dividends (monthly) | `net_dividends` | `user_id` |
 | Dividend receipts | `dividend_receipts` | `user_id` + symbol |
 | Market docs | `stock_documents` | symbol (shared) |
+| Price history | `stock_price_history` | symbol (shared) — yield charts |
+| Dividend history | `stock_dividend_history` | symbol (shared) — yield charts, monthly exposure |
+
+**Chroma legacy:** `price_history` / `dividend_history` (and `*_json` metadata) map to the two history tables above. `stock_documents.document` holds aggregated fundamentals; time series are normalized on PostgreSQL.
 
 ## Required patterns
 

@@ -22,6 +22,8 @@ MANAGED_TABLES: Tuple[str, ...] = (
     "net_dividends",
     "dividend_receipts",
     "stock_documents",
+    "stock_price_history",
+    "stock_dividend_history",
     "schema_migrations",
 )
 
@@ -36,8 +38,20 @@ _SQLITE_PORTFOLIO_TABLES: Tuple[str, ...] = (
 _SQLITE_APP_TABLES: Tuple[str, ...] = ("users", "access_requests", "schema_migrations")
 
 _THIN_LIBRARY_WHERE = """
-WHERE jsonb_array_length(COALESCE(document->'price_history', '[]'::jsonb)) < 252
-   OR jsonb_array_length(COALESCE(document->'dividend_history', '[]'::jsonb)) < 4
+WHERE GREATEST(
+        COALESCE(
+          (SELECT COUNT(*) FROM stock_price_history p WHERE p.symbol = stock_documents.symbol),
+          0
+        ),
+        jsonb_array_length(COALESCE(document->'price_history', '[]'::jsonb))
+      ) < 252
+   OR GREATEST(
+        COALESCE(
+          (SELECT COUNT(*) FROM stock_dividend_history d WHERE d.symbol = stock_documents.symbol),
+          0
+        ),
+        jsonb_array_length(COALESCE(document->'dividend_history', '[]'::jsonb))
+      ) < 4
 """.strip()
 
 _TABLE_NAME = re.compile(r"^[a-z_][a-z0-9_]*$")
@@ -278,19 +292,36 @@ def _validate_stock_documents(conn: Any) -> TableCheck:
         )
 
     stats_sql = """
+        WITH price_counts AS (
+          SELECT symbol, COUNT(*) AS n FROM stock_price_history GROUP BY symbol
+        ),
+        div_counts AS (
+          SELECT symbol, COUNT(*) AS n FROM stock_dividend_history GROUP BY symbol
+        )
         SELECT
           COUNT(*) FILTER (
-            WHERE jsonb_array_length(COALESCE(document->'price_history', '[]'::jsonb)) >= 252
+            WHERE GREATEST(
+              COALESCE(p.n, 0),
+              jsonb_array_length(COALESCE(s.document->'price_history', '[]'::jsonb))
+            ) >= 252
           ) AS price_year_plus,
           COUNT(*) FILTER (
-            WHERE jsonb_array_length(COALESCE(document->'dividend_history', '[]'::jsonb)) >= 4
+            WHERE GREATEST(
+              COALESCE(d.n, 0),
+              jsonb_array_length(COALESCE(s.document->'dividend_history', '[]'::jsonb))
+            ) >= 4
           ) AS div_ttm_ready,
           COUNT(*) FILTER (
-            WHERE jsonb_array_length(COALESCE(document->'price_history', '[]'::jsonb)) >= 500
+            WHERE GREATEST(
+              COALESCE(p.n, 0),
+              jsonb_array_length(COALESCE(s.document->'price_history', '[]'::jsonb))
+            ) >= 500
           ) AS price_two_year_plus,
-          MIN(last_updated) AS oldest_update,
-          MAX(last_updated) AS newest_update
-        FROM stock_documents
+          MIN(s.last_updated) AS oldest_update,
+          MAX(s.last_updated) AS newest_update
+        FROM stock_documents s
+        LEFT JOIN price_counts p ON p.symbol = s.symbol
+        LEFT JOIN div_counts d ON d.symbol = s.symbol
         """
     row = conn.execute(stats_sql).fetchone()
     details = dict(row) if isinstance(row, dict) else {}
@@ -337,6 +368,8 @@ _TABLE_VALIDATORS = {
     "net_dividends": lambda c: _validate_simple_count(c, "net_dividends"),
     "dividend_receipts": lambda c: _validate_simple_count(c, "dividend_receipts"),
     "stock_documents": _validate_stock_documents,
+    "stock_price_history": lambda c: _validate_simple_count(c, "stock_price_history"),
+    "stock_dividend_history": lambda c: _validate_simple_count(c, "stock_dividend_history"),
     "schema_migrations": _validate_schema_migrations,
 }
 
@@ -429,27 +462,27 @@ def inspect_stock_symbol(symbol: str) -> Dict[str, Any]:
         row = conn.execute(
             """
             SELECT
-              symbol,
-              sector,
-              dividend_streak_years,
-              dividend_yield,
-              data_quality,
-              last_updated,
-              source,
-              jsonb_array_length(COALESCE(document->'price_history', '[]'::jsonb)) AS price_points,
-              jsonb_array_length(COALESCE(document->'dividend_history', '[]'::jsonb)) AS dividend_payments,
-              document->'price_history'->0->>'date' AS first_price_date,
-              document->'price_history'->-1->>'date' AS last_price_date,
-              COALESCE(
-                document->'dividend_history'->0->>'ex_date',
-                document->'dividend_history'->0->>'date'
-              ) AS first_dividend_date,
-              COALESCE(
-                document->'dividend_history'->-1->>'ex_date',
-                document->'dividend_history'->-1->>'date'
-              ) AS last_dividend_date
-            FROM stock_documents
-            WHERE symbol = %s
+              s.symbol,
+              s.sector,
+              s.dividend_streak_years,
+              s.dividend_yield,
+              s.data_quality,
+              s.last_updated,
+              s.source,
+              GREATEST(
+                COALESCE((SELECT COUNT(*) FROM stock_price_history p WHERE p.symbol = s.symbol), 0),
+                jsonb_array_length(COALESCE(s.document->'price_history', '[]'::jsonb))
+              ) AS price_points,
+              GREATEST(
+                COALESCE((SELECT COUNT(*) FROM stock_dividend_history d WHERE d.symbol = s.symbol), 0),
+                jsonb_array_length(COALESCE(s.document->'dividend_history', '[]'::jsonb))
+              ) AS dividend_payments,
+              (SELECT MIN(price_date) FROM stock_price_history p WHERE p.symbol = s.symbol) AS first_price_date,
+              (SELECT MAX(price_date) FROM stock_price_history p WHERE p.symbol = s.symbol) AS last_price_date,
+              (SELECT MIN(ex_date) FROM stock_dividend_history d WHERE d.symbol = s.symbol) AS first_dividend_date,
+              (SELECT MAX(ex_date) FROM stock_dividend_history d WHERE d.symbol = s.symbol) AS last_dividend_date
+            FROM stock_documents s
+            WHERE s.symbol = %s
             """,
             (sym,),
         ).fetchone()
@@ -612,6 +645,8 @@ UNION ALL SELECT 'monthly_deposits', COUNT(*)::bigint FROM monthly_deposits
 UNION ALL SELECT 'net_dividends', COUNT(*)::bigint FROM net_dividends
 UNION ALL SELECT 'dividend_receipts', COUNT(*)::bigint FROM dividend_receipts
 UNION ALL SELECT 'stock_documents', COUNT(*)::bigint FROM stock_documents
+UNION ALL SELECT 'stock_price_history', COUNT(*)::bigint FROM stock_price_history
+UNION ALL SELECT 'stock_dividend_history', COUNT(*)::bigint FROM stock_dividend_history
 UNION ALL SELECT 'schema_migrations', COUNT(*)::bigint FROM schema_migrations
 ORDER BY table_name
 """.strip(),

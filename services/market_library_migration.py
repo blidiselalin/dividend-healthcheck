@@ -290,6 +290,16 @@ def import_legacy_market_library(
     if to_write:
         store.add_documents(to_write)
 
+    try:
+        from db.postgres_market_history_store import PostgresMarketHistoryStore
+
+        PostgresMarketHistoryStore().backfill_from_document_jsonb(
+            symbols=[doc.symbol for doc in to_write if getattr(doc, "symbol", None)],
+            limit=max(len(to_write), 1),
+        )
+    except Exception as exc:
+        logger.warning("Post-import history table sync failed: %s", exc)
+
     all_after = store.get_all_documents()
     stats["postgres_after"] = len(all_after)
     stats["yield_ready_after"] = sum(1 for doc in all_after if yield_channel_ready(doc))

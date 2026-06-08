@@ -38,6 +38,9 @@ class PostgresMarketStore:
 
         ensure_schema()
         ids: List[str] = []
+        from db.postgres_market_history_store import PostgresMarketHistoryStore
+
+        history_store = PostgresMarketHistoryStore()
         with get_connection() as conn:
             for doc in documents:
                 if not isinstance(doc, StockDocument):
@@ -70,6 +73,7 @@ class PostgresMarketStore:
                         doc.source.value if doc.source else "manual",
                     ),
                 )
+                history_store.upsert_document_history(doc, conn=conn)
                 ids.append(doc.document_id)
         return ids
 
@@ -159,40 +163,9 @@ class PostgresMarketStore:
 
     def history_coverage_summary(self) -> Dict[str, int]:
         """Aggregate yield-ready / thin-history counts without loading full documents."""
-        from config import MIN_YIELD_DIVIDEND_PAYMENTS, MIN_YIELD_PRICE_POINTS
-        from db.connection import ensure_schema, get_connection
+        from db.postgres_market_history_store import PostgresMarketHistoryStore
 
-        ensure_schema()
-        with get_connection() as conn:
-            row = conn.execute(
-                """
-                SELECT
-                  COUNT(*) AS total,
-                  COUNT(*) FILTER (
-                    WHERE jsonb_array_length(COALESCE(document->'price_history', '[]'::jsonb)) >= %s
-                      AND jsonb_array_length(COALESCE(document->'dividend_history', '[]'::jsonb)) >= %s
-                  ) AS yield_ready,
-                  COUNT(*) FILTER (
-                    WHERE jsonb_array_length(COALESCE(document->'price_history', '[]'::jsonb)) < %s
-                       OR jsonb_array_length(COALESCE(document->'dividend_history', '[]'::jsonb)) < %s
-                  ) AS thin_history
-                FROM stock_documents
-                """,
-                (
-                    MIN_YIELD_PRICE_POINTS,
-                    MIN_YIELD_DIVIDEND_PAYMENTS,
-                    MIN_YIELD_PRICE_POINTS,
-                    MIN_YIELD_DIVIDEND_PAYMENTS,
-                ),
-            ).fetchone()
-        data = dict(row) if row else {}
-        return {
-            "total": int(data.get("total") or 0),
-            "yield_ready": int(data.get("yield_ready") or 0),
-            "thin_history": int(data.get("thin_history") or 0),
-            "min_price_points": MIN_YIELD_PRICE_POINTS,
-            "min_dividend_payments": MIN_YIELD_DIVIDEND_PAYMENTS,
-        }
+        return PostgresMarketHistoryStore().history_coverage_summary()
 
     def delete_symbols(self, symbols: List[str]) -> int:
         from db.connection import ensure_schema, get_connection
@@ -297,6 +270,13 @@ def _document_from_row(row: Any):
 
     if row.get("source") and doc.source.value == "manual":
         doc.source = parse_data_source(str(row["source"]))
+
+    try:
+        from db.postgres_market_history_store import PostgresMarketHistoryStore
+
+        doc = PostgresMarketHistoryStore().attach_history_to_document(doc)
+    except Exception:
+        pass
 
     return doc
 

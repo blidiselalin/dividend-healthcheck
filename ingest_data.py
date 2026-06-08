@@ -280,6 +280,21 @@ Examples:
     )
 
     parser.add_argument(
+        "--sync-history-tables",
+        action="store_true",
+        help=(
+            "Copy price_history and dividend_history from stock_documents JSONB "
+            "into stock_price_history / stock_dividend_history tables"
+        ),
+    )
+    parser.add_argument(
+        "--sync-history-limit",
+        type=int,
+        default=500,
+        help="With --sync-history-tables, max symbols per run (default: 500)",
+    )
+
+    parser.add_argument(
         "--sync-portfolio",
         action="store_true",
         help="Link portfolio.db holdings into the vector DB (creates missing symbols via yfinance)",
@@ -530,6 +545,23 @@ Examples:
             f"({after['pct_covered']:.0f}%)"
         )
         print(f"  Total analysed:  {after['analysed_total']}")
+        return 0
+
+    if args.sync_history_tables:
+        print(f"\n{'='*50}")
+        print("  SYNC JSONB HISTORY → NORMALIZED TABLES")
+        print(f"{'='*50}\n")
+        from db.postgres_market_history_store import PostgresMarketHistoryStore
+
+        symbols = args.symbols.split(",") if args.symbols else None
+        stats = PostgresMarketHistoryStore().backfill_from_document_jsonb(
+            symbols=symbols,
+            limit=max(1, args.sync_history_limit),
+        )
+        print("History table sync complete!")
+        print(f"  Processed: {stats.get('processed', 0)}")
+        print(f"  Synced:    {stats.get('synced', 0)}")
+        print(f"  Skipped:   {stats.get('skipped', 0)}")
         return 0
 
     # Handle backfill-history action
