@@ -159,7 +159,14 @@ def history_dataframe_from_document(
         )
 
     if len(records) < min_rows:
-        return pd.DataFrame()
+        if len(records) >= 52:
+            logger.debug(
+                "Using %d library price rows (below requested min_rows=%d)",
+                len(records),
+                min_rows,
+            )
+        else:
+            return pd.DataFrame()
 
     frame = pd.DataFrame(records, index=index)
     frame.sort_index(inplace=True)

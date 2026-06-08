@@ -1611,7 +1611,8 @@ class PortfolioDetailsView:
         st.markdown(f"##### Overview (since {SINCE_YEAR})")
         st.caption(
             "Annual dividend per share from analysed stocks. "
-            "Green heatmap cells = higher DPS vs prior years."
+            "Green heatmap cells = higher DPS vs prior years. "
+            "Current year is projected (est.) for fair comparison with complete years."
         )
 
         if not growth_data:
@@ -1689,7 +1690,11 @@ class PortfolioDetailsView:
 
         st.markdown("##### Annual dividend / share (table)")
         matrix = service.annual_matrix_dataframe(growth_data)
-        year_cols = [column for column in matrix.columns if column.isdigit()]
+        year_cols = [
+            column
+            for column in matrix.columns
+            if column not in {"Ticker", "Company", "Growth years", "CAGR %"}
+        ]
         st.dataframe(
             matrix,
             width="stretch",

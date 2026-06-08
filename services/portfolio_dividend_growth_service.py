@@ -8,6 +8,7 @@ from utils.chart_theme import style_figure
 
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import date
 from typing import Dict, List, Optional, Tuple, Any
 
 import pandas as pd
@@ -59,12 +60,29 @@ class PortfolioDividendGrowthService:
         records,
         *,
         since_year: int = SINCE_YEAR,
+        document: Any = None,
     ) -> Dict[int, float]:
         totals: Dict[int, float] = defaultdict(float)
+        counts: Dict[int, int] = defaultdict(int)
         for record in records:
             year = record.ex_date.year
             if year >= since_year:
                 totals[year] += float(record.amount)
+                counts[year] += 1
+
+        from utils.yield_history_tables import estimate_annual_dividend_for_year
+
+        today = date.today()
+        if today.year in totals:
+            display, _, _ = estimate_annual_dividend_for_year(
+                today.year,
+                totals[today.year],
+                counts[today.year],
+                document=document,
+                all_records=records,
+                today=today,
+            )
+            totals[today.year] = display
         return dict(sorted(totals.items()))
 
     @staticmethod
@@ -105,7 +123,9 @@ class PortfolioDividendGrowthService:
             if not doc or not doc.dividend_history:
                 continue
             annual = self._annual_dividends_from_history(
-                doc.dividend_history, since_year=since_year
+                doc.dividend_history,
+                since_year=since_year,
+                document=doc,
             )
             if not annual:
                 continue
@@ -129,6 +149,8 @@ class PortfolioDividendGrowthService:
         if not items:
             return pd.DataFrame()
 
+        from utils.yield_history_tables import year_column_label
+
         years = sorted(
             {year for item in items for year in item.annual_by_year}
         )
@@ -136,7 +158,7 @@ class PortfolioDividendGrowthService:
         for item in items:
             row = {"Ticker": item.symbol, "Company": item.company}
             for year in years:
-                row[str(year)] = item.annual_by_year.get(year)
+                row[year_column_label(year)] = item.annual_by_year.get(year)
             row["Growth years"] = item.growth_years
             row["CAGR %"] = item.cagr_since_start
             rows.append(row)
@@ -151,8 +173,16 @@ class PortfolioDividendGrowthService:
         for item in items:
             for year, dps in item.annual_by_year.items():
                 totals[year] += dps * item.shares
+        from utils.yield_history_tables import year_column_label
+
         return pd.DataFrame(
-            [{"Year": year, "Est. dividends $": round(value, 2)} for year, value in sorted(totals.items())]
+            [
+                {
+                    "Year": year_column_label(year),
+                    "Est. dividends $": round(value, 2),
+                }
+                for year, value in sorted(totals.items())
+            ]
         )
 
     def yoy_growth_matrix(
@@ -162,22 +192,25 @@ class PortfolioDividendGrowthService:
         if not items:
             return pd.DataFrame()
 
+        from utils.yield_history_tables import year_column_label
+
         years = sorted({year for item in items for year in item.annual_by_year})
         rows = []
         for item in items:
             row = {"Ticker": item.symbol}
             sorted_years = sorted(item.annual_by_year)
             for index, year in enumerate(sorted_years):
+                label = year_column_label(year)
                 if index == 0:
-                    row[str(year)] = None
+                    row[label] = None
                     continue
                 prev = sorted_years[index - 1]
                 prev_val = item.annual_by_year[prev]
                 curr_val = item.annual_by_year[year]
                 if prev_val > 0:
-                    row[str(year)] = round((curr_val - prev_val) / prev_val * 100, 1)
+                    row[label] = round((curr_val - prev_val) / prev_val * 100, 1)
                 else:
-                    row[str(year)] = None
+                    row[label] = None
             rows.append(row)
         return pd.DataFrame(rows)
 
@@ -188,8 +221,11 @@ class PortfolioDividendGrowthService:
         if not items:
             return None
 
+        from utils.yield_history_tables import year_column_label
+
         items_sorted = sorted(items, key=lambda item: item.latest_annual or 0, reverse=True)
         years = sorted({year for item in items for year in item.annual_by_year})
+        year_labels = [year_column_label(year) for year in years]
         y_labels = [f"{item.symbol}" for item in items_sorted]
         z = [
             [item.annual_by_year.get(year) for year in years]
@@ -199,7 +235,7 @@ class PortfolioDividendGrowthService:
         fig = go.Figure(
             go.Heatmap(
                 z=z,
-                x=[str(year) for year in years],
+                x=year_labels,
                 y=y_labels,
                 colorscale="Greens",
                 hovertemplate="%{y} %{x}<br>$%{z:.4f}/share<extra></extra>",
@@ -230,12 +266,14 @@ class PortfolioDividendGrowthService:
             reverse=True,
         )[:max_lines]
 
+        from utils.yield_history_tables import year_column_label
+
         fig = go.Figure()
         for item in ranked:
             years = sorted(item.annual_by_year)
             fig.add_trace(
                 go.Scatter(
-                    x=[str(year) for year in years],
+                    x=[year_column_label(year) for year in years],
                     y=[item.annual_by_year[year] for year in years],
                     mode="lines+markers",
                     name=item.symbol,

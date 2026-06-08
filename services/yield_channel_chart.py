@@ -279,6 +279,10 @@ class YieldChannelService:
         symbol: str, 
         years: int = 10,
         use_db: bool = True,
+        document: Any = None,
+        *,
+        min_price_rows: int = 120,
+        min_yield_rows: int = 60,
     ) -> Optional[YieldChannelData]:
         """
         Fetch historical data and calculate yield channel metrics.
@@ -292,6 +296,9 @@ class YieldChannelService:
             symbol: Stock ticker symbol
             years: Number of years of historical data (default 10 per Weiss)
             use_db: Try to use vector DB data first
+            document: Optional pre-loaded library document (skips lookup)
+            min_price_rows: Minimum daily price rows required
+            min_yield_rows: Minimum yield sample points after TTM alignment
             
         Returns:
             YieldChannelData or None if data unavailable
@@ -302,17 +309,18 @@ class YieldChannelService:
         # Try vector DB first for historical dividend data
         db_dividend_history = None
         db_streak = None
-        db_doc = None
+        db_doc = document
 
-        if use_db and self._vector_store:
+        if db_doc is None and use_db and self._vector_store:
             try:
                 db_doc = self._vector_store.get_by_symbol(symbol)
-                if db_doc and db_doc.dividend_history:
-                    db_dividend_history = db_doc.dividend_history
-                    db_streak = db_doc.dividend_streak_years
-                    logger.debug(f"{symbol}: Found {len(db_dividend_history)} dividends in DB")
             except Exception as e:
-                logger.debug(f"Vector DB lookup failed for {symbol}: {e}")
+                logger.debug("Vector DB lookup failed for %s: %s", symbol, e)
+
+        if db_doc and db_doc.dividend_history:
+            db_dividend_history = db_doc.dividend_history
+            db_streak = db_doc.dividend_streak_years
+            logger.debug("%s: Found %d dividends in DB", symbol, len(db_dividend_history))
 
         try:
             from utils.yfinance_history import fetch_price_history_with_fallback
@@ -338,22 +346,21 @@ class YieldChannelService:
                 merge_dividend_series,
             )
 
-            min_price_rows = 120
-            min_yield_rows = 60
-            library_prices = bool(
-                db_doc
-                and getattr(db_doc, "price_history", None)
-                and len(db_doc.price_history) >= min_price_rows
-            )
+            min_price_rows = max(52, int(min_price_rows))
+            min_yield_rows = max(26, int(min_yield_rows))
+            price_count = len(getattr(db_doc, "price_history", None) or []) if db_doc else 0
+            div_count = len(db_dividend_history or [])
+            prefer_library = price_count >= 52 and div_count >= 2
+            library_min_rows = min(min_price_rows, price_count) if prefer_library else min_price_rows
 
             hist, price_source = fetch_price_history_with_fallback(
                 symbol,
                 years=years,
                 document=db_doc,
-                min_rows=min_price_rows,
-                prefer_library=library_prices,
+                min_rows=library_min_rows,
+                prefer_library=prefer_library,
             )
-            if hist.empty or len(hist) < min_price_rows:
+            if hist.empty or len(hist) < min(min_price_rows, 52):
                 logger.debug(
                     "%s: insufficient price history (source=%s, rows=%d)",
                     symbol,
@@ -412,7 +419,8 @@ class YieldChannelService:
                 return None
 
             hist = self._downsample_for_display(hist)
-            if len(hist) < 36:
+            min_display_rows = max(26, min_yield_rows // 2)
+            if len(hist) < min_display_rows:
                 return None
 
             # Statistical analysis using percentiles (Weiss methodology)

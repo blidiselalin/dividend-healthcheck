@@ -91,11 +91,19 @@ def load_yield_channel_data(
     try:
         from services.yield_channel_chart import _default_yield_channel_service
 
-        return _default_yield_channel_service().fetch_yield_channel_data(
-            symbol,
-            years=years,
-            use_db=True,
-        )
+        service = _default_yield_channel_service()
+        for min_prices, min_yields in ((120, 60), (52, 26)):
+            channel = service.fetch_yield_channel_data(
+                symbol,
+                years=years,
+                use_db=True,
+                document=document,
+                min_price_rows=min_prices,
+                min_yield_rows=min_yields,
+            )
+            if channel is not None:
+                return channel
+        return None
     except Exception as exc:
         logger.debug("Yield channel unavailable for %s: %s", symbol, exc)
         return None

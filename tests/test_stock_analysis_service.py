@@ -59,6 +59,27 @@ def test_load_independent_stock_analysis_from_library():
     assert analysis.yield_channel is mock_channel
 
 
+def test_load_yield_channel_data_passes_library_document():
+    from services.stock_analysis_service import load_yield_channel_data
+
+    doc = _library_doc()
+    mock_channel = MagicMock()
+
+    with patch(
+        "services.yield_channel_chart._default_yield_channel_service"
+    ) as mock_service_factory:
+        service = MagicMock()
+        service.fetch_yield_channel_data.return_value = mock_channel
+        mock_service_factory.return_value = service
+
+        result = load_yield_channel_data("INTU", document=doc)
+
+    assert result is mock_channel
+    service.fetch_yield_channel_data.assert_called()
+    first_call = service.fetch_yield_channel_data.call_args_list[0]
+    assert first_call.kwargs["document"] is doc
+
+
 def test_postgres_document_from_row_merges_indexed_columns():
     from db.postgres_market_store import _document_from_row
 

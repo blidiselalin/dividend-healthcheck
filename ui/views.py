@@ -226,7 +226,16 @@ class SingleStockView:
                     sector_peers, external = SectorService.get_top_sector_peers(
                         data, score, include_external=True
                     )
-                UIComponents.display_sector_comparison(data, score, sector_peers, external)
+                UIComponents.display_sector_comparison(
+                    data,
+                    score,
+                    sector_peers,
+                    external,
+                    yield_channels=(
+                        {symbol.upper(): yield_channel_data} if yield_channel_data else None
+                    ),
+                    vector_docs={symbol.upper(): vector_doc} if vector_doc else None,
+                )
 
         with st.expander("Data sources & library record", expanded=False):
             UIComponents.display_vector_db_data(symbol, document=vector_doc)

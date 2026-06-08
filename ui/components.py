@@ -454,6 +454,9 @@ class UIComponents:
         current_score: int,
         sector_peers: List[Dict[str, Any]],
         external_competitors: Optional[List[Dict[str, Any]]] = None,
+        *,
+        yield_channels: Optional[Dict[str, Any]] = None,
+        vector_docs: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Display sector comparison with ranked peers.
@@ -465,6 +468,8 @@ class UIComponents:
         """
         sector = current_stock.sector
         external_competitors = external_competitors or []
+        yield_channels = yield_channels or {}
+        vector_docs = vector_docs or {}
         
         if not sector_peers and not external_competitors:
             st.info(f"No stocks found in {sector} for comparison")
@@ -523,6 +528,16 @@ class UIComponents:
             # Show yield channel comparison for top reference stock
             if YIELD_CHART_AVAILABLE and external_competitors:
                 top_ref = external_competitors[0]
+                ref_sym = (top_ref.get("symbol") or "").upper()
+                if ref_sym and ref_sym not in vector_docs:
+                    try:
+                        from services.shared_market_db import get_document
+
+                        ref_doc = get_document(ref_sym)
+                        if ref_doc is not None:
+                            vector_docs = {**vector_docs, ref_sym: ref_doc}
+                    except Exception:
+                        pass
                 with st.expander(
                     f"📈 Yield Channel: {top_ref['symbol']} vs {current_stock.symbol}",
                     expanded=False
@@ -535,10 +550,19 @@ class UIComponents:
                     col1, col2 = st.columns(2)
                     with col1:
                         st.markdown(f"**{current_stock.symbol}** (Your Stock)")
-                        UIComponents._display_mini_yield_chart(current_stock.symbol)
+                        UIComponents._display_mini_yield_chart(
+                            current_stock.symbol,
+                            channel_data=yield_channels.get(current_stock.symbol.upper()),
+                            vector_doc=vector_docs.get(current_stock.symbol.upper()),
+                        )
                     with col2:
                         st.markdown(f"**{top_ref['symbol']}** (Reference)")
-                        UIComponents._display_mini_yield_chart(top_ref['symbol'])
+                        ref_sym = top_ref["symbol"].upper()
+                        UIComponents._display_mini_yield_chart(
+                            ref_sym,
+                            channel_data=yield_channels.get(ref_sym),
+                            vector_doc=vector_docs.get(ref_sym),
+                        )
         
         # Insights
         UIComponents._display_comparison_insights(
@@ -546,7 +570,51 @@ class UIComponents:
         )
     
     @staticmethod
-    def _display_mini_yield_chart(symbol: str) -> None:
+    def _resolve_mini_yield_channel(
+        symbol: str,
+        *,
+        channel_data=None,
+        vector_doc=None,
+    ):
+        if channel_data is not None:
+            return channel_data
+
+        sym = (symbol or "").upper()
+        doc = vector_doc
+        if doc is None:
+            try:
+                from services.shared_market_db import get_document
+
+                doc = get_document(sym)
+            except Exception:
+                doc = None
+
+        from services.yield_channel_chart import _default_yield_channel_service
+
+        service = _default_yield_channel_service()
+        for years, min_prices, min_yields in (
+            (10, 120, 60),
+            (10, 52, 26),
+            (5, 52, 26),
+        ):
+            data = service.fetch_yield_channel_data(
+                sym,
+                years=years,
+                document=doc,
+                min_price_rows=min_prices,
+                min_yield_rows=min_yields,
+            )
+            if data is not None:
+                return data
+        return None
+
+    @staticmethod
+    def _display_mini_yield_chart(
+        symbol: str,
+        *,
+        channel_data=None,
+        vector_doc=None,
+    ) -> None:
         """Display a compact yield channel summary for comparison."""
         if not YIELD_CHART_AVAILABLE:
             st.caption("Yield chart unavailable")
@@ -556,8 +624,27 @@ class UIComponents:
             from services.yield_channel_chart import _default_yield_channel_service
 
             service = _default_yield_channel_service()
-            data = service.fetch_yield_channel_data(symbol, years=10)
+            data = UIComponents._resolve_mini_yield_channel(
+                symbol,
+                channel_data=channel_data,
+                vector_doc=vector_doc,
+            )
             if data is None:
+                from utils.yield_history_tables import yearly_dividend_per_share_table
+
+                doc = vector_doc
+                if doc is None:
+                    try:
+                        from services.shared_market_db import get_document
+
+                        doc = get_document(symbol.upper())
+                    except Exception:
+                        doc = None
+                yearly = yearly_dividend_per_share_table(doc) if doc is not None else None
+                if yearly is not None and not yearly.empty:
+                    st.caption(f"Yield channel building for {symbol} — annual dividends from library:")
+                    st.dataframe(yearly.tail(6), hide_index=True, width="stretch")
+                    return
                 st.caption(f"Insufficient data for {symbol}")
                 return
             
@@ -679,7 +766,23 @@ class UIComponents:
 
         if channel_data is None:
             with st.spinner(f"Analyzing {years}-year dividend yield history..."):
-                data = service.fetch_yield_channel_data(symbol, years)
+                doc = vector_doc
+                if doc is None:
+                    try:
+                        from services.shared_market_db import get_document
+
+                        doc = get_document(symbol.upper())
+                    except Exception:
+                        doc = None
+                data = service.fetch_yield_channel_data(symbol, years=years, document=doc)
+                if data is None:
+                    data = service.fetch_yield_channel_data(
+                        symbol,
+                        years=years,
+                        document=doc,
+                        min_price_rows=52,
+                        min_yield_rows=26,
+                    )
         else:
             data = channel_data
 
@@ -702,7 +805,18 @@ class UIComponents:
                     f"for **{symbol}**. Showing annual dividend per share from the library below."
                 )
                 st.markdown("#### Annual dividend per share (library history)")
-                st.dataframe(yearly, hide_index=True, width="stretch")
+                st.caption(
+                    "Current year shows a projected full-year estimate when the calendar year is not complete."
+                )
+                st.dataframe(
+                    yearly,
+                    hide_index=True,
+                    width="stretch",
+                    column_config={
+                        "Dividend / share $": st.column_config.NumberColumn(format="$%.4f"),
+                        "YTD paid $": st.column_config.NumberColumn(format="$%.4f"),
+                    },
+                )
                 st.caption(
                     "Run `python ingest_data.py --backfill-history` or **Backfill thin history** "
                     "in the admin sidebar to populate price series for the yield chart."
@@ -779,7 +893,8 @@ class UIComponents:
         if not yearly.empty:
             st.markdown("#### Historical yield exposure (by year)")
             st.caption(
-                "Trailing dividend yield and price at each year-end — the data behind the chart above."
+                "Trailing dividend yield and price at each year-end — the data behind the chart above. "
+                "Current year values are partial-year estimates for comparison with complete years."
             )
             st.dataframe(
                 yearly,
@@ -1232,12 +1347,16 @@ class UIComponents:
                 yearly_div = yearly_dividend_per_share_table(doc)
                 if not yearly_div.empty:
                     st.markdown("#### 📅 Annual dividend per share (yearly)")
+                    st.caption(
+                        "Current year is projected (est.) when payments for the year are still in progress."
+                    )
                     st.dataframe(
                         yearly_div,
                         hide_index=True,
                         width="stretch",
                         column_config={
                             "Dividend / share $": st.column_config.NumberColumn(format="$%.4f"),
+                            "YTD paid $": st.column_config.NumberColumn(format="$%.4f"),
                         },
                     )
             
