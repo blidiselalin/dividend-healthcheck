@@ -1,0 +1,80 @@
+"""
+Sidebar progress bars for background portfolio and admin tasks.
+"""
+
+from __future__ import annotations
+
+from datetime import timedelta
+
+import streamlit as st
+
+from auth.user_context import is_app_admin
+from services.background_jobs import has_active_jobs
+from services.deferred_startup import (
+    apply_background_results,
+    schedule_hourly_market_update,
+    visible_jobs,
+)
+from ui.theme import sidebar_heading
+
+
+@st.fragment(run_every=timedelta(seconds=2))
+def _background_progress_fragment() -> None:
+    applied = apply_background_results()
+    jobs = visible_jobs(admin=is_app_admin())
+    if not jobs and not applied:
+        return
+
+    sidebar_heading("Background tasks")
+    for job in jobs:
+        label = job.label
+        if job.message:
+            label = f"{job.label} — {job.message}"
+        if job.status == "error":
+            st.error(f"{job.label}: {job.error or 'failed'}")
+            continue
+        if job.status in ("queued", "running"):
+            st.progress(job.progress, text=label)
+        elif job.status == "done":
+            st.success(f"{label} ✓")
+
+    if applied:
+        st.rerun()
+
+
+def render_sidebar_progress() -> None:
+    """Show active background jobs and poll while work is running."""
+    jobs = visible_jobs(admin=is_app_admin())
+    if jobs or has_active_jobs():
+        _background_progress_fragment()
+        return
+
+    apply_background_results()
+
+
+def render_admin_market_update_controls() -> None:
+    """Admin-only control to refresh the shared stock library in the background."""
+    if not is_app_admin():
+        return
+
+    sidebar_heading("Admin")
+    if st.sidebar.button(
+        "Update stock library",
+        use_container_width=True,
+        help="Refresh prices and enrich stale symbols without blocking the UI",
+        key="admin_hourly_market_update",
+    ):
+        job_id = schedule_hourly_market_update()
+        if job_id:
+            st.toast("Stock library update started in the background")
+        else:
+            st.toast("Update already running")
+        st.rerun()
+
+    summary = st.session_state.get("last_hourly_update_summary")
+    if summary:
+        enrich = summary.get("enrich") or {}
+        st.sidebar.caption(
+            f"Last update: enriched {enrich.get('enriched', 0)} symbols "
+            f"({summary.get('elapsed_seconds', '?')}s)"
+        )

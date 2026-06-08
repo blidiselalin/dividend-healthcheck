@@ -6,7 +6,9 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Dict, List, Optional, TYPE_CHECKING
+from typing import Callable, Dict, List, Optional, TYPE_CHECKING
+
+ProgressCallback = Callable[[float, str], None]
 
 if TYPE_CHECKING:
     from data_ingestion.models import StockDocument
@@ -30,6 +32,7 @@ def preload_portfolio_analysis(
     *,
     years: int = 10,
     max_workers: int = 6,
+    progress_callback: Optional[ProgressCallback] = None,
 ) -> PortfolioAnalysisPreload:
     """
     Fetch yield-channel series and retain vector documents for every holding.
@@ -57,6 +60,11 @@ def preload_portfolio_analysis(
 
     service = YieldChannelService(vector_store=vector_store)
 
+    total = len(symbols)
+    completed = 0
+    if progress_callback and total:
+        progress_callback(0.0, f"0/{total} yield charts")
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(service.fetch_yield_channel_data, symbol, years): symbol
@@ -70,6 +78,12 @@ def preload_portfolio_analysis(
                 channel = None
             if channel is not None:
                 yield_channels[symbol] = channel
+            completed += 1
+            if progress_callback and total:
+                progress_callback(
+                    completed / total,
+                    f"{completed}/{total} yield charts ({symbol})",
+                )
 
     return PortfolioAnalysisPreload(
         stock_data=dict(stock_data),

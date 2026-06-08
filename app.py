@@ -81,10 +81,11 @@ from ui.theme import (
 from ui.chatbot_widget import render_chatbot_widget
 from config import DATA_SOURCES
 from services.portfolio_session import sync_portfolio_session_with_db
-from services.portfolio_ui_cache import (
-    hydrate_session_from_disk,
-    refresh_portfolio_after_library_update,
-    warm_portfolio_session_from_db,
+from services.portfolio_ui_cache import hydrate_session_from_disk
+from services.deferred_startup import apply_background_results, schedule_startup_tasks
+from ui.sidebar_progress_panel import (
+    render_admin_market_update_controls,
+    render_sidebar_progress,
 )
 
 
@@ -159,12 +160,14 @@ def _render_data_badge() -> None:
 
     doc_count = int(status.get("document_count") or 0)
     if doc_count > 0:
-        if status.get("sp500_coverage") is None:
+        cov = status.get("sp500_coverage") or {}
+        if not cov and not status.get("_coverage_scheduled"):
             try:
-                from services.sp500_peers_service import coverage_stats
+                from services.deferred_startup import schedule_coverage_badge_refresh
 
+                schedule_coverage_badge_refresh()
                 status = dict(status)
-                status["sp500_coverage"] = coverage_stats()
+                status["_coverage_scheduled"] = True
                 st.session_state["market_db_status"] = status
             except Exception:
                 pass
@@ -212,26 +215,26 @@ def main() -> None:
         st.stop()
 
     sync_portfolio_session_with_db()
-    from services.portfolio_dividend_sync_service import maybe_sync_received_dividends
     from services.portfolio_session import is_demo_session, user_has_holdings_in_db
 
-    if not is_demo_session() and user_has_holdings_in_db():
-        maybe_sync_received_dividends()
+    apply_background_results()
     if hydrate_session_from_disk():
         rows = st.session_state.get("portfolio_details_rows") or []
         logger.info("Portfolio session hydrated from disk (%d holdings)", len(rows))
-    elif refresh_portfolio_after_library_update():
-        rows = st.session_state.get("portfolio_details_rows") or []
-        logger.info("Portfolio session auto-reloaded after library update (%d holdings)", len(rows))
-    elif not is_demo_session() and user_has_holdings_in_db():
-        warm_portfolio_session_from_db(preload_charts=False)
+
+    schedule_startup_tasks(
+        is_demo=is_demo_session(),
+        has_holdings=user_has_holdings_in_db(),
+    )
     boot = _startup_db_light()
     st.session_state["db_price_refresh_stats"] = boot
     st.session_state["market_db_status"] = boot.get("market_db") or {}
 
     st.session_state["analysis_type"] = NAV_PORTFOLIO
+    render_sidebar_progress()
     render_portfolio_sidebar()
     render_account_sidebar()
+    render_admin_market_update_controls()
     from ui.db_admin_panel import render_db_admin_if_active, render_db_admin_sidebar_entry
 
     render_db_admin_sidebar_entry()

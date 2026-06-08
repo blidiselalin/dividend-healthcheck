@@ -98,13 +98,12 @@ def _preload_from_session() -> PortfolioAnalysisPreload:
 
 
 def _ensure_yield_preload_if_needed() -> None:
-    """Load yield-channel charts after a fast library-only portfolio open."""
+    """Schedule yield-channel preload in the background after a fast library open."""
     if not st.session_state.get("portfolio_fast_loaded"):
         return
-    from services.portfolio_ui_cache import ensure_portfolio_yield_preload
+    from services.deferred_startup import schedule_yield_preload_if_needed
 
-    with st.spinner("Loading yield charts…"):
-        ensure_portfolio_yield_preload()
+    schedule_yield_preload_if_needed()
 
 
 class PortfolioDetailsView:
