@@ -161,14 +161,14 @@ def apply_completed_jobs(
     handlers: Dict[str, Callable[[Any], None]],
     *,
     scope: Optional[str] = None,
-) -> bool:
+) -> List[str]:
     """
     Apply finished job results on the main thread.
 
-    Returns True when at least one job was applied.
+    Returns kinds of jobs that were applied (empty when none).
     """
     scope_key = scope or session_scope()
-    applied_any = False
+    applied_kinds: List[str] = []
     with _STORE_LOCK:
         jobs = list(_JOB_STORE.get(scope_key, {}).values())
 
@@ -181,10 +181,10 @@ def apply_completed_jobs(
         try:
             handler(job.result)
             job.applied = True
-            applied_any = True
+            applied_kinds.append(job.kind)
         except Exception as exc:
             logger.warning("Could not apply background job %s: %s", job.id, exc)
             job.status = "error"
             job.error = str(exc)
 
-    return applied_any
+    return applied_kinds

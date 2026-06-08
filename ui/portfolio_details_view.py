@@ -123,7 +123,7 @@ def _resolve_holding_analysis(
     analysis = load_independent_stock_analysis(
         sym,
         document=vector_doc,
-        include_yield_channel=yield_channel is None,
+        include_yield_channel=False,
     )
     if analysis is None:
         return stock_data, vector_doc, yield_channel
@@ -131,7 +131,7 @@ def _resolve_holding_analysis(
     return (
         analysis.stock_data or stock_data,
         analysis.document or vector_doc,
-        yield_channel or analysis.yield_channel,
+        yield_channel,
     )
 
 
@@ -781,7 +781,7 @@ class PortfolioDetailsView:
             analysis = load_independent_stock_analysis(
                 symbol,
                 document=cached_doc,
-                include_yield_channel=preload.yield_channels.get(symbol) is None,
+                include_yield_channel=False,
             )
             if analysis is None:
                 data = None
@@ -790,9 +790,7 @@ class PortfolioDetailsView:
             else:
                 data = analysis.stock_data
                 vector_doc = analysis.document or cached_doc
-                yield_channel = (
-                    preload.yield_channels.get(symbol) or analysis.yield_channel
-                )
+                yield_channel = preload.yield_channels.get(symbol)
 
         if not data:
             st.error(

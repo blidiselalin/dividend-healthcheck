@@ -27,7 +27,7 @@ JOB_HOURLY_UPDATE = "hourly_market_update"
 JOB_HISTORY_BACKFILL = "history_backfill"
 
 
-def apply_background_results() -> bool:
+def apply_background_results() -> List[str]:
     """Merge completed background jobs into Streamlit session state."""
     import streamlit as st
 
@@ -40,10 +40,10 @@ def apply_background_results() -> bool:
         JOB_HOURLY_UPDATE: _apply_hourly_update,
         JOB_HISTORY_BACKFILL: _apply_history_backfill,
     }
-    applied = apply_completed_jobs(handlers)
-    if applied:
+    applied_kinds = apply_completed_jobs(handlers)
+    if applied_kinds:
         st.session_state["_background_jobs_applied"] = True
-    return applied
+    return applied_kinds
 
 
 def _library_reload_needed() -> bool:
@@ -333,6 +333,12 @@ def _apply_history_backfill(result: Dict[str, Any]) -> None:
         from ui.portfolio_details_view import _load_dividend_growth
 
         _load_dividend_growth.clear()
+    except Exception:
+        pass
+    try:
+        from ui.sidebar_progress_panel import _cached_thin_history_summary
+
+        _cached_thin_history_summary.clear()
     except Exception:
         pass
     logger.info(

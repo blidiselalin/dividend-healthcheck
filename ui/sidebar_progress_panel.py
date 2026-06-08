@@ -11,6 +11,10 @@ import streamlit as st
 from auth.user_context import is_app_admin
 from services.background_jobs import has_active_jobs
 from services.deferred_startup import (
+    JOB_HISTORY_BACKFILL,
+    JOB_LIVE_RELOAD,
+    JOB_WARM_PORTFOLIO,
+    JOB_YIELD_PRELOAD,
     apply_background_results,
     schedule_hourly_market_update,
     visible_jobs,
@@ -18,11 +22,18 @@ from services.deferred_startup import (
 from ui.theme import sidebar_heading
 
 
+@st.cache_data(ttl=120, show_spinner=False)
+def _cached_thin_history_summary() -> dict:
+    from services.stock_history_backfill import thin_history_summary
+
+    return thin_history_summary()
+
+
 @st.fragment(run_every=timedelta(seconds=2))
 def _background_progress_fragment() -> None:
-    applied = apply_background_results()
+    applied_kinds = apply_background_results()
     jobs = visible_jobs(admin=is_app_admin())
-    if not jobs and not applied:
+    if not jobs and not applied_kinds:
         return
 
     sidebar_heading("Background tasks")
@@ -38,7 +49,8 @@ def _background_progress_fragment() -> None:
         elif job.status == "done":
             st.success(f"{label} ✓")
 
-    if applied:
+    rerun_kinds = {JOB_YIELD_PRELOAD, JOB_WARM_PORTFOLIO, JOB_LIVE_RELOAD}
+    if applied_kinds and any(kind in rerun_kinds for kind in applied_kinds):
         st.rerun()
 
 
@@ -58,9 +70,7 @@ def render_admin_market_update_controls() -> None:
         return
 
     try:
-        from services.stock_history_backfill import thin_history_summary
-
-        summary = thin_history_summary()
+        summary = _cached_thin_history_summary()
         if summary["thin_history"]:
             st.sidebar.caption(
                 f"Library history: {summary['yield_ready']}/{summary['total']} yield-ready · "
