@@ -123,7 +123,7 @@ def yearly_dividend_per_share_table(document: Any, *, since_year: Optional[int] 
     today = date.today()
     rows = []
     for year in sorted(totals):
-        display_dps, status, ytd_paid = estimate_annual_dividend_for_year(
+        display_dps, _, _ = estimate_annual_dividend_for_year(
             year,
             totals[year],
             counts[year],
@@ -134,10 +134,7 @@ def yearly_dividend_per_share_table(document: Any, *, since_year: Optional[int] 
         row: Dict[str, Any] = {
             "Year": year_column_label(year, today=today),
             "Dividend / share $": display_dps,
-            "Status": status,
         }
-        if ytd_paid is not None:
-            row["YTD paid $"] = ytd_paid
         rows.append(row)
 
     return pd.DataFrame(rows)

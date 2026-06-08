@@ -22,9 +22,9 @@ def test_yearly_dividend_per_share_from_library():
         DividendRecord(ex_date=date(2024, 8, 1), payment_date=None, amount=0.48),
     ]
     table = yearly_dividend_per_share_table(doc)
+    assert list(table.columns) == ["Year", "Dividend / share $"]
     assert list(table["Year"]) == ["2023", "2024"]
     assert table.loc[table["Year"] == "2023", "Dividend / share $"].iloc[0] == 0.92
-    assert table.loc[table["Year"] == "2023", "Status"].iloc[0] == "Complete"
 
 
 def test_current_year_dividend_is_projected_for_comparison():
@@ -41,8 +41,6 @@ def test_current_year_dividend_is_projected_for_comparison():
     current = table.loc[table["Year"] == year_column_label(2026, today=date(2026, 5, 19))]
     assert not current.empty
     assert current["Dividend / share $"].iloc[0] == 6.56
-    assert current["Status"].iloc[0] == "Estimated (declared rate)"
-    assert current["YTD paid $"].iloc[0] == 1.64
 
 
 def test_estimate_annual_dividend_scales_partial_payments():
@@ -75,5 +73,4 @@ def test_yearly_yield_exposure_from_channel():
     table = yearly_yield_exposure_table(Channel(), today=date(2024, 6, 1))
     assert "2023" in list(table["Year"])
     assert "2024 (est.)" in list(table["Year"])
-    assert table.loc[table["Year"] == "2024 (est.)", "Status"].iloc[0] == "Estimated (partial year)"
     assert table.loc[table["Year"] == "2023", "Trailing div $"].iloc[0] == 1.6

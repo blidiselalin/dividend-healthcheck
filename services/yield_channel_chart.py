@@ -498,6 +498,8 @@ class YieldChannelService:
     @staticmethod
     def _prepare_history_frame(hist: pd.DataFrame) -> pd.DataFrame:
         """Sort, dedupe, and normalize OHLCV before yield math."""
+        from utils.yfinance_history import densify_price_history
+
         frame = hist.copy()
         frame = frame.sort_index()
         frame = frame[~frame.index.duplicated(keep="last")]
@@ -509,6 +511,7 @@ class YieldChannelService:
         if "Dividends" not in frame.columns:
             frame["Dividends"] = 0.0
         frame["Dividends"] = pd.to_numeric(frame["Dividends"], errors="coerce").fillna(0.0)
+        frame = densify_price_history(frame)
         return frame
 
     @staticmethod

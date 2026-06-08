@@ -755,7 +755,9 @@ class UIComponents:
         service = _default_yield_channel_service()
 
         if channel_data is None:
-            with st.spinner(f"Analyzing {years}-year dividend yield history..."):
+            with st.spinner(
+                f"Building {years}-year Dividends Don't Lie yield channel for {symbol.upper()}…"
+            ):
                 doc = vector_doc
                 if doc is None:
                     try:
@@ -792,16 +794,12 @@ class UIComponents:
                     f"for **{symbol}**. Showing annual dividend per share from the library below."
                 )
                 st.markdown("#### Annual dividend per share (library history)")
-                st.caption(
-                    "Current year shows a projected full-year estimate when the calendar year is not complete."
-                )
                 st.dataframe(
-                    yearly,
+                    yearly[["Year", "Dividend / share $"]],
                     hide_index=True,
                     width="stretch",
                     column_config={
                         "Dividend / share $": st.column_config.NumberColumn(format="$%.4f"),
-                        "YTD paid $": st.column_config.NumberColumn(format="$%.4f"),
                     },
                 )
                 st.caption(
@@ -1334,16 +1332,12 @@ class UIComponents:
                 yearly_div = yearly_dividend_per_share_table(doc)
                 if not yearly_div.empty:
                     st.markdown("#### 📅 Annual dividend per share (yearly)")
-                    st.caption(
-                        "Current year is projected (est.) when payments for the year are still in progress."
-                    )
                     st.dataframe(
-                        yearly_div,
+                        yearly_div[["Year", "Dividend / share $"]],
                         hide_index=True,
                         width="stretch",
                         column_config={
                             "Dividend / share $": st.column_config.NumberColumn(format="$%.4f"),
-                            "YTD paid $": st.column_config.NumberColumn(format="$%.4f"),
                         },
                     )
             

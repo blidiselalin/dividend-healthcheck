@@ -184,6 +184,25 @@ def history_dataframe_from_document(
     return frame
 
 
+def densify_price_history(frame: "pd.DataFrame") -> "pd.DataFrame":
+    """Expand sparse closing prices to business days via forward fill."""
+    if not YFINANCE_AVAILABLE or frame is None or frame.empty:
+        return frame
+
+    out = frame.sort_index()
+    out = out[~out.index.duplicated(keep="last")]
+    if "Close" not in out.columns or len(out) >= 252:
+        return out
+
+    start = out.index.min()
+    end = out.index.max()
+    if pd.Timestamp(start) >= pd.Timestamp(end):
+        return out
+
+    daily = out.reindex(pd.date_range(start, end, freq="B")).ffill()
+    return daily.dropna(subset=["Close"])
+
+
 def fetch_price_history_with_fallback(
     symbol: str,
     *,
@@ -202,6 +221,19 @@ def fetch_price_history_with_fallback(
     """
     min_needed = max(52, int(min_rows))
     library_unique = unique_price_dates(document) if document is not None else 0
+
+    if document is not None and library_unique >= 52:
+        library = history_dataframe_from_document(
+            document, years=years, min_rows=min(52, library_unique)
+        )
+        library = densify_price_history(library)
+        if not library.empty and len(library) >= min_needed:
+            logger.debug(
+                "%s: using analysed-library price history (%d days, densified)",
+                symbol,
+                len(library),
+            )
+            return library, "analysed_library"
 
     if prefer_library and document is not None and library_unique >= min_needed:
         library = history_dataframe_from_document(
@@ -226,7 +258,8 @@ def fetch_price_history_with_fallback(
         library = history_dataframe_from_document(
             document, years=years, min_rows=min(52, library_unique)
         )
-        if not library.empty:
+        library = densify_price_history(library)
+        if not library.empty and len(library) >= 52:
             logger.info(
                 "%s: using analysed-library price history (%d unique days) after yfinance miss",
                 symbol,

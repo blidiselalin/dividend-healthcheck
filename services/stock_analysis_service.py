@@ -143,10 +143,8 @@ def ensure_yield_channel_data(
     if doc is None:
         return None
 
-    from utils.stock_document_history import history_is_thin
-
     div_count = len(doc.dividend_history or [])
-    if div_count < 2 or not history_is_thin(doc):
+    if div_count < 4:
         return None
 
     try:
