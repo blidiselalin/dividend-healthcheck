@@ -101,7 +101,14 @@ def test_import_legacy_market_library_writes_postgres(tmp_path: Path):
     ), mock_pg as store_cls:
         instance = store_cls.return_value
         instance.get_all_documents.return_value = []
-        instance.count.return_value = 1
+        instance.count.return_value = 0
+        instance.history_coverage_summary.return_value = {
+            "total": 0,
+            "yield_ready": 0,
+            "thin_history": 0,
+            "min_price_points": 252,
+            "min_dividend_payments": 4,
+        }
 
         stats = import_legacy_market_library(data_dir, force=True)
 
