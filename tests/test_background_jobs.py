@@ -40,7 +40,7 @@ def test_start_job_runs_worker_and_applies_result():
     def handler(result):
         applied.append(result["value"])
 
-    assert apply_completed_jobs({"test_kind": handler}, scope=scope) is True
+    assert apply_completed_jobs({"test_kind": handler}, scope=scope) == ["test_kind"]
     assert applied == [42]
     assert jobs[0].applied is True
 

@@ -113,13 +113,12 @@ def diagnose_legacy_import(data_dir: Path) -> LegacyImportDiagnostics:
     try:
         from db.connection import use_cloud_sql
         from db.postgres_market_store import PostgresMarketStore
-        from utils.stock_document_history import yield_channel_ready
 
         if use_cloud_sql():
             store = PostgresMarketStore()
-            all_docs = store.get_all_documents()
-            diag.postgres_document_count = len(all_docs)
-            diag.postgres_ready_for_yield = sum(1 for doc in all_docs if yield_channel_ready(doc))
+            diag.postgres_document_count = store.count()
+            coverage = store.history_coverage_summary()
+            diag.postgres_ready_for_yield = coverage["yield_ready"]
     except Exception as exc:
         logger.debug("Postgres diagnostics unavailable: %s", exc)
 

@@ -116,6 +116,15 @@ def backfill_thin_history(
 def thin_history_summary(documents: Optional[List["StockDocument"]] = None) -> Dict[str, int]:
     """Counts for admin dashboards."""
     if documents is None:
+        try:
+            from db.connection import use_cloud_sql
+
+            if use_cloud_sql():
+                from db.postgres_market_store import PostgresMarketStore
+
+                return PostgresMarketStore().history_coverage_summary()
+        except Exception:
+            pass
         from services.shared_market_db import get_shared_vector_store
 
         documents = get_shared_vector_store().get_all_documents()
