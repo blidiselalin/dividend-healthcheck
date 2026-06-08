@@ -36,7 +36,10 @@ def _background_progress_fragment() -> None:
     if not jobs and not applied_kinds:
         return
 
-    sidebar_heading("Background tasks")
+    st.markdown(
+        '<p class="ds-sidebar-heading">Background tasks</p>',
+        unsafe_allow_html=True,
+    )
     for job in jobs:
         label = job.label
         if job.message:
@@ -58,7 +61,8 @@ def render_sidebar_progress() -> None:
     """Show active background jobs and poll while work is running."""
     jobs = visible_jobs(admin=is_app_admin())
     if jobs or has_active_jobs():
-        _background_progress_fragment()
+        with st.sidebar:
+            _background_progress_fragment()
         return
 
     apply_background_results()
