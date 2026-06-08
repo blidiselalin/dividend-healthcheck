@@ -16,6 +16,17 @@ if TYPE_CHECKING:
     from services.yield_channel_chart import YieldChannelData
 
 
+def _fetch_preload_channel(
+    _service: object,
+    symbol: str,
+    years: int,
+    document: Optional["StockDocument"],
+) -> Optional["YieldChannelData"]:
+    from services.stock_analysis_service import load_yield_channel_data
+
+    return load_yield_channel_data(symbol, years=years, document=document)
+
+
 @dataclass(frozen=True)
 class PortfolioAnalysisPreload:
     """In-memory analysis payloads keyed by ticker."""
@@ -67,7 +78,13 @@ def preload_portfolio_analysis(
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(service.fetch_yield_channel_data, symbol, years): symbol
+            executor.submit(
+                _fetch_preload_channel,
+                service,
+                symbol,
+                years,
+                vector_docs.get(symbol),
+            ): symbol
             for symbol in symbols
         }
         for future in as_completed(futures):

@@ -589,24 +589,13 @@ class UIComponents:
             except Exception:
                 doc = None
 
-        from services.yield_channel_chart import _default_yield_channel_service
+        from services.stock_analysis_service import load_yield_channel_data
 
-        service = _default_yield_channel_service()
-        for years, min_prices, min_yields in (
-            (10, 120, 60),
-            (10, 52, 26),
-            (5, 52, 26),
-        ):
-            data = service.fetch_yield_channel_data(
-                sym,
-                years=years,
-                document=doc,
-                min_price_rows=min_prices,
-                min_yield_rows=min_yields,
-            )
-            if data is not None:
-                return data
-        return None
+        return load_yield_channel_data(
+            sym,
+            years=10,
+            document=doc,
+        )
 
     @staticmethod
     def _display_mini_yield_chart(
@@ -760,6 +749,7 @@ class UIComponents:
             st.info("📊 Yield channel charts require `plotly` package. Install with: `pip install plotly`")
             return False
         
+        from services.stock_analysis_service import ensure_yield_channel_data
         from services.yield_channel_chart import _default_yield_channel_service
 
         service = _default_yield_channel_service()
@@ -774,15 +764,12 @@ class UIComponents:
                         doc = get_document(symbol.upper())
                     except Exception:
                         doc = None
-                data = service.fetch_yield_channel_data(symbol, years=years, document=doc)
-                if data is None:
-                    data = service.fetch_yield_channel_data(
-                        symbol,
-                        years=years,
-                        document=doc,
-                        min_price_rows=52,
-                        min_yield_rows=26,
-                    )
+                data = ensure_yield_channel_data(
+                    symbol,
+                    years=years,
+                    document=doc,
+                    allow_backfill=True,
+                )
         else:
             data = channel_data
 

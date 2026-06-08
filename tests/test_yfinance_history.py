@@ -10,7 +10,9 @@ from data_ingestion.models import DataSource, DividendRecord, PriceHistory, Stoc
 from utils.yfinance_history import (
     compute_ttm_from_payment_series,
     dividend_series_from_records,
+    fetch_price_history_with_fallback,
     history_dataframe_from_document,
+    unique_price_dates,
 )
 
 
@@ -39,6 +41,54 @@ def test_history_dataframe_from_document():
     assert not frame.empty
     assert len(frame) >= 100
     assert "Close" in frame.columns
+
+
+def test_history_dataframe_deduplicates_duplicate_dates():
+    doc = StockDocument(symbol="INTU", name="Intuit", source=DataSource.YAHOO)
+    doc.price_history = [
+        PriceHistory(
+            date=date(2024, 6, 1),
+            open=650.0,
+            high=660.0,
+            low=640.0,
+            close=650.0 + i,
+            volume=900_000,
+        )
+        for i in range(120)
+    ]
+    assert unique_price_dates(doc) == 1
+    frame = history_dataframe_from_document(doc, years=10, min_rows=52)
+    assert frame.empty
+
+
+def test_fetch_price_history_prefers_yfinance_when_library_dates_duplicate():
+    from unittest.mock import patch
+
+    doc = StockDocument(symbol="INTU", name="Intuit", source=DataSource.YAHOO)
+    doc.price_history = [
+        PriceHistory(
+            date=date(2024, 6, 1),
+            open=650.0,
+            high=660.0,
+            low=640.0,
+            close=650.0,
+            volume=900_000,
+        )
+    ] * 120
+    yf_frame = pd.DataFrame(
+        {"Close": [640.0 + i * 0.1 for i in range(300)]},
+        index=pd.date_range("2023-01-03", periods=300, freq="B"),
+    )
+    with patch("utils.yfinance_history.fetch_price_history", return_value=yf_frame):
+        frame, source = fetch_price_history_with_fallback(
+            "INTU",
+            years=10,
+            document=doc,
+            min_rows=120,
+            prefer_library=True,
+        )
+    assert source == "yfinance"
+    assert len(frame) >= 120
 
 
 def test_compute_ttm_from_payment_series_newer_payer():

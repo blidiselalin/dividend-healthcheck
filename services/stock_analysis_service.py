@@ -92,10 +92,20 @@ def load_yield_channel_data(
         from services.yield_channel_chart import _default_yield_channel_service
 
         service = _default_yield_channel_service()
-        for min_prices, min_yields in ((120, 60), (52, 26)):
+        attempts = (
+            (years, 120, 60),
+            (years, 52, 26),
+            (min(years, 5), 52, 26),
+        )
+        seen: set[tuple[int, int, int]] = set()
+        for attempt_years, min_prices, min_yields in attempts:
+            key = (attempt_years, min_prices, min_yields)
+            if key in seen:
+                continue
+            seen.add(key)
             channel = service.fetch_yield_channel_data(
                 symbol,
-                years=years,
+                years=attempt_years,
                 use_db=True,
                 document=document,
                 min_price_rows=min_prices,
@@ -107,6 +117,47 @@ def load_yield_channel_data(
     except Exception as exc:
         logger.debug("Yield channel unavailable for %s: %s", symbol, exc)
         return None
+
+
+def ensure_yield_channel_data(
+    symbol: str,
+    *,
+    years: int = 10,
+    document: Optional["StockDocument"] = None,
+    allow_backfill: bool = True,
+) -> Optional["YieldChannelData"]:
+    """
+    Load yield-channel data, optionally backfilling thin library history once.
+
+    Used by the analysis UI when dividends exist but price series are missing.
+    """
+    sym = (symbol or "").strip().upper()
+    if not sym:
+        return None
+
+    doc = document or load_library_document(sym)
+    channel = load_yield_channel_data(sym, years=years, document=doc)
+    if channel is not None or not allow_backfill:
+        return channel
+
+    if doc is None:
+        return None
+
+    from utils.stock_document_history import history_is_thin
+
+    div_count = len(doc.dividend_history or [])
+    if div_count < 2 or not history_is_thin(doc):
+        return None
+
+    try:
+        from services.stock_history_backfill import backfill_thin_history
+
+        backfill_thin_history(symbols=[sym], limit=1)
+        doc = load_library_document(sym) or doc
+    except Exception as exc:
+        logger.debug("On-demand history backfill failed for %s: %s", sym, exc)
+
+    return load_yield_channel_data(sym, years=years, document=doc)
 
 
 def load_independent_stock_analysis(
@@ -138,7 +189,7 @@ def load_independent_stock_analysis(
         yield_source = "api"
 
     channel = (
-        load_yield_channel_data(sym, years=years, document=doc)
+        ensure_yield_channel_data(sym, years=years, document=doc)
         if include_yield_channel
         else None
     )

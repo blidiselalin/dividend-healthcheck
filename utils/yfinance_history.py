@@ -112,6 +112,17 @@ def fetch_price_history(
     return pd.DataFrame()
 
 
+def unique_price_dates(document: Any) -> int:
+    """Count distinct trading dates in a library document's price history."""
+    price_history = getattr(document, "price_history", None) or []
+    dates = {
+        getattr(point, "date", None)
+        for point in price_history
+        if getattr(point, "date", None) is not None
+    }
+    return len(dates)
+
+
 def history_dataframe_from_document(
     doc: Any,
     *,
@@ -158,18 +169,18 @@ def history_dataframe_from_document(
             }
         )
 
-    if len(records) < min_rows:
-        if len(records) >= 52:
+    frame = pd.DataFrame(records, index=index)
+    frame.sort_index(inplace=True)
+    frame = frame[~frame.index.duplicated(keep="last")]
+    if len(frame) < min_rows:
+        if len(frame) >= 52:
             logger.debug(
-                "Using %d library price rows (below requested min_rows=%d)",
-                len(records),
+                "Using %d unique library price days (below requested min_rows=%d)",
+                len(frame),
                 min_rows,
             )
         else:
             return pd.DataFrame()
-
-    frame = pd.DataFrame(records, index=index)
-    frame.sort_index(inplace=True)
     return frame
 
 
@@ -184,38 +195,47 @@ def fetch_price_history_with_fallback(
     """
     Fetch OHLCV history from yfinance and/or analysed-stock price_history.
 
-    When ``prefer_library`` is True and the document has enough rows, use the
-    shared library first so prices align with stored dividend_history.
+    When ``prefer_library`` is True and the document has enough unique trading
+    days, use the shared library first so prices align with dividend_history.
 
     Returns (dataframe, source_label): 'yfinance', 'analysed_library', or 'none'.
     """
-    if prefer_library and document is not None:
+    min_needed = max(52, int(min_rows))
+    library_unique = unique_price_dates(document) if document is not None else 0
+
+    if prefer_library and document is not None and library_unique >= min_needed:
         library = history_dataframe_from_document(
-            document, years=years, min_rows=min_rows
+            document, years=years, min_rows=min(min_needed, library_unique)
         )
-        if library is not None and not library.empty and len(library) >= min_rows:
+        if not library.empty and len(library) >= min(min_needed, len(library)):
             logger.debug(
-                "%s: using analysed-library price history (%d rows)",
+                "%s: using analysed-library price history (%d unique days)",
                 symbol,
                 len(library),
             )
             return library, "analysed_library"
 
     frame = fetch_price_history(symbol, years=years)
-    if frame is not None and not frame.empty and len(frame) >= min_rows:
-        return frame, "yfinance"
+    if frame is not None and not frame.empty:
+        frame = frame.sort_index()
+        frame = frame[~frame.index.duplicated(keep="last")]
+        if len(frame) >= min_needed:
+            return frame, "yfinance"
 
-    if document is not None:
+    if document is not None and library_unique >= 52:
         library = history_dataframe_from_document(
-            document, years=years, min_rows=min_rows
+            document, years=years, min_rows=min(52, library_unique)
         )
-        if library is not None and not library.empty:
+        if not library.empty:
             logger.info(
-                "%s: using analysed-library price history (%d rows) after yfinance miss",
+                "%s: using analysed-library price history (%d unique days) after yfinance miss",
                 symbol,
                 len(library),
             )
             return library, "analysed_library"
+
+    if frame is not None and not frame.empty and len(frame) >= 52:
+        return frame, "yfinance"
 
     return pd.DataFrame(), "none"
 

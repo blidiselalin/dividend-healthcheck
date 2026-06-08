@@ -126,7 +126,8 @@ def validate_yield_channel_data(data: YieldChannelData) -> Optional[YieldChannel
         return None
 
     n = len(data.dates)
-    if n < 36 or len(data.prices) != n or len(data.yields) != n:
+    min_points = 26
+    if n < min_points or len(data.prices) != n or len(data.yields) != n:
         return None
 
     pairs = sorted(
@@ -150,7 +151,7 @@ def validate_yield_channel_data(data: YieldChannelData) -> Optional[YieldChannel
         prices.append(price_f)
         yields.append(yld_f)
 
-    if len(dates) < 36:
+    if len(dates) < min_points:
         return None
 
     current_price = float(data.current_price)
@@ -323,8 +324,6 @@ class YieldChannelService:
             logger.debug("%s: Found %d dividends in DB", symbol, len(db_dividend_history))
 
         try:
-            from utils.yfinance_history import fetch_price_history_with_fallback
-
             ticker = yf.Ticker(symbol)
 
             # Get company name
@@ -343,12 +342,14 @@ class YieldChannelService:
                 dividend_series_from_document,
                 dividend_series_from_records,
                 fetch_dividend_series,
+                fetch_price_history_with_fallback,
                 merge_dividend_series,
+                unique_price_dates,
             )
 
             min_price_rows = max(52, int(min_price_rows))
             min_yield_rows = max(26, int(min_yield_rows))
-            price_count = len(getattr(db_doc, "price_history", None) or []) if db_doc else 0
+            price_count = unique_price_dates(db_doc) if db_doc else 0
             div_count = len(db_dividend_history or [])
             prefer_library = price_count >= 52 and div_count >= 2
             library_min_rows = min(min_price_rows, price_count) if prefer_library else min_price_rows
@@ -360,18 +361,28 @@ class YieldChannelService:
                 min_rows=library_min_rows,
                 prefer_library=prefer_library,
             )
-            if hist.empty or len(hist) < min(min_price_rows, 52):
+            prepared = self._prepare_history_frame(hist)
+            if len(prepared) < min(min_price_rows, 52) and prefer_library:
+                hist, price_source = fetch_price_history_with_fallback(
+                    symbol,
+                    years=years,
+                    document=db_doc,
+                    min_rows=library_min_rows,
+                    prefer_library=False,
+                )
+                prepared = self._prepare_history_frame(hist)
+            if prepared.empty or len(prepared) < min(min_price_rows, 52):
                 logger.debug(
                     "%s: insufficient price history (source=%s, rows=%d)",
                     symbol,
                     price_source,
-                    len(hist),
+                    len(prepared),
                 )
                 return None
             if price_source == "analysed_library":
                 logger.debug("%s: yield channel using analysed-library prices", symbol)
 
-            prepared = self._prepare_history_frame(hist)
+            hist = prepared
 
             library_divs = dividend_series_from_records(db_dividend_history or [])
             if library_divs.empty and db_doc is not None:

@@ -47,7 +47,7 @@ def test_load_independent_stock_analysis_from_library():
     mock_channel = MagicMock(current_yield=0.68)
 
     with patch("services.live_price.apply_live_price", side_effect=lambda s: s), patch(
-        "services.stock_analysis_service.load_yield_channel_data",
+        "services.stock_analysis_service.ensure_yield_channel_data",
         return_value=mock_channel,
     ):
         analysis = load_independent_stock_analysis("INTU", document=doc)
