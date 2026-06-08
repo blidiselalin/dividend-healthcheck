@@ -186,6 +186,7 @@ class SingleStockView:
             symbol,
             years=10,
             channel_data=yield_channel_data,
+            vector_doc=vector_doc,
             show_header=True,
         )
 
@@ -202,7 +203,7 @@ class SingleStockView:
             vector_doc=vector_doc,
             yield_channel_data=yield_channel_data,
             portfolio_prices_at=portfolio_at,
-            expanded=False,
+            expanded=True,
         )
 
         with st.expander("More metrics", expanded=False):

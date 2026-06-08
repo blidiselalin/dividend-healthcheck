@@ -207,26 +207,20 @@ def _import_portfolio_db(db_path: Path, user_id: str, *, data_dir: Path | None =
     return stats
 
 
-def _import_market_library(data_dir: Path) -> int:
-    from data_ingestion.vector_store import load_legacy_vectordb_documents
-    from db.connection import use_cloud_sql
-    from db.postgres_market_store import PostgresMarketStore
+def _import_market_library(data_dir: Path, *, force: bool = False) -> int:
+    from services.market_library_migration import diagnose_legacy_import, import_legacy_market_library
 
-    if not use_cloud_sql():
-        print("  market library: skipped (DATABASE_URL not set)")
+    diag = diagnose_legacy_import(data_dir)
+    if diag.legacy_document_count == 0:
+        print(f"  market library: 0 symbols — {diag.message}")
         return 0
 
-    vectordb_dir = data_dir / "vectordb"
-    documents = load_legacy_vectordb_documents(vectordb_dir)
-    if not documents:
-        print("  market library: 0 symbols (no legacy Chroma data; run --ingest)")
-        return 0
-
-    pg = PostgresMarketStore()
-    pg.add_documents(documents)
-    total = pg.count()
-    print(f"  market library: {len(documents)} symbols imported (PostgreSQL total={total})")
-    return len(documents)
+    stats = import_legacy_market_library(data_dir, merge_with_postgres=True, force=force)
+    print(f"  market library: {stats.get('message', stats)}")
+    if stats.get("errors"):
+        print(f"  market library errors: {stats['errors']}")
+    written = stats.get("imported", 0) + stats.get("merged", 0)
+    return int(written or stats.get("postgres_after", 0))
 
 
 def main() -> int:
@@ -235,6 +229,11 @@ def main() -> int:
         "--data-dir",
         type=Path,
         default=Path.home() / ".dividendscope" / "data",
+    )
+    parser.add_argument(
+        "--force-market",
+        action="store_true",
+        help="Re-import legacy vectordb even if a prior import marker exists",
     )
     args = parser.parse_args()
     data_dir = args.data_dir.expanduser()
@@ -262,8 +261,7 @@ def main() -> int:
                 total[key] += stats[key]
             print(f"  user {user_dir.name}: {stats}")
 
-    market = _import_market_library(data_dir)
-    print(f"  market library: {market} symbols")
+    market = _import_market_library(data_dir, force=args.force_market)
     print("Done.")
     return 0
 

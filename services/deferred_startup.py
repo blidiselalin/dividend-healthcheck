@@ -24,6 +24,7 @@ JOB_WARM_PORTFOLIO = "warm_portfolio"
 JOB_LIVE_RELOAD = "live_reload"
 JOB_COVERAGE_STATS = "coverage_stats"
 JOB_HOURLY_UPDATE = "hourly_market_update"
+JOB_HISTORY_BACKFILL = "history_backfill"
 
 
 def apply_background_results() -> bool:
@@ -37,6 +38,7 @@ def apply_background_results() -> bool:
         JOB_LIVE_RELOAD: _apply_live_reload,
         JOB_COVERAGE_STATS: _apply_coverage_stats,
         JOB_HOURLY_UPDATE: _apply_hourly_update,
+        JOB_HISTORY_BACKFILL: _apply_history_backfill,
     }
     applied = apply_completed_jobs(handlers)
     if applied:
@@ -195,6 +197,26 @@ def schedule_coverage_badge_refresh() -> None:
     start_job(JOB_COVERAGE_STATS, "Updating library stats", _worker)
 
 
+def schedule_history_backfill(*, limit: int = 40) -> Optional[str]:
+    """Admin-triggered backfill for thin price/dividend history."""
+    from auth.user_context import is_app_admin
+
+    if not is_app_admin():
+        return None
+
+    def _worker(progress: ProgressCallback) -> Dict[str, Any]:
+        from services.stock_history_backfill import backfill_thin_history
+
+        return backfill_thin_history(limit=limit, progress_callback=progress)
+
+    return start_job(
+        JOB_HISTORY_BACKFILL,
+        "Backfilling price/dividend history",
+        _worker,
+        admin_only=True,
+    )
+
+
 def schedule_hourly_market_update(*, enrich_limit: int = 40) -> Optional[str]:
     """Admin-triggered hourly market refresh (prices + stale enrich)."""
     from auth.user_context import is_app_admin
@@ -301,6 +323,23 @@ def _apply_coverage_stats(result: Dict[str, Any]) -> None:
     status = dict(st.session_state.get("market_db_status") or {})
     status["sp500_coverage"] = result
     st.session_state["market_db_status"] = status
+
+
+def _apply_history_backfill(result: Dict[str, Any]) -> None:
+    import streamlit as st
+
+    st.session_state["last_history_backfill_summary"] = result
+    try:
+        from ui.portfolio_details_view import _load_dividend_growth
+
+        _load_dividend_growth.clear()
+    except Exception:
+        pass
+    logger.info(
+        "Background history backfill: enriched=%s ready=%s",
+        result.get("enriched"),
+        result.get("ready_after"),
+    )
 
 
 def _apply_hourly_update(result: Dict[str, Any]) -> None:

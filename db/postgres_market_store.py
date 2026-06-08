@@ -224,6 +224,7 @@ class PostgresMarketStore:
 def _document_from_row(row: Any):
     """Merge JSONB document with indexed stock_documents table columns."""
     from data_ingestion.models import StockDocument, parse_data_source
+    from utils.stock_document_history import hydrate_document_history
 
     if not row:
         return None
@@ -232,6 +233,7 @@ def _document_from_row(row: Any):
     if not isinstance(payload, dict):
         payload = dict(payload)
     doc = StockDocument.from_dict(payload)
+    doc = hydrate_document_history(doc)
 
     sector = row.get("sector")
     if sector and (not doc.sector or doc.sector == "Unknown"):

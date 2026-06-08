@@ -228,6 +228,15 @@ class DataIngestionPipeline:
                 if doc.symbol.upper() not in DELISTED_SYMBOLS
                 and (doc.data_quality < min_quality or min_quality == 0)
             ]
+            from utils.stock_document_history import history_is_thin
+
+            documents.sort(
+                key=lambda doc: (
+                    0 if history_is_thin(doc) else 1,
+                    len(doc.price_history or []),
+                    len(doc.dividend_history or []),
+                )
+            )
         
         total = len(documents)
         logger.info(f"Enriching {total} documents with yfinance data...")

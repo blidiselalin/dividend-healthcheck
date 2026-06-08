@@ -57,6 +57,18 @@ def render_admin_market_update_controls() -> None:
     if not is_app_admin():
         return
 
+    try:
+        from services.stock_history_backfill import thin_history_summary
+
+        summary = thin_history_summary()
+        if summary["thin_history"]:
+            st.sidebar.caption(
+                f"Library history: {summary['yield_ready']}/{summary['total']} yield-ready · "
+                f"{summary['thin_history']} need backfill"
+            )
+    except Exception:
+        pass
+
     sidebar_heading("Admin")
     if st.sidebar.button(
         "Update stock library",
@@ -69,6 +81,21 @@ def render_admin_market_update_controls() -> None:
             st.toast("Stock library update started in the background")
         else:
             st.toast("Update already running")
+        st.rerun()
+
+    if st.sidebar.button(
+        "Backfill thin history",
+        use_container_width=True,
+        help="Fetch missing price/dividend series into stock_documents (yield channels)",
+        key="admin_history_backfill",
+    ):
+        from services.deferred_startup import schedule_history_backfill
+
+        job_id = schedule_history_backfill(limit=40)
+        if job_id:
+            st.toast("History backfill started in the background")
+        else:
+            st.toast("Backfill already running")
         st.rerun()
 
     summary = st.session_state.get("last_hourly_update_summary")

@@ -265,6 +265,21 @@ Examples:
     )
 
     parser.add_argument(
+        "--backfill-history",
+        action="store_true",
+        help=(
+            "Backfill price_history and dividend_history for library rows missing "
+            "yield-channel data (252+ prices, 4+ dividends)"
+        ),
+    )
+    parser.add_argument(
+        "--backfill-limit",
+        type=int,
+        default=40,
+        help="With --backfill-history, max symbols per run (default: 40)",
+    )
+
+    parser.add_argument(
         "--sync-portfolio",
         action="store_true",
         help="Link portfolio.db holdings into the vector DB (creates missing symbols via yfinance)",
@@ -515,6 +530,43 @@ Examples:
             f"({after['pct_covered']:.0f}%)"
         )
         print(f"  Total analysed:  {after['analysed_total']}")
+        return 0
+
+    # Handle backfill-history action
+    if args.backfill_history:
+        print(f"\n{'='*50}")
+        print("  BACKFILLING THIN PRICE/DIVIDEND HISTORY")
+        print(f"{'='*50}\n")
+
+        symbols = args.symbols.split(",") if args.symbols else None
+        from services.stock_history_backfill import backfill_thin_history, thin_history_summary
+
+        before = thin_history_summary()
+        print(
+            f"  Library: {before['yield_ready']}/{before['total']} yield-ready "
+            f"({before['thin_history']} thin)"
+        )
+
+        def progress_cb(value, message):
+            pct = value * 100
+            print(f"\r[{pct:5.1f}%] {message}...", end="", flush=True)
+
+        stats = backfill_thin_history(
+            limit=max(1, args.backfill_limit),
+            symbols=symbols,
+            progress_callback=progress_cb,
+        )
+        after = thin_history_summary()
+        print("\n")
+        print("History backfill complete!")
+        print(f"  Candidates:     {stats.get('candidates', 0)}")
+        print(f"  Processed:        {stats.get('processed', 0)}")
+        print(f"  Enriched:         {stats.get('enriched', 0)}")
+        print(f"  Yield-ready now:  {stats.get('ready_after', 0)} this batch")
+        print(
+            f"  Library total:    {after['yield_ready']}/{after['total']} yield-ready "
+            f"({after['thin_history']} thin remaining)"
+        )
         return 0
 
     # Handle enrich-existing action

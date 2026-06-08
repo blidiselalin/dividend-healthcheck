@@ -217,7 +217,9 @@ class YFinanceEnricher:
                 doc.description = info.get("longBusinessSummary", "")[:500]
             
             # Fetch dividend history if needed
-            if not doc.dividend_history or len(doc.dividend_history) < 10:
+            from config import MIN_YIELD_DIVIDEND_PAYMENTS
+
+            if not doc.dividend_history or len(doc.dividend_history) < MIN_YIELD_DIVIDEND_PAYMENTS:
                 doc = self._enrich_dividend_history(doc, ticker)
             
             # Calculate dividend growth rates
@@ -416,14 +418,14 @@ class YFinanceEnricher:
     ) -> StockDocument:
         """Enrich with price history and calculate returns."""
         try:
+            from config import MIN_YIELD_PRICE_POINTS
             from utils.yfinance_history import fetch_price_history
 
-            hist = fetch_price_history(doc.symbol, years=5)
+            hist = fetch_price_history(doc.symbol, years=10)
             if hist is None or hist.empty:
                 return doc
-            
-            # Only add if we don't have much price history
-            if len(doc.price_history) < 100:
+
+            if len(doc.price_history) < MIN_YIELD_PRICE_POINTS:
                 existing_dates = {p.date for p in doc.price_history}
                 
                 for date_idx, row in hist.iterrows():

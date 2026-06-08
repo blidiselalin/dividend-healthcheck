@@ -54,18 +54,30 @@ docker compose up -d
 echo ">>> Apply PostgreSQL schema"
 docker compose exec -T dividendscope python -m db --migrate
 
-echo ">>> Container status"
-docker compose ps
+HOST_VDB="${ROOT}/data/vectordb"
+if [[ -d "$HOST_VDB" ]] && [[ -n "$(ls -A "$HOST_VDB" 2>/dev/null)" ]]; then
+  echo ">>> Copy project data/vectordb → persistent volume /data/vectordb"
+  docker compose exec -T dividendscope mkdir -p /data/vectordb
+  docker cp "$HOST_VDB/." dividendscope:/data/vectordb/
+fi
+
+echo ">>> Legacy market library (Chroma → PostgreSQL if /data/vectordb present)"
+docker compose exec -T dividendscope python scripts/auto_import_market_library.py || true
 
 if [[ "$MIGRATE_FILES" == true ]]; then
-  echo ">>> Import legacy SQLite/Chroma from /data into PostgreSQL…"
-  docker compose exec -T dividendscope python scripts/migrate_to_cloud_sql.py --data-dir /data
+  echo ">>> Full legacy import (SQLite + Chroma → PostgreSQL)…"
+  docker compose exec -T dividendscope python scripts/migrate_to_cloud_sql.py --data-dir /data --force-market
 fi
+
+echo ">>> Container status"
+docker compose ps
 
 if [[ "$RUN_INGEST" == true ]]; then
   echo ">>> Shared S&P library ingest (may take 30–90 min first time)…"
   docker compose exec -T dividendscope python ingest_data.py --ensure-sp500
   docker compose exec -T dividendscope python ingest_data.py --enrich-existing
+  echo ">>> Backfill price/dividend history for yield channels (batched)…"
+  docker compose exec -T dividendscope python ingest_data.py --backfill-history --backfill-limit 120
 fi
 
 if [[ "$SYNC_PORTFOLIO" == true ]]; then

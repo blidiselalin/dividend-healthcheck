@@ -21,29 +21,36 @@ def enrich_stale_documents(
     request_delay: float = 0.35,
 ) -> Dict[str, Any]:
     """
-    Re-enrich the oldest or lowest-quality documents in the shared market library.
+    Re-enrich stale or thin-history documents in the shared market library.
 
-    Processes at most ``limit`` symbols per run so hourly cron stays within API limits.
+    Thin history (missing yield-channel rows) is processed first each run.
     """
     from config import DELISTED_SYMBOLS
     from data_ingestion.stock_enricher import create_stock_enricher
     from services.shared_market_db import get_shared_vector_store
+    from services.stock_history_backfill import documents_needing_history_backfill
+    from utils.stock_document_history import history_is_thin
 
     store = get_shared_vector_store()
     cutoff = datetime.now() - timedelta(days=max(1, stale_days))
+    all_documents = store.get_all_documents()
 
-    candidates: List[Any] = []
-    for document in store.get_all_documents():
+    candidates: List[Any] = list(documents_needing_history_backfill(all_documents))
+    seen = {(doc.symbol or "").upper() for doc in candidates}
+
+    for document in all_documents:
         symbol = (document.symbol or "").upper()
-        if not symbol or symbol in DELISTED_SYMBOLS:
+        if not symbol or symbol in DELISTED_SYMBOLS or symbol in seen:
             continue
         updated = document.last_updated or datetime.min
         quality = float(document.data_quality or 0)
         if updated < cutoff or quality < 55:
             candidates.append(document)
+            seen.add(symbol)
 
     candidates.sort(
         key=lambda doc: (
+            0 if history_is_thin(doc) else 1,
             doc.last_updated or datetime.min,
             float(doc.data_quality or 0),
         )

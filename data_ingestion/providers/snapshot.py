@@ -11,6 +11,7 @@ from dataclasses import dataclass, field, fields
 from datetime import date, datetime
 from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Set
 
+from config import MIN_YIELD_DIVIDEND_PAYMENTS, MIN_YIELD_PRICE_POINTS
 from data_ingestion.models import DataSource, DividendRecord, PriceHistory, StockDocument
 
 # Field groups used to decide which provider to call for gap-filling.
@@ -214,7 +215,10 @@ def missing_field_groups(doc: StockDocument) -> List[str]:
         "growth": _empty(doc.revenue_growth) and _empty(doc.earnings_growth),
         "performance": _empty(doc.price_return_1y),
         "analyst": _empty(doc.analyst_rating) and _empty(doc.target_price),
-        "history": len(doc.dividend_history) < 4 and len(doc.price_history) < 30,
+        "history": (
+            len(doc.price_history) < MIN_YIELD_PRICE_POINTS
+            or len(doc.dividend_history) < MIN_YIELD_DIVIDEND_PAYMENTS
+        ),
     }
     for group, is_missing in checks.items():
         if is_missing:
