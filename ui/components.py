@@ -812,8 +812,9 @@ class UIComponents:
                     },
                 )
                 st.caption(
-                    "Run `python ingest_data.py --backfill-history` or **Backfill thin history** "
-                    "in the admin sidebar to populate price series for the yield chart."
+                    "Library dividends are present but price history may be missing or duplicated. "
+                    "Reload live data, run `python ingest_data.py --backfill-history`, or use "
+                    "**Backfill thin history** in the admin sidebar."
                 )
                 return False
 

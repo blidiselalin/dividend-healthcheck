@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from unittest.mock import MagicMock, patch
 
-from data_ingestion.models import DividendRecord, PriceHistory, StockDocument
+from data_ingestion.models import DataSource, DividendRecord, PriceHistory, StockDocument
 
 
 def _library_doc() -> StockDocument:
@@ -26,6 +26,40 @@ def _library_doc() -> StockDocument:
         for m in (2, 5, 8, 11)
     ]
     return doc
+
+
+def test_ensure_yield_channel_data_falls_back_to_yfinance_prices():
+    from datetime import date
+
+    from data_ingestion.models import DataSource, DividendRecord, PriceHistory, StockDocument
+    from services.stock_analysis_service import ensure_yield_channel_data
+
+    doc = StockDocument(symbol="INTU", name="Intuit", source=DataSource.YAHOO)
+    doc.dividend_history = [
+        DividendRecord(ex_date=date(2015 + y, 2, 15), payment_date=None, amount=1.0 + y * 0.1)
+        for y in range(10)
+    ]
+    doc.price_history = [
+        PriceHistory(
+            date=date(2024, 6, 1),
+            open=650.0,
+            high=660.0,
+            low=640.0,
+            close=650.0,
+            volume=900_000,
+        )
+    ] * 200
+    mock_channel = MagicMock()
+
+    with patch(
+        "services.stock_analysis_service.load_yield_channel_data",
+        side_effect=[None, mock_channel],
+    ) as mock_load, patch("services.stock_history_backfill.backfill_thin_history") as mock_backfill:
+        result = ensure_yield_channel_data("INTU", document=doc, allow_backfill=False)
+
+    assert result is mock_channel
+    mock_backfill.assert_not_called()
+    assert mock_load.call_count == 2
 
 
 def test_ensure_yield_channel_data_skips_backfill_when_channel_exists():
@@ -52,7 +86,7 @@ def test_ensure_yield_channel_data_backfills_thin_history():
 
     with patch(
         "services.stock_analysis_service.load_yield_channel_data",
-        side_effect=[None, mock_channel],
+        side_effect=[None, None, mock_channel],
     ), patch(
         "services.stock_analysis_service.load_library_document",
         return_value=doc,

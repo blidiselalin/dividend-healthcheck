@@ -343,6 +343,7 @@ class YieldChannelService:
                 dividend_series_from_records,
                 fetch_dividend_series,
                 fetch_price_history_with_fallback,
+                library_prices_trustworthy,
                 merge_dividend_series,
                 unique_price_dates,
             )
@@ -351,7 +352,7 @@ class YieldChannelService:
             min_yield_rows = max(13, int(min_yield_rows))
             price_count = unique_price_dates(db_doc) if db_doc else 0
             div_count = len(db_dividend_history or [])
-            prefer_library = price_count >= 52 and div_count >= 2
+            prefer_library = library_prices_trustworthy(db_doc) and div_count >= 2
             library_min_rows = min(min_price_rows, price_count) if prefer_library else min_price_rows
 
             hist, price_source = fetch_price_history_with_fallback(
@@ -362,7 +363,7 @@ class YieldChannelService:
                 prefer_library=prefer_library,
             )
             prepared = self._prepare_history_frame(hist)
-            if len(prepared) < min(min_price_rows, 52) and prefer_library:
+            if len(prepared) < min(min_price_rows, 52):
                 hist, price_source = fetch_price_history_with_fallback(
                     symbol,
                     years=years,

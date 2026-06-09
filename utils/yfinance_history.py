@@ -123,6 +123,25 @@ def unique_price_dates(document: Any) -> int:
     return len(dates)
 
 
+def library_prices_trustworthy(document: Any, *, min_unique: int = 52) -> bool:
+    """
+    True when library OHLCV spans enough distinct trading days for yield charts.
+
+    Rejects duplicate-date snapshots (many rows, one calendar day) that inflate
+    raw counts but collapse after dedupe.
+    """
+    if document is None:
+        return False
+    price_history = getattr(document, "price_history", None) or []
+    raw = len(price_history)
+    unique = unique_price_dates(document)
+    if unique < min_unique:
+        return False
+    if raw >= 100 and unique < max(min_unique, raw // 4):
+        return False
+    return True
+
+
 def history_dataframe_from_document(
     doc: Any,
     *,
@@ -220,11 +239,11 @@ def fetch_price_history_with_fallback(
     Returns (dataframe, source_label): 'yfinance', 'analysed_library', or 'none'.
     """
     min_needed = max(52, int(min_rows))
-    library_unique = unique_price_dates(document) if document is not None else 0
+    library_ok = library_prices_trustworthy(document, min_unique=min(52, min_needed))
 
-    if document is not None and library_unique >= 52:
+    if library_ok:
         library = history_dataframe_from_document(
-            document, years=years, min_rows=min(52, library_unique)
+            document, years=years, min_rows=min(52, unique_price_dates(document))
         )
         library = densify_price_history(library)
         if not library.empty and len(library) >= min_needed:
@@ -235,9 +254,9 @@ def fetch_price_history_with_fallback(
             )
             return library, "analysed_library"
 
-    if prefer_library and document is not None and library_unique >= min_needed:
+    if prefer_library and library_ok:
         library = history_dataframe_from_document(
-            document, years=years, min_rows=min(min_needed, library_unique)
+            document, years=years, min_rows=min(min_needed, unique_price_dates(document))
         )
         if not library.empty and len(library) >= min(min_needed, len(library)):
             logger.debug(
@@ -254,9 +273,9 @@ def fetch_price_history_with_fallback(
         if len(frame) >= min_needed:
             return frame, "yfinance"
 
-    if document is not None and library_unique >= 52:
+    if document is not None and library_prices_trustworthy(document, min_unique=52):
         library = history_dataframe_from_document(
-            document, years=years, min_rows=min(52, library_unique)
+            document, years=years, min_rows=min(52, unique_price_dates(document))
         )
         library = densify_price_history(library)
         if not library.empty and len(library) >= 52:

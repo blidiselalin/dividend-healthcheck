@@ -25,13 +25,21 @@ def history_counts(doc: Any) -> tuple[int, int]:
 
 def history_is_thin(doc: Any) -> bool:
     """True when yield channels and history tables need a backfill."""
+    from utils.yfinance_history import library_prices_trustworthy, unique_price_dates
+
     price_n, div_n = history_counts(doc)
-    return price_n < MIN_YIELD_PRICE_POINTS or div_n < MIN_YIELD_DIVIDEND_PAYMENTS
+    unique_prices = unique_price_dates(doc)
+    prices_thin = not library_prices_trustworthy(doc, min_unique=MIN_YIELD_PRICE_POINTS)
+    if price_n >= MIN_YIELD_PRICE_POINTS and unique_prices < max(52, price_n // 4):
+        prices_thin = True
+    return prices_thin or div_n < MIN_YIELD_DIVIDEND_PAYMENTS
 
 
 def yield_channel_ready(doc: Any) -> bool:
-    price_n, div_n = history_counts(doc)
-    return price_n >= MIN_YIELD_PRICE_POINTS and div_n >= MIN_YIELD_DIVIDEND_PAYMENTS
+    from utils.yfinance_history import library_prices_trustworthy
+
+    _, div_n = history_counts(doc)
+    return library_prices_trustworthy(doc, min_unique=MIN_YIELD_PRICE_POINTS) and div_n >= MIN_YIELD_DIVIDEND_PAYMENTS
 
 
 def parse_history_payload(data: Dict[str, Any]) -> tuple[List[Any], List[Any]]:

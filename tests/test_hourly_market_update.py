@@ -24,12 +24,33 @@ def _doc(
     price_points: int = 0,
     div_points: int = 0,
 ):
+    from datetime import date
+
+    from data_ingestion.models import DividendRecord, PriceHistory
+
     doc = MagicMock()
     doc.symbol = symbol
     doc.last_updated = datetime.now() - timedelta(days=days_old)
     doc.data_quality = quality
-    doc.price_history = [object()] * price_points
-    doc.dividend_history = [object()] * div_points
+    doc.price_history = [
+        PriceHistory(
+            date=date(2020, 1, 1) + timedelta(days=i),
+            open=1.0,
+            high=1.0,
+            low=1.0,
+            close=1.0,
+            volume=1,
+        )
+        for i in range(price_points)
+    ]
+    doc.dividend_history = [
+        DividendRecord(
+            ex_date=date(2020, 1, 1) + timedelta(days=i * 90),
+            payment_date=None,
+            amount=1.0,
+        )
+        for i in range(div_points)
+    ]
     return doc
 
 

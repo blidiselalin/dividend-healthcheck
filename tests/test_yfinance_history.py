@@ -61,6 +61,23 @@ def test_history_dataframe_deduplicates_duplicate_dates():
     assert frame.empty
 
 
+def test_library_prices_trustworthy_rejects_duplicate_dates():
+    from utils.yfinance_history import library_prices_trustworthy
+
+    doc = StockDocument(symbol="INTU", name="Intuit", source=DataSource.YAHOO)
+    doc.price_history = [
+        PriceHistory(
+            date=date(2024, 6, 1),
+            open=650.0,
+            high=660.0,
+            low=640.0,
+            close=650.0,
+            volume=900_000,
+        )
+    ] * 120
+    assert not library_prices_trustworthy(doc)
+
+
 def test_fetch_price_history_prefers_yfinance_when_library_dates_duplicate():
     from unittest.mock import patch
 

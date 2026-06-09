@@ -165,14 +165,22 @@ def ensure_yield_channel_data(
 
     doc = document or load_library_document(sym)
     channel = load_yield_channel_data(sym, years=years, document=doc)
-    if channel is not None or not allow_backfill:
+    if channel is not None:
         return channel
 
-    if doc is None:
-        return None
+    if doc is not None and len(doc.dividend_history or []) >= 4:
+        from utils.yfinance_history import library_prices_trustworthy
 
-    div_count = len(doc.dividend_history or [])
-    if div_count < 4:
+        if not library_prices_trustworthy(doc):
+            channel = load_yield_channel_data(
+                sym,
+                years=years,
+                document=_document_dividends_only(doc),
+            )
+            if channel is not None:
+                return channel
+
+    if not allow_backfill:
         return None
 
     try:
@@ -183,7 +191,24 @@ def ensure_yield_channel_data(
     except Exception as exc:
         logger.debug("On-demand history backfill failed for %s: %s", sym, exc)
 
-    return load_yield_channel_data(sym, years=years, document=doc)
+    channel = load_yield_channel_data(sym, years=years, document=doc)
+    if channel is not None:
+        return channel
+
+    if len(doc.dividend_history or []) >= 4:
+        return load_yield_channel_data(
+            sym,
+            years=years,
+            document=_document_dividends_only(doc),
+        )
+    return None
+
+
+def _document_dividends_only(document: "StockDocument") -> "StockDocument":
+    """Copy library metadata without price rows (forces live price fetch)."""
+    from dataclasses import replace
+
+    return replace(document, price_history=[])
 
 
 def load_independent_stock_analysis(
