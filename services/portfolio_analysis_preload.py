@@ -50,24 +50,50 @@ def preload_portfolio_analysis(
     """
     Fetch yield-channel series and retain vector documents for every holding.
 
-    Runs in parallel so the portfolio table and drill-down charts are ready
-    before the user selects a ticker.
+    Backfills thin price/dividend history for portfolio symbols first, then loads
+    charts from the updated library.
     """
+    from services.portfolio_details_service import PortfolioDetailsService
+    from services.stock_history_backfill import backfill_portfolio_holdings
     from services.stock_analysis_service import load_yield_channel_data
     from services.yield_channel_chart import YieldChannelData
+    from utils.stock_document_history import history_is_thin
+
+    docs = dict(vector_docs)
+    if not docs and symbols:
+        docs = PortfolioDetailsService()._load_documents(symbols)
+
+    needs_backfill = [
+        symbol
+        for symbol in symbols
+        if docs.get(symbol) is None or history_is_thin(docs.get(symbol))
+    ]
+    if needs_backfill:
+        if progress_callback:
+            progress_callback(0.0, f"Backfilling history for {len(needs_backfill)} holdings…")
+        backfill_portfolio_holdings(
+            needs_backfill,
+            progress_callback=(
+                (lambda value, message: progress_callback(value * 0.4, message))
+                if progress_callback
+                else None
+            ),
+        )
+        docs = PortfolioDetailsService()._load_documents(symbols)
 
     yield_channels: Dict[str, YieldChannelData] = {}
     if not symbols:
         return PortfolioAnalysisPreload(
             stock_data=dict(stock_data),
             yield_channels=yield_channels,
-            vector_docs=dict(vector_docs),
+            vector_docs=dict(docs),
         )
 
     total = len(symbols)
     completed = 0
+    chart_base = 0.4 if needs_backfill else 0.0
     if progress_callback and total:
-        progress_callback(0.0, f"0/{total} yield charts")
+        progress_callback(chart_base, f"0/{total} yield charts")
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
@@ -75,7 +101,7 @@ def preload_portfolio_analysis(
                 load_yield_channel_data,
                 symbol,
                 years=years,
-                document=vector_docs.get(symbol),
+                document=docs.get(symbol),
             ): symbol
             for symbol in symbols
         }
@@ -90,12 +116,12 @@ def preload_portfolio_analysis(
             completed += 1
             if progress_callback and total:
                 progress_callback(
-                    completed / total,
+                    chart_base + (1.0 - chart_base) * (completed / total),
                     f"{completed}/{total} yield charts ({symbol})",
                 )
 
     return PortfolioAnalysisPreload(
         stock_data=dict(stock_data),
         yield_channels=yield_channels,
-        vector_docs=dict(vector_docs),
+        vector_docs=dict(docs),
     )

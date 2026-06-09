@@ -177,19 +177,29 @@ class StockSnapshot:
         self._merge_history(other)
 
     def _merge_history(self, other: "StockSnapshot") -> None:
+        from utils.datetime_compat import coerce_calendar_date
+
         if other.price_history:
-            existing = {point.date for point in self.price_history}
+            existing = {coerce_calendar_date(point.date) for point in self.price_history}
             for point in other.price_history:
-                if point.date not in existing:
+                point_date = coerce_calendar_date(point.date)
+                if point_date not in existing:
                     self.price_history.append(point)
-            self.price_history.sort(key=lambda point: point.date, reverse=True)
+            self.price_history.sort(
+                key=lambda point: coerce_calendar_date(point.date),
+                reverse=True,
+            )
 
         if other.dividend_history:
-            existing = {record.ex_date for record in self.dividend_history}
+            existing = {coerce_calendar_date(record.ex_date) for record in self.dividend_history}
             for record in other.dividend_history:
-                if record.ex_date not in existing:
+                ex_date = coerce_calendar_date(record.ex_date)
+                if ex_date not in existing:
                     self.dividend_history.append(record)
-            self.dividend_history.sort(key=lambda record: record.ex_date, reverse=True)
+            self.dividend_history.sort(
+                key=lambda record: coerce_calendar_date(record.ex_date),
+                reverse=True,
+            )
 
 
 def missing_field_groups(doc: StockDocument) -> List[str]:
@@ -228,6 +238,7 @@ def missing_field_groups(doc: StockDocument) -> List[str]:
 
 def apply_snapshot_to_document(doc: StockDocument, snapshot: StockSnapshot) -> StockDocument:
     """Apply snapshot fields onto ``doc`` without overwriting existing values."""
+    from utils.datetime_compat import max_datetime
     if doc.name == doc.symbol and snapshot.name:
         doc.name = snapshot.name
     if doc.sector == "Unknown" and snapshot.sector:
@@ -274,7 +285,7 @@ def apply_snapshot_to_document(doc: StockDocument, snapshot: StockSnapshot) -> S
 
     if snapshot.source != DataSource.MANUAL:
         doc.source = snapshot.source
-    doc.last_updated = max(doc.last_updated, snapshot.fetched_at)
+    doc.last_updated = max_datetime(doc.last_updated, snapshot.fetched_at)
     return doc
 
 

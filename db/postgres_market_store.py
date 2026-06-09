@@ -262,12 +262,16 @@ def _document_from_row(row: Any, *, conn: Any = None):
         doc.data_quality = float(row["data_quality"])
 
     if row.get("last_updated") is not None:
+        from utils.datetime_compat import to_naive_utc
+
         raw_updated = row["last_updated"]
         if isinstance(raw_updated, datetime):
-            doc.last_updated = raw_updated
+            doc.last_updated = to_naive_utc(raw_updated)
         elif isinstance(raw_updated, str):
             try:
-                doc.last_updated = datetime.fromisoformat(raw_updated.replace("Z", "+00:00"))
+                doc.last_updated = to_naive_utc(
+                    datetime.fromisoformat(raw_updated.replace("Z", "+00:00"))
+                )
             except ValueError:
                 pass
 

@@ -415,6 +415,11 @@ def compute_ttm_from_payment_series(
 
     frame = hist.copy()
     frame.index = _to_naive_datetime_index(frame.index)
+    if "Close" not in frame.columns:
+        if "Adj Close" in frame.columns:
+            frame["Close"] = frame["Adj Close"]
+        else:
+            return None
     frame["Close"] = pd.to_numeric(frame["Close"], errors="coerce")
     frame = frame.dropna(subset=["Close"])
     frame = frame[frame["Close"] > 0]

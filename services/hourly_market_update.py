@@ -28,12 +28,17 @@ def enrich_stale_documents(
     from config import DELISTED_SYMBOLS
     from data_ingestion.stock_enricher import create_stock_enricher
     from services.shared_market_db import get_shared_vector_store
-    from services.stock_history_backfill import documents_needing_history_backfill
+    from services.stock_history_backfill import (
+        documents_needing_history_backfill,
+        portfolio_backfill_symbols,
+    )
+    from utils.datetime_compat import to_naive_utc
     from utils.stock_document_history import history_is_thin
 
     store = get_shared_vector_store()
     cutoff = datetime.now() - timedelta(days=max(1, stale_days))
     all_documents = store.get_all_documents()
+    portfolio = portfolio_backfill_symbols()
 
     candidates: List[Any] = list(documents_needing_history_backfill(all_documents))
     seen = {(doc.symbol or "").upper() for doc in candidates}
@@ -42,7 +47,7 @@ def enrich_stale_documents(
         symbol = (document.symbol or "").upper()
         if not symbol or symbol in DELISTED_SYMBOLS or symbol in seen:
             continue
-        updated = document.last_updated or datetime.min
+        updated = to_naive_utc(document.last_updated) or datetime.min
         quality = float(document.data_quality or 0)
         if updated < cutoff or quality < 55:
             candidates.append(document)
@@ -51,7 +56,8 @@ def enrich_stale_documents(
     candidates.sort(
         key=lambda doc: (
             0 if history_is_thin(doc) else 1,
-            doc.last_updated or datetime.min,
+            0 if (doc.symbol or "").upper() in portfolio else 1,
+            to_naive_utc(doc.last_updated) or datetime.min,
             float(doc.data_quality or 0),
         )
     )

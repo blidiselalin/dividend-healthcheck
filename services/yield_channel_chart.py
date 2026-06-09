@@ -362,6 +362,9 @@ class YieldChannelService:
                 prefer_library=prefer_library or library_only,
                 library_only=library_only,
             )
+            if hist is None or hist.empty:
+                logger.debug("%s: no price history (source=%s)", symbol, price_source)
+                return None
             prepared = self._prepare_history_frame(hist)
             if not library_only and len(prepared) < min(min_price_rows, 52):
                 hist, price_source = fetch_price_history_with_fallback(
@@ -506,7 +509,7 @@ class YieldChannelService:
             return validate_yield_channel_data(payload)
 
         except Exception as e:
-            logger.error(f"Error fetching yield channel data for {symbol}: {e}")
+            logger.debug("Yield channel unavailable for %s: %s", symbol, e)
             return None
 
     @staticmethod
@@ -514,10 +517,18 @@ class YieldChannelService:
         """Sort, dedupe, and normalize OHLCV before yield math."""
         from utils.yfinance_history import densify_price_history
 
+        if hist is None or hist.empty:
+            return pd.DataFrame()
+
         frame = hist.copy()
         frame = frame.sort_index()
         frame = frame[~frame.index.duplicated(keep="last")]
-        if "Adj Close" in frame.columns:
+        if "Close" not in frame.columns:
+            if "Adj Close" in frame.columns:
+                frame["Close"] = frame["Adj Close"]
+            else:
+                return pd.DataFrame()
+        elif "Adj Close" in frame.columns:
             frame["Close"] = frame["Adj Close"]
         frame["Close"] = pd.to_numeric(frame["Close"], errors="coerce")
         frame = frame.dropna(subset=["Close"])

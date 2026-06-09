@@ -2,25 +2,38 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 
 from data_ingestion.models import DataSource, DividendRecord, PriceHistory, StockDocument
 
 
-def _library_doc() -> StockDocument:
+def _library_doc(*, chart_ready: bool = False) -> StockDocument:
     doc = StockDocument(symbol="INTU", name="Intuit", sector="Technology")
     doc.dividend_yield = None
-    doc.price_history = [
-        PriceHistory(
-            date=date(2024, 6, 1),
-            open=650.0,
-            high=660.0,
-            low=640.0,
-            close=650.0,
-            volume=900_000,
-        )
-    ] * 200
+    if chart_ready:
+        doc.price_history = [
+            PriceHistory(
+                date=date(2020, 1, 1) + timedelta(days=i),
+                open=650.0,
+                high=660.0,
+                low=640.0,
+                close=650.0 + i * 0.01,
+                volume=900_000,
+            )
+            for i in range(260)
+        ]
+    else:
+        doc.price_history = [
+            PriceHistory(
+                date=date(2024, 6, 1),
+                open=650.0,
+                high=660.0,
+                low=640.0,
+                close=650.0,
+                volume=900_000,
+            )
+        ] * 200
     doc.dividend_history = [
         DividendRecord(ex_date=date(2024, m, 1), payment_date=date(2024, m, 15), amount=1.1)
         for m in (2, 5, 8, 11)
@@ -76,7 +89,11 @@ def test_ensure_yield_channel_data_backfills_thin_history():
     ), patch("services.stock_history_backfill.backfill_thin_history") as mock_backfill:
         result = ensure_yield_channel_data("INTU", document=doc, allow_backfill=True)
 
-    mock_backfill.assert_called_once_with(symbols=["INTU"], limit=1)
+    mock_backfill.assert_called_once_with(
+        symbols=["INTU"],
+        limit=1,
+        prioritize_portfolio=True,
+    )
     assert result is mock_channel
 
 
@@ -111,16 +128,30 @@ def test_load_independent_stock_analysis_from_library():
     assert analysis.yield_channel is mock_channel
 
 
-def test_load_yield_channel_data_passes_library_document():
+def test_load_yield_channel_data_skips_when_not_chart_ready():
     from services.stock_analysis_service import load_yield_channel_data
 
     doc = _library_doc()
+
+    with patch("services.shared_market_db.get_document", return_value=None), patch(
+        "services.yield_channel_chart._default_yield_channel_service"
+    ) as mock_service_factory:
+        result = load_yield_channel_data("INTU", document=doc)
+
+    assert result is None
+    mock_service_factory.assert_not_called()
+
+
+def test_load_yield_channel_data_passes_library_document():
+    from services.stock_analysis_service import load_yield_channel_data
+
+    doc = _library_doc(chart_ready=True)
     mock_channel = MagicMock()
 
     with patch(
         "services.yield_channel_chart._default_yield_channel_service"
     ) as mock_service_factory, patch(
-        "services.shared_market_db.get_document", return_value=doc
+        "services.shared_market_db.get_document", return_value=None
     ):
         service = MagicMock()
         service.fetch_yield_channel_data.return_value = mock_channel

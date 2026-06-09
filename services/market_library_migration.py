@@ -176,8 +176,10 @@ def pick_richer_document(existing: Any, incoming: Any) -> Any:
     if in_score[:2] < ex_score[:2]:
         return existing
 
-    ex_updated = getattr(existing, "last_updated", None) or datetime.min
-    in_updated = getattr(incoming, "last_updated", None) or datetime.min
+    from utils.datetime_compat import to_naive_utc
+
+    ex_updated = to_naive_utc(getattr(existing, "last_updated", None)) or datetime.min
+    in_updated = to_naive_utc(getattr(incoming, "last_updated", None)) or datetime.min
     if in_updated > ex_updated:
         return incoming
     if in_score[2] > ex_score[2]:

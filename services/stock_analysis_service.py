@@ -130,6 +130,12 @@ def load_yield_channel_data(
     doc = resolve_library_document(sym, document)
     if doc is None:
         return None
+
+    from utils.yield_channel_library import assess_yield_channel_readiness
+
+    if not assess_yield_channel_readiness(sym, doc).chart_ready:
+        return None
+
     try:
         from services.yield_channel_chart import _default_yield_channel_service
         from utils.yield_channel_history import plan_yield_channel_attempts
@@ -167,14 +173,15 @@ def ensure_yield_channel_data(
     """
     Load yield-channel data from library tables / stock_documents.
 
-    When ``allow_backfill`` is True (admin jobs only), thin symbols are enriched
-    once from external sources into the library, then reloaded from the database.
+    When ``allow_backfill`` is True, thin symbols are enriched once from external
+    sources into the library, then reloaded from the database.
     """
     sym = (symbol or "").strip().upper()
     if not sym:
         return None
 
     from utils.library_document import resolve_library_document
+    from utils.stock_document_history import history_is_thin
 
     doc = resolve_library_document(sym, document)
     channel = load_yield_channel_data(
@@ -186,14 +193,14 @@ def ensure_yield_channel_data(
     if channel is not None or not allow_backfill:
         return channel
 
-    if doc is None or len(doc.dividend_history or []) < 4:
+    if doc is not None and not history_is_thin(doc):
         return None
 
     try:
         from services.stock_history_backfill import backfill_thin_history
 
-        backfill_thin_history(symbols=[sym], limit=1)
-        doc = load_library_document(sym) or doc
+        backfill_thin_history(symbols=[sym], limit=1, prioritize_portfolio=True)
+        doc = resolve_library_document(sym, None) or doc
     except Exception as exc:
         logger.debug("On-demand history backfill failed for %s: %s", sym, exc)
 

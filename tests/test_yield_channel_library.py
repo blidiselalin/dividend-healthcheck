@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+import pandas as pd
 from unittest.mock import patch
 
 from data_ingestion.models import DividendRecord, PriceHistory, StockDocument
@@ -66,14 +67,28 @@ def test_readiness_detects_duplicate_price_rows():
     assert readiness.needs_history_backfill is True
 
 
-def test_reload_guidance_mentions_backfill_and_sync():
+def test_reload_guidance_mentions_backfill_when_prices_missing():
     doc = StockDocument(symbol="INTU", name="Intuit")
-    doc.price_history = _good_prices(60)
+    doc.price_history = []
     doc.dividend_history = [
-        DividendRecord(ex_date=date(2020, 2, 15), payment_date=None, amount=1.0)
+        DividendRecord(ex_date=date(2020, 2, 15) + timedelta(days=90 * i), payment_date=None, amount=1.0)
+        for i in range(8)
     ]
     with patch("services.shared_market_db.get_document", return_value=None):
         readiness = assess_yield_channel_readiness("INTU", doc)
     guidance = format_history_reload_guidance(readiness)
+    assert "price history is missing" in guidance
     assert "Backfill thin history" in guidance
-    assert CHART_MIN_UNIQUE_PRICE_DAYS == 52
+
+
+def test_prepare_history_frame_handles_empty_input():
+    from services.yield_channel_chart import YieldChannelService
+
+    assert YieldChannelService._prepare_history_frame(pd.DataFrame()).empty
+
+
+def test_prepare_history_frame_handles_missing_close_column():
+    from services.yield_channel_chart import YieldChannelService
+
+    frame = pd.DataFrame({"Open": [1.0]}, index=pd.date_range("2020-01-01", periods=1))
+    assert YieldChannelService._prepare_history_frame(frame).empty

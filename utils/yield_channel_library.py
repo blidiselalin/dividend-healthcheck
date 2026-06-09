@@ -125,11 +125,19 @@ def format_history_reload_guidance(readiness: YieldChannelReadiness) -> str:
             "Symbol is missing from **stock_documents** — run S&P ingest or add the holding to the library first."
         )
     elif readiness.needs_history_backfill:
-        steps.append(
-            "Use **Backfill thin history** in the admin sidebar (or "
-            "`python ingest_data.py --backfill-history --backfill-limit 120`) "
-            "to fetch price and dividend series into the library."
-        )
+        if readiness.dividend_payments >= CHART_MIN_DIVIDEND_PAYMENTS and readiness.unique_price_days == 0:
+            steps.append(
+                "Dividend history is present but **price history is missing** — run "
+                "**Backfill thin history** in the admin sidebar (or "
+                "`python ingest_data.py --backfill-history --backfill-limit 120`) "
+                "to fetch OHLCV into the library, then **Sync history tables**."
+            )
+        else:
+            steps.append(
+                "Use **Backfill thin history** in the admin sidebar (or "
+                "`python ingest_data.py --backfill-history --backfill-limit 120`) "
+                "to fetch price and dividend series into the library."
+            )
     if readiness.needs_table_sync or readiness.table_price_rows > 0:
         steps.append(
             "Use **Sync history tables** in the admin sidebar (or "

@@ -714,6 +714,20 @@ class UIComponents:
                     st.markdown(f"⚠ {w}")
     
     # === DIVIDEND YIELD CHANNELS CHART ===
+
+    @staticmethod
+    def _symbol_in_current_portfolio(symbol: str, vector_doc=None) -> bool:
+        sym = (symbol or "").strip().upper()
+        if not sym:
+            return False
+        if vector_doc is not None and getattr(vector_doc, "in_portfolio", False):
+            return True
+        try:
+            from services.stock_history_backfill import portfolio_backfill_symbols
+
+            return sym in portfolio_backfill_symbols()
+        except Exception:
+            return False
     
     @staticmethod
     def display_yield_channel_chart(
@@ -757,17 +771,33 @@ class UIComponents:
         if channel_data is None:
             doc = resolve_library_document(symbol, vector_doc)
             readiness = assess_yield_channel_readiness(symbol, doc)
-            with st.spinner(
-                f"Loading Dividends Don't Lie yield channel for {symbol.upper()} "
-                f"from library history tables…"
-            ):
-                data = ensure_yield_channel_data(
-                    symbol,
-                    years=years,
-                    document=doc,
-                    allow_backfill=False,
-                    library_only=True,
-                )
+            in_portfolio = _symbol_in_current_portfolio(symbol, doc)
+            if readiness.chart_ready:
+                with st.spinner(
+                    f"Loading Dividends Don't Lie yield channel for {symbol.upper()} "
+                    f"from library history tables…"
+                ):
+                    data = ensure_yield_channel_data(
+                        symbol,
+                        years=years,
+                        document=doc,
+                        allow_backfill=False,
+                        library_only=True,
+                    )
+            elif in_portfolio:
+                with st.spinner(
+                    f"Backfilling price history for portfolio holding {symbol.upper()}…"
+                ):
+                    data = ensure_yield_channel_data(
+                        symbol,
+                        years=years,
+                        document=doc,
+                        allow_backfill=True,
+                        library_only=True,
+                    )
+                    readiness = assess_yield_channel_readiness(symbol, doc)
+            else:
+                data = None
         else:
             data = channel_data
             readiness = assess_yield_channel_readiness(symbol, vector_doc)
