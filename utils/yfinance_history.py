@@ -229,16 +229,33 @@ def fetch_price_history_with_fallback(
     document: Any = None,
     min_rows: int = 100,
     prefer_library: bool = False,
+    library_only: bool = False,
 ) -> tuple["pd.DataFrame", str]:
     """
     Fetch OHLCV history from yfinance and/or analysed-stock price_history.
 
-    When ``prefer_library`` is True and the document has enough unique trading
-    days, use the shared library first so prices align with dividend_history.
+    When ``library_only`` is True, only library / document prices are used
+    (no live Yahoo fallback). When ``prefer_library`` is True and the document
+    has enough unique trading days, use the shared library first so prices
+    align with dividend_history.
 
     Returns (dataframe, source_label): 'yfinance', 'analysed_library', or 'none'.
     """
     min_needed = max(52, int(min_rows))
+
+    if library_only:
+        if not library_prices_trustworthy(document, min_unique=min(52, min_needed)):
+            return pd.DataFrame(), "none"
+        library = history_dataframe_from_document(
+            document,
+            years=years,
+            min_rows=min(52, unique_price_dates(document)),
+        )
+        library = densify_price_history(library)
+        if not library.empty and len(library) >= min(min_needed, len(library)):
+            return library, "analysed_library"
+        return pd.DataFrame(), "none"
+
     library_ok = library_prices_trustworthy(document, min_unique=min(52, min_needed))
 
     if library_ok:

@@ -284,6 +284,7 @@ class YieldChannelService:
         *,
         min_price_rows: int = 120,
         min_yield_rows: int = 60,
+        library_only: bool = False,
     ) -> Optional[YieldChannelData]:
         """
         Fetch historical data and calculate yield channel metrics.
@@ -324,13 +325,11 @@ class YieldChannelService:
             logger.debug("%s: Found %d dividends in DB", symbol, len(db_dividend_history))
 
         try:
-            ticker = yf.Ticker(symbol)
-
-            # Get company name
             company_name = symbol
             if db_doc and getattr(db_doc, "name", None):
                 company_name = db_doc.name
-            else:
+            elif not library_only:
+                ticker = yf.Ticker(symbol)
                 try:
                     info = ticker.info
                     company_name = info.get("shortName") or info.get("longName") or symbol
@@ -360,10 +359,11 @@ class YieldChannelService:
                 years=years,
                 document=db_doc,
                 min_rows=library_min_rows,
-                prefer_library=prefer_library,
+                prefer_library=prefer_library or library_only,
+                library_only=library_only,
             )
             prepared = self._prepare_history_frame(hist)
-            if len(prepared) < min(min_price_rows, 52):
+            if not library_only and len(prepared) < min(min_price_rows, 52):
                 hist, price_source = fetch_price_history_with_fallback(
                     symbol,
                     years=years,
@@ -394,6 +394,9 @@ class YieldChannelService:
                 library_divs = dividend_series_from_document(db_doc, years=years)
             if len(library_divs) >= 4:
                 payment_series = library_divs
+            elif library_only:
+                logger.debug("%s: insufficient library dividend payments", symbol)
+                return None
             else:
                 payment_series = merge_dividend_series(
                     library_divs,

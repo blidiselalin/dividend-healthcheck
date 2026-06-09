@@ -78,6 +78,23 @@ def test_library_prices_trustworthy_rejects_duplicate_dates():
     assert not library_prices_trustworthy(doc)
 
 
+def test_fetch_library_only_skips_yfinance():
+    from unittest.mock import patch
+
+    doc = _sample_doc(n=260)
+    with patch("utils.yfinance_history.fetch_price_history") as mock_yf:
+        frame, source = fetch_price_history_with_fallback(
+            "KO",
+            years=10,
+            document=doc,
+            min_rows=120,
+            library_only=True,
+        )
+    mock_yf.assert_not_called()
+    assert source == "analysed_library"
+    assert len(frame) >= 120
+
+
 def test_fetch_price_history_prefers_yfinance_when_library_dates_duplicate():
     from unittest.mock import patch
 

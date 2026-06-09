@@ -28,40 +28,22 @@ def _library_doc() -> StockDocument:
     return doc
 
 
-def test_ensure_yield_channel_data_falls_back_to_yfinance_prices():
-    from datetime import date
-
-    from data_ingestion.models import DataSource, DividendRecord, PriceHistory, StockDocument
+def test_ensure_yield_channel_data_skips_backfill_by_default():
     from services.stock_analysis_service import ensure_yield_channel_data
 
-    doc = StockDocument(symbol="INTU", name="Intuit", source=DataSource.YAHOO)
-    doc.dividend_history = [
-        DividendRecord(ex_date=date(2015 + y, 2, 15), payment_date=None, amount=1.0 + y * 0.1)
-        for y in range(10)
-    ]
-    doc.price_history = [
-        PriceHistory(
-            date=date(2024, 6, 1),
-            open=650.0,
-            high=660.0,
-            low=640.0,
-            close=650.0,
-            volume=900_000,
-        )
-    ] * 200
+    doc = _library_doc()
     mock_channel = MagicMock()
 
     with patch(
         "services.stock_analysis_service.load_yield_channel_data",
-        side_effect=[None, mock_channel],
-    ) as mock_load, patch(
-        "services.shared_market_db.get_document", return_value=None
-    ), patch("services.stock_history_backfill.backfill_thin_history") as mock_backfill:
-        result = ensure_yield_channel_data("INTU", document=doc, allow_backfill=False)
+        return_value=mock_channel,
+    ) as mock_load, patch("services.stock_history_backfill.backfill_thin_history") as mock_backfill:
+        result = ensure_yield_channel_data("INTU", document=doc)
 
     assert result is mock_channel
     mock_backfill.assert_not_called()
-    assert mock_load.call_count == 2
+    mock_load.assert_called_once()
+    assert mock_load.call_args.kwargs.get("library_only") is True
 
 
 def test_ensure_yield_channel_data_skips_backfill_when_channel_exists():
@@ -88,7 +70,7 @@ def test_ensure_yield_channel_data_backfills_thin_history():
 
     with patch(
         "services.stock_analysis_service.load_yield_channel_data",
-        side_effect=[None, None, mock_channel],
+        side_effect=[None, mock_channel],
     ), patch(
         "services.shared_market_db.get_document", return_value=doc
     ), patch("services.stock_history_backfill.backfill_thin_history") as mock_backfill:
@@ -150,6 +132,7 @@ def test_load_yield_channel_data_passes_library_document():
     service.fetch_yield_channel_data.assert_called()
     first_call = service.fetch_yield_channel_data.call_args_list[0]
     assert first_call.kwargs["document"] is doc
+    assert first_call.kwargs.get("library_only") is True
 
 
 def test_postgres_document_from_row_merges_indexed_columns():

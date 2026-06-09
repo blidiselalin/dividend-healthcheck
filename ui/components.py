@@ -580,21 +580,15 @@ class UIComponents:
             return channel_data
 
         sym = (symbol or "").upper()
-        doc = vector_doc
-        if doc is None:
-            try:
-                from services.shared_market_db import get_document
-
-                doc = get_document(sym)
-            except Exception:
-                doc = None
-
         from services.stock_analysis_service import load_yield_channel_data
+        from utils.library_document import resolve_library_document
 
+        doc = resolve_library_document(sym, vector_doc)
         return load_yield_channel_data(
             sym,
             years=10,
             document=doc,
+            library_only=True,
         )
 
     @staticmethod
@@ -752,50 +746,44 @@ class UIComponents:
         from services.stock_analysis_service import ensure_yield_channel_data
         from services.yield_channel_chart import _default_yield_channel_service
         from utils.library_document import resolve_library_document
+        from utils.yield_channel_library import (
+            assess_yield_channel_readiness,
+            format_history_coverage_summary,
+            format_history_reload_guidance,
+        )
 
         service = _default_yield_channel_service()
 
         if channel_data is None:
+            doc = resolve_library_document(symbol, vector_doc)
+            readiness = assess_yield_channel_readiness(symbol, doc)
             with st.spinner(
-                f"Building Dividends Don't Lie yield channel for {symbol.upper()} "
-                f"(up to {years} years of history)…"
+                f"Loading Dividends Don't Lie yield channel for {symbol.upper()} "
+                f"from library history tables…"
             ):
-                doc = resolve_library_document(symbol, vector_doc)
                 data = ensure_yield_channel_data(
                     symbol,
                     years=years,
                     document=doc,
-                    allow_backfill=True,
+                    allow_backfill=False,
+                    library_only=True,
                 )
         else:
             data = channel_data
+            readiness = assess_yield_channel_readiness(symbol, vector_doc)
 
         if data is None:
             from utils.yield_history_tables import yearly_dividend_per_share_table
 
-            doc = vector_doc
-            if doc is None:
-                try:
-                    from services.shared_market_db import get_document
-
-                    doc = get_document(symbol.upper())
-                except Exception:
-                    doc = None
-
+            doc = resolve_library_document(symbol, vector_doc)
             yearly = yearly_dividend_per_share_table(doc) if doc is not None else pd.DataFrame()
             if not yearly.empty:
-                from utils.yield_channel_history import estimate_history_years
-
-                available = estimate_history_years(doc)
-                span_hint = (
-                    f" (~{available} years in library)"
-                    if available is not None
-                    else ""
-                )
                 st.warning(
-                    f"Could not build a yield channel chart for **{symbol}** yet{span_hint}. "
+                    f"Could not build a yield channel chart for **{symbol}** from library tables yet. "
                     "Showing annual dividend per share from the library below."
                 )
+                st.markdown(format_history_coverage_summary(readiness))
+                st.info(format_history_reload_guidance(readiness))
                 st.markdown("#### Annual dividend per share (library history)")
                 st.dataframe(
                     yearly[["Year", "Dividend / share $"]],
@@ -805,18 +793,13 @@ class UIComponents:
                         "Dividend / share $": st.column_config.NumberColumn(format="$%.4f"),
                     },
                 )
-                st.caption(
-                    "Library dividends are present but price history may be missing or duplicated. "
-                    "Reload live data, run `python ingest_data.py --backfill-history`, or use "
-                    "**Backfill thin history** in the admin sidebar."
-                )
                 return False
 
             st.warning(
-                f"Insufficient dividend history for **{symbol}** yield channel analysis "
-                "(needs ~5+ years of dividend and price history from library or live fallback sources). "
-                "Try **Reload live data**, **Backfill thin history**, or choose another symbol."
+                f"Insufficient dividend history for **{symbol}** in the market library."
             )
+            st.markdown(format_history_coverage_summary(readiness))
+            st.info(format_history_reload_guidance(readiness))
             return False
         
         from ui.charts import show_chart
