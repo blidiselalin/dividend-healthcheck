@@ -4,6 +4,7 @@ Sidebar UI to add tickers, edit holdings, log purchases/deposits, and refresh po
 
 from __future__ import annotations
 
+from calendar import month_name
 from datetime import date
 from typing import Callable, Optional
 
@@ -31,14 +32,145 @@ def _after_change(
     st.rerun()
 
 
+def _month_label(year: int, month: int) -> str:
+    return f"{month_name[int(month)]} {int(year)}"
+
+
+def _render_monthly_evolution_tab(service: PortfolioManagementService) -> None:
+    """Add or edit monthly deposit + portfolio snapshots for the dashboard."""
+    st.caption(
+        "Record monthly **deposits** and **Portfolio €** for the dashboard evolution table and charts. "
+        "Portfolio € must be set for gain and month-over-month columns to appear."
+    )
+
+    deposits = service.list_deposits()
+    missing_portfolio = service.deposits_missing_portfolio_value()
+    if missing_portfolio:
+        labels = ", ".join(item.label for item in missing_portfolio[-6:])
+        st.warning(
+            f"Missing Portfolio €: **{labels}**. Select a month below and enter the end-of-month value."
+        )
+
+    period_labels = {"__new__": "Add new month…"}
+    period_labels.update(
+        {item.period_key: f"{item.label} ({item.period_key})" for item in deposits}
+    )
+    period_keys = ["__new__"] + [item.period_key for item in deposits]
+    if missing_portfolio and st.session_state.get("pm_evo_period", "__new__") == "__new__":
+        st.session_state["pm_evo_period"] = missing_portfolio[-1].period_key
+    selected = st.selectbox(
+        "Month",
+        period_keys,
+        format_func=lambda key: period_labels[key],
+        key="pm_evo_period",
+    )
+
+    existing = None
+    if selected != "__new__":
+        existing = next(item for item in deposits if item.period_key == selected)
+        form_key = selected
+    else:
+        form_key = "new"
+
+    if existing:
+        default_year = existing.period.year
+        default_month = existing.period.month
+        default_label = existing.label
+        default_eur = float(existing.deposit_eur)
+        default_usd = float(existing.deposit_usd)
+        default_port = float(existing.portfolio_eur)
+    else:
+        default_year = date.today().year
+        default_month = date.today().month
+        default_label = _month_label(default_year, default_month)
+        default_eur = 0.0
+        default_usd = 0.0
+        default_port = 0.0
+
+    rows = st.session_state.get("portfolio_details_rows") or []
+    total_usd = sum(getattr(row, "current_value", 0) or 0.0 for row in rows)
+    if total_usd > 0:
+        suggested_eur = service.estimate_portfolio_eur_from_usd(total_usd, existing)
+        if st.button(
+            f"Use live portfolio € ({suggested_eur:,.0f} from ${total_usd:,.0f} holdings)",
+            key=f"pm_evo_live_{form_key}",
+        ):
+            st.session_state[f"pm_evo_port_{form_key}"] = suggested_eur
+            st.rerun()
+
+    dep_year = st.number_input(
+        "Year",
+        min_value=2000,
+        max_value=2100,
+        value=default_year,
+        key=f"pm_evo_year_{form_key}",
+    )
+    dep_month = st.number_input(
+        "Month",
+        min_value=1,
+        max_value=12,
+        value=default_month,
+        key=f"pm_evo_month_{form_key}",
+    )
+    dep_label = st.text_input(
+        "Label",
+        value=default_label,
+        key=f"pm_evo_label_{form_key}",
+    )
+    dep_eur = st.number_input(
+        "Deposit €",
+        min_value=0.0,
+        value=default_eur,
+        step=1.0,
+        key=f"pm_evo_eur_{form_key}",
+    )
+    dep_usd = st.number_input(
+        "Deposit $",
+        min_value=0.0,
+        value=default_usd,
+        step=1.0,
+        key=f"pm_evo_usd_{form_key}",
+    )
+    dep_port = st.number_input(
+        "Portfolio € (end of month)",
+        min_value=0.0,
+        value=default_port,
+        step=1.0,
+        key=f"pm_evo_port_{form_key}",
+        help="Required for Monthly evolution gain and MoM % columns on the dashboard.",
+    )
+
+    if st.button("Save month", key=f"pm_evo_save_{form_key}"):
+        try:
+            label = dep_label.strip() or _month_label(int(dep_year), int(dep_month))
+            saved = service.add_deposit(
+                year=int(dep_year),
+                month=int(dep_month),
+                label=label,
+                deposit_eur=dep_eur,
+                deposit_usd=dep_usd,
+                portfolio_eur=dep_port,
+            )
+            msg = f"Saved {saved.label}."
+            if saved.portfolio_eur <= 0:
+                msg += " Portfolio € is still zero — evolution charts will skip this month."
+            _after_change(
+                msg,
+                full_reload=False,
+                sections=["deposits", "dashboard"],
+            )
+        except Exception as exc:
+            st.error(str(exc))
+
+
 def render_portfolio_manage_sidebar() -> None:
     """Portfolio management expander in the sidebar."""
     service = PortfolioManagementService()
 
     expand_manage = is_demo_session() or not user_has_holdings_in_db()
     with st.sidebar.expander("Manage portfolio", expanded=expand_manage):
-        tab_add, tab_edit, tab_buy, tab_deposit = st.tabs(
-            ["Add ticker", "Edit position", "Purchase", "Deposit"]
+        tab_add, tab_edit, tab_buy, tab_evolution = st.tabs(
+            ["Add ticker", "Edit position", "Purchase", "Monthly evolution"]
         )
 
         with tab_add:
@@ -151,6 +283,9 @@ def render_portfolio_manage_sidebar() -> None:
                         else:
                             st.error("Could not remove position.")
 
+        with tab_evolution:
+            _render_monthly_evolution_tab(service)
+
         with tab_buy:
             if not symbols:
                 st.info("Add a holding before logging purchases.")
@@ -176,31 +311,6 @@ def render_portfolio_manage_sidebar() -> None:
                         st.error(str(exc))
                     except Exception as exc:
                         st.error(str(exc))
-
-        with tab_deposit:
-            dep_year = st.number_input("Year", min_value=2000, max_value=2100, value=date.today().year)
-            dep_month = st.number_input("Month", min_value=1, max_value=12, value=date.today().month)
-            dep_label = st.text_input("Label", value=date.today().strftime("%B %Y"))
-            dep_eur = st.number_input("Deposit EUR", min_value=0.0, value=0.0, step=1.0)
-            dep_usd = st.number_input("Deposit USD", min_value=0.0, value=0.0, step=1.0)
-            dep_port = st.number_input("Portfolio EUR", min_value=0.0, value=0.0, step=1.0)
-            if st.button("Save month", key="pm_dep_btn"):
-                try:
-                    service.add_deposit(
-                        year=int(dep_year),
-                        month=int(dep_month),
-                        label=dep_label.strip() or f"{int(dep_year)}-{int(dep_month):02d}",
-                        deposit_eur=dep_eur,
-                        deposit_usd=dep_usd,
-                        portfolio_eur=dep_port,
-                    )
-                    _after_change(
-                        "Deposit saved.",
-                        full_reload=False,
-                        sections=["deposits"],
-                    )
-                except Exception as exc:
-                    st.error(str(exc))
 
 
 def render_tab_refresh_button(

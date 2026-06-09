@@ -6,6 +6,7 @@ from datetime import date
 
 import pytest
 
+from data_ingestion.deposits_store import MonthlyDeposit
 from data_ingestion.portfolio_store import PortfolioStore
 from data_ingestion.purchase_journal_store import PurchaseJournalStore
 from services.portfolio_management_service import PortfolioManagementService
@@ -115,6 +116,64 @@ def test_add_deposit(
     )
     assert dep.period_key == "2026-05"
     assert dep.portfolio_eur == 120000.0
+
+
+def test_get_deposit_and_missing_portfolio(
+    portfolio_store: PortfolioStore,
+    deposits_store,
+) -> None:
+    service = PortfolioManagementService(
+        portfolio=portfolio_store,
+        deposits=deposits_store,
+    )
+    service.add_deposit(
+        year=2026,
+        month=4,
+        label="April 2026",
+        deposit_eur=0.0,
+        deposit_usd=0.0,
+        portfolio_eur=117565.63,
+    )
+    service.add_deposit(
+        year=2026,
+        month=5,
+        label="May 2026",
+        deposit_eur=4111.6,
+        deposit_usd=4821.01,
+        portfolio_eur=0.0,
+    )
+
+    may = service.get_deposit(2026, 5)
+    assert may is not None
+    assert may.deposit_eur == 4111.6
+    assert may.portfolio_eur == 0.0
+    assert service.get_deposit(2026, 6) is None
+
+    missing = service.deposits_missing_portfolio_value()
+    assert len(missing) == 1
+    assert missing[0].period_key == "2026-05"
+
+
+def test_estimate_portfolio_eur_from_usd_uses_deposit_fx() -> None:
+    deposit = MonthlyDeposit(
+        period=date(2026, 5, 1),
+        label="May 2026",
+        deposit_eur=4111.6,
+        deposit_usd=4821.01,
+        portfolio_eur=0.0,
+        sort_order=1,
+    )
+    estimated = PortfolioManagementService.estimate_portfolio_eur_from_usd(
+        100_000.0,
+        deposit,
+    )
+    expected = round(100_000.0 * (4111.6 / 4821.01), 2)
+    assert estimated == expected
+
+
+def test_estimate_portfolio_eur_from_usd_default_fx() -> None:
+    estimated = PortfolioManagementService.estimate_portfolio_eur_from_usd(1000.0)
+    assert estimated == 920.0
 
 
 def test_remove_ticker(portfolio_store: PortfolioStore) -> None:

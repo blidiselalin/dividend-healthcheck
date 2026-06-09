@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
+import pandas as pd
 import pytest
 
 from data_ingestion.deposits_store import DepositsStore, MonthlyDeposit
@@ -86,6 +87,36 @@ def test_dashboard_evolution_and_metrics(sample_deposits: DepositsStore) -> None
     assert metrics.avg_monthly_deposit_eur == 750.0
     assert metrics.months_since_start == 1
     assert metrics.deposits.month_count == 2
+
+
+def test_dashboard_evolution_skips_zero_portfolio(tmp_path) -> None:
+    store = DepositsStore(db_path=tmp_path / "evo.db", seed=False)
+    store.upsert_deposit(
+        year=2026,
+        month=4,
+        label="April 2026",
+        deposit_eur=0.0,
+        deposit_usd=0.0,
+        portfolio_eur=117565.63,
+    )
+    store.upsert_deposit(
+        year=2026,
+        month=5,
+        label="May 2026",
+        deposit_eur=4111.6,
+        deposit_usd=4821.01,
+        portfolio_eur=0.0,
+    )
+    dashboard = PortfolioDashboardService(
+        deposits_service=PortfolioDepositsService(store=store)
+    )
+    df = dashboard.evolution_dataframe()
+    may = df.iloc[1]
+    assert may["deposit_eur"] == 4111.6
+    assert may["cumulative_deposits_eur"] == pytest.approx(4111.6)
+    assert pd.isna(may["portfolio_eur"])
+    assert pd.isna(may["gain_vs_deposits_eur"])
+    assert pd.isna(may["mom_change_pct"])
 
 
 def test_dashboard_empty_deposits_no_keyerror(tmp_path) -> None:

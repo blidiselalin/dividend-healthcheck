@@ -213,5 +213,38 @@ class PortfolioManagementService:
             portfolio_eur=portfolio_eur,
         )
 
+    def list_deposits(self) -> List[MonthlyDeposit]:
+        return self.deposits.list_deposits()
+
+    def get_deposit(self, year: int, month: int) -> Optional[MonthlyDeposit]:
+        period_key = f"{year:04d}-{month:02d}"
+        for item in self.list_deposits():
+            if item.period_key == period_key:
+                return item
+        return None
+
+    def deposits_missing_portfolio_value(self) -> List[MonthlyDeposit]:
+        return [item for item in self.list_deposits() if item.portfolio_eur <= 0]
+
+    @staticmethod
+    def estimate_portfolio_eur_from_usd(
+        value_usd: float,
+        deposit: Optional[MonthlyDeposit] = None,
+        *,
+        default_fx: float = 0.92,
+    ) -> float:
+        """Convert a USD portfolio total to EUR using the month's deposit FX when available."""
+        if value_usd <= 0:
+            return 0.0
+        if (
+            deposit is not None
+            and deposit.deposit_eur > 0
+            and deposit.deposit_usd > 0
+        ):
+            fx = deposit.deposit_eur / deposit.deposit_usd
+        else:
+            fx = default_fx
+        return round(value_usd * fx, 2)
+
     def list_holdings(self) -> List[PortfolioHolding]:
         return self.portfolio.list_holdings()
