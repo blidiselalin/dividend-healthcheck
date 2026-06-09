@@ -93,6 +93,23 @@ class NewsSummary:
     def negative_count(self) -> int:
         return sum(1 for a in self.articles if a.sentiment == "negative")
 
+    @property
+    def neutral_count(self) -> int:
+        return sum(1 for a in self.articles if a.sentiment == "neutral")
+
+    def articles_by_sentiment(self) -> Dict[str, List[NewsArticle]]:
+        grouped: Dict[str, List[NewsArticle]] = {
+            "positive": [],
+            "neutral": [],
+            "negative": [],
+        }
+        for article in self.articles:
+            bucket = article.sentiment or "neutral"
+            if bucket not in grouped:
+                bucket = "neutral"
+            grouped[bucket].append(article)
+        return grouped
+
 
 class NewsService:
     """
@@ -101,6 +118,25 @@ class NewsService:
     Aggregates news from multiple public sources and provides
     summarized insights for dividend stock investors.
     """
+
+    SOURCE_CATEGORY_RULES: Dict[str, tuple[str, ...]] = {
+        "Wire / Agency": ("reuters", "associated press", "ap news", "bloomberg", "afp", "dow jones"),
+        "Financial Media": (
+            "yahoo finance", "cnbc", "marketwatch", "seeking alpha", "barron",
+            "wall street journal", "wsj", "financial times", "benzinga", "motley fool",
+            "investor's business daily", "thestreet", "fool.com", "investopedia",
+        ),
+        "Aggregator": ("google news", "msn", "news.google"),
+        "Research / Ratings": ("zacks", "tipranks", "morningstar", "simply wall st"),
+    }
+
+    SOURCE_CATEGORY_COLORS: Dict[str, str] = {
+        "Wire / Agency": "#1565c0",
+        "Financial Media": "#2e7d32",
+        "Aggregator": "#6a1b9a",
+        "Research / Ratings": "#ef6c00",
+        "Other": "#546e7a",
+    }
     
     # Keywords indicating positive news for dividend investors
     POSITIVE_KEYWORDS = [
@@ -480,6 +516,55 @@ class NewsService:
         
         # Deduplicate and limit
         return list(dict.fromkeys(highlights))[:3], list(dict.fromkeys(risks))[:3]
+
+    def classify_source(self, source: str) -> str:
+        """Map a publisher name to a display category."""
+        normalized = (source or "").strip().lower()
+        for category, needles in self.SOURCE_CATEGORY_RULES.items():
+            if any(needle in normalized for needle in needles):
+                return category
+        return "Other"
+
+    def classify_article_theme(self, article: NewsArticle) -> str:
+        """Pick the strongest content theme for one headline."""
+        text = f"{article.title} {article.summary or ''}".lower()
+        best_theme = "general"
+        best_score = 0
+        for theme, keywords in self.THEME_KEYWORDS.items():
+            score = sum(1 for kw in keywords if kw in text)
+            if score > best_score:
+                best_score = score
+                best_theme = theme
+        return best_theme
+
+    def sources_breakdown(self, articles: List[NewsArticle]) -> List[Dict[str, Any]]:
+        """Count articles by publisher and source category."""
+        counts: Dict[tuple[str, str], int] = {}
+        for article in articles:
+            source = article.source or "Unknown"
+            category = self.classify_source(source)
+            key = (source, category)
+            counts[key] = counts.get(key, 0) + 1
+        rows = [
+            {"source": source, "category": category, "count": count}
+            for (source, category), count in counts.items()
+        ]
+        rows.sort(key=lambda row: (-row["count"], row["source"].lower()))
+        return rows
+
+    def _format_article_for_display(self, article: NewsArticle) -> Dict[str, Any]:
+        category = self.classify_source(article.source or "")
+        payload = article.to_dict()
+        payload["source_category"] = category
+        payload["source_category_color"] = self.SOURCE_CATEGORY_COLORS.get(
+            category, self.SOURCE_CATEGORY_COLORS["Other"]
+        )
+        payload["theme"] = self.classify_article_theme(article)
+        if article.published_at:
+            payload["published_label"] = article.published_at.strftime("%b %d, %Y")
+        else:
+            payload["published_label"] = ""
+        return payload
     
     def format_summary_for_display(self, summary: NewsSummary) -> Dict[str, Any]:
         """Format news summary for UI display."""
@@ -506,13 +591,25 @@ class NewsService:
             "sentiment_color": sentiment_color.get(summary.overall_sentiment, "#9e9e9e"),
             "sentiment_score": summary.sentiment_score,
             "positive_count": summary.positive_count,
+            "neutral_count": summary.neutral_count,
             "negative_count": summary.negative_count,
             "key_themes": summary.key_themes,
             "highlights": summary.highlights,
             "risks": summary.risks,
             "sources": summary.sources_used,
+            "sources_breakdown": self.sources_breakdown(summary.articles),
             "last_updated": summary.last_updated.strftime("%Y-%m-%d %H:%M") if summary.last_updated else None,
-            "articles": [a.to_dict() for a in summary.articles[:5]],  # Top 5 for display
+            "articles_by_sentiment": {
+                sentiment: [
+                    self._format_article_for_display(article)
+                    for article in articles
+                ]
+                for sentiment, articles in summary.articles_by_sentiment().items()
+            },
+            "articles": [
+                self._format_article_for_display(article)
+                for article in summary.articles[:10]
+            ],
         }
 
 

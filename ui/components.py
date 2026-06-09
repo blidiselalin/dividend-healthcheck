@@ -1041,11 +1041,11 @@ class UIComponents:
         display = service.format_summary_for_display(summary)
         
         # Header with sentiment indicator
-        st.markdown(f"### 📰 Latest News & Sentiment")
-        
+        st.markdown("### 📰 Latest News & Sentiment")
+
         # Sentiment overview row
-        col1, col2, col3, col4 = st.columns(4)
-        
+        col1, col2, col3, col4, col5 = st.columns(5)
+
         with col1:
             emoji = display["sentiment_emoji"]
             sentiment = display["sentiment"].title()
@@ -1053,99 +1053,169 @@ class UIComponents:
                 "Overall Sentiment",
                 f"{emoji} {sentiment}",
                 f"Score: {display['sentiment_score']:+.2f}",
-                delta_color="normal" if display["sentiment_score"] >= 0 else "inverse"
+                delta_color="normal" if display["sentiment_score"] >= 0 else "inverse",
             )
-        
+
         with col2:
             st.metric(
                 "Articles Found",
                 display["article_count"],
-                f"Past {days} days"
+                f"Past {days} days",
             )
-        
+
         with col3:
-            st.metric(
-                "Positive",
-                display["positive_count"],
-                delta_color="off"
-            )
-        
+            st.metric("Positive", display["positive_count"])
+
         with col4:
-            st.metric(
-                "Negative",
-                display["negative_count"],
-                delta_color="off"
-            )
-        
+            st.metric("Neutral", display.get("neutral_count", 0))
+
+        with col5:
+            st.metric("Negative", display["negative_count"])
+
         # Key themes
         if display["key_themes"]:
             themes_str = " • ".join([t.title() for t in display["key_themes"]])
             st.caption(f"**Key Themes:** {themes_str}")
-        
+
+        # Categorized sources
+        breakdown = display.get("sources_breakdown") or []
+        if breakdown:
+            st.markdown("**Sources**")
+            source_cols = st.columns(min(len(breakdown), 4) or 1)
+            for index, row in enumerate(breakdown[:8]):
+                with source_cols[index % len(source_cols)]:
+                    color = row.get("source_category_color", "#546e7a")
+                    st.markdown(
+                        f"<span style='display:inline-block;background:{color}18;color:{color};"
+                        f"padding:4px 10px;border-radius:999px;font-size:0.82em;margin:2px 0;'>"
+                        f"<strong>{row['source']}</strong><br>"
+                        f"{row['category']} · {row['count']} article{'s' if row['count'] != 1 else ''}"
+                        f"</span>",
+                        unsafe_allow_html=True,
+                    )
+
         # Highlights and Risks in two columns
         if display["highlights"] or display["risks"]:
             col_left, col_right = st.columns(2)
-            
+
             with col_left:
                 if display["highlights"]:
-                    st.markdown("**Positive Headlines:**")
+                    st.markdown("**Positive Headlines**")
                     for h in display["highlights"]:
                         st.markdown(f"- ✅ {h}")
-            
+
             with col_right:
                 if display["risks"]:
-                    st.markdown("**Risk Headlines:**")
+                    st.markdown("**Risk Headlines**")
                     for r in display["risks"]:
                         st.markdown(f"- ⚠️ {r}")
-        
-        # Recent articles expandable
-        with st.expander(f"📄 Recent Articles ({len(summary.articles)})", expanded=False):
-            for article in summary.articles[:10]:
-                # Sentiment indicator
-                if article.sentiment == "positive":
-                    sent_icon = "🟢"
-                elif article.sentiment == "negative":
-                    sent_icon = "🔴"
-                else:
-                    sent_icon = "⚪"
-                
-                # Date formatting
-                date_str = ""
-                if article.published_at:
-                    date_str = article.published_at.strftime("%b %d, %Y")
-                
-                # Article card
-                st.markdown(f"""
-                <div style="
-                    border-left: 3px solid {'#4caf50' if article.sentiment == 'positive' else '#f44336' if article.sentiment == 'negative' else '#9e9e9e'};
-                    padding: 8px 12px;
-                    margin: 8px 0;
-                    background: rgba(0,0,0,0.02);
-                    border-radius: 0 4px 4px 0;
-                ">
-                    <div style="font-weight: 500; margin-bottom: 4px;">
-                        {sent_icon} {article.title}
-                    </div>
-                    <div style="font-size: 0.8em; color: #666;">
-                        {article.source} • {date_str}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                if article.summary:
-                    st.caption(article.summary[:200] + "..." if len(article.summary) > 200 else article.summary)
-                
-                if article.url:
-                    st.markdown(f"[Read more]({article.url})")
-                
-                st.markdown("---")
-        
-        # Sources footer
+
+        grouped = display.get("articles_by_sentiment") or {}
+        tab_positive, tab_neutral, tab_negative = st.tabs([
+            f"🟢 Positive ({display['positive_count']})",
+            f"⚪ Neutral ({display.get('neutral_count', 0)})",
+            f"🔴 Negative ({display['negative_count']})",
+        ])
+
+        UIComponents._render_news_sentiment_group(
+            tab_positive,
+            grouped.get("positive") or [],
+            empty_text="No clearly positive headlines in this window.",
+        )
+        UIComponents._render_news_sentiment_group(
+            tab_neutral,
+            grouped.get("neutral") or [],
+            empty_text="No neutral coverage — most headlines leaned positive or negative.",
+        )
+        UIComponents._render_news_sentiment_group(
+            tab_negative,
+            grouped.get("negative") or [],
+            empty_text="No clearly negative headlines in this window.",
+        )
+
         if display["sources"]:
             sources_str = ", ".join(display["sources"])
-            st.caption(f"**Sources:** {sources_str} • Updated: {display['last_updated']}")
-        
+            st.caption(f"**Aggregators:** {sources_str} • Updated: {display['last_updated']}")
+
         return True
+
+    @staticmethod
+    def _render_news_sentiment_group(container, articles: list, *, empty_text: str) -> None:
+        """Render one sentiment bucket with categorized article cards."""
+        with container:
+            if not articles:
+                st.caption(empty_text)
+                return
+            for article in articles:
+                UIComponents._render_news_article_card(article)
+
+    @staticmethod
+    def _render_news_article_card(article: dict) -> None:
+        sentiment = article.get("sentiment") or "neutral"
+        if sentiment == "positive":
+            border = "#4caf50"
+            icon = "🟢"
+        elif sentiment == "negative":
+            border = "#f44336"
+            icon = "🔴"
+        else:
+            border = "#9e9e9e"
+            icon = "⚪"
+
+        theme = (article.get("theme") or "general").replace("_", " ").title()
+        category = article.get("source_category") or "Other"
+        category_color = article.get("source_category_color") or "#546e7a"
+        date_str = article.get("published_label") or ""
+        title = article.get("title") or "Untitled"
+        source = article.get("source") or "Unknown"
+        summary = article.get("summary") or ""
+
+        st.markdown(
+            f"""
+            <div style="
+                border-left: 3px solid {border};
+                padding: 8px 12px;
+                margin: 8px 0;
+                background: rgba(0,0,0,0.02);
+                border-radius: 0 4px 4px 0;
+            ">
+                <div style="font-weight: 500; margin-bottom: 4px;">
+                    {icon} {title}
+                </div>
+                <div style="font-size: 0.8em; color: #666; margin-bottom: 6px;">
+                    {source} • {date_str}
+                </div>
+                <div style="font-size: 0.78em; margin-bottom: 4px;">
+                    <span style="
+                        display:inline-block;
+                        background:{category_color}18;
+                        color:{category_color};
+                        padding:2px 8px;
+                        border-radius:999px;
+                        margin-right:6px;
+                    ">{category}</span>
+                    <span style="
+                        display:inline-block;
+                        background:#eceff1;
+                        color:#455a64;
+                        padding:2px 8px;
+                        border-radius:999px;
+                    ">{theme}</span>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        if summary:
+            snippet = summary[:220] + "..." if len(summary) > 220 else summary
+            st.caption(snippet)
+
+        url = article.get("url")
+        if url:
+            st.markdown(f"[Read more]({url})")
+
+        st.markdown("---")
     
     @staticmethod
     def display_news_sentiment_badge(symbol: str) -> Optional[str]:
