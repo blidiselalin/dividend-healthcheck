@@ -113,6 +113,13 @@ def start_job(
 
     job_id = uuid.uuid4().hex[:12]
     job = BackgroundJob(id=job_id, kind=kind, label=label, admin_only=admin_only)
+    captured_user_id: Optional[str] = None
+    try:
+        from auth.user_context import current_user_id
+
+        captured_user_id = current_user_id()
+    except Exception:
+        pass
 
     def _progress(value: float, message: str = "") -> None:
         with _STORE_LOCK:
@@ -124,13 +131,16 @@ def start_job(
                 stored.message = message
 
     def _run() -> None:
+        from auth.user_context import bind_background_user_id
+
         with _STORE_LOCK:
             stored = _JOB_STORE.get(scope_key, {}).get(job_id)
             if stored:
                 stored.status = "running"
                 stored.message = "Starting…"
         try:
-            result = worker(_progress)
+            with bind_background_user_id(captured_user_id):
+                result = worker(_progress)
             with _STORE_LOCK:
                 stored = _JOB_STORE.get(scope_key, {}).get(job_id)
                 if stored:

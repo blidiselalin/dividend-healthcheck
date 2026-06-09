@@ -4,6 +4,8 @@ Resolve the signed-in user and per-user data paths for portfolio storage.
 
 from __future__ import annotations
 
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -27,6 +29,33 @@ from auth.user_store import AppUser, UserStore
 _LOCAL_USER_ID = "local"
 _SESSION_USER_KEY = "app_user_id"
 _SESSION_EMAIL_KEY = "app_user_email"
+_BACKGROUND_USER = threading.local()
+
+
+@contextmanager
+def bind_background_user_id(user_id: Optional[str]):
+    """
+    Bind a user id for portfolio DB access inside background worker threads.
+
+    Streamlit session identity is unavailable off the main thread; jobs must
+    capture ``current_user_id()`` when scheduled and re-bind it in the worker.
+    """
+    previous = getattr(_BACKGROUND_USER, "user_id", None)
+    if user_id:
+        _BACKGROUND_USER.user_id = user_id
+    try:
+        yield
+    finally:
+        if user_id:
+            if previous is None:
+                if hasattr(_BACKGROUND_USER, "user_id"):
+                    delattr(_BACKGROUND_USER, "user_id")
+            else:
+                _BACKGROUND_USER.user_id = previous
+
+
+def background_user_id() -> Optional[str]:
+    return getattr(_BACKGROUND_USER, "user_id", None)
 
 
 def _streamlit_logged_in() -> bool:
@@ -123,6 +152,9 @@ def current_user() -> Optional[CurrentUser]:
 
 
 def current_user_id() -> Optional[str]:
+    bound = background_user_id()
+    if bound:
+        return bound
     user = current_user()
     return user.id if user else None
 
@@ -142,6 +174,11 @@ def is_app_admin(
 
 
 def resolve_user_data_dir() -> Path:
+    bound = background_user_id()
+    if bound and uses_per_user_storage():
+        path = DATA_DIR / "users" / bound
+        path.mkdir(parents=True, exist_ok=True)
+        return path
     user = current_user()
     if user and uses_per_user_storage():
         path = DATA_DIR / "users" / user.id
