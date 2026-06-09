@@ -43,6 +43,44 @@ def test_upsert_document_history_writes_price_and_dividend_rows():
     assert "stock_dividend_history" in sql_calls
 
 
+def test_attach_history_prefers_table_when_json_prices_are_duplicated():
+    from datetime import date
+
+    doc = StockDocument(symbol="INTU", name="Intuit")
+    doc.price_history = [
+        PriceHistory(
+            date=date(2024, 6, 1),
+            open=650.0,
+            high=660.0,
+            low=640.0,
+            close=650.0,
+            volume=900_000,
+        )
+    ] * 1257
+
+    table_prices = [
+        PriceHistory(
+            date=date(2020, 1, 1) + __import__("datetime").timedelta(days=i),
+            open=400.0 + i * 0.1,
+            high=401.0,
+            low=399.0,
+            close=400.0 + i * 0.1,
+            volume=1_000_000,
+        )
+        for i in range(300)
+    ]
+
+    from db.postgres_market_history_store import PostgresMarketHistoryStore
+
+    store = PostgresMarketHistoryStore()
+    with patch.object(store, "load_price_history", return_value=table_prices), patch.object(
+        store, "load_dividend_history", return_value=[]
+    ):
+        updated = store.attach_history_to_document(doc)
+
+    assert len(updated.price_history) == 300
+
+
 def test_attach_history_uses_table_when_equal_or_richer():
     doc = StockDocument(symbol="AAPL", name="Apple")
     doc.price_history = []

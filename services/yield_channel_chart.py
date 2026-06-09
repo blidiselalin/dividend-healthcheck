@@ -372,7 +372,11 @@ class YieldChannelService:
                     prefer_library=False,
                 )
                 prepared = self._prepare_history_frame(hist)
-            if prepared.empty or len(prepared) < min(min_price_rows, 52):
+            if (
+                prepared.empty
+                or "Close" not in prepared.columns
+                or len(prepared) < min(min_price_rows, 52)
+            ):
                 logger.debug(
                     "%s: insufficient price history (source=%s, rows=%d)",
                     symbol,

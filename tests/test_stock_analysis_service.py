@@ -54,7 +54,9 @@ def test_ensure_yield_channel_data_falls_back_to_yfinance_prices():
     with patch(
         "services.stock_analysis_service.load_yield_channel_data",
         side_effect=[None, mock_channel],
-    ) as mock_load, patch("services.stock_history_backfill.backfill_thin_history") as mock_backfill:
+    ) as mock_load, patch(
+        "services.shared_market_db.get_document", return_value=None
+    ), patch("services.stock_history_backfill.backfill_thin_history") as mock_backfill:
         result = ensure_yield_channel_data("INTU", document=doc, allow_backfill=False)
 
     assert result is mock_channel
@@ -88,8 +90,7 @@ def test_ensure_yield_channel_data_backfills_thin_history():
         "services.stock_analysis_service.load_yield_channel_data",
         side_effect=[None, None, mock_channel],
     ), patch(
-        "services.stock_analysis_service.load_library_document",
-        return_value=doc,
+        "services.shared_market_db.get_document", return_value=doc
     ), patch("services.stock_history_backfill.backfill_thin_history") as mock_backfill:
         result = ensure_yield_channel_data("INTU", document=doc, allow_backfill=True)
 
@@ -136,7 +137,9 @@ def test_load_yield_channel_data_passes_library_document():
 
     with patch(
         "services.yield_channel_chart._default_yield_channel_service"
-    ) as mock_service_factory:
+    ) as mock_service_factory, patch(
+        "services.shared_market_db.get_document", return_value=doc
+    ):
         service = MagicMock()
         service.fetch_yield_channel_data.return_value = mock_channel
         mock_service_factory.return_value = service

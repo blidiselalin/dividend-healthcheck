@@ -122,20 +122,24 @@ def load_yield_channel_data(
     years: int = 10,
     document: Optional["StockDocument"] = None,
 ) -> Optional["YieldChannelData"]:
+    from utils.library_document import resolve_library_document
+
+    sym = (symbol or "").strip().upper()
+    doc = resolve_library_document(sym, document)
     try:
         from services.yield_channel_chart import _default_yield_channel_service
         from utils.yield_channel_history import plan_yield_channel_attempts
 
         service = _default_yield_channel_service()
         for attempt_years, min_prices, min_yields in plan_yield_channel_attempts(
-            document,
+            doc,
             requested_years=years,
         ):
             channel = service.fetch_yield_channel_data(
-                symbol,
+                sym,
                 years=attempt_years,
                 use_db=True,
-                document=document,
+                document=doc,
                 min_price_rows=min_prices,
                 min_yield_rows=min_yields,
             )
@@ -143,7 +147,7 @@ def load_yield_channel_data(
                 return channel
         return None
     except Exception as exc:
-        logger.debug("Yield channel unavailable for %s: %s", symbol, exc)
+        logger.debug("Yield channel unavailable for %s: %s", sym, exc)
         return None
 
 
@@ -163,7 +167,9 @@ def ensure_yield_channel_data(
     if not sym:
         return None
 
-    doc = document or load_library_document(sym)
+    from utils.library_document import resolve_library_document
+
+    doc = resolve_library_document(sym, document)
     channel = load_yield_channel_data(sym, years=years, document=doc)
     if channel is not None:
         return channel

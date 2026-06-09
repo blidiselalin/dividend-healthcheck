@@ -209,11 +209,35 @@ class PostgresMarketHistoryStore:
             logger.debug("History table load failed for %s: %s", symbol, exc)
             return document
 
-        if table_prices and len(table_prices) >= len(json_prices):
+        if table_prices and self._prefer_table_prices(table_prices, json_prices):
             document.price_history = table_prices
         if table_divs and len(table_divs) >= len(json_divs):
             document.dividend_history = table_divs
         return document
+
+    @staticmethod
+    def _prefer_table_prices(table_prices: list, json_prices: list) -> bool:
+        """Prefer normalized table OHLCV when JSONB rows are duplicate or thinner."""
+        if not table_prices:
+            return False
+        if not json_prices:
+            return True
+
+        from utils.yfinance_history import library_prices_trustworthy, unique_price_dates
+
+        class _PriceDoc:
+            def __init__(self, prices: list) -> None:
+                self.price_history = prices
+
+        table_ok = library_prices_trustworthy(_PriceDoc(table_prices), min_unique=52)
+        json_ok = library_prices_trustworthy(_PriceDoc(json_prices), min_unique=52)
+        if table_ok and not json_ok:
+            return True
+        if table_ok and json_ok:
+            return unique_price_dates(_PriceDoc(table_prices)) >= unique_price_dates(
+                _PriceDoc(json_prices)
+            )
+        return len(table_prices) >= len(json_prices)
 
     def history_coverage_summary(self) -> Dict[str, int]:
         """Counts using normalized tables, falling back to JSONB when tables are empty."""

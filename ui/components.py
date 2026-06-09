@@ -751,6 +751,7 @@ class UIComponents:
         
         from services.stock_analysis_service import ensure_yield_channel_data
         from services.yield_channel_chart import _default_yield_channel_service
+        from utils.library_document import resolve_library_document
 
         service = _default_yield_channel_service()
 
@@ -759,14 +760,7 @@ class UIComponents:
                 f"Building Dividends Don't Lie yield channel for {symbol.upper()} "
                 f"(up to {years} years of history)…"
             ):
-                doc = vector_doc
-                if doc is None:
-                    try:
-                        from services.shared_market_db import get_document
-
-                        doc = get_document(symbol.upper())
-                    except Exception:
-                        doc = None
+                doc = resolve_library_document(symbol, vector_doc)
                 data = ensure_yield_channel_data(
                     symbol,
                     years=years,
