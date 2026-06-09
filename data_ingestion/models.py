@@ -49,14 +49,16 @@ class PriceHistory:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for storage."""
+        from utils.json_safe import finite_float
+
         return {
             "date": self.date.isoformat(),
-            "open": self.open,
-            "high": self.high,
-            "low": self.low,
-            "close": self.close,
+            "open": finite_float(self.open),
+            "high": finite_float(self.high),
+            "low": finite_float(self.low),
+            "close": finite_float(self.close),
             "volume": self.volume,
-            "adjusted_close": self.adjusted_close,
+            "adjusted_close": finite_float(self.adjusted_close),
         }
     
     @classmethod

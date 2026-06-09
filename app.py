@@ -9,6 +9,10 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(_ROOT))
 
+from utils.yfinance_config import configure_yfinance
+
+configure_yfinance()
+
 from utils.logging_config import configure_app_logging, get_logger
 
 configure_app_logging()

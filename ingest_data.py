@@ -40,6 +40,10 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
+from utils.yfinance_config import configure_yfinance
+
+configure_yfinance()
+
 # Import config for default paths
 try:
     from config import DOWNLOADS_DIR, VECTORDB_DIR

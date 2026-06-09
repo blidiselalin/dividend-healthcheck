@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Apply PostgreSQL schema on container start, then launch Streamlit.
 set -euo pipefail
+CACHE_ROOT="${DIVIDENDSCOPE_DATA_DIR:-/data}/cache/yfinance"
+mkdir -p "$CACHE_ROOT"
 python -m db --migrate 2>/dev/null || true
 python scripts/auto_import_market_library.py 2>/dev/null || true
 python -c "

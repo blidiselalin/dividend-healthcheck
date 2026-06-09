@@ -60,13 +60,15 @@ class PostgresMarketHistoryStore:
         dividends: Sequence[Any],
         conn: Any,
     ) -> None:
+        from utils.json_safe import finite_float
+
         if prices:
             conn.execute("DELETE FROM stock_price_history WHERE symbol = %s", (symbol,))
             for point in prices:
                 price_date = _parse_date(getattr(point, "date", None))
                 if price_date is None:
                     continue
-                close = getattr(point, "close", None)
+                close = finite_float(getattr(point, "close", None))
                 if close is None:
                     continue
                 conn.execute(
@@ -85,12 +87,12 @@ class PostgresMarketHistoryStore:
                     (
                         symbol,
                         price_date,
-                        getattr(point, "open", None),
-                        getattr(point, "high", None),
-                        getattr(point, "low", None),
-                        float(close),
-                        getattr(point, "adjusted_close", None),
-                        getattr(point, "volume", None),
+                        finite_float(getattr(point, "open", None)),
+                        finite_float(getattr(point, "high", None)),
+                        finite_float(getattr(point, "low", None)),
+                        close,
+                        finite_float(getattr(point, "adjusted_close", None)),
+                        int(getattr(point, "volume", 0) or 0),
                     ),
                 )
 

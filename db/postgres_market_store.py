@@ -32,6 +32,7 @@ class PostgresMarketStore:
     def add_documents(self, documents: List[Any]) -> List[str]:
         from data_ingestion.models import StockDocument
         from db.connection import ensure_schema, get_connection
+        from utils.json_safe import sanitize_for_json
 
         if not documents:
             return []
@@ -45,7 +46,7 @@ class PostgresMarketStore:
             for doc in documents:
                 if not isinstance(doc, StockDocument):
                     continue
-                payload = doc.to_full_dict()
+                payload = sanitize_for_json(doc.to_full_dict())
                 symbol = doc.symbol.upper()
                 conn.execute(
                     """

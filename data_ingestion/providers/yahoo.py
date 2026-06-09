@@ -138,16 +138,24 @@ class YahooFinanceProvider(BaseFetcher, StockDataProvider):
         try:
             hist = ticker.history(period="10y", auto_adjust=True)
             if hist is not None and not hist.empty:
+                from utils.json_safe import finite_float
+
                 for idx, row in hist.tail(252 * 10).iterrows():
+                    close = finite_float(row.get("Close"))
+                    if close is None or close <= 0:
+                        continue
+                    open_ = finite_float(row.get("Open"), default=close) or close
+                    high = finite_float(row.get("High"), default=close) or close
+                    low = finite_float(row.get("Low"), default=close) or close
                     snap.price_history.append(
                         PriceHistory(
                             date=idx.date() if hasattr(idx, "date") else idx,
-                            open=float(row["Open"]),
-                            high=float(row["High"]),
-                            low=float(row["Low"]),
-                            close=float(row["Close"]),
+                            open=open_,
+                            high=high,
+                            low=low,
+                            close=close,
                             volume=int(row.get("Volume", 0) or 0),
-                            adjusted_close=float(row.get("Close", row["Close"])),
+                            adjusted_close=finite_float(row.get("Close"), default=close) or close,
                         )
                     )
         except Exception:

@@ -430,17 +430,27 @@ class YFinanceEnricher:
                 
                 for date_idx, row in hist.iterrows():
                     try:
+                        from utils.json_safe import finite_float
+
                         price_date = date_idx.date() if hasattr(date_idx, 'date') else date_idx
-                        if price_date not in existing_dates:
-                            doc.price_history.append(PriceHistory(
-                                date=price_date,
-                                open=float(row.get("Open", 0)),
-                                high=float(row.get("High", 0)),
-                                low=float(row.get("Low", 0)),
-                                close=float(row.get("Close", 0)),
-                                volume=int(row.get("Volume", 0)),
-                                adjusted_close=float(row.get("Adj Close", row.get("Close", 0))),
-                            ))
+                        if price_date in existing_dates:
+                            continue
+                        close = finite_float(row.get("Close"))
+                        if close is None or close <= 0:
+                            continue
+                        open_ = finite_float(row.get("Open"), default=close) or close
+                        high = finite_float(row.get("High"), default=close) or close
+                        low = finite_float(row.get("Low"), default=close) or close
+                        adj = finite_float(row.get("Adj Close"), default=close) or close
+                        doc.price_history.append(PriceHistory(
+                            date=price_date,
+                            open=open_,
+                            high=high,
+                            low=low,
+                            close=close,
+                            volume=int(row.get("Volume", 0) or 0),
+                            adjusted_close=adj,
+                        ))
                     except Exception:
                         continue
                 

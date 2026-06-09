@@ -771,7 +771,7 @@ class UIComponents:
         if channel_data is None:
             doc = resolve_library_document(symbol, vector_doc)
             readiness = assess_yield_channel_readiness(symbol, doc)
-            in_portfolio = _symbol_in_current_portfolio(symbol, doc)
+            in_portfolio = UIComponents._symbol_in_current_portfolio(symbol, doc)
             if readiness.chart_ready:
                 with st.spinner(
                     f"Loading Dividends Don't Lie yield channel for {symbol.upper()} "

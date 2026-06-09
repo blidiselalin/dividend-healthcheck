@@ -42,24 +42,29 @@ def fetch_latest_market_price(symbol: str) -> Optional[float]:
     try:
         import yfinance as yf
 
-        ticker = yf.Ticker(symbol)
-        fast_info = getattr(ticker, "fast_info", None)
-        if fast_info:
-            for key in (
-                "lastPrice",
-                "last_price",
-                "regularMarketPrice",
-                "regular_market_price",
-            ):
-                price = _read_fast_info_value(fast_info, key)
-                if price is not None:
-                    return price
+        from utils.yfinance_config import configure_yfinance
+        from utils.yfinance_history import suppress_yfinance_noise
 
-        history = ticker.history(period="5d", auto_adjust=True)
-        if history is not None and not history.empty and "Close" in history.columns:
-            closes = history["Close"].dropna()
-            if not closes.empty:
-                return float(closes.iloc[-1])
+        configure_yfinance()
+        ticker = yf.Ticker(symbol)
+        with suppress_yfinance_noise():
+            fast_info = getattr(ticker, "fast_info", None)
+            if fast_info:
+                for key in (
+                    "lastPrice",
+                    "last_price",
+                    "regularMarketPrice",
+                    "regular_market_price",
+                ):
+                    price = _read_fast_info_value(fast_info, key)
+                    if price is not None:
+                        return price
+
+            history = ticker.history(period="5d", auto_adjust=True)
+            if history is not None and not history.empty and "Close" in history.columns:
+                closes = history["Close"].dropna()
+                if not closes.empty:
+                    return float(closes.iloc[-1])
     except Exception as exc:
         logger.debug("Live price fetch failed for %s: %s", symbol, exc)
     return None
@@ -74,24 +79,29 @@ def fetch_previous_close(symbol: str) -> Optional[float]:
     try:
         import yfinance as yf
 
-        ticker = yf.Ticker(symbol)
-        fast_info = getattr(ticker, "fast_info", None)
-        if fast_info:
-            for key in (
-                "previousClose",
-                "previous_close",
-                "regularMarketPreviousClose",
-                "regular_market_previous_close",
-            ):
-                price = _read_fast_info_value(fast_info, key)
-                if price is not None:
-                    return price
+        from utils.yfinance_config import configure_yfinance
+        from utils.yfinance_history import suppress_yfinance_noise
 
-        history = ticker.history(period="5d", auto_adjust=True)
-        if history is not None and not history.empty and "Close" in history.columns:
-            closes = history["Close"].dropna()
-            if len(closes) >= 2:
-                return float(closes.iloc[-2])
+        configure_yfinance()
+        ticker = yf.Ticker(symbol)
+        with suppress_yfinance_noise():
+            fast_info = getattr(ticker, "fast_info", None)
+            if fast_info:
+                for key in (
+                    "previousClose",
+                    "previous_close",
+                    "regularMarketPreviousClose",
+                    "regular_market_previous_close",
+                ):
+                    price = _read_fast_info_value(fast_info, key)
+                    if price is not None:
+                        return price
+
+            history = ticker.history(period="5d", auto_adjust=True)
+            if history is not None and not history.empty and "Close" in history.columns:
+                closes = history["Close"].dropna()
+                if len(closes) >= 2:
+                    return float(closes.iloc[-2])
     except Exception as exc:
         logger.debug("Previous close fetch failed for %s: %s", symbol, exc)
     return None
