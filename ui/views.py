@@ -26,19 +26,8 @@ except ImportError:
 
 # Try to import enhanced service (fallback with API calls)
 try:
-    from services.enhanced_stock_service import EnhancedStockService
-    _enhanced_service: Optional[EnhancedStockService] = None
-    
-    def _get_enhanced_service() -> EnhancedStockService:
-        """Get or create the enhanced stock service singleton."""
-        global _enhanced_service
-        if _enhanced_service is None:
-            _enhanced_service = EnhancedStockService(
-                staleness_days=7,
-                fetch_realtime_prices=True,
-            )
-        return _enhanced_service
-    
+    from services.enhanced_stock_service import get_enhanced_stock_service
+
     ENHANCED_SERVICE_AVAILABLE = True
 except ImportError:
     ENHANCED_SERVICE_AVAILABLE = False
@@ -48,25 +37,26 @@ def get_stock_data(symbol: str) -> Optional[StockData]:
     """
     Load stock data for single-stock analysis.
 
-    Uses the shared library (price/dividend history in stock_documents) first,
-    then falls back to enhanced or basic API services.
+    Uses the shared library first, then falls back to enhanced or basic API services.
     """
-    try:
-        from services.stock_analysis_service import load_independent_stock_analysis
+    from services.stock_analysis_service import load_stock_data
 
-        analysis = load_independent_stock_analysis(symbol, include_yield_channel=False)
-        if analysis is not None:
-            return analysis.stock_data
-    except Exception:
-        pass
-
-    from services.live_price import apply_live_price
+    data = load_stock_data(
+        symbol,
+        include_yield_channel=False,
+        fetch_realtime_prices=True,
+    )
+    if data is not None:
+        return data
 
     if ENHANCED_SERVICE_AVAILABLE:
-        service = _get_enhanced_service()
-        data = service.fetch(symbol)
+        from services.live_price import apply_live_price
+
+        data = get_enhanced_stock_service(fetch_realtime_prices=True).fetch(symbol)
         if data:
             return apply_live_price(data)
+
+    from services.live_price import apply_live_price
 
     data = StockService.fetch(symbol)
     return apply_live_price(data) if data else None

@@ -65,6 +65,38 @@ def fetch_latest_market_price(symbol: str) -> Optional[float]:
     return None
 
 
+def fetch_previous_close(symbol: str) -> Optional[float]:
+    """Previous session close from Yahoo Finance (for day-change on holdings)."""
+    symbol = (symbol or "").strip().upper()
+    if not symbol:
+        return None
+
+    try:
+        import yfinance as yf
+
+        ticker = yf.Ticker(symbol)
+        fast_info = getattr(ticker, "fast_info", None)
+        if fast_info:
+            for key in (
+                "previousClose",
+                "previous_close",
+                "regularMarketPreviousClose",
+                "regular_market_previous_close",
+            ):
+                price = _read_fast_info_value(fast_info, key)
+                if price is not None:
+                    return price
+
+        history = ticker.history(period="5d", auto_adjust=True)
+        if history is not None and not history.empty and "Close" in history.columns:
+            closes = history["Close"].dropna()
+            if len(closes) >= 2:
+                return float(closes.iloc[-2])
+    except Exception as exc:
+        logger.debug("Previous close fetch failed for %s: %s", symbol, exc)
+    return None
+
+
 def apply_live_price(data: Any) -> Any:
     """
     Overlay a live quote on StockData (mutates in place).

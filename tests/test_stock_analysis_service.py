@@ -28,6 +28,41 @@ def _library_doc() -> StockDocument:
     return doc
 
 
+def test_ensure_yield_channel_data_skips_backfill_when_channel_exists():
+    from services.stock_analysis_service import ensure_yield_channel_data
+
+    doc = _library_doc()
+    mock_channel = MagicMock()
+
+    with patch(
+        "services.stock_analysis_service.load_yield_channel_data",
+        return_value=mock_channel,
+    ), patch("services.stock_history_backfill.backfill_thin_history") as mock_backfill:
+        result = ensure_yield_channel_data("INTU", document=doc, allow_backfill=True)
+
+    assert result is mock_channel
+    mock_backfill.assert_not_called()
+
+
+def test_ensure_yield_channel_data_backfills_thin_history():
+    from services.stock_analysis_service import ensure_yield_channel_data
+
+    doc = _library_doc()
+    mock_channel = MagicMock()
+
+    with patch(
+        "services.stock_analysis_service.load_yield_channel_data",
+        side_effect=[None, mock_channel],
+    ), patch(
+        "services.stock_analysis_service.load_library_document",
+        return_value=doc,
+    ), patch("services.stock_history_backfill.backfill_thin_history") as mock_backfill:
+        result = ensure_yield_channel_data("INTU", document=doc, allow_backfill=True)
+
+    mock_backfill.assert_called_once_with(symbols=["INTU"], limit=1)
+    assert result is mock_channel
+
+
 def test_stock_data_from_document_uses_history():
     from services.stock_analysis_service import stock_data_from_document
 

@@ -756,7 +756,8 @@ class UIComponents:
 
         if channel_data is None:
             with st.spinner(
-                f"Building {years}-year Dividends Don't Lie yield channel for {symbol.upper()}…"
+                f"Building Dividends Don't Lie yield channel for {symbol.upper()} "
+                f"(up to {years} years of history)…"
             ):
                 doc = vector_doc
                 if doc is None:
@@ -789,9 +790,17 @@ class UIComponents:
 
             yearly = yearly_dividend_per_share_table(doc) if doc is not None else pd.DataFrame()
             if not yearly.empty:
+                from utils.yield_channel_history import estimate_history_years
+
+                available = estimate_history_years(doc)
+                span_hint = (
+                    f" (~{available} years in library)"
+                    if available is not None
+                    else ""
+                )
                 st.warning(
-                    f"Full **{years}-year yield channel** needs more price/dividend history "
-                    f"for **{symbol}**. Showing annual dividend per share from the library below."
+                    f"Could not build a yield channel chart for **{symbol}** yet{span_hint}. "
+                    "Showing annual dividend per share from the library below."
                 )
                 st.markdown("#### Annual dividend per share (library history)")
                 st.dataframe(
@@ -821,11 +830,20 @@ class UIComponents:
         analysis = service.format_analysis_summary(data)
 
         if show_header:
+            from utils.yield_channel_history import yield_channel_history_label
+
+            history_label = yield_channel_history_label(data.years_analyzed, requested=years)
             st.markdown("### Dividend Yield Channels · *Dividends Don't Lie*")
             st.caption(
                 f"Geraldine Weiss (1988): yield vs its own history shows if price is fair. "
-                f"{data.data_points:,} weekly points · ${data.current_dividend:.2f}/yr dividend today."
+                f"{history_label} · {data.data_points:,} chart points · "
+                f"${data.current_dividend:.2f}/yr dividend today."
             )
+            if data.years_analyzed < years:
+                st.info(
+                    f"Using **{data.years_analyzed} years** of available price/dividend history "
+                    f"(requested up to {years} years)."
+                )
 
         zone_color = YIELD_ZONE_COLORS.get(data.zone, "#0f766e")
         headline, sub = st.columns([1, 2])

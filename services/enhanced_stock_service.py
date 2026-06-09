@@ -402,3 +402,21 @@ class EnhancedStockService:
             "fetch_realtime_prices": self._fetch_realtime,
             "mode": "DB-first" if self.is_db_primary else "API-only",
         }
+
+
+_enhanced_instances: Dict[tuple, EnhancedStockService] = {}
+
+
+def get_enhanced_stock_service(
+    *,
+    fetch_realtime_prices: bool = False,
+    staleness_days: int = 7,
+) -> EnhancedStockService:
+    """Shared EnhancedStockService instances keyed by runtime config."""
+    key = (fetch_realtime_prices, staleness_days)
+    if key not in _enhanced_instances:
+        _enhanced_instances[key] = EnhancedStockService(
+            staleness_days=staleness_days,
+            fetch_realtime_prices=fetch_realtime_prices,
+        )
+    return _enhanced_instances[key]

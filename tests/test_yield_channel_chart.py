@@ -71,6 +71,11 @@ def test_ordered_percentiles_monotonic():
     assert stats["p10"] <= stats["p25"] <= stats["median"] <= stats["p75"] <= stats["p90"]
 
 
+def test_validate_accepts_minimum_series():
+    data = _sample_channel(n=13)
+    assert validate_yield_channel_data(data) is not None
+
+
 def test_validate_rejects_short_series():
     data = _sample_channel(n=10)
     assert validate_yield_channel_data(data) is None

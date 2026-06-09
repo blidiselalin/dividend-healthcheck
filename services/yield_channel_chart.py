@@ -126,7 +126,7 @@ def validate_yield_channel_data(data: YieldChannelData) -> Optional[YieldChannel
         return None
 
     n = len(data.dates)
-    min_points = 26
+    min_points = 13
     if n < min_points or len(data.prices) != n or len(data.yields) != n:
         return None
 
@@ -348,7 +348,7 @@ class YieldChannelService:
             )
 
             min_price_rows = max(52, int(min_price_rows))
-            min_yield_rows = max(26, int(min_yield_rows))
+            min_yield_rows = max(13, int(min_yield_rows))
             price_count = unique_price_dates(db_doc) if db_doc else 0
             div_count = len(db_dividend_history or [])
             prefer_library = price_count >= 52 and div_count >= 2
@@ -402,7 +402,7 @@ class YieldChannelService:
             hist = compute_ttm_from_payment_series(
                 prepared,
                 payment_series,
-                min_rows=min_yield_rows,
+                min_rows=max(13, min(min_yield_rows, len(prepared) // 3)),
             )
             if hist is None:
                 aligned = self._ensure_dividends_on_history(
@@ -415,13 +415,15 @@ class YieldChannelService:
                     logger.debug("%s: no dividend payments on price history", symbol)
                     return None
                 hist = self._calculate_ttm_dividend(aligned)
-                if hist is None or len(hist) < min_yield_rows:
+                effective_min = max(13, min(min_yield_rows, len(aligned) // 3))
+                if hist is None or len(hist) < effective_min:
                     logger.debug("%s: could not compute trailing dividend", symbol)
                     return None
 
             hist["Yield"] = (hist["Div_TTM"] / hist["Close"]) * 100
             hist = hist[(hist["Yield"] >= 0.01) & (hist["Yield"] < 25)]
-            if len(hist) < min_yield_rows:
+            effective_min_yield = max(13, min(min_yield_rows, len(hist)))
+            if len(hist) < effective_min_yield:
                 logger.debug(
                     "%s: insufficient yield points after filter (%d)",
                     symbol,
@@ -430,9 +432,13 @@ class YieldChannelService:
                 return None
 
             hist = self._downsample_for_display(hist)
-            min_display_rows = max(26, min_yield_rows // 2)
+            min_display_rows = max(13, min(min_yield_rows // 2, len(hist)))
             if len(hist) < min_display_rows:
                 return None
+
+            from utils.yield_channel_history import years_covered_by_frame
+
+            years_analyzed = min(years, years_covered_by_frame(hist))
 
             # Statistical analysis using percentiles (Weiss methodology)
             yields = hist["Yield"].dropna()
@@ -483,7 +489,7 @@ class YieldChannelService:
                 prices=hist["Close"].tolist(),
                 yields=hist["Yield"].tolist(),
                 annual_dividends=hist["Div_TTM"].tolist(),
-                years_analyzed=years,
+                years_analyzed=years_analyzed,
                 data_points=len(hist),
                 dividend_cagr_5y=dividend_growth.get("cagr_5y"),
                 dividend_cagr_10y=dividend_growth.get("cagr_10y"),
@@ -1066,17 +1072,6 @@ def _default_yield_channel_service() -> "YieldChannelService":
         return YieldChannelService(vector_store=get_shared_vector_store())
     except Exception:
         return YieldChannelService()
-
-
-def fetch_yield_channel_data(symbol: str, years: int = 10) -> Optional[YieldChannelData]:
-    """Convenience function for backward compatibility."""
-    return _default_yield_channel_service().fetch_yield_channel_data(symbol, years)
-
-
-def create_yield_channel_chart(data: YieldChannelData, height: int = 600) -> Optional[Any]:
-    """Convenience function for backward compatibility."""
-    service = YieldChannelService()
-    return service.create_yield_channel_chart(data, height)
 
 
 def is_available() -> bool:

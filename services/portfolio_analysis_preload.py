@@ -16,17 +16,6 @@ if TYPE_CHECKING:
     from services.yield_channel_chart import YieldChannelData
 
 
-def _fetch_preload_channel(
-    _service: object,
-    symbol: str,
-    years: int,
-    document: Optional["StockDocument"],
-) -> Optional["YieldChannelData"]:
-    from services.stock_analysis_service import load_yield_channel_data
-
-    return load_yield_channel_data(symbol, years=years, document=document)
-
-
 @dataclass(frozen=True)
 class PortfolioAnalysisPreload:
     """In-memory analysis payloads keyed by ticker."""
@@ -34,6 +23,19 @@ class PortfolioAnalysisPreload:
     stock_data: Dict[str, "StockData"]
     yield_channels: Dict[str, "YieldChannelData"]
     vector_docs: Dict[str, "StockDocument"]
+
+    @classmethod
+    def from_caches(
+        cls,
+        stock_data: Optional[Dict[str, "StockData"]] = None,
+        yield_channels: Optional[Dict[str, "YieldChannelData"]] = None,
+        vector_docs: Optional[Dict[str, "StockDocument"]] = None,
+    ) -> "PortfolioAnalysisPreload":
+        return cls(
+            stock_data=dict(stock_data or {}),
+            yield_channels=dict(yield_channels or {}),
+            vector_docs=dict(vector_docs or {}),
+        )
 
 
 def preload_portfolio_analysis(
@@ -51,7 +53,8 @@ def preload_portfolio_analysis(
     Runs in parallel so the portfolio table and drill-down charts are ready
     before the user selects a ticker.
     """
-    from services.yield_channel_chart import YieldChannelService
+    from services.stock_analysis_service import load_yield_channel_data
+    from services.yield_channel_chart import YieldChannelData
 
     yield_channels: Dict[str, YieldChannelData] = {}
     if not symbols:
@@ -61,16 +64,6 @@ def preload_portfolio_analysis(
             vector_docs=dict(vector_docs),
         )
 
-    vector_store = None
-    try:
-        from services.shared_market_db import get_shared_vector_store
-
-        vector_store = get_shared_vector_store()
-    except Exception:
-        pass
-
-    service = YieldChannelService(vector_store=vector_store)
-
     total = len(symbols)
     completed = 0
     if progress_callback and total:
@@ -79,11 +72,10 @@ def preload_portfolio_analysis(
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(
-                _fetch_preload_channel,
-                service,
+                load_yield_channel_data,
                 symbol,
-                years,
-                vector_docs.get(symbol),
+                years=years,
+                document=vector_docs.get(symbol),
             ): symbol
             for symbol in symbols
         }

@@ -226,25 +226,9 @@ def render_empty_home() -> None:
 
 
 def render_compact_summary(rows: List[PortfolioDetailRow]) -> None:
-    total_value = sum(row.current_value or 0.0 for row in rows)
-    total_acquisition = sum(row.acquisition_value for row in rows)
-    total_profit = total_value - total_acquisition
-    profit_pct = (total_profit / total_acquisition * 100) if total_acquisition else None
-    total_income = sum(row.annual_income or 0.0 for row in rows)
+    from ui.portfolio_summary import render_holdings_summary
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Holdings", len(rows))
-    c2.metric("Value", f"${total_value:,.0f}")
-    c3.metric(
-        "P/L",
-        f"${total_profit:+,.0f}",
-        f"{profit_pct:+.1f}%" if profit_pct is not None else None,
-    )
-    c4.metric(
-        "Yield",
-        f"{(total_income / total_value * 100):.2f}%" if total_value else "—",
-        help=f"Annual income ${total_income:,.0f}",
-    )
+    render_holdings_summary(rows)
 
     ranked = sorted(rows, key=lambda r: r.current_value or 0.0, reverse=True)[:8]
     if not ranked:

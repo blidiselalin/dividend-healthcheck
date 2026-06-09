@@ -90,10 +90,10 @@ def _load_portfolio_payload(
 
 
 def _preload_from_session() -> PortfolioAnalysisPreload:
-    return PortfolioAnalysisPreload(
-        stock_data=st.session_state.get("portfolio_stock_cache", {}),
-        yield_channels=st.session_state.get("portfolio_yield_cache", {}),
-        vector_docs=st.session_state.get("portfolio_vector_docs", {}),
+    return PortfolioAnalysisPreload.from_caches(
+        st.session_state.get("portfolio_stock_cache", {}),
+        st.session_state.get("portfolio_yield_cache", {}),
+        st.session_state.get("portfolio_vector_docs", {}),
     )
 
 
@@ -224,27 +224,9 @@ class PortfolioDetailsView:
     @classmethod
     def _render_portfolio_hero(cls, rows: List[PortfolioDetailRow]) -> None:
         """Compact KPI strip shown above all portfolio sections."""
-        total_value = sum(row.current_value or 0.0 for row in rows)
-        total_acquisition = sum(row.acquisition_value for row in rows)
-        total_profit = total_value - total_acquisition
-        profit_pct = (total_profit / total_acquisition * 100) if total_acquisition else None
-        total_income = sum(row.annual_income or 0.0 for row in rows)
+        from ui.portfolio_summary import render_holdings_summary
 
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Positions", len(rows))
-        c2.metric("Portfolio value", f"${total_value:,.0f}")
-        c3.metric(
-            "Total P/L",
-            f"${total_profit:+,.0f}",
-            f"{profit_pct:+.1f}%" if profit_pct is not None else None,
-        )
-        c4.metric("Annual income", f"${total_income:,.0f}")
-        c5.metric(
-            "Avg yield",
-            f"{(total_income / total_value * 100):.2f}%"
-            if total_value
-            else "—",
-        )
+        render_holdings_summary(rows, show_positions=True)
 
     @classmethod
     def _render_quick_holdings(cls, rows: List[PortfolioDetailRow]) -> None:

@@ -25,15 +25,10 @@ class DividendSyncStats:
 
 
 def _load_documents(symbols: List[str]) -> Dict[str, Optional[StockDocument]]:
-    documents: Dict[str, Optional[StockDocument]] = {symbol: None for symbol in symbols}
-    try:
-        from services.shared_market_db import get_document
+    from services.shared_market_db import load_documents
 
-        for symbol in symbols:
-            documents[symbol] = get_document(symbol)
-    except Exception as exc:
-        logger.warning("Shared market library unavailable for dividend sync: %s", exc)
-    return documents
+    found = load_documents(symbols)
+    return {symbol: found.get(symbol.upper()) for symbol in symbols}
 
 
 def maybe_sync_received_dividends(

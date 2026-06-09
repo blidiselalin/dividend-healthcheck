@@ -99,10 +99,10 @@ def _rebuild_attention_from_session() -> Optional[AttentionSummary]:
         return None
     from services.portfolio_analysis_preload import PortfolioAnalysisPreload
 
-    preload = PortfolioAnalysisPreload(
-        stock_data=st.session_state.get("portfolio_stock_cache", {}),
-        yield_channels=st.session_state.get("portfolio_yield_cache", {}),
-        vector_docs=st.session_state.get("portfolio_vector_docs", {}),
+    preload = PortfolioAnalysisPreload.from_caches(
+        st.session_state.get("portfolio_stock_cache", {}),
+        st.session_state.get("portfolio_yield_cache", {}),
+        st.session_state.get("portfolio_vector_docs", {}),
     )
     monitor = PortfolioRiskMonitorService()
     summary = monitor.build_summary(rows, preload)

@@ -87,3 +87,13 @@ def get_document(symbol: str):
         return get_shared_vector_store().get_by_symbol(symbol.upper())
     except Exception:
         return None
+
+
+def load_documents(symbols: list[str]) -> Dict[str, Any]:
+    """Load library documents for many tickers (missing symbols omitted)."""
+    documents: Dict[str, Any] = {}
+    for symbol in symbols:
+        document = get_document(symbol)
+        if document is not None:
+            documents[symbol.upper()] = document
+    return documents

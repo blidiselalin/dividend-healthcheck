@@ -28,7 +28,7 @@ except ImportError:
 # Optional yield channel chart service (requires plotly)
 try:
     from .yield_channel_chart import YieldChannelService, YieldChannelData, is_available
-    __all__.extend(["YieldChannelService", "YieldChannelData"])
+    __all__.extend(["YieldChannelService", "YieldChannelData", "is_available"])
 except ImportError:
     pass
 

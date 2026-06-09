@@ -3,7 +3,11 @@
 from unittest.mock import MagicMock, patch
 
 from models.stock import StockData
-from services.live_price import apply_live_price, fetch_latest_market_price
+from services.live_price import (
+    apply_live_price,
+    fetch_latest_market_price,
+    fetch_previous_close,
+)
 
 
 def _stock(*, price: float = 393.0) -> StockData:
@@ -38,6 +42,32 @@ def test_apply_live_price_keeps_cached_when_fetch_fails(mock_fetch):
     assert "Price: Live" not in (result.data_sources or [])
 
 
+def test_fetch_previous_close_rejects_empty_symbol():
+    assert fetch_previous_close("") is None
+    assert fetch_previous_close("   ") is None
+
+
+@patch("yfinance.Ticker")
+def test_fetch_previous_close_reads_fast_info(mock_ticker_cls):
+    fast_info = MagicMock()
+    fast_info.get.side_effect = lambda key: 645.0 if key == "previousClose" else None
+    mock_ticker_cls.return_value.fast_info = fast_info
+
+    assert fetch_previous_close("INTU") == 645.0
+
+
+@patch("yfinance.Ticker")
+def test_fetch_previous_close_falls_back_to_history(mock_ticker_cls):
+    import pandas as pd
+
+    mock_ticker_cls.return_value.fast_info = None
+    mock_ticker_cls.return_value.history.return_value = pd.DataFrame(
+        {"Close": [640.0, 645.0, 650.0]}
+    )
+
+    assert fetch_previous_close("INTU") == 645.0
+
+
 @patch("yfinance.Ticker")
 def test_fetch_latest_market_price_reads_fast_info(mock_ticker_cls):
     fast_info = MagicMock()
@@ -48,9 +78,8 @@ def test_fetch_latest_market_price_reads_fast_info(mock_ticker_cls):
 
 
 @patch("services.stock_analysis_service.load_independent_stock_analysis")
-def test_get_stock_data_delegates_to_independent_analysis(mock_load):
-    from services.portfolio_details_service import get_stock_data
-    from services.stock_analysis_service import IndependentStockAnalysis
+def test_load_stock_data_delegates_to_independent_analysis(mock_load):
+    from services.stock_analysis_service import load_stock_data, IndependentStockAnalysis
 
     stale = _stock(price=307.07)
     mock_load.return_value = IndependentStockAnalysis(
@@ -64,8 +93,9 @@ def test_get_stock_data_delegates_to_independent_analysis(mock_load):
         history_summary={"library_hit": True},
     )
 
-    data = get_stock_data("INTU")
+    data = load_stock_data("INTU")
 
-    mock_load.assert_called_once_with("INTU")
+    mock_load.assert_called_once()
+    assert mock_load.call_args.args[0] == "INTU"
     assert data is stale
     assert data.price == 307.07

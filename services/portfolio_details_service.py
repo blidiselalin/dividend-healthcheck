@@ -12,54 +12,16 @@ from typing import Dict, List, Optional, Tuple
 
 import yfinance as yf
 
+from data_ingestion.models import StockDocument
 from data_ingestion.portfolio_store import PortfolioHolding, PortfolioStore
 from models.stock import StockData
+from services.live_price import fetch_latest_market_price, fetch_previous_close
 from services.scoring import ScoringService
-from services.stock_service import StockService
+from services.stock_analysis_service import load_portfolio_statistics_stock
 from services.portfolio_analysis_preload import PortfolioAnalysisPreload, preload_portfolio_analysis
 from utils.logging_config import get_logger
 
 logger = get_logger("dividendscope.portfolio")
-
-try:
-    from data_ingestion.models import StockDocument
-    VECTOR_STORE_AVAILABLE = True
-except ImportError:
-    VECTOR_STORE_AVAILABLE = False
-
-try:
-    from services.enhanced_stock_service import EnhancedStockService
-    _enhanced_service: Optional[EnhancedStockService] = None
-    ENHANCED_SERVICE_AVAILABLE = True
-except ImportError:
-    ENHANCED_SERVICE_AVAILABLE = False
-
-
-def _fetch_statistics_stock(symbol: str, document: Optional[StockDocument]) -> Optional[StockData]:
-    """Load valuation and dividend statistics from the vector DB when available."""
-    if document is not None:
-        from services.stock_analysis_service import stock_data_from_document
-
-        return stock_data_from_document(document, apply_live_price=False)
-
-    if ENHANCED_SERVICE_AVAILABLE:
-        global _enhanced_service
-        if _enhanced_service is None:
-            _enhanced_service = EnhancedStockService(
-                staleness_days=7,
-                fetch_realtime_prices=False,
-            )
-        return _enhanced_service.fetch(symbol)
-
-    return StockService.fetch(symbol)
-
-
-def get_stock_data(symbol: str) -> Optional[StockData]:
-    """Load independent stock analysis from the shared library (history-first)."""
-    from services.stock_analysis_service import load_independent_stock_analysis
-
-    analysis = load_independent_stock_analysis(symbol)
-    return analysis.stock_data if analysis else None
 
 
 @dataclass(frozen=True)
@@ -111,6 +73,7 @@ class PortfolioDetailRow:
     ex_dividend_date: Optional[date]
     dividend_pay_date: Optional[date]
     data_source: str
+    previous_close: Optional[float] = None
 
 
 class PortfolioDetailsService:
@@ -142,18 +105,28 @@ class PortfolioDetailsService:
         documents = self._load_documents(symbols)
         stats_cache: Dict[str, Optional[StockData]] = {}
         live_prices: Dict[str, Optional[float]] = {}
+        previous_closes: Dict[str, Optional[float]] = {}
         price_cache: Dict[str, PriceSnapshot] = {}
         market_cache: Dict[str, Tuple[Optional[float], Optional[date], Optional[date]]] = {}
 
         with ThreadPoolExecutor(max_workers=8) as executor:
             stats_futures = {
-                executor.submit(_fetch_statistics_stock, symbol, documents.get(symbol)): symbol
+                executor.submit(
+                    load_portfolio_statistics_stock,
+                    symbol,
+                    documents.get(symbol),
+                ): symbol
                 for symbol in symbols
             }
             price_futures = {}
+            previous_close_futures = {}
             if use_live_prices:
                 price_futures = {
-                    executor.submit(self._fetch_latest_price, symbol): symbol
+                    executor.submit(fetch_latest_market_price, symbol): symbol
+                    for symbol in symbols
+                }
+                previous_close_futures = {
+                    executor.submit(fetch_previous_close, symbol): symbol
                     for symbol in symbols
                 }
             for future in as_completed(stats_futures):
@@ -169,6 +142,12 @@ class PortfolioDetailsService:
                         live_prices[symbol] = future.result()
                     except Exception:
                         live_prices[symbol] = None
+                for future in as_completed(previous_close_futures):
+                    symbol = previous_close_futures[future]
+                    try:
+                        previous_closes[symbol] = future.result()
+                    except Exception:
+                        previous_closes[symbol] = None
 
         if not use_live_prices:
             for symbol in symbols:
@@ -180,6 +159,7 @@ class PortfolioDetailsService:
                 elif stats and stats.price is not None:
                     price = float(stats.price)
                 live_prices[symbol] = price
+                previous_closes[symbol] = None
 
         for symbol in symbols:
             document = documents.get(symbol)
@@ -222,7 +202,7 @@ class PortfolioDetailsService:
                 if live_price is not None:
                     stats.price = live_price
                 document = documents.get(holding.symbol)
-                if document is not None:
+                if document is not None and not getattr(stats, "_yield_source", None):
                     from utils.stock_history_enrichment import enrich_stock_data_from_history
 
                     stats, yield_source = enrich_stock_data_from_history(stats, document)
@@ -245,6 +225,7 @@ class PortfolioDetailsService:
                     ex_dividend_date=ex_date_override,
                     has_db_stats=holding.symbol in documents,
                     use_live_prices=use_live_prices,
+                    previous_close=previous_closes.get(holding.symbol),
                 )
             )
 
@@ -263,17 +244,9 @@ class PortfolioDetailsService:
         return rows, preload
 
     def _load_documents(self, symbols: List[str]) -> Dict[str, StockDocument]:
-        if not VECTOR_STORE_AVAILABLE:
-            return {}
+        from services.shared_market_db import load_documents
 
-        from services.shared_market_db import get_document
-
-        documents: Dict[str, StockDocument] = {}
-        for symbol in symbols:
-            document = get_document(symbol)
-            if document is not None:
-                documents[symbol] = document
-        return documents
+        return load_documents(symbols)
 
     def _build_row(
         self,
@@ -291,6 +264,7 @@ class PortfolioDetailsService:
         has_db_stats: bool,
         *,
         use_live_prices: bool = False,
+        previous_close: Optional[float] = None,
     ) -> PortfolioDetailRow:
         current_price = live_price
         current_value = current_price * holding.shares if current_price is not None else None
@@ -377,6 +351,7 @@ class PortfolioDetailsService:
             ex_dividend_date=ex_date,
             dividend_pay_date=dividend_pay_date,
             data_source=data_source,
+            previous_close=previous_close,
         )
 
     @staticmethod
@@ -452,12 +427,6 @@ class PortfolioDetailsService:
                 return snapshot
 
         return self._fetch_price_snapshot(symbol)
-
-    @staticmethod
-    def _fetch_latest_price(symbol: str) -> Optional[float]:
-        from services.live_price import fetch_latest_market_price
-
-        return fetch_latest_market_price(symbol)
 
     @staticmethod
     def _price_snapshot_from_history(

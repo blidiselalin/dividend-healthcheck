@@ -13,6 +13,59 @@ from utils.yield_history_tables import (
 )
 
 
+def test_estimate_annual_dividend_uses_declared_rate():
+    doc = type("Doc", (), {"annual_dividend": 6.56, "dividend_rate": None})()
+    display, status, ytd = estimate_annual_dividend_for_year(
+        2026,
+        1.64,
+        1,
+        document=doc,
+        today=date(2026, 5, 19),
+    )
+    assert display == 6.56
+    assert "declared" in status.lower()
+    assert ytd == 1.64
+
+
+def test_estimate_annual_dividend_uses_prior_year():
+    records = [
+        DividendRecord(ex_date=date(2024, 2, 1), payment_date=None, amount=4.0),
+        DividendRecord(ex_date=date(2025, 2, 1), payment_date=None, amount=0.5),
+    ]
+    display, status, _ = estimate_annual_dividend_for_year(
+        2025,
+        0.5,
+        1,
+        all_records=records,
+        today=date(2025, 3, 1),
+    )
+    assert display == 4.0
+    assert "prior year" in status.lower()
+
+
+def test_estimate_annual_dividend_scales_ytd_by_month():
+    display, status, _ = estimate_annual_dividend_for_year(
+        2025,
+        1.0,
+        1,
+        today=date(2025, 3, 1),
+    )
+    assert display == 4.0
+    assert "YTD scaled" in status
+
+
+def test_complete_year_returns_summed_total():
+    display, status, ytd = estimate_annual_dividend_for_year(
+        2023,
+        1.84,
+        4,
+        today=date(2026, 5, 19),
+    )
+    assert display == 1.84
+    assert status == "Complete"
+    assert ytd is None
+
+
 def test_yearly_dividend_per_share_from_library():
     doc = StockDocument(symbol="KO", name="Coca-Cola", source=DataSource.YAHOO)
     doc.dividend_history = [
