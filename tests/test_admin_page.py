@@ -84,3 +84,24 @@ def test_admin_console_session_helpers(monkeypatch):
     assert is_admin_console_active() is True
     set_admin_console_active(False)
     assert is_admin_console_active() is False
+
+
+def test_navigate_to_portfolio_home_clears_admin_and_holding(monkeypatch):
+    session = {
+        "admin_console_active": True,
+        "portfolio_view_mode": "holding",
+        "portfolio_research_mode": True,
+        "portfolio_section_label": "Holdings",
+    }
+    monkeypatch.setattr("streamlit.session_state", session, raising=False)
+    rerun = []
+    monkeypatch.setattr("streamlit.rerun", lambda: rerun.append(True))
+
+    from ui.portfolio_home import navigate_to_portfolio_home
+
+    navigate_to_portfolio_home()
+    assert session.get("admin_console_active") is False
+    assert session["portfolio_view_mode"] == "overview"
+    assert "portfolio_research_mode" not in session
+    assert session["portfolio_section_label"] == "Home"
+    assert rerun == [True]

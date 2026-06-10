@@ -26,10 +26,21 @@ def _reload_live_data() -> None:
 
 
 def render_portfolio_sidebar() -> None:
-    """Portfolio sidebar: reload + manage (insights live on Overview)."""
+    """Portfolio sidebar: reload + manage (insights live on Home)."""
     hydrate_session_from_disk()
 
     sidebar_heading("Portfolio")
+    if st.sidebar.button(
+        "Home",
+        use_container_width=True,
+        type="primary",
+        key="nav_portfolio_home",
+        help="Return to portfolio home (summary, research, and overview)",
+    ):
+        from ui.portfolio_home import navigate_to_portfolio_home
+
+        navigate_to_portfolio_home()
+
     if portfolio_data_ready():
         loaded_at: Optional[datetime] = st.session_state.get("portfolio_details_time")
         count = len(st.session_state.get("portfolio_details_rows") or [])

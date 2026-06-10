@@ -4,7 +4,12 @@ High-level portfolio dashboard: KPIs and monthly evolution since inception.
 
 from __future__ import annotations
 
-from utils.chart_theme import evolution_chart_margins, monthly_category_axis, style_figure
+from utils.chart_theme import (
+    bottom_legend,
+    evolution_chart_margins,
+    monthly_category_axis,
+    style_figure,
+)
 
 from dataclasses import dataclass
 from typing import List, Optional
@@ -210,7 +215,7 @@ class PortfolioDashboardService:
             go.Scatter(
                 x=labels,
                 y=plot_df["cumulative_deposits_eur"],
-                name="Capital deposited (cumulative)",
+                name="Deposits (cumul.)",
                 mode="lines",
                 line=dict(color="#5c6bc0", width=2, dash="dot"),
                 hovertemplate="%{x}<br>€%{y:,.2f}<extra></extra>",
@@ -220,7 +225,7 @@ class PortfolioDashboardService:
             go.Scatter(
                 x=labels,
                 y=plot_df["portfolio_eur"],
-                name="Portfolio value",
+                name="Portfolio",
                 mode="lines+markers",
                 line=dict(color="#2e7d32", width=3),
                 fill="tonexty",
@@ -229,18 +234,10 @@ class PortfolioDashboardService:
             )
         )
         fig.update_layout(
-            title="Portfolio vs deposited capital (since inception)",
             yaxis_title="€",
             height=420,
-            margin=evolution_chart_margins(n_labels),
-            legend=dict(
-                orientation="h",
-                yanchor="top",
-                y=1.08,
-                x=0,
-                xanchor="left",
-                font=dict(size=10),
-            ),
+            margin=evolution_chart_margins(n_labels, legend_bottom=True),
+            legend=bottom_legend(),
             hovermode="x unified",
         )
         fig.update_xaxes(**monthly_category_axis(n_labels))
@@ -261,7 +258,7 @@ class PortfolioDashboardService:
             go.Bar(
                 x=labels,
                 y=df["deposit_eur"],
-                name="Monthly deposit",
+                name="Deposit",
                 marker_color="#1976d2",
                 opacity=0.85,
                 hovertemplate="%{x}<br>Deposit €%{y:,.2f}<extra></extra>",
@@ -272,7 +269,7 @@ class PortfolioDashboardService:
             go.Scatter(
                 x=labels,
                 y=df["mom_change_pct"],
-                name="Portfolio change %",
+                name="MoM %",
                 mode="lines+markers",
                 line=dict(color="#ef6c00", width=2),
                 connectgaps=False,
@@ -281,21 +278,13 @@ class PortfolioDashboardService:
             secondary_y=True,
         )
         fig.update_layout(
-            title="Monthly flow: deposits and portfolio % change",
             height=380,
-            margin=evolution_chart_margins(n_labels),
-            legend=dict(
-                orientation="h",
-                yanchor="top",
-                y=1.08,
-                x=0,
-                xanchor="left",
-                font=dict(size=10),
-            ),
+            margin=evolution_chart_margins(n_labels, legend_bottom=True, dual_y=True),
+            legend=bottom_legend(),
         )
         fig.update_xaxes(**monthly_category_axis(n_labels))
-        fig.update_yaxes(title_text="Deposit €", secondary_y=False)
-        fig.update_yaxes(title_text="MoM %", secondary_y=True)
+        fig.update_yaxes(title_text="€", secondary_y=False)
+        fig.update_yaxes(title_text="%", secondary_y=True)
         return style_figure(fig)
 
     def create_gain_chart(self, deposits: Optional[List[MonthlyDeposit]] = None):
@@ -323,10 +312,10 @@ class PortfolioDashboardService:
             )
         )
         fig.update_layout(
-            title="Unrealized gain vs total deposits (€)",
             yaxis_title="€",
             height=360,
             margin=evolution_chart_margins(n_labels),
+            showlegend=False,
         )
         fig.update_xaxes(**monthly_category_axis(n_labels))
         return style_figure(fig)

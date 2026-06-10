@@ -7,12 +7,15 @@ from __future__ import annotations
 from utils.chart_theme import style_figure
 
 import calendar
-from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Dict, List, Optional, Sequence, Set, TYPE_CHECKING
 
-from utils.dividend_amounts import per_payment_amount
+from utils.dividend_amounts import (
+    expected_payment_months,
+    normalize_payment_amount,
+    per_payment_amount,
+)
 
 if TYPE_CHECKING:
     from data_ingestion.models import DividendRecord, StockDocument
@@ -34,6 +37,9 @@ class HoldingMonthDividend:
     status: str  # received | scheduled | projected
 
 
+_STATUS_RANK = {"received": 0, "scheduled": 1, "projected": 2}
+
+
 @dataclass
 class MonthDividendExposure:
     """Aggregated dividend exposure for a single calendar month."""
@@ -46,6 +52,43 @@ class MonthDividendExposure:
     @property
     def payer_count(self) -> int:
         return len(self.holdings)
+
+    @property
+    def received_cash(self) -> float:
+        """Cash from payments already received this month (pay date on or before today)."""
+        return round(
+            sum(item.expected_cash for item in self.holdings if item.status == "received"),
+            2,
+        )
+
+    @property
+    def received_payer_count(self) -> int:
+        return sum(1 for item in self.holdings if item.status == "received")
+
+    @property
+    def scheduled_cash(self) -> float:
+        return round(
+            sum(item.expected_cash for item in self.holdings if item.status == "scheduled"),
+            2,
+        )
+
+    @property
+    def projected_cash(self) -> float:
+        return round(
+            sum(item.expected_cash for item in self.holdings if item.status == "projected"),
+            2,
+        )
+
+    @property
+    def confirmed_cash(self) -> float:
+        """Received or announced this month — excludes pattern projections."""
+        return round(self.received_cash + self.scheduled_cash, 2)
+
+    @property
+    def confirmed_payer_count(self) -> int:
+        return sum(
+            1 for item in self.holdings if item.status in {"received", "scheduled"}
+        )
 
 
 @dataclass
@@ -92,35 +135,38 @@ def _per_share_payment(
     return per_payment_amount(records, document, stock)
 
 
-def _typical_payment_months(records: Sequence["DividendRecord"]) -> Set[int]:
-    """Calendar months (1–12) that usually include a cash dividend."""
-    if not records:
-        return set()
+def _shares_for_payment(
+    holding: "PortfolioHolding",
+    *,
+    as_of: date,
+    detail_service,
+) -> float:
+    """Shares held on the payment date (journal lots when available)."""
+    from services.portfolio_holding_detail_service import shares_as_of
 
-    recent = sorted(records, key=lambda record: _cash_date(record))[-36:]
-    month_counts = Counter(_cash_date(record).month for record in recent)
-    if not month_counts:
-        return set()
-
-    max_count = max(month_counts.values())
-    if max_count <= 1:
-        return set(month_counts.keys())
-
-    threshold = max(1, max_count - 1)
-    return {month for month, count in month_counts.items() if count >= threshold}
+    lots = detail_service.estimated_lots_for_symbol(holding.symbol)
+    fallback = holding.shares if not lots else 0.0
+    return shares_as_of(lots, as_of, fallback_shares=fallback)
 
 
-def _payments_in_month_from_history(
-    records: Sequence["DividendRecord"],
-    target_month: date,
-) -> List[tuple[date, date, float]]:
-    """Historical payments whose cash date falls in target_month."""
-    matches: List[tuple[date, date, float]] = []
-    for record in records:
-        cash_day = _cash_date(record)
-        if _in_month(cash_day, target_month):
-            matches.append((record.ex_date, cash_day, float(record.amount)))
-    return matches
+def _collapse_symbol_payments(
+    payments: List[HoldingMonthDividend],
+) -> List[HoldingMonthDividend]:
+    """Keep one payment row per symbol — prefer received, then largest plausible cash."""
+    merged: Dict[str, HoldingMonthDividend] = {}
+    for item in payments:
+        existing = merged.get(item.symbol)
+        if existing is None:
+            merged[item.symbol] = item
+            continue
+        if _STATUS_RANK[item.status] < _STATUS_RANK[existing.status]:
+            merged[item.symbol] = item
+        elif (
+            _STATUS_RANK[item.status] == _STATUS_RANK[existing.status]
+            and item.per_share <= existing.per_share
+        ):
+            merged[item.symbol] = item
+    return list(merged.values())
 
 
 def _holding_payments_for_month(
@@ -131,15 +177,17 @@ def _holding_payments_for_month(
     stock: Optional["StockData"],
     row_ex_date: Optional[date] = None,
     row_pay_date: Optional[date] = None,
+    reference_date: date,
+    detail_service,
 ) -> List[HoldingMonthDividend]:
     records = list(document.dividend_history) if document and document.dividend_history else []
     company = (
         (document.name if document and document.name else None)
         or (stock.name if stock and stock.name else None)
+        or holding.company_name
         or holding.symbol
     )
-    today = date.today()
-    current_month = month_start(today)
+    current_month = month_start(reference_date)
     is_past_month = target_month < current_month
     is_future_month = target_month > current_month
 
@@ -152,7 +200,10 @@ def _holding_payments_for_month(
         pay_date: Optional[date],
         per_share_amount: float,
         status: str,
+        shares: float,
     ) -> None:
+        if shares <= 0 or per_share_amount <= 0:
+            return
         pay_key = pay_date.isoformat() if pay_date else "unknown"
         key = f"{pay_key}-{per_share_amount:.6f}"
         if key in seen_keys:
@@ -162,8 +213,8 @@ def _holding_payments_for_month(
             HoldingMonthDividend(
                 symbol=holding.symbol,
                 company=company,
-                shares=holding.shares,
-                expected_cash=round(per_share_amount * holding.shares, 2),
+                shares=round(shares, 4),
+                expected_cash=round(per_share_amount * shares, 2),
                 per_share=round(per_share_amount, 4),
                 payment_date=pay_date,
                 ex_date=ex_date,
@@ -171,39 +222,56 @@ def _holding_payments_for_month(
             )
         )
 
-    history_payments = _payments_in_month_from_history(records, target_month)
-    for ex_date, pay_date, amount in history_payments:
-        status = "received" if is_past_month or pay_date <= today else "scheduled"
-        _add(ex_date=ex_date, pay_date=pay_date, per_share_amount=amount, status=status)
+    for record in records:
+        pay_date = _cash_date(record)
+        if not _in_month(pay_date, target_month):
+            continue
+        amount = normalize_payment_amount(float(record.amount), records, document, stock)
+        shares = _shares_for_payment(holding, as_of=record.ex_date, detail_service=detail_service)
+        status = "received" if is_past_month or pay_date <= reference_date else "scheduled"
+        _add(
+            ex_date=record.ex_date,
+            pay_date=pay_date,
+            per_share_amount=amount,
+            status=status,
+            shares=shares,
+        )
 
-    # Past months: only cash that actually landed in that month (dividend history).
     if is_past_month:
-        return results
+        return _collapse_symbol_payments(results)
 
     per_share = _per_share_payment(records, document, stock)
     if per_share is None or per_share <= 0:
-        return results
+        return _collapse_symbol_payments(results)
 
-    # Current / future: optional announced dates when not already in history.
-    if not is_future_month:
+    if not is_future_month and not results:
         announced_ex = row_ex_date or (document.ex_dividend_date if document else None)
         announced_pay = row_pay_date
         if announced_ex or announced_pay:
             pay = announced_pay or (announced_ex + timedelta(days=14))
-            if _in_month(pay, target_month) and not history_payments:
-                status = "received" if pay <= today else "scheduled"
+            if _in_month(pay, target_month):
+                shares = _shares_for_payment(
+                    holding,
+                    as_of=announced_ex or pay,
+                    detail_service=detail_service,
+                )
+                status = "received" if pay <= reference_date else "scheduled"
                 _add(
                     ex_date=announced_ex or (pay - timedelta(days=14)),
                     pay_date=pay,
                     per_share_amount=per_share,
                     status=status,
+                    shares=shares,
                 )
 
-    if results or is_past_month:
-        return results
+    if results:
+        return _collapse_symbol_payments(results)
 
-    typical_months = _typical_payment_months(records)
-    if target_month.month not in typical_months:
+    payment_months = expected_payment_months(
+        records,
+        stored_frequency=document.payment_frequency if document else None,
+    )
+    if target_month.month not in payment_months:
         return results
 
     same_calendar_month = [
@@ -213,22 +281,30 @@ def _holding_payments_for_month(
     ]
     if same_calendar_month:
         recent_same_month = sorted(same_calendar_month, key=lambda r: _cash_date(r))[-3:]
-        projected = sum(record.amount for record in recent_same_month) / len(
-            recent_same_month
+        projected = normalize_payment_amount(
+            sum(record.amount for record in recent_same_month) / len(recent_same_month),
+            records,
+            document,
+            stock,
         )
     else:
         projected = per_share
 
     projected_pay = date(target_month.year, target_month.month, 15)
-    status = "scheduled" if not is_future_month else "projected"
+    shares = _shares_for_payment(
+        holding,
+        as_of=projected_pay - timedelta(days=14),
+        detail_service=detail_service,
+    )
+    status = "projected" if is_future_month else "scheduled"
     _add(
         ex_date=projected_pay - timedelta(days=14),
         pay_date=projected_pay,
         per_share_amount=projected,
         status=status,
+        shares=shares,
     )
-
-    return results
+    return _collapse_symbol_payments(results)
 
 
 def _summarize_month(
@@ -238,6 +314,8 @@ def _summarize_month(
     vector_docs: Dict[str, "StockDocument"],
     stock_data: Dict[str, "StockData"],
     row_dates: Optional[Dict[str, tuple[Optional[date], Optional[date]]]] = None,
+    reference_date: date,
+    detail_service,
 ) -> MonthDividendExposure:
     row_dates = row_dates or {}
     payments: List[HoldingMonthDividend] = []
@@ -254,6 +332,8 @@ def _summarize_month(
                 stock=stock,
                 row_ex_date=ex_date,
                 row_pay_date=pay_date,
+                reference_date=reference_date,
+                detail_service=detail_service,
             )
         )
 
@@ -276,21 +356,42 @@ def build_portfolio_dividend_calendar(
     reference_date: Optional[date] = None,
 ) -> PortfolioDividendCalendar:
     """Build last / current / next month dividend exposure for the portfolio."""
+    from services.portfolio_holding_detail_service import PortfolioHoldingDetailService
+
     today = reference_date or date.today()
     current = month_start(today)
     last_month = add_months(current, -1)
     next_month = add_months(current, 1)
+    detail_service = PortfolioHoldingDetailService()
 
     return PortfolioDividendCalendar(
         reference_date=today,
         last_month=_summarize_month(
-            holdings, last_month, vector_docs=vector_docs, stock_data=stock_data, row_dates=row_dates
+            holdings,
+            last_month,
+            vector_docs=vector_docs,
+            stock_data=stock_data,
+            row_dates=row_dates,
+            reference_date=today,
+            detail_service=detail_service,
         ),
         current_month=_summarize_month(
-            holdings, current, vector_docs=vector_docs, stock_data=stock_data, row_dates=row_dates
+            holdings,
+            current,
+            vector_docs=vector_docs,
+            stock_data=stock_data,
+            row_dates=row_dates,
+            reference_date=today,
+            detail_service=detail_service,
         ),
         next_month=_summarize_month(
-            holdings, next_month, vector_docs=vector_docs, stock_data=stock_data, row_dates=row_dates
+            holdings,
+            next_month,
+            vector_docs=vector_docs,
+            stock_data=stock_data,
+            row_dates=row_dates,
+            reference_date=today,
+            detail_service=detail_service,
         ),
     )
 
@@ -316,7 +417,7 @@ def create_month_comparison_chart(calendar: PortfolioDividendCalendar):
 
     months = [calendar.last_month, calendar.current_month, calendar.next_month]
     labels = [month.label for month in months]
-    totals = [month.total_cash for month in months]
+    totals = [month.confirmed_cash or month.total_cash for month in months]
     colors = ["#90a4ae", "#1976d2", "#43a047"]
 
     fig = go.Figure(

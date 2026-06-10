@@ -198,3 +198,16 @@ def apply_completed_jobs(
             job.error = str(exc)
 
     return applied_kinds
+
+
+def acknowledge_jobs(
+    *,
+    statuses: tuple[str, ...] = ("error",),
+    scope: Optional[str] = None,
+) -> None:
+    """Mark finished jobs acknowledged so UI polling can stop (e.g. shown errors)."""
+    scope_key = scope or session_scope()
+    with _STORE_LOCK:
+        for job in _JOB_STORE.get(scope_key, {}).values():
+            if job.status in statuses and not job.applied:
+                job.applied = True

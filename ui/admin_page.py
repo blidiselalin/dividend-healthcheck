@@ -26,7 +26,7 @@ from services.price_refresh_scheduler import scheduler_status
 from services.shared_market_db import shared_market_db_status
 from services.sp500_peers_service import coverage_stats, top_dividend_coverage_stats
 from ui.db_admin_panel import render_database_admin_tabs
-from ui.theme import render_notice, render_page_header
+from ui.theme import render_notice
 
 _ADMIN_VIEW_KEY = "admin_console_active"
 
@@ -51,12 +51,14 @@ def render_admin_sidebar_entry() -> None:
     )
     if is_admin_console_active():
         if st.sidebar.button(
-            "← Back to portfolio",
+            "Home",
             use_container_width=True,
             key="admin_console_back",
+            help="Return to portfolio home",
         ):
-            set_admin_console_active(False)
-            st.rerun()
+            from ui.portfolio_home import navigate_to_portfolio_home
+
+            navigate_to_portfolio_home()
     elif st.sidebar.button(
         "Open admin console",
         use_container_width=True,
@@ -76,10 +78,17 @@ def render_admin_page_if_active() -> bool:
         return False
 
     _inject_admin_styles()
-    render_page_header(
-        title="Admin console",
-        subtitle="Shared market library, history pipelines, and database inspection",
-    )
+    head_left, head_right = st.columns([1, 5])
+    with head_left:
+        if st.button("← Home", type="primary", use_container_width=True, key="admin_page_home"):
+            from ui.portfolio_home import navigate_to_portfolio_home
+
+            navigate_to_portfolio_home()
+    with head_right:
+        st.markdown("### Admin console")
+        st.caption(
+            "Shared market library, history pipelines, and database inspection"
+        )
     _render_status_metrics()
     _render_background_jobs_panel()
 
@@ -144,7 +153,7 @@ def _inject_admin_styles() -> None:
 
 def _library_status() -> Dict[str, Any]:
     status = dict(st.session_state.get("market_db_status") or {})
-    if not status.get("document_count"):
+    if "document_count" not in status:
         try:
             status = shared_market_db_status(include_coverage=True)
             st.session_state["market_db_status"] = status
@@ -153,11 +162,44 @@ def _library_status() -> Dict[str, Any]:
     return status
 
 
+def _coverage_from_status(status: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    """Read coverage KPIs from session; avoid repeated DB counts on every paint."""
+    sp_cov = status.get("sp500_coverage")
+    top_cov = status.get("top_dividend_coverage")
+    updated = False
+    if sp_cov is None:
+        sp_cov = coverage_stats()
+        status["sp500_coverage"] = sp_cov
+        updated = True
+    if top_cov is None:
+        top_cov = top_dividend_coverage_stats()
+        status["top_dividend_coverage"] = top_cov
+        updated = True
+    if updated:
+        st.session_state["market_db_status"] = {
+            **dict(st.session_state.get("market_db_status") or {}),
+            **status,
+        }
+    return sp_cov, top_cov
+
+
+def _admin_jobs_need_polling() -> bool:
+    from services.background_jobs import has_active_jobs
+
+    if has_active_jobs():
+        return True
+    for job in visible_jobs(admin=True):
+        if job.status in ("queued", "running"):
+            return True
+        if job.status == "done" and not job.applied:
+            return True
+    return False
+
+
 def _render_status_metrics() -> None:
     status = _library_status()
     doc_count = int(status.get("document_count") or 0)
-    sp_cov = status.get("sp500_coverage") or coverage_stats()
-    top_cov = status.get("top_dividend_coverage") or top_dividend_coverage_stats()
+    sp_cov, top_cov = _coverage_from_status(status)
 
     try:
         thin = cached_thin_history_summary()
@@ -186,11 +228,10 @@ def _render_status_metrics() -> None:
 
 
 @st.fragment(run_every=timedelta(seconds=2))
-def _admin_jobs_fragment() -> None:
+def _admin_jobs_poll_fragment() -> None:
     applied = apply_background_results()
     jobs = visible_jobs(admin=True)
     if not jobs and not applied:
-        st.caption("No admin background jobs running.")
         return
 
     for job in jobs:
@@ -206,12 +247,38 @@ def _admin_jobs_fragment() -> None:
 
     if applied:
         clear_thin_history_summary_cache()
-        st.rerun()
+        import time
+
+        now = time.time()
+        last = float(st.session_state.get("_admin_jobs_last_rerun_at") or 0)
+        if now - last >= 2:
+            st.session_state["_admin_jobs_last_rerun_at"] = now
+            st.rerun()
+
+    from services.background_jobs import acknowledge_jobs
+
+    if any(job.status == "error" for job in jobs):
+        acknowledge_jobs(statuses=("error",))
 
 
 def _render_background_jobs_panel() -> None:
     with st.expander("Background jobs", expanded=True):
-        _admin_jobs_fragment()
+        if _admin_jobs_need_polling():
+            _admin_jobs_poll_fragment()
+        else:
+            applied = apply_background_results()
+            jobs = visible_jobs(admin=True)
+            if jobs:
+                for job in jobs:
+                    if job.status == "error":
+                        st.error(f"{job.label}: {job.error or 'failed'}")
+                from services.background_jobs import acknowledge_jobs
+
+                acknowledge_jobs(statuses=("error",))
+            elif applied:
+                st.caption("Background jobs finished — metrics updated.")
+            else:
+                st.caption("No admin background jobs running.")
 
 
 def _render_overview_tab() -> None:

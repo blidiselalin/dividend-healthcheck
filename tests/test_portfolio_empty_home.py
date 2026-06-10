@@ -7,6 +7,40 @@ from pathlib import Path
 import pytest
 
 from services.portfolio_session import is_demo_session, user_has_holdings_in_db
+from ui.theme import (
+    PORTFOLIO_NAV,
+    PORTFOLIO_SECTION_LABELS,
+    portfolio_section_key_from_label,
+    resolve_portfolio_section_label,
+)
+
+
+def test_portfolio_nav_lists_all_sections_with_hints() -> None:
+    assert len(PORTFOLIO_NAV) == 6
+    assert PORTFOLIO_SECTION_LABELS == [
+        "Home",
+        "Holdings",
+        "Dividend income",
+        "Dividend growth",
+        "Purchase journal",
+        "Deposits & benchmarks",
+    ]
+    for label, _key, hint in PORTFOLIO_NAV:
+        assert hint.strip()
+
+
+def test_resolve_portfolio_section_label_defaults_and_normalizes() -> None:
+    assert resolve_portfolio_section_label(None) == "Home"
+    assert resolve_portfolio_section_label("") == "Home"
+    assert resolve_portfolio_section_label("Unknown") == "Home"
+    assert resolve_portfolio_section_label("Overview") == "Home"
+    assert resolve_portfolio_section_label("Dividend income") == "Dividend income"
+
+
+def test_portfolio_section_key_from_label() -> None:
+    assert portfolio_section_key_from_label(None) == "dashboard"
+    assert portfolio_section_key_from_label("Holdings") == "holdings"
+    assert portfolio_section_key_from_label("Deposits & benchmarks") == "deposits"
 
 
 def test_home_examples_include_ko_for_test_docs() -> None:

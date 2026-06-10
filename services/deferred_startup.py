@@ -356,7 +356,7 @@ def visible_jobs(*, admin: bool) -> List:
             visible.append(job)
         elif job.status == "done" and not job.applied:
             visible.append(job)
-        elif job.status == "error" and job.finished_at:
+        elif job.status == "error" and job.finished_at and not job.applied:
             visible.append(job)
     return visible[-6:]
 

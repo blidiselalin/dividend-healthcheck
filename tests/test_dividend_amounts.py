@@ -6,6 +6,8 @@ from datetime import date
 from data_ingestion.models import DividendRecord
 from utils.dividend_amounts import (
     detect_payment_frequency,
+    expected_payment_months,
+    normalize_payment_amount,
     per_payment_amount,
     resolve_annual_dividend_per_share,
     trailing_annual_dividend,
@@ -43,6 +45,31 @@ class DividendAmountsTests(unittest.TestCase):
         records = _monthly_records(12, amount=0.271)
         amount = per_payment_amount(records, document=None, stock=None)
         self.assertAlmostEqual(amount, 0.271, places=3)
+
+    def test_normalize_payment_amount_clamps_annual_lump(self):
+        records = _quarterly_records(amount=0.6775)
+        normalized = normalize_payment_amount(2.71, records, document=None, stock=None)
+        self.assertAlmostEqual(normalized, 0.6775, places=4)
+
+    def test_expected_payment_months_for_quarterly(self):
+        records = _quarterly_records()
+        months = expected_payment_months(records, stored_frequency=4)
+        self.assertEqual(months, {3, 6, 9, 12})
+
+
+def _quarterly_records(amount: float = 0.48) -> list[DividendRecord]:
+    months = (3, 6, 9, 12)
+    records: list[DividendRecord] = []
+    for year in (2024, 2025, 2026):
+        for month in months:
+            records.append(
+                DividendRecord(
+                    ex_date=date(year, month, 10),
+                    payment_date=date(year, month, 25),
+                    amount=amount,
+                )
+            )
+    return records
 
 
 if __name__ == "__main__":

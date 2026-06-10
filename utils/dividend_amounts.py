@@ -7,7 +7,7 @@ Used by portfolio details (annual income) and the monthly dividend calendar
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import TYPE_CHECKING, List, Optional, Sequence
 
 if TYPE_CHECKING:
@@ -142,6 +142,82 @@ def resolve_annual_dividend_per_share(
     return round(max(candidates), 4)
 
 
+def _canonical_per_payment(
+    records: Sequence["DividendRecord"],
+    document: Optional["StockDocument"] = None,
+    stock: Optional["StockData"] = None,
+) -> Optional[float]:
+    """Typical per-payment amount without trusting a single outlier row."""
+    if not records:
+        annual = resolve_annual_dividend_per_share(records, document, stock)
+        if annual is None or annual <= 0:
+            return None
+        freq = payments_per_year(
+            records,
+            stored_frequency=document.payment_frequency if document else None,
+        )
+        return round(annual / freq, 4)
+
+    ordered = sorted(records, key=lambda record: record.ex_date)
+    recent = [float(record.amount) for record in ordered[-12:] if record.amount > 0]
+    if recent:
+        recent_sorted = sorted(recent)
+        median = recent_sorted[len(recent_sorted) // 2]
+        annual = resolve_annual_dividend_per_share(records, document, stock)
+        freq = payments_per_year(
+            records,
+            stored_frequency=document.payment_frequency if document else None,
+        )
+        if annual and annual > 0 and median <= annual * 1.05:
+            return round(annual / freq, 4)
+        return round(median, 4)
+
+    annual = resolve_annual_dividend_per_share(records, document, stock)
+    if annual is None or annual <= 0:
+        return None
+    freq = payments_per_year(
+        records,
+        stored_frequency=document.payment_frequency if document else None,
+    )
+    return round(annual / freq, 4)
+
+
+def normalize_payment_amount(
+    raw_amount: float,
+    records: Sequence["DividendRecord"],
+    document: Optional["StockDocument"] = None,
+    stock: Optional["StockData"] = None,
+) -> float:
+    """
+    Return a per-payment cash amount.
+
+    Some library rows store an annual total or a special dividend outlier; clamp those
+    to the canonical per-payment estimate used elsewhere in the app.
+    """
+    if raw_amount <= 0:
+        return raw_amount
+
+    annual = resolve_annual_dividend_per_share(records, document, stock)
+    freq = payments_per_year(
+        records,
+        stored_frequency=document.payment_frequency if document else None,
+    )
+    if annual and annual > 0 and abs(raw_amount - annual) <= max(annual * 0.05, 0.01):
+        return round(annual / freq, 4)
+
+    canonical = _canonical_per_payment(records, document, stock)
+    if canonical is None or canonical <= 0:
+        return raw_amount
+
+    if raw_amount <= canonical * 2.5:
+        return raw_amount
+
+    if annual and annual > 0 and raw_amount <= annual * 1.05:
+        return round(annual / freq, 4)
+
+    return canonical
+
+
 def per_payment_amount(
     records: Sequence["DividendRecord"],
     document: Optional["StockDocument"] = None,
@@ -150,14 +226,29 @@ def per_payment_amount(
     """Cash dividend per payment (not annualized)."""
     latest = latest_payment_amount(records)
     if latest is not None and latest > 0:
-        return latest
+        return normalize_payment_amount(latest, records, document, stock)
 
-    annual = resolve_annual_dividend_per_share(records, document, stock)
-    if annual is None or annual <= 0:
-        return None
+    return _canonical_per_payment(records, document, stock)
 
-    freq = payments_per_year(
-        records,
-        stored_frequency=document.payment_frequency if document else None,
-    )
-    return round(annual / freq, 4)
+
+def expected_payment_months(
+    records: Sequence["DividendRecord"],
+    *,
+    stored_frequency: Optional[int] = None,
+) -> set[int]:
+    """Calendar months (1–12) that should include a cash dividend payment."""
+    freq = payments_per_year(records, stored_frequency=stored_frequency)
+    if freq == FREQUENCY_MONTHLY:
+        return set(range(1, 13))
+    if not records:
+        return set()
+
+    recent = sorted(records, key=lambda record: record.ex_date)[-max(freq * 3, 8) :]
+    months = {_cash_date(record).month for record in recent}
+    return months
+
+
+def _cash_date(record: "DividendRecord") -> date:
+    if record.payment_date:
+        return record.payment_date
+    return record.ex_date + timedelta(days=14)

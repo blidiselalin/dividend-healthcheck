@@ -59,7 +59,7 @@ from utils.formatting import format_large_number
 from ui.charts import show_chart
 from ui.theme import (
     PORTFOLIO_TAB_SCOPES,
-    pick_portfolio_section,
+    current_portfolio_section_key,
     portfolio_data_ready,
     render_portfolio_status_line,
 )
@@ -273,22 +273,23 @@ class PortfolioDetailsView:
         total_income = sum(row.annual_income or 0.0 for row in rows)
         total_dividends_paid = sum(row.dividends_paid for row in rows)
 
-        col1, col2, col3, col4, col5 = st.columns(5)
+        col1, col2, col3 = st.columns(3)
+        col4, col5 = st.columns(2)
         with col1:
             st.metric("Positions", len(rows))
         with col2:
-            st.metric("Current Value", f"${total_value:,.2f}")
+            st.metric("Current value", f"${total_value:,.2f}")
         with col3:
-            st.metric("Acquisition Value", f"${total_acquisition:,.2f}")
+            st.metric("Acquisition", f"${total_acquisition:,.2f}")
         with col4:
             profit_pct = (total_profit / total_acquisition * 100) if total_acquisition else None
             st.metric(
-                "Total Profit",
+                "Total profit",
                 f"${total_profit:,.2f}",
                 f"{profit_pct:+.2f}%" if profit_pct is not None else None,
             )
         with col5:
-            st.metric("Annual Dividend Income", f"${total_income:,.2f}")
+            st.metric("Annual income", f"${total_income:,.2f}")
         st.caption(f"Lifetime dividends received: ${total_dividends_paid:,.2f}")
 
     @staticmethod
@@ -347,37 +348,60 @@ class PortfolioDetailsView:
         next_month = calendar.next_month
 
         st.caption(
-            "Last month uses **actual dividend payments** recorded in analysed stocks "
-            "(cash date in that month). This month and next month add scheduled and projected "
-            "payments from announced dates and usual payment patterns."
+            "Last month uses **actual cash dates** from dividend history. "
+            "This month shows **received + scheduled** payments; projections are listed separately in the table."
         )
 
-        delta_vs_last = current.total_cash - last.total_cash
-        delta_vs_next = next_month.total_cash - current.total_cash
+        delta_vs_last = current.confirmed_cash - last.total_cash
+        delta_vs_next = next_month.confirmed_cash - current.confirmed_cash
+        this_month_display = current.confirmed_cash or current.total_cash
 
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3 = st.columns(3)
+        col4, col5 = st.columns(2)
         with col1:
             st.metric(
-                f"This month ({current.label})",
-                f"${current.total_cash:,.2f}",
-                f"{current.payer_count} payers",
+                "This month",
+                f"${this_month_display:,.2f}",
+                f"{current.confirmed_payer_count} payers · {current.label}",
+                help=(
+                    f"Received ${current.received_cash:,.2f} · "
+                    f"scheduled ${current.scheduled_cash:,.2f}"
+                    + (
+                        f" · projected ${current.projected_cash:,.2f}"
+                        if current.projected_cash
+                        else ""
+                    )
+                ),
             )
         with col2:
             st.metric(
-                f"Last month ({last.label})",
-                f"${last.total_cash:,.2f}",
-                f"{last.payer_count} payers · actual",
+                "Paid so far",
+                f"${current.received_cash:,.2f}",
+                f"{current.received_payer_count} received",
+                help="Dividends with pay date on or before today",
             )
         with col3:
             st.metric(
-                f"Next month ({next_month.label})",
-                f"${next_month.total_cash:,.2f}",
-                f"${delta_vs_next:+,.0f} vs this month",
-                delta_color="normal" if delta_vs_next >= 0 else "inverse",
+                "Last month",
+                f"${last.total_cash:,.2f}",
+                f"{last.payer_count} payers · {last.label}",
             )
         with col4:
-            annualized = (current.total_cash * 12) if current.total_cash else 0
-            st.metric("Run-rate (×12)", f"${annualized:,.2f}")
+            st.metric(
+                "Next month",
+                f"${next_month.confirmed_cash or next_month.total_cash:,.2f}",
+                f"{next_month.label}",
+            )
+        with col5:
+            monthly_income = sum(row.annual_income or 0.0 for row in rows) / 12.0
+            run_rate = monthly_income if monthly_income > 0 else (this_month_display * 12)
+            st.metric(
+                "Monthly income",
+                f"${run_rate:,.2f}",
+                f"${delta_vs_next:+,.0f} vs this month",
+                delta_color="normal" if delta_vs_next >= 0 else "inverse",
+                help="Portfolio annual dividend income ÷ 12 (same basis as holdings table)",
+            )
 
         comparison = create_month_comparison_chart(calendar)
         if comparison:
@@ -673,10 +697,10 @@ class PortfolioDetailsView:
 
         nav_bar = st.columns([1, 5, 2])
         with nav_bar[0]:
-            if st.button("← Back to portfolio", type="primary", use_container_width=True):
-                st.session_state["portfolio_view_mode"] = PORTFOLIO_VIEW_OVERVIEW
-                st.session_state.pop("portfolio_research_mode", None)
-                st.rerun()
+            if st.button("← Home", type="primary", use_container_width=True):
+                from ui.portfolio_home import navigate_to_portfolio_home
+
+                navigate_to_portfolio_home()
         with nav_bar[1]:
             if research_mode:
                 st.subheader(f"S&P research · {selected_symbol}")
@@ -1160,6 +1184,49 @@ class PortfolioDetailsView:
         _ensure_yield_preload_if_needed()
         if preload is None or st.session_state.get("portfolio_fast_loaded"):
             preload = _preload_from_session()
+
+        from services.portfolio_month_dividends import current_month_paid_dividends
+
+        month_paid = current_month_paid_dividends(rows=rows, preload=preload)
+        if month_paid is not None:
+            st.markdown("##### Dividends received this month")
+            paid_row1_a, paid_row1_b, paid_row1_c = st.columns(3)
+            with paid_row1_a:
+                st.metric(
+                    "Received",
+                    f"${month_paid.net_usd:,.2f}"
+                    if month_paid.net_usd is not None
+                    else f"${month_paid.gross_usd:,.2f}",
+                    month_paid.through_label,
+                    help=(
+                        f"Cash received in {month_paid.month_label} with pay date on or before "
+                        f"{month_paid.through_date.strftime('%d %b %Y')}"
+                    ),
+                )
+            with paid_row1_b:
+                st.metric(
+                    "Gross",
+                    f"${month_paid.gross_usd:,.2f}",
+                    f"{month_paid.payer_count} payment{'s' if month_paid.payer_count != 1 else ''}"
+                    if month_paid.payer_count
+                    else "None yet",
+                )
+            with paid_row1_c:
+                if month_paid.net_usd is not None:
+                    tax = round(month_paid.gross_usd - month_paid.net_usd, 2)
+                    st.metric(
+                        "Tax (est.)",
+                        f"${tax:,.2f}",
+                        help=f"Withholding estimate for {month_paid.through_label}",
+                    )
+                else:
+                    st.metric(
+                        "Net",
+                        "—",
+                        help="Reload live data to sync dividend receipts",
+                    )
+            st.divider()
+
         service = PortfolioDashboardService()
         deposits = service.list_deposits()
         holdings_snapshot = (
@@ -1242,6 +1309,7 @@ class PortfolioDetailsView:
             cls._render_attention_watchlist(rows, preload)
 
         st.markdown("##### Portfolio evolution (€)")
+        st.caption("Green line = portfolio value · dotted line = cumulative deposits")
         evolution_chart = service.create_evolution_chart(deposits)
         if evolution_chart:
             show_chart(
@@ -2216,7 +2284,7 @@ class PortfolioDetailsView:
         if not render_portfolio_home_header(rows_loaded):
             return
 
-        section_key = pick_portfolio_section()
+        section_key = current_portfolio_section_key()
         render_portfolio_status_line()
         cls._render_portfolio_section(section_key)
 

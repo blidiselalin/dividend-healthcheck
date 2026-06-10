@@ -113,27 +113,52 @@ def style_figure(
 
 def monthly_category_axis(category_count: int) -> Dict[str, Any]:
     """X-axis settings for month labels — reduces tick overlap on long histories."""
-    if category_count <= 8:
+    if category_count <= 6:
         return dict(tickangle=0, automargin=True)
-    if category_count <= 14:
-        return dict(tickangle=-35, nticks=min(category_count, 12), automargin=True)
+    if category_count <= 12:
+        return dict(tickangle=-35, nticks=min(category_count, 10), automargin=True)
     return dict(
         tickangle=-55,
-        nticks=min(category_count, 14),
-        tickfont=dict(size=10),
+        nticks=min(category_count, 12),
+        tickfont=dict(size=9),
         automargin=True,
     )
 
 
-def evolution_chart_margins(category_count: int) -> Dict[str, int]:
-    """Bottom margin sized for rotated month labels."""
-    if category_count <= 8:
-        bottom = 72
-    elif category_count <= 14:
-        bottom = 100
+def evolution_chart_margins(
+    category_count: int,
+    *,
+    legend_bottom: bool = False,
+    dual_y: bool = False,
+) -> Dict[str, int]:
+    """Margins sized for month labels and optional bottom legend (no in-chart title)."""
+    if category_count <= 6:
+        bottom = 64
+    elif category_count <= 12:
+        bottom = 96
     else:
-        bottom = 130
-    return dict(t=48, b=bottom, l=56, r=32)
+        bottom = 128
+    if legend_bottom:
+        bottom += 40
+    return dict(
+        t=40,
+        b=bottom,
+        l=56,
+        r=52 if dual_y else 32,
+    )
+
+
+def bottom_legend() -> Dict[str, Any]:
+    """Horizontal legend below the plot — avoids overlapping Streamlit section titles."""
+    return dict(
+        orientation="h",
+        yanchor="top",
+        y=-0.22,
+        x=0.5,
+        xanchor="center",
+        font=dict(size=10),
+        bgcolor="rgba(255,255,255,0.92)",
+    )
 
 
 def style_subplot_titles(fig: Any, *, size: int = 13, color: Optional[str] = None) -> Any:

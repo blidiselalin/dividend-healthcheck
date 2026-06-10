@@ -22,13 +22,21 @@ _LEGACY_NAV_MAP = {
 
 # Portfolio workspace sections: (sidebar label, internal key, one-line description).
 PORTFOLIO_NAV: List[Tuple[str, str, str]] = [
-    ("Overview", "dashboard", "Performance, watchlists, and portfolio snapshot"),
-    ("Holdings", "holdings", "Every position — filter, explore, compare with other holdings"),
-    ("Income", "dividends", "Monthly calendar and cash received after tax"),
-    ("Growth", "dividend_growth", "Dividend per share and year-over-year growth"),
-    ("Journal", "journal", "Purchase lots and estimated share counts"),
-    ("Deposits", "deposits", "Deposits, portfolio value, and index benchmarks"),
+    ("Home", "dashboard", "Snapshot, watchlists, and dividends paid this month"),
+    ("Holdings", "holdings", "All positions — filter, explore, and compare"),
+    ("Dividend income", "dividends", "Monthly calendar and net cash received after tax"),
+    ("Dividend growth", "dividend_growth", "Dividend per share and year-over-year growth"),
+    ("Purchase journal", "journal", "Buy dates, lots, and share counts"),
+    ("Deposits & benchmarks", "deposits", "Monthly deposits, portfolio value, and index comparison"),
 ]
+
+_LEGACY_PORTFOLIO_SECTION_LABELS = {
+    "Overview": "Home",
+    "Income": "Dividend income",
+    "Growth": "Dividend growth",
+    "Journal": "Purchase journal",
+    "Deposits": "Deposits & benchmarks",
+}
 
 PORTFOLIO_SECTION_LABELS = [item[0] for item in PORTFOLIO_NAV]
 PORTFOLIO_SECTION_BY_LABEL = {item[0]: item[1] for item in PORTFOLIO_NAV}
@@ -189,28 +197,42 @@ def inject_app_theme() -> None:
             border: 1px solid #e2e8f0;
             border-radius: 10px;
             padding: 0.55rem 0.75rem 0.45rem;
-            min-height: 5.5rem;
+            min-height: 5.75rem;
+            overflow: visible !important;
         }
         div[data-testid="stMetric"] label {
-            font-size: 0.75rem;
+            font-size: 0.72rem;
             color: #64748b;
             line-height: 1.35 !important;
-            min-height: 2.1em;
+            min-height: 2.4em;
+            word-break: break-word;
+            overflow-wrap: anywhere;
         }
         div[data-testid="stMetricValue"] {
-            font-size: 1.25rem;
+            font-size: 1.15rem;
             font-weight: 600;
             color: #0f172a;
             line-height: 1.25 !important;
+            word-break: break-word;
         }
         div[data-testid="stMetricDelta"] {
             overflow: visible !important;
             white-space: normal !important;
             line-height: 1.3 !important;
+            font-size: 0.78rem !important;
+            word-break: break-word;
         }
         [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
-            gap: 0.65rem;
+            gap: 0.75rem;
             align-items: stretch;
+            flex-wrap: wrap;
+        }
+        [data-testid="stPlotlyChart"] {
+            overflow: visible !important;
+            margin-bottom: 0.75rem;
+        }
+        [data-testid="stPlotlyChart"] .js-plotly-plot {
+            overflow: visible !important;
         }
         .ds-hero {
             background: linear-gradient(135deg, #0f766e 0%, #115e59 55%, #134e4a 100%);
@@ -239,6 +261,28 @@ def inject_app_theme() -> None:
         [data-testid="stSegmentedControl"] {
             margin-bottom: 0.25rem;
         }
+        .ds-portfolio-nav {
+            margin: 0.5rem 0 1rem 0;
+        }
+        .ds-portfolio-nav-title {
+            margin: 0 0 0.15rem 0;
+            font-size: 1.05rem;
+            font-weight: 650;
+            color: #0f172a;
+        }
+        .ds-portfolio-nav-lead {
+            margin: 0 0 0.85rem 0;
+            color: #64748b;
+            font-size: 0.88rem;
+        }
+        .ds-portfolio-nav-hint {
+            color: #64748b;
+            font-size: 0.8rem;
+            line-height: 1.35;
+            margin: 0.2rem 0 0.65rem 0;
+            min-height: 2.4rem;
+            word-break: break-word;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -256,23 +300,68 @@ def render_page_header(*, title: str, subtitle: str, compact: bool = False) -> N
     )
 
 
-def pick_portfolio_section() -> str:
-    """Section picker (full labels, no truncation). Returns internal section key."""
-    default_label = st.session_state.get("portfolio_section_label", "Overview")
-    if default_label not in PORTFOLIO_SECTION_LABELS:
-        default_label = "Overview"
+def resolve_portfolio_section_label(label: str | None) -> str:
+    """Normalize a section label to a known portfolio view name."""
+    if not label:
+        return "Home"
+    mapped = _LEGACY_PORTFOLIO_SECTION_LABELS.get(label, label)
+    if mapped not in PORTFOLIO_SECTION_LABELS:
+        return "Home"
+    return mapped
 
-    label = st.selectbox(
-        "View",
-        PORTFOLIO_SECTION_LABELS,
-        index=PORTFOLIO_SECTION_LABELS.index(default_label),
-        key="portfolio_section_picker",
+
+def portfolio_section_key_from_label(label: str | None) -> str:
+    """Map a section label (or None) to the internal section key."""
+    return PORTFOLIO_SECTION_BY_LABEL[resolve_portfolio_section_label(label)]
+
+
+def current_portfolio_section_key() -> str:
+    """Current section key from session state."""
+    return portfolio_section_key_from_label(st.session_state.get("portfolio_section_label"))
+
+
+def render_portfolio_section_nav() -> str:
+    """Visible section picker — full list with descriptions. Returns internal section key."""
+    active_label = resolve_portfolio_section_label(
+        st.session_state.get("portfolio_section_label")
     )
-    st.session_state["portfolio_section_label"] = label
-    hint = PORTFOLIO_HINT_BY_LABEL.get(label, "")
-    if hint:
-        st.caption(hint)
-    return PORTFOLIO_SECTION_BY_LABEL[label]
+    st.session_state["portfolio_section_label"] = active_label
+
+    st.markdown(
+        """
+        <div class="ds-portfolio-nav">
+            <p class="ds-portfolio-nav-title">Portfolio sections</p>
+            <p class="ds-portfolio-nav-lead">
+                Jump to a section — home, holdings, income, growth, journal, or deposits.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    selected_label = active_label
+    cols = st.columns(3)
+    for index, (label, key, hint) in enumerate(PORTFOLIO_NAV):
+        with cols[index % 3]:
+            if st.button(
+                label,
+                key=f"portfolio_nav_{key}",
+                use_container_width=True,
+                type="primary" if label == active_label else "secondary",
+                help=hint,
+            ):
+                selected_label = label
+                st.session_state["portfolio_section_label"] = label
+                st.rerun()
+            st.markdown(f'<p class="ds-portfolio-nav-hint">{hint}</p>', unsafe_allow_html=True)
+
+    st.session_state["portfolio_section_label"] = selected_label
+    return PORTFOLIO_SECTION_BY_LABEL[selected_label]
+
+
+def pick_portfolio_section() -> str:
+    """Section picker — visible grid of all portfolio views. Returns internal section key."""
+    return render_portfolio_section_nav()
 
 
 def portfolio_data_ready() -> bool:

@@ -18,6 +18,7 @@ from ui.theme import (
     PORTFOLIO_LABEL_BY_KEY,
     portfolio_data_ready,
     render_notice,
+    render_portfolio_section_nav,
 )
 
 PORTFOLIO_VIEW_HOLDING = "holding"
@@ -50,6 +51,17 @@ HOME_EXAMPLES: Sequence[dict] = (
         "section": "dividends",
     },
 )
+
+
+def navigate_to_portfolio_home() -> None:
+    """Leave admin, holding drill-down, or research and return to portfolio home."""
+    from ui.admin_page import set_admin_console_active
+
+    set_admin_console_active(False)
+    st.session_state["portfolio_view_mode"] = PORTFOLIO_VIEW_OVERVIEW
+    st.session_state.pop("portfolio_research_mode", None)
+    st.session_state["portfolio_section_label"] = "Home"
+    st.rerun()
 
 
 def set_holding_selection(symbol: str, nav_tickers: Optional[List[str]] = None) -> None:
@@ -226,9 +238,24 @@ def render_empty_home() -> None:
 
 
 def render_compact_summary(rows: List[PortfolioDetailRow]) -> None:
+    from services.portfolio_analysis_preload import PortfolioAnalysisPreload
+    from services.portfolio_month_dividends import current_month_paid_dividends
     from ui.portfolio_summary import render_holdings_summary
 
-    render_holdings_summary(rows)
+    preload = None
+    if st.session_state.get("portfolio_analysis_ready"):
+        preload = PortfolioAnalysisPreload.from_caches(
+            st.session_state.get("portfolio_stock_cache", {}),
+            st.session_state.get("portfolio_yield_cache", {}),
+            st.session_state.get("portfolio_vector_docs", {}),
+        )
+
+    month_paid = current_month_paid_dividends(rows=rows, preload=preload)
+    render_holdings_summary(
+        rows,
+        month_paid=month_paid,
+        show_month_received=month_paid is not None,
+    )
 
     ranked = sorted(rows, key=lambda r: r.current_value or 0.0, reverse=True)[:8]
     if not ranked:
@@ -268,6 +295,7 @@ def render_portfolio_home_header(
 
     st.divider()
     render_compact_summary(rows)
+    render_portfolio_section_nav()
     render_try_it_examples(expanded=is_demo_session())
     st.divider()
     return True
