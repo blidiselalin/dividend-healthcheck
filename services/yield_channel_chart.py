@@ -461,7 +461,8 @@ class YieldChannelService:
             current_yield = float(hist["Yield"].iloc[-1])
             
             # Calculate percentile of current yield
-            percentile = float((yields < current_yield).sum() / len(yields) * 100)
+            # Using rank(pct=True) correctly handles ties
+            percentile = float(yields.rank(pct=True).iloc[-1] * 100)
             
             # Determine zone based on percentile
             zone = self._determine_zone(percentile)
