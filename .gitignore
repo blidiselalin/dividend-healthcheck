@@ -29,6 +29,7 @@ data/*
 !data/vectordb/
 !data/portfolio.db
 !data/sp500_symbols.json
+!data/top_dividend_symbols.json
 !data/.gitkeep
 data/users/
 data/users.db
