@@ -29,13 +29,6 @@ def remove_delisted_from_market_library(
     }
 
 
-def remove_delisted_from_vector_db(
-    symbols: Optional[List[str]] = None,
-) -> Dict[str, Any]:
-    """Alias for ``remove_delisted_from_market_library``."""
-    return remove_delisted_from_market_library(symbols)
-
-
 def _fetch_latest_price(symbol: str) -> Optional[float]:
     """Fetch the latest trade price from Yahoo Finance."""
     from services.live_price import fetch_latest_market_price
@@ -168,12 +161,3 @@ def refresh_market_library_prices(
         logger.info("Updated prices for %s symbols in market library", len(modified))
 
     return stats
-
-
-def refresh_vector_db_prices(
-    symbols: Optional[List[str]] = None,
-    *,
-    max_workers: int = 8,
-) -> Dict[str, Any]:
-    """Alias for ``refresh_market_library_prices``."""
-    return refresh_market_library_prices(symbols, max_workers=max_workers)

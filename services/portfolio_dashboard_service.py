@@ -4,7 +4,7 @@ High-level portfolio dashboard: KPIs and monthly evolution since inception.
 
 from __future__ import annotations
 
-from utils.chart_theme import style_figure
+from utils.chart_theme import evolution_chart_margins, monthly_category_axis, style_figure
 
 from dataclasses import dataclass
 from typing import List, Optional
@@ -204,6 +204,7 @@ class PortfolioDashboardService:
             return None
 
         labels = plot_df["label"].tolist()
+        n_labels = len(labels)
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(
@@ -230,12 +231,19 @@ class PortfolioDashboardService:
         fig.update_layout(
             title="Portfolio vs deposited capital (since inception)",
             yaxis_title="€",
-            height=440,
-            margin=dict(t=50, b=120),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02),
-            xaxis=dict(tickangle=-45),
+            height=420,
+            margin=evolution_chart_margins(n_labels),
+            legend=dict(
+                orientation="h",
+                yanchor="top",
+                y=1.08,
+                x=0,
+                xanchor="left",
+                font=dict(size=10),
+            ),
             hovermode="x unified",
         )
+        fig.update_xaxes(**monthly_category_axis(n_labels))
         return style_figure(fig)
 
     def create_monthly_flow_chart(self, deposits: Optional[List[MonthlyDeposit]] = None):
@@ -247,6 +255,7 @@ class PortfolioDashboardService:
             return None
 
         labels = df["label"].tolist()
+        n_labels = len(labels)
         fig = make_subplots(specs=[[{"secondary_y": True}]])
         fig.add_trace(
             go.Bar(
@@ -273,11 +282,18 @@ class PortfolioDashboardService:
         )
         fig.update_layout(
             title="Monthly flow: deposits and portfolio % change",
-            height=400,
-            margin=dict(t=50, b=120),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02),
-            xaxis=dict(tickangle=-45),
+            height=380,
+            margin=evolution_chart_margins(n_labels),
+            legend=dict(
+                orientation="h",
+                yanchor="top",
+                y=1.08,
+                x=0,
+                xanchor="left",
+                font=dict(size=10),
+            ),
         )
+        fig.update_xaxes(**monthly_category_axis(n_labels))
         fig.update_yaxes(title_text="Deposit €", secondary_y=False)
         fig.update_yaxes(title_text="MoM %", secondary_y=True)
         return style_figure(fig)
@@ -293,6 +309,7 @@ class PortfolioDashboardService:
         if plot_df.empty:
             return None
 
+        n_labels = len(plot_df)
         colors = [
             "#2e7d32" if value >= 0 else "#c62828"
             for value in plot_df["gain_vs_deposits_eur"]
@@ -309,7 +326,7 @@ class PortfolioDashboardService:
             title="Unrealized gain vs total deposits (€)",
             yaxis_title="€",
             height=360,
-            margin=dict(t=50, b=120),
-            xaxis=dict(tickangle=-45),
+            margin=evolution_chart_margins(n_labels),
         )
+        fig.update_xaxes(**monthly_category_axis(n_labels))
         return style_figure(fig)

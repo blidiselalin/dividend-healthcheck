@@ -1,5 +1,5 @@
 """
-Admin database validation and read-only SQL explorer (main panel).
+Admin database validation and read-only SQL explorer.
 """
 
 from __future__ import annotations
@@ -20,33 +20,13 @@ from services.db_admin_service import (
 )
 from ui.theme import render_notice
 
-_ADMIN_VIEW_KEY = "admin_db_view"
 
-
-def render_db_admin_sidebar_entry() -> None:
+def render_database_admin_tabs() -> None:
+    """Database admin tabs (embedded in the admin console)."""
     if not is_app_admin():
+        render_notice("Admin access required.", kind="warning")
         return
-    from ui.theme import sidebar_heading
 
-    sidebar_heading("Database")
-    if st.sidebar.button("Open database admin", use_container_width=True, key="admin_db_open"):
-        st.session_state[_ADMIN_VIEW_KEY] = True
-        st.rerun()
-    if st.session_state.get(_ADMIN_VIEW_KEY):
-        if st.sidebar.button("Back to portfolio", use_container_width=True, key="admin_db_close"):
-            st.session_state[_ADMIN_VIEW_KEY] = False
-            st.rerun()
-
-
-def render_db_admin_if_active() -> bool:
-    """Render admin DB UI in the main panel when active. Returns True if rendered."""
-    if not st.session_state.get(_ADMIN_VIEW_KEY):
-        return False
-    if not is_app_admin():
-        st.session_state[_ADMIN_VIEW_KEY] = False
-        return False
-
-    st.title("Database admin")
     st.caption(f"Storage: **{storage_label()}** — read-only validation and SELECT queries.")
 
     tab_overview, tab_tables, tab_symbol, tab_sql = st.tabs(
@@ -64,8 +44,6 @@ def render_db_admin_if_active() -> bool:
 
     with tab_sql:
         _render_sql_tab()
-
-    return True
 
 
 def _render_overview_tab() -> None:

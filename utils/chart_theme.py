@@ -51,6 +51,13 @@ def style_figure(
     default_margin = dict(l=52, r=28, t=top, b=44)
     if margin:
         default_margin.update(margin)
+    else:
+        existing = fig.layout.margin
+        if existing is not None:
+            for edge in ("l", "r", "t", "b"):
+                value = getattr(existing, edge, None)
+                if value is not None and value > default_margin[edge]:
+                    default_margin[edge] = value
 
     layout: Dict[str, Any] = dict(
         template="plotly_white",
@@ -102,6 +109,31 @@ def style_figure(
         title_font=dict(size=12, color=PALETTE["muted"]),
     )
     return fig
+
+
+def monthly_category_axis(category_count: int) -> Dict[str, Any]:
+    """X-axis settings for month labels — reduces tick overlap on long histories."""
+    if category_count <= 8:
+        return dict(tickangle=0, automargin=True)
+    if category_count <= 14:
+        return dict(tickangle=-35, nticks=min(category_count, 12), automargin=True)
+    return dict(
+        tickangle=-55,
+        nticks=min(category_count, 14),
+        tickfont=dict(size=10),
+        automargin=True,
+    )
+
+
+def evolution_chart_margins(category_count: int) -> Dict[str, int]:
+    """Bottom margin sized for rotated month labels."""
+    if category_count <= 8:
+        bottom = 72
+    elif category_count <= 14:
+        bottom = 100
+    else:
+        bottom = 130
+    return dict(t=48, b=bottom, l=56, r=32)
 
 
 def style_subplot_titles(fig: Any, *, size: int = 13, color: Optional[str] = None) -> Any:

@@ -2,7 +2,7 @@
 Backwards compatibility for market data enrichment and stored documents.
 
 Covers legacy DataSource values, YFinanceEnricher, pipeline/hourly entry points,
-vector store round-trips, and deprecated aliases.
+vector store round-trips.
 """
 
 from __future__ import annotations
@@ -161,18 +161,6 @@ def test_multi_source_enricher_can_disable_yfinance_post_process() -> None:
         with patch.object(enricher._legacy, "enrich_document") as mock_legacy:
             enricher.enrich_document(doc)
     mock_legacy.assert_not_called()
-
-
-def test_remove_delisted_from_vector_db_alias() -> None:
-    from services.db_price_refresh import (
-        remove_delisted_from_market_library,
-        remove_delisted_from_vector_db,
-    )
-
-    with patch("services.db_price_refresh.remove_delisted_from_market_library") as mock:
-        mock.return_value = {"removed": 1}
-        assert remove_delisted_from_vector_db(["ZZ"]) == {"removed": 1}
-    mock.assert_called_once_with(["ZZ"])
 
 
 @patch("data_ingestion.stock_enricher.create_stock_enricher")

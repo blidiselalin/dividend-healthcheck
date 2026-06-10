@@ -193,7 +193,11 @@ def hydrate_session_from_disk() -> bool:
         clear_session_cache()
         return False
 
-    st.session_state["portfolio_details_rows"] = [_row_from_dict(item) for item in rows_payload]
+    from services.portfolio_details_service import PortfolioDetailsService
+
+    st.session_state["portfolio_details_rows"] = PortfolioDetailsService().enrich_rows_previous_close(
+        [_row_from_dict(item) for item in rows_payload]
+    )
     if bundle.get("attention_summary") is not None:
         st.session_state[SESSION_SUMMARY_KEY] = bundle["attention_summary"]
     if bundle.get("risk_checked_at"):

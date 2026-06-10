@@ -44,7 +44,7 @@ from typing import List, Optional
 sys.path.insert(0, str(Path(__file__).parent))
 
 # Import stock lists from central config
-from config import DIVIDEND_KINGS, DIVIDEND_ARISTOCRATS
+from config import DIVIDEND_KINGS, DIVIDEND_ARISTOCRATS, ALL_DIVIDEND_STOCKS
 
 logger = logging.getLogger(__name__)
 
@@ -229,8 +229,7 @@ Examples:
     elif args.kings_only:
         symbols = list(DIVIDEND_KINGS)
     else:
-        # All dividend stocks
-        symbols = list(set(DIVIDEND_KINGS + DIVIDEND_ARISTOCRATS))
+        symbols = list(ALL_DIVIDEND_STOCKS)
     
     print(f"\nSymbols to download: {len(symbols)}")
     print(f"Output directory: {args.output_dir}")

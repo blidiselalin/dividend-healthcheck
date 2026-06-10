@@ -15,7 +15,7 @@ from typing import Dict, List, Optional, Tuple, Any
 
 import pandas as pd
 
-from config import DIVIDEND_KINGS, DIVIDEND_ARISTOCRATS, API_DELAY_SECONDS
+from config import DIVIDEND_KINGS, DIVIDEND_ARISTOCRATS, ALL_DIVIDEND_STOCKS, API_DELAY_SECONDS
 from models.stock import StockData
 from services.stock_service import StockService
 from services.scoring import ScoringService
@@ -125,13 +125,13 @@ class SectorService:
         
         Args:
             sector: Sector name to filter by.
-            stock_list: List of symbols to search (defaults to DIVIDEND_KINGS).
+            stock_list: List of symbols to search (defaults to ALL_DIVIDEND_STOCKS).
             use_cache: Whether to use cached data.
             
         Returns:
             List of peer dictionaries sorted by score (descending).
         """
-        stock_list = stock_list or DIVIDEND_KINGS
+        stock_list = stock_list or ALL_DIVIDEND_STOCKS
         cache_key = f"{sector}_{','.join(sorted(stock_list[:5]))}"
         
         if use_cache and cache_key in cls._sector_cache:
@@ -182,7 +182,7 @@ class SectorService:
         try:
             from services.sp500_peers_service import find_sector_peers
 
-            exclude_set = set(exclude_symbols) | set(DIVIDEND_KINGS) | set(DIVIDEND_ARISTOCRATS)
+            exclude_set = set(exclude_symbols) | set(ALL_DIVIDEND_STOCKS)
             sp500_peers = find_sector_peers(
                 sector=sector,
                 exclude_symbols=list(exclude_set),
@@ -212,7 +212,7 @@ class SectorService:
             return []
         
         # Exclude symbols already in our config or exclude list
-        all_config_stocks = set(DIVIDEND_KINGS) | set(DIVIDEND_ARISTOCRATS)
+        all_config_stocks = set(ALL_DIVIDEND_STOCKS)
         exclude_set = set(exclude_symbols) | all_config_stocks
         candidates = [s for s in candidates if s not in exclude_set]
         

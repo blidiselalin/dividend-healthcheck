@@ -45,7 +45,11 @@ from services.portfolio_attention_service import (
 from ui.dividend_timing_display import dividend_timing_legend, render_dividend_timing_dataframe
 from ui.portfolio_manage_panel import render_tab_refresh_button
 from services.dividend_timing import classify_dividend_timing
-from ui.portfolio_risk_panel import SESSION_SUMMARY_KEY, get_cached_attention_summary
+from ui.portfolio_risk_panel import (
+    SESSION_SUMMARY_KEY,
+    get_cached_attention_summary,
+    refresh_portfolio_risks,
+)
 from services.portfolio_holding_detail_service import PortfolioHoldingDetailService
 from data_ingestion.sp500_universe import sectors_match
 from services.scoring import ScoringService
@@ -719,7 +723,7 @@ class PortfolioDetailsView:
         if stock_data is None:
             st.error(
                 f"Could not load analysis for **{selected_symbol}**. "
-                "Run **Backfill thin history** (admin) or "
+                "Run **Backfill thin history** in the **admin console** or "
                 "`python ingest_data.py --backfill-history` on the server."
             )
             return
@@ -1166,41 +1170,50 @@ class PortfolioDetailsView:
         evolution = service.evolution_dataframe(deposits)
 
         st.markdown("##### Capital & performance (€)")
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
-        with c1:
+        row1_a, row1_b, row1_c = st.columns(3)
+        with row1_a:
             st.metric("Total deposits", f"€{summary.total_deposits_eur:,.0f}")
-        with c2:
+        with row1_b:
             st.metric(
                 "Portfolio",
                 f"€{summary.latest_portfolio_eur:,.0f}",
                 help=summary.latest_label,
             )
-        with c3:
+        with row1_c:
             st.metric(
-                "Gain vs deposits",
+                "Gain",
                 f"€{summary.gain_eur:+,.0f}",
                 f"{summary.gain_pct:+.1f}%" if summary.gain_pct is not None else None,
+                help="Gain vs cumulative deposits",
             )
-        with c4:
+
+        row2_a, row2_b, row2_c = st.columns(3)
+        with row2_a:
             st.metric(
-                "Portfolio CAGR",
+                "CAGR",
                 f"{metrics.cagr_pct:.1f}%" if metrics.cagr_pct is not None else "—",
                 help="Compound annual growth on recorded portfolio value",
             )
-        with c5:
-            st.metric("Avg deposit/month", f"€{metrics.avg_monthly_deposit_eur:,.0f}")
-        with c6:
+        with row2_b:
             st.metric(
-                "Last month MoM",
+                "Avg deposit",
+                f"€{metrics.avg_monthly_deposit_eur:,.0f}",
+                help="Average monthly deposit",
+            )
+        with row2_c:
+            st.metric(
+                "MoM",
                 f"{metrics.latest_mom_change_pct:+.1f}%"
                 if metrics.latest_mom_change_pct is not None
                 else "—",
+                help="Last month portfolio change vs prior month",
             )
 
         if not compact:
             if holdings_snapshot:
                 st.markdown("##### Current positions (USD)")
-                h1, h2, h3, h4 = st.columns(4)
+                h1, h2 = st.columns(2)
+                h3, h4 = st.columns(2)
                 with h1:
                     st.metric("Value", f"${holdings_snapshot.current_value_usd:,.0f}")
                 with h2:
@@ -1237,28 +1250,28 @@ class PortfolioDetailsView:
                 key="portfolio_dashboard_evolution",
             )
 
-        left, right = st.columns(2)
-        with left:
-            flow_chart = service.create_monthly_flow_chart(deposits)
-            if flow_chart:
-                show_chart(
-                    flow_chart,
-                    width="stretch",
-                    key="portfolio_dashboard_flow",
-                )
-        with right:
-            gain_chart = service.create_gain_chart(deposits)
-            if gain_chart:
-                show_chart(
-                    gain_chart,
-                    width="stretch",
-                    key="portfolio_dashboard_gain",
-                )
+        flow_chart = service.create_monthly_flow_chart(deposits)
+        if flow_chart:
+            st.markdown("###### Monthly deposits & MoM change")
+            show_chart(
+                flow_chart,
+                width="stretch",
+                key="portfolio_dashboard_flow",
+            )
+
+        gain_chart = service.create_gain_chart(deposits)
+        if gain_chart:
+            st.markdown("###### Gain vs deposits by month")
+            show_chart(
+                gain_chart,
+                width="stretch",
+                key="portfolio_dashboard_gain",
+            )
 
         if metrics.best_month_gain_pct is not None:
             st.caption(
                 f"Best month (MoM): **{metrics.best_month_label}** "
-                f"({metrics.best_month_gain_pct:+.1f}%) • "
+                f"({metrics.best_month_gain_pct:+.1f}%) · "
                 f"Tracking {summary.month_count} months "
                 f"({metrics.months_since_start} calendar months)"
             )
@@ -1269,31 +1282,31 @@ class PortfolioDetailsView:
             display = display.rename(
                 columns={
                     "label": "Month",
-                    "deposit_eur": "Deposit €",
-                    "portfolio_eur": "Portfolio €",
-                    "cumulative_deposits_eur": "Cumulative deposits €",
-                    "gain_vs_deposits_eur": "Gain vs deposits €",
-                    "mom_change_pct": "MoM change %",
+                    "deposit_eur": "Deposit",
+                    "portfolio_eur": "Portfolio",
+                    "cumulative_deposits_eur": "Cumul. deposits",
+                    "gain_vs_deposits_eur": "Gain",
+                    "mom_change_pct": "MoM %",
                 }
             )
             show_cols = [
                 "Month",
-                "Deposit €",
-                "Portfolio €",
-                "Cumulative deposits €",
-                "Gain vs deposits €",
-                "MoM change %",
+                "Deposit",
+                "Portfolio",
+                "Cumul. deposits",
+                "Gain",
+                "MoM %",
             ]
             st.dataframe(
                 display[show_cols],
                 width="stretch",
                 hide_index=True,
                 column_config={
-                    "Deposit €": st.column_config.NumberColumn(format="€%.2f"),
-                    "Portfolio €": st.column_config.NumberColumn(format="€%.2f"),
-                    "Cumulative deposits €": st.column_config.NumberColumn(format="€%.2f"),
-                    "Gain vs deposits €": st.column_config.NumberColumn(format="€%+.2f"),
-                    "MoM change %": st.column_config.NumberColumn(format="%+.2f%%"),
+                    "Deposit": st.column_config.NumberColumn(format="€%.2f"),
+                    "Portfolio": st.column_config.NumberColumn(format="€%.2f"),
+                    "Cumul. deposits": st.column_config.NumberColumn(format="€%.2f"),
+                    "Gain": st.column_config.NumberColumn(format="€%+.2f"),
+                    "MoM %": st.column_config.NumberColumn(format="%+.2f%%"),
                 },
             )
 
@@ -1600,7 +1613,7 @@ class PortfolioDetailsView:
         if not growth_data:
             st.info(
                 "No dividend history in the database for current positions. "
-                "Run `python ingest_data.py --backfill-history` or **Backfill thin history** (admin)."
+                "Run `python ingest_data.py --backfill-history` or **Backfill thin history** in the admin console."
             )
             return
 
@@ -1913,8 +1926,15 @@ class PortfolioDetailsView:
         """Inline purchase journal and dividend cash history for one holding."""
         detail_svc = PortfolioHoldingDetailService()
         document = preload.vector_docs.get(symbol)
+        holding = detail_svc.portfolio.get_holding(symbol)
+        tracking_since = (
+            holding.dividend_tracking_since if holding is not None else None
+        )
         summary = detail_svc.summarize(
-            symbol, document, current_shares=row.shares
+            symbol,
+            document,
+            current_shares=row.shares,
+            tracking_since=tracking_since,
         )
 
         st.caption(f"**{symbol}** — {row.company}")
@@ -1951,7 +1971,10 @@ class PortfolioDetailsView:
         buy_col, div_col = st.columns(2)
         purchases_df = detail_svc.purchases_dataframe(symbol)
         dividends_df = detail_svc.dividends_dataframe(
-            symbol, document, current_shares=row.shares
+            symbol,
+            document,
+            current_shares=row.shares,
+            tracking_since=tracking_since,
         )
 
         with buy_col:

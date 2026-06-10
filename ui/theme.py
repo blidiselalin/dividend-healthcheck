@@ -189,15 +189,28 @@ def inject_app_theme() -> None:
             border: 1px solid #e2e8f0;
             border-radius: 10px;
             padding: 0.55rem 0.75rem 0.45rem;
+            min-height: 5.5rem;
         }
         div[data-testid="stMetric"] label {
             font-size: 0.75rem;
             color: #64748b;
+            line-height: 1.35 !important;
+            min-height: 2.1em;
         }
         div[data-testid="stMetricValue"] {
             font-size: 1.25rem;
             font-weight: 600;
             color: #0f172a;
+            line-height: 1.25 !important;
+        }
+        div[data-testid="stMetricDelta"] {
+            overflow: visible !important;
+            white-space: normal !important;
+            line-height: 1.3 !important;
+        }
+        [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
+            gap: 0.65rem;
+            align-items: stretch;
         }
         .ds-hero {
             background: linear-gradient(135deg, #0f766e 0%, #115e59 55%, #134e4a 100%);
@@ -282,5 +295,5 @@ def render_portfolio_status_line() -> None:
     if loaded_at:
         st.caption(
             f"Portfolio snapshot {loaded_at.strftime('%d %b %H:%M')} — "
-            "use **Reload live data** after ingest or hourly updates"
+            "use **Reload live data** after ingest; prices auto-refresh every 5 minutes in the backend"
         )

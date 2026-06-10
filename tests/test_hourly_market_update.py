@@ -117,3 +117,33 @@ def test_ingest_data_hourly_update_cli(mock_run, capsys):
 
     mock_run.assert_called_once_with(stale_days=7, enrich_limit=25)
     assert "Hourly update complete" in capsys.readouterr().out
+
+
+@patch("services.sp500_peers_service.ensure_top_dividend_in_vectordb")
+def test_ingest_data_ensure_top_dividend_cli(mock_ensure, capsys):
+    mock_ensure.return_value = {"created": 3, "errors": 0, "already_present": 97}
+
+    from ingest_data import main
+
+    with patch(
+        "sys.argv",
+        ["ingest_data.py", "--ensure-top-dividend", "--top-dividend-limit", "10"],
+    ):
+        assert main() == 0
+
+    mock_ensure.assert_called_once()
+    assert mock_ensure.call_args.kwargs["limit"] == 10
+    assert "Top dividend ingest complete" in capsys.readouterr().out
+
+
+@patch("services.db_price_refresh.remove_delisted_from_market_library")
+def test_ingest_data_remove_delisted_cli(mock_remove, capsys):
+    mock_remove.return_value = {"removed": 2, "symbols": ["WBA", "ZZ"]}
+
+    from ingest_data import main
+
+    with patch("sys.argv", ["ingest_data.py", "--remove-delisted"]):
+        assert main() == 0
+
+    mock_remove.assert_called_once()
+    assert "Delisted symbols removed" in capsys.readouterr().out

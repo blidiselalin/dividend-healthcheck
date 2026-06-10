@@ -80,7 +80,11 @@ def _downloads_have_ingestible_files(data_path: Path) -> bool:
 def _run_enrich_without_downloads(pipeline: DataIngestionPipeline) -> int:
     """Docker/cloud path: populate shared S&P library and enrich (no CSV downloads)."""
     from services.portfolio_vector_sync import sync_portfolio_to_vector_db
-    from services.sp500_peers_service import coverage_stats, ensure_sp500_in_vectordb
+    from services.sp500_peers_service import (
+        coverage_stats,
+        ensure_sp500_in_vectordb,
+        ensure_top_dividend_in_vectordb,
+    )
 
     print("No CSV/JSON files in downloads — shared market DB + yfinance enrich.\n")
 
@@ -96,6 +100,20 @@ def _run_enrich_without_downloads(pipeline: DataIngestionPipeline) -> int:
     print(
         f"  S&P coverage: {after['analysed_sp500']}/{after['universe_total']} "
         f"({after['pct_covered']:.0f}%) · new docs: {sp500_stats.get('created', 0)}"
+    )
+    print()
+
+    print("Step 1b: Ensure top 100 dividend tickers in shared analysed-stocks DB")
+
+    def top_div_progress(msg, current, total):
+        pct = (current / total) * 100 if total > 0 else 0
+        print(f"\r[{pct:5.1f}%] {msg}...", end="", flush=True)
+
+    top_div_stats = ensure_top_dividend_in_vectordb(progress_callback=top_div_progress)
+    print("\n")
+    print(
+        f"  Top dividend: new docs {top_div_stats.get('created', 0)} · "
+        f"already present {top_div_stats.get('already_present', 0)}"
     )
     print()
 
@@ -323,6 +341,19 @@ Examples:
     )
     
     parser.add_argument(
+        "--ensure-top-dividend",
+        action="store_true",
+        help="Add missing top-100 dividend tickers to analysed stocks (yfinance enrich)",
+    )
+
+    parser.add_argument(
+        "--top-dividend-limit",
+        type=int,
+        default=None,
+        help="With --ensure-top-dividend, max new tickers to fetch this run",
+    )
+    
+    parser.add_argument(
         "--symbols",
         type=str,
         help="Comma-separated list of symbols to enrich (for --enrich-existing)",
@@ -416,13 +447,13 @@ Examples:
         return 0
 
     if args.refresh_prices:
-        from services.db_price_refresh import refresh_vector_db_prices
+        from services.db_price_refresh import refresh_market_library_prices
 
         print(f"\n{'='*50}")
         print("  REFRESHING LATEST PRICES IN VECTOR DB")
         print(f"{'='*50}\n")
 
-        stats = refresh_vector_db_prices()
+        stats = refresh_market_library_prices()
         print("\n✓ Price refresh complete!")
         print(f"  Symbols targeted: {stats['total']}")
         print(f"  Updated: {stats['updated']}")
@@ -431,13 +462,13 @@ Examples:
         return 0
 
     if args.remove_delisted:
-        from services.db_price_refresh import remove_delisted_from_vector_db
+        from services.db_price_refresh import remove_delisted_from_market_library
 
         print(f"\n{'='*50}")
         print("  REMOVING DELISTED SYMBOLS FROM VECTOR DB")
         print(f"{'='*50}\n")
 
-        stats = remove_delisted_from_vector_db()
+        stats = remove_delisted_from_market_library()
         print("\n✓ Delisted symbols removed!")
         print(f"  Symbols: {', '.join(stats['symbols'])}")
         print(f"  Documents removed: {stats['removed']}")
@@ -554,6 +585,31 @@ Examples:
             f"({after['pct_covered']:.0f}%)"
         )
         print(f"  Total analysed:  {after['analysed_total']}")
+        return 0
+
+    if args.ensure_top_dividend:
+        from data_ingestion.dividend_universe import get_top_dividend_symbols
+        from services.sp500_peers_service import ensure_top_dividend_in_vectordb
+
+        print(f"\n{'='*50}")
+        print("  TOP 100 DIVIDEND → ANALYSED STOCKS")
+        print(f"{'='*50}\n")
+        universe = get_top_dividend_symbols()
+        print(f"  Universe size: {len(universe)}")
+
+        def progress_cb(msg, current, total):
+            pct = (current / total) * 100 if total > 0 else 0
+            print(f"\r[{pct:5.1f}%] {msg}...", end="", flush=True)
+
+        stats = ensure_top_dividend_in_vectordb(
+            limit=args.top_dividend_limit,
+            progress_callback=progress_cb,
+        )
+        print("\n")
+        print("✓ Top dividend ingest complete!")
+        print(f"  New documents:   {stats.get('created', 0)}")
+        print(f"  Errors:          {stats.get('errors', 0)}")
+        print(f"  Already present: {stats.get('already_present', 0)}")
         return 0
 
     if args.sync_history_tables:

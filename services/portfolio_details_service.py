@@ -5,7 +5,7 @@ Build the full portfolio details table from holdings and market data.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from functools import lru_cache
 from typing import Dict, List, Optional, Tuple
@@ -161,6 +161,8 @@ class PortfolioDetailsService:
                 live_prices[symbol] = price
                 previous_closes[symbol] = None
 
+        self._fill_previous_closes_from_history(symbols, documents, previous_closes)
+
         for symbol in symbols:
             document = documents.get(symbol)
             price_cache[symbol] = self._get_price_snapshot(
@@ -247,6 +249,73 @@ class PortfolioDetailsService:
         from services.shared_market_db import load_documents
 
         return load_documents(symbols)
+
+    @staticmethod
+    def _previous_close_from_history(
+        price_history,
+        *,
+        as_of: Optional[date] = None,
+    ) -> Optional[float]:
+        """Prior session close from stored daily bars (day-change without a live quote)."""
+        if not price_history:
+            return None
+
+        today = as_of or date.today()
+        bars = sorted(
+            (
+                point
+                for point in price_history
+                if point.close is not None and point.close > 0
+            ),
+            key=lambda point: point.date,
+        )
+        if not bars:
+            return None
+        if bars[-1].date >= today:
+            if len(bars) >= 2:
+                return float(bars[-2].close)
+            return None
+        return float(bars[-1].close)
+
+    def _fill_previous_closes_from_history(
+        self,
+        symbols: List[str],
+        documents: Dict[str, StockDocument],
+        previous_closes: Dict[str, Optional[float]],
+    ) -> None:
+        for symbol in symbols:
+            if previous_closes.get(symbol) is not None:
+                continue
+            document = documents.get(symbol)
+            if document is None:
+                continue
+            prior = self._previous_close_from_history(document.price_history)
+            if prior is not None:
+                previous_closes[symbol] = prior
+
+    def enrich_rows_previous_close(
+        self,
+        rows: List[PortfolioDetailRow],
+    ) -> List[PortfolioDetailRow]:
+        """Fill missing previous_close from stored price history (cached sessions)."""
+        missing = [row.ticker for row in rows if row.previous_close is None]
+        if not missing:
+            return rows
+        documents = self._load_documents(missing)
+        enriched: List[PortfolioDetailRow] = []
+        for row in rows:
+            if row.previous_close is not None:
+                enriched.append(row)
+                continue
+            document = documents.get(row.ticker)
+            prior = self._previous_close_from_history(
+                document.price_history if document else None
+            )
+            if prior is None:
+                enriched.append(row)
+            else:
+                enriched.append(replace(row, previous_close=prior))
+        return enriched
 
     def _build_row(
         self,

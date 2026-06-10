@@ -128,19 +128,19 @@ def format_history_reload_guidance(readiness: YieldChannelReadiness) -> str:
         if readiness.dividend_payments >= CHART_MIN_DIVIDEND_PAYMENTS and readiness.unique_price_days == 0:
             steps.append(
                 "Dividend history is present but **price history is missing** — run "
-                "**Backfill thin history** in the admin sidebar (or "
+                "**Backfill thin history** in the admin console (or "
                 "`python ingest_data.py --backfill-history --backfill-limit 120`) "
                 "to fetch OHLCV into the library, then **Sync history tables**."
             )
         else:
             steps.append(
-                "Use **Backfill thin history** in the admin sidebar (or "
+                "Use **Backfill thin history** in the admin console (or "
                 "`python ingest_data.py --backfill-history --backfill-limit 120`) "
                 "to fetch price and dividend series into the library."
             )
     if readiness.needs_table_sync or readiness.table_price_rows > 0:
         steps.append(
-            "Use **Sync history tables** in the admin sidebar (or "
+            "Use **Sync history tables** in the admin console (or "
             "`python ingest_data.py --sync-history-tables --sync-history-limit 500`) "
             "to copy library JSONB into `stock_price_history` and `stock_dividend_history`."
         )

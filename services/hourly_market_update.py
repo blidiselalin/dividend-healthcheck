@@ -110,7 +110,7 @@ def run_hourly_market_update(
     started = datetime.now()
     summary: Dict[str, Any] = {"started_at": started.isoformat()}
 
-    logger.info("Hourly market update: refreshing prices")
+    logger.info("Hourly market update: refreshing prices (also runs every 5 min in app)")
     summary["prices"] = refresh_market_library_prices()
 
     logger.info("Hourly market update: S&P catch-up (limit=%s)", sp500_new_limit)

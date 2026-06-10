@@ -25,6 +25,11 @@ def render_holdings_summary(
     show_positions: bool = False,
 ) -> HoldingsSummary:
     """Render broker-style holdings summary metrics."""
+    if summary is None and rows and any(row.previous_close is None for row in rows):
+        from services.portfolio_details_service import PortfolioDetailsService
+
+        rows = PortfolioDetailsService().enrich_rows_previous_close(rows)
+
     metrics = summary or compute_holdings_summary(rows)
 
     columns = st.columns(4 if show_positions else 3)

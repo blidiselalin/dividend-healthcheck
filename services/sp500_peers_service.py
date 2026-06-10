@@ -41,6 +41,7 @@ def _store() -> Optional["VectorStore"]:
 
 
 _coverage_cache: Optional[Dict[str, Any]] = None
+_top_dividend_coverage_cache: Optional[Dict[str, Any]] = None
 
 
 def coverage_stats(*, force: bool = False) -> Dict[str, Any]:
@@ -75,6 +76,42 @@ def coverage_stats(*, force: bool = False) -> Dict[str, Any]:
         "pct_covered": (analysed_sp500_count / universe_total * 100) if universe_total else 0.0,
     }
     _coverage_cache = result
+    return dict(result)
+
+
+def top_dividend_coverage_stats(*, force: bool = False) -> Dict[str, Any]:
+    """How many top-100 dividend names exist in analysed stocks."""
+    global _top_dividend_coverage_cache
+    if _top_dividend_coverage_cache is not None and not force:
+        return dict(_top_dividend_coverage_cache)
+
+    from data_ingestion.dividend_universe import get_top_dividend_symbols
+
+    universe = get_top_dividend_symbols()
+    universe_set = {symbol.upper() for symbol in universe}
+    store = _store()
+    if store is None:
+        return {
+            "universe_total": len(universe_set),
+            "analysed_top_dividend": 0,
+            "pct_covered": 0.0,
+        }
+
+    if hasattr(store, "count_symbols_in"):
+        analysed_count = store.count_symbols_in(list(universe_set))
+    else:
+        analysed_symbols = {
+            doc.symbol.upper() for doc in store.get_all_documents() if doc.symbol
+        }
+        analysed_count = len(analysed_symbols & universe_set)
+
+    total = len(universe_set)
+    result = {
+        "universe_total": total,
+        "analysed_top_dividend": analysed_count,
+        "pct_covered": (analysed_count / total * 100) if total else 0.0,
+    }
+    _top_dividend_coverage_cache = result
     return dict(result)
 
 
@@ -137,6 +174,75 @@ def ensure_sp500_in_vectordb(
             stats["created"] += 1
         except Exception as exc:
             logger.warning("S&P 500 ingest failed for %s: %s", symbol, exc)
+            stats["errors"] += 1
+
+        if len(batch) >= 25:
+            store.add_documents(batch)
+            batch.clear()
+
+    if batch:
+        store.add_documents(batch)
+
+    stats["already_present"] = len(existing & set(universe))
+    return stats
+
+
+def ensure_top_dividend_in_vectordb(
+    *,
+    limit: Optional[int] = None,
+    request_delay: float = 0.35,
+    progress_callback=None,
+) -> Dict[str, int]:
+    """Create and enrich missing top-100 dividend documents in analysed stocks."""
+    from data_ingestion.dividend_universe import get_top_dividend_symbols
+
+    stats = {"created": 0, "skipped": 0, "errors": 0, "already_present": 0}
+    store = _store()
+    if store is None:
+        stats["errors"] = 1
+        return stats
+
+    universe = get_top_dividend_symbols()
+    existing = {doc.symbol.upper() for doc in store.get_all_documents()}
+    missing = [
+        symbol
+        for symbol in universe
+        if symbol.upper() not in existing and symbol.upper() not in DELISTED_SYMBOLS
+    ]
+    if limit is not None:
+        missing = missing[: max(0, limit)]
+
+    if not missing:
+        stats["already_present"] = len(universe)
+        return stats
+
+    try:
+        from data_ingestion.stock_enricher import create_stock_enricher
+    except ImportError:
+        stats["errors"] = len(missing)
+        return stats
+
+    enricher = create_stock_enricher(request_delay=request_delay)
+    total = len(missing)
+    batch: List[StockDocument] = []
+
+    for index, symbol in enumerate(missing, start=1):
+        if progress_callback:
+            progress_callback(f"Top dividend: {symbol}", index, total)
+        try:
+            document = enricher.fetch_document(symbol)
+            if document is None:
+                document = StockDocument(
+                    symbol=symbol,
+                    name=symbol,
+                    source=DataSource.YAHOO,
+                )
+            else:
+                document.source = DataSource.YAHOO
+            batch.append(document)
+            stats["created"] += 1
+        except Exception as exc:
+            logger.warning("Top dividend ingest failed for %s: %s", symbol, exc)
             stats["errors"] += 1
 
         if len(batch) >= 25:

@@ -237,9 +237,13 @@ class PortfolioHoldingDetailService:
         document: Optional["StockDocument"],
         *,
         current_shares: float,
+        tracking_since: Optional[date] = None,
     ) -> pd.DataFrame:
         rows = self.dividend_history(
-            symbol, document, current_shares=current_shares, tracking_since=tracking_since,
+            symbol,
+            document,
+            current_shares=current_shares,
+            tracking_since=tracking_since,
             prefer_stored=True,
         )
         if not rows:

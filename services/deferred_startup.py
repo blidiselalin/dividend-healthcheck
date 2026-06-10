@@ -26,6 +26,9 @@ JOB_COVERAGE_STATS = "coverage_stats"
 JOB_HOURLY_UPDATE = "hourly_market_update"
 JOB_HISTORY_BACKFILL = "history_backfill"
 JOB_HISTORY_TABLE_SYNC = "history_table_sync"
+JOB_ENSURE_SP500 = "ensure_sp500"
+JOB_ENSURE_TOP_DIVIDEND = "ensure_top_dividend"
+JOB_PRICE_REFRESH = "price_refresh"
 
 
 def apply_background_results() -> List[str]:
@@ -41,6 +44,9 @@ def apply_background_results() -> List[str]:
         JOB_HOURLY_UPDATE: _apply_hourly_update,
         JOB_HISTORY_BACKFILL: _apply_history_backfill,
         JOB_HISTORY_TABLE_SYNC: _apply_history_table_sync,
+        JOB_ENSURE_SP500: _apply_ensure_sp500,
+        JOB_ENSURE_TOP_DIVIDEND: _apply_ensure_top_dividend,
+        JOB_PRICE_REFRESH: _apply_price_refresh,
     }
     applied_kinds = apply_completed_jobs(handlers)
     if applied_kinds:
@@ -265,6 +271,81 @@ def schedule_hourly_market_update(*, enrich_limit: int = 40) -> Optional[str]:
     )
 
 
+def schedule_ensure_sp500(*, limit: Optional[int] = None) -> Optional[str]:
+    """Admin-triggered ingest of missing S&P 500 symbols into analysed stocks."""
+    from auth.user_context import is_app_admin
+
+    if not is_app_admin():
+        return None
+
+    def _worker(progress: ProgressCallback) -> Dict[str, Any]:
+        from services.sp500_peers_service import coverage_stats, ensure_sp500_in_vectordb
+
+        def _cb(msg: str, current: int, total: int) -> None:
+            progress(current / total if total else 0.05, msg)
+
+        stats = ensure_sp500_in_vectordb(limit=limit, progress_callback=_cb)
+        stats["coverage"] = coverage_stats(force=True)
+        progress(1.0, "S&P 500 ingest complete")
+        return stats
+
+    return start_job(
+        JOB_ENSURE_SP500,
+        "Ensuring S&P 500 in library",
+        _worker,
+        admin_only=True,
+    )
+
+
+def schedule_ensure_top_dividend(*, limit: Optional[int] = None) -> Optional[str]:
+    """Admin-triggered ingest of missing top-100 dividend symbols."""
+    from auth.user_context import is_app_admin
+
+    if not is_app_admin():
+        return None
+
+    def _worker(progress: ProgressCallback) -> Dict[str, Any]:
+        from services.sp500_peers_service import ensure_top_dividend_in_vectordb, top_dividend_coverage_stats
+
+        def _cb(msg: str, current: int, total: int) -> None:
+            progress(current / total if total else 0.05, msg)
+
+        stats = ensure_top_dividend_in_vectordb(limit=limit, progress_callback=_cb)
+        stats["coverage"] = top_dividend_coverage_stats(force=True)
+        progress(1.0, "Top dividend ingest complete")
+        return stats
+
+    return start_job(
+        JOB_ENSURE_TOP_DIVIDEND,
+        "Ensuring top dividend tickers",
+        _worker,
+        admin_only=True,
+    )
+
+
+def schedule_price_refresh() -> Optional[str]:
+    """On-demand price refresh for all library symbols (background thread)."""
+    from auth.user_context import is_app_admin
+
+    if not is_app_admin():
+        return None
+
+    def _worker(progress: ProgressCallback) -> Dict[str, Any]:
+        from services.price_refresh_scheduler import run_price_refresh_once
+
+        progress(0.1, "Fetching live prices…")
+        stats = run_price_refresh_once()
+        progress(1.0, "Price refresh complete")
+        return stats
+
+    return start_job(
+        JOB_PRICE_REFRESH,
+        "Refreshing live prices",
+        _worker,
+        admin_only=True,
+    )
+
+
 def visible_jobs(*, admin: bool) -> List:
     jobs = list_jobs(include_finished=True)
     visible = []
@@ -305,6 +386,12 @@ def _apply_yield_preload(result: Dict[str, Any]) -> None:
     st.session_state["portfolio_analysis_ready"] = True
     st.session_state.pop("portfolio_fast_loaded", None)
     save_session_cache()
+    try:
+        from ui.portfolio_risk_panel import _rebuild_attention_from_session
+
+        _rebuild_attention_from_session()
+    except Exception as exc:
+        logger.debug("Risk watchlist rebuild after yield preload skipped: %s", exc)
 
 
 def _apply_warm_portfolio(result: Dict[str, Any]) -> None:
@@ -355,9 +442,9 @@ def _apply_history_table_sync(result: Dict[str, Any]) -> None:
 
     st.session_state["last_history_table_sync_summary"] = result
     try:
-        from ui.sidebar_progress_panel import _cached_thin_history_summary
+        from ui.market_library_cache import clear_thin_history_summary_cache
 
-        _cached_thin_history_summary.clear()
+        clear_thin_history_summary_cache()
     except Exception:
         pass
     logger.info(
@@ -378,9 +465,9 @@ def _apply_history_backfill(result: Dict[str, Any]) -> None:
     except Exception:
         pass
     try:
-        from ui.sidebar_progress_panel import _cached_thin_history_summary
+        from ui.market_library_cache import clear_thin_history_summary_cache
 
-        _cached_thin_history_summary.clear()
+        clear_thin_history_summary_cache()
     except Exception:
         pass
     logger.info(
@@ -399,4 +486,54 @@ def _apply_hourly_update(result: Dict[str, Any]) -> None:
         "Background hourly update: enriched=%s processed=%s",
         enrich.get("enriched"),
         enrich.get("processed"),
+    )
+
+
+def _apply_ensure_sp500(result: Dict[str, Any]) -> None:
+    import streamlit as st
+
+    from services.shared_market_db import reset_shared_vector_store_cache
+
+    st.session_state["last_ensure_sp500_summary"] = result
+    reset_shared_vector_store_cache()
+    coverage = (result or {}).get("coverage")
+    if coverage:
+        status = dict(st.session_state.get("market_db_status") or {})
+        status["sp500_coverage"] = coverage
+        st.session_state["market_db_status"] = status
+    logger.info(
+        "Background ensure S&P 500: created=%s errors=%s",
+        (result or {}).get("created"),
+        (result or {}).get("errors"),
+    )
+
+
+def _apply_ensure_top_dividend(result: Dict[str, Any]) -> None:
+    import streamlit as st
+
+    from services.shared_market_db import reset_shared_vector_store_cache
+
+    st.session_state["last_ensure_top_dividend_summary"] = result
+    reset_shared_vector_store_cache()
+    coverage = (result or {}).get("coverage")
+    if coverage:
+        status = dict(st.session_state.get("market_db_status") or {})
+        status["top_dividend_coverage"] = coverage
+        st.session_state["market_db_status"] = status
+    logger.info(
+        "Background ensure top dividend: created=%s errors=%s",
+        (result or {}).get("created"),
+        (result or {}).get("errors"),
+    )
+
+
+def _apply_price_refresh(result: Dict[str, Any]) -> None:
+    import streamlit as st
+
+    st.session_state["last_price_refresh_summary"] = result
+    logger.info(
+        "Background price refresh: updated=%s skipped=%s errors=%s",
+        (result or {}).get("updated"),
+        (result or {}).get("skipped"),
+        (result or {}).get("errors"),
     )

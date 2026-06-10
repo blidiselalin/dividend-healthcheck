@@ -87,10 +87,8 @@ from config import DATA_SOURCES
 from services.portfolio_session import sync_portfolio_session_with_db
 from services.portfolio_ui_cache import hydrate_session_from_disk
 from services.deferred_startup import apply_background_results, schedule_startup_tasks
-from ui.sidebar_progress_panel import (
-    render_admin_market_update_controls,
-    render_sidebar_progress,
-)
+from ui.admin_page import render_admin_page_if_active, render_admin_sidebar_entry
+from ui.sidebar_progress_panel import render_sidebar_progress
 
 
 @st.cache_resource(show_spinner=False)
@@ -106,6 +104,13 @@ def _startup_db_light() -> dict:
         log_provider_status(logger)
     except Exception:
         pass
+    try:
+        from services.price_refresh_scheduler import start_price_refresh_scheduler
+
+        if start_price_refresh_scheduler():
+            logger.info("Background price refresh scheduler started (5-minute interval)")
+    except Exception as exc:
+        logger.warning("Price refresh scheduler not started: %s", exc)
     logger.info(
         "Shared market library storage=%s documents=%d sp500=%s/%s",
         market.get("storage"),
@@ -238,13 +243,10 @@ def main() -> None:
     render_sidebar_progress()
     render_portfolio_sidebar()
     render_account_sidebar()
-    render_admin_market_update_controls()
-    from ui.db_admin_panel import render_db_admin_if_active, render_db_admin_sidebar_entry
-
-    render_db_admin_sidebar_entry()
+    render_admin_sidebar_entry()
     render_chatbot_widget()
     main_content_start()
-    if render_db_admin_if_active():
+    if render_admin_page_if_active():
         _render_sidebar_footer()
         return
     PortfolioDetailsView.render()

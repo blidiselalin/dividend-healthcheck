@@ -57,6 +57,10 @@ def render_portfolio_sidebar() -> None:
             _rebuild_attention_from_session()
         st.rerun()
 
+    from ui.portfolio_risk_panel import render_portfolio_risk_monitor
+
+    render_portfolio_risk_monitor()
+
     from ui.analysis_evidence import render_portfolio_session_evidence
 
     render_portfolio_session_evidence(expanded=False)

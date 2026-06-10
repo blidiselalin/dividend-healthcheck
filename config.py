@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from pathlib import Path
 from typing import Dict, List, Final, FrozenSet
 
 # =============================================================================
@@ -137,10 +138,40 @@ DIVIDEND_ARISTOCRATS: Final[List[str]] = [
 ]
 
 # Combined list for full analysis (frozen for immutability)
-ALL_DIVIDEND_STOCKS: Final[List[str]] = sorted(
-    symbol for symbol in set(DIVIDEND_KINGS + DIVIDEND_ARISTOCRATS)
-    if symbol not in DELISTED_SYMBOLS
-)
+def _load_bundled_top_dividend_symbols() -> List[str]:
+    path = Path(__file__).resolve().parent / "data" / "top_dividend_symbols.json"
+    if not path.exists():
+        return sorted(
+            symbol
+            for symbol in set(DIVIDEND_KINGS + DIVIDEND_ARISTOCRATS)
+            if symbol not in DELISTED_SYMBOLS
+        )
+    try:
+        import json
+
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        symbols = [_normalize_symbol(symbol) for symbol in payload.get("symbols") or []]
+        symbols = [symbol for symbol in symbols if symbol and symbol not in DELISTED_SYMBOLS]
+        if symbols:
+            return sorted(set(symbols))
+    except Exception:
+        pass
+    return sorted(
+        symbol
+        for symbol in set(DIVIDEND_KINGS + DIVIDEND_ARISTOCRATS)
+        if symbol not in DELISTED_SYMBOLS
+    )
+
+
+def _normalize_symbol(symbol: str) -> str:
+    return symbol.strip().upper().replace(".", "-")
+
+
+# Top 100 S&P dividend names (Aristocrats + quality supplemental payers)
+TOP_DIVIDEND_STOCKS: Final[List[str]] = _load_bundled_top_dividend_symbols()
+
+# Combined list for full analysis (frozen for immutability)
+ALL_DIVIDEND_STOCKS: Final[List[str]] = TOP_DIVIDEND_STOCKS
 DIVIDEND_SYMBOLS_SET: Final[FrozenSet[str]] = frozenset(ALL_DIVIDEND_STOCKS)
 
 
@@ -225,6 +256,9 @@ MIN_YIELD_DIVIDEND_PAYMENTS: Final[int] = 4
 
 # Portfolio risk scan: only refreshed when the user clicks Reload / Refresh (not on a timer).
 PORTFOLIO_RISK_REFRESH_SECONDS: Final[int] = 86400 * 365
+
+# Shared library live price refresh (background daemon in the Streamlit process).
+PRICE_REFRESH_INTERVAL_SECONDS: Final[int] = 300  # 5 minutes
 
 # In-app assistant (sidebar chat). Optional HUGGINGFACE_API_KEY for LLM fallback.
 CHATBOT_ENABLED_DEFAULT: Final[bool] = True

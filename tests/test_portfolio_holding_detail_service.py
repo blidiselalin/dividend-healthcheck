@@ -60,3 +60,24 @@ def test_dividend_cash_uses_shares_at_ex_date():
     assert len(rows) == 1
     assert rows[0].shares_held == 10.0
     assert rows[0].cash_usd == 10.0
+
+
+def test_dividends_dataframe_passes_tracking_since():
+    service = PortfolioHoldingDetailService()
+    captured: dict = {}
+
+    def fake_history(symbol, document, *, current_shares, tracking_since, prefer_stored):
+        captured["tracking_since"] = tracking_since
+        captured["prefer_stored"] = prefer_stored
+        return []
+
+    service.dividend_history = fake_history
+    frame = service.dividends_dataframe(
+        "KO",
+        None,
+        current_shares=10.0,
+        tracking_since=date(2024, 1, 1),
+    )
+    assert captured["tracking_since"] == date(2024, 1, 1)
+    assert captured["prefer_stored"] is True
+    assert frame.empty
