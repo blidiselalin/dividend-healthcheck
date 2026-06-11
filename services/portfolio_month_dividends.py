@@ -123,7 +123,7 @@ def current_month_paid_dividends(
     Always returns a snapshot when the portfolio has rows (including $0.00).
     """
     today = reference_date or date.today()
-    if not rows:
+    if rows is None:
         if not PortfolioStore().list_holdings():
             return None
         rows = []
