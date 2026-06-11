@@ -167,10 +167,66 @@ class PortfolioManagementService:
         symbol: str,
         **fields: Any,
     ) -> Optional[PortfolioHolding]:
-        holding = self.portfolio.update_holding(symbol, **fields)
-        if holding is not None:
-            sync_portfolio_to_vector_db(enrich_missing=False, symbols=[holding.symbol])
-            sync_received_dividends(db_path=self.portfolio.db_path, symbols=[holding.symbol])
+        old_symbol = self.normalize_symbol(symbol)
+        new_symbol = fields.get("symbol")
+        if new_symbol:
+            new_symbol = self.normalize_symbol(new_symbol)
+            fields["symbol"] = new_symbol
+        else:
+            new_symbol = old_symbol
+
+        ticker_changed = new_symbol != old_symbol
+
+        if ticker_changed:
+            if self.portfolio.holding_exists(new_symbol):
+                raise ValueError(f"{new_symbol} is already in the portfolio.")
+            
+            check = self.validate_symbol(new_symbol)
+            if not check.valid:
+                raise ValueError(check.message)
+            
+            if "company_name" not in fields or not fields["company_name"]:
+                fields["company_name"] = check.company_name
+
+            with self.portfolio._connect() as connection:
+                if connection.is_postgres:
+                    connection.execute(
+                        "UPDATE holdings SET symbol = ? WHERE user_id = ? AND symbol = ?",
+                        (new_symbol, connection.user_id, old_symbol),
+                    )
+                    connection.execute(
+                        "UPDATE purchase_journal SET symbol = ? WHERE user_id = ? AND symbol = ?",
+                        (new_symbol, connection.user_id, old_symbol),
+                    )
+                    connection.execute(
+                        "UPDATE dividend_receipts SET symbol = ? WHERE user_id = ? AND symbol = ?",
+                        (new_symbol, connection.user_id, old_symbol),
+                    )
+                else:
+                    connection.execute(
+                        "UPDATE holdings SET symbol = ? WHERE symbol = ?",
+                        (new_symbol, old_symbol),
+                    )
+                    connection.execute(
+                        "UPDATE purchase_journal SET symbol = ? WHERE symbol = ?",
+                        (new_symbol, old_symbol),
+                    )
+                    connection.execute(
+                        "UPDATE dividend_receipts SET symbol = ? WHERE symbol = ?",
+                        (new_symbol, old_symbol),
+                    )
+
+            holding = self.portfolio.update_holding(new_symbol, **fields)
+            if holding is not None:
+                sync_portfolio_to_vector_db(enrich_missing=False, symbols=[old_symbol])
+                sync_portfolio_to_vector_db(enrich_missing=True, symbols=[new_symbol])
+                sync_received_dividends(db_path=self.portfolio.db_path, symbols=[new_symbol])
+        else:
+            holding = self.portfolio.update_holding(old_symbol, **fields)
+            if holding is not None:
+                sync_portfolio_to_vector_db(enrich_missing=False, symbols=[holding.symbol])
+                sync_received_dividends(db_path=self.portfolio.db_path, symbols=[holding.symbol])
+
         return holding
 
     def remove_ticker(self, symbol: str) -> bool:

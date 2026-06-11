@@ -128,9 +128,8 @@ def current_month_paid_dividends(
             return None
         rows = []
 
-    gross, payer_count = gross_paid_in_calendar_month(today.year, today.month, through=today)
-
-    if gross == 0.0 and payer_count == 0 and rows and preload:
+    # Prefer live calendar from preload to ensure calculation is up-to-date on page load
+    if rows and preload:
         holdings = PortfolioStore().list_holdings()
         if holdings:
             row_dates = {
@@ -146,6 +145,8 @@ def current_month_paid_dividends(
             current = calendar.current_month
             gross = current.received_cash
             payer_count = current.received_payer_count
+    else:
+        gross, payer_count = gross_paid_in_calendar_month(today.year, today.month, through=today)
 
     net = net_received_through(gross, year=today.year)
 

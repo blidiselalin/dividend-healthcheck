@@ -1193,23 +1193,24 @@ class PortfolioDetailsView:
             paid_row1_a, paid_row1_b, paid_row1_c = st.columns(3)
             with paid_row1_a:
                 st.metric(
-                    "Received",
-                    f"${month_paid.net_usd:,.2f}"
-                    if month_paid.net_usd is not None
-                    else f"${month_paid.gross_usd:,.2f}",
-                    month_paid.through_label,
-                    help=(
-                        f"Cash received in {month_paid.month_label} with pay date on or before "
-                        f"{month_paid.through_date.strftime('%d %b %Y')}"
-                    ),
-                )
-            with paid_row1_b:
-                st.metric(
-                    "Gross",
-                    f"${month_paid.gross_usd:,.2f}",
-                    f"{month_paid.payer_count} payment{'s' if month_paid.payer_count != 1 else ''}"
-                    if month_paid.payer_count
-                    else "None yet",
+                label="Received (Gross)",
+                value=f"${month_paid.gross_usd:,.2f}",
+                delta=month_paid.through_label,
+                help=(
+                    f"Gross cash received in {month_paid.month_label} with pay date on or before "
+                    f"{month_paid.through_date.strftime('%d %b %Y')}"
+                ),
+            )
+        with paid_row1_b:
+            st.metric(
+                label="Received (Net)",
+                value=f"${month_paid.net_usd:,.2f}"
+                if month_paid.net_usd is not None
+                else f"${month_paid.gross_usd:,.2f}",
+                delta=f"{month_paid.payer_count} payment{'s' if month_paid.payer_count != 1 else ''}"
+                if month_paid.payer_count
+                else "None yet",
+                help="Net cash received after withholding tax",
                 )
             with paid_row1_c:
                 if month_paid.net_usd is not None:
@@ -1805,14 +1806,14 @@ class PortfolioDetailsView:
 
         st.divider()
         st.markdown("##### 2. Net dividends received")
-        cls._render_dividend_income_page()
+        cls._render_dividend_income_page(rows)
 
     @classmethod
-    def _render_dividend_income_page(cls) -> None:
+    def _render_dividend_income_page(cls, rows: Optional[List[PortfolioDetailRow]] = None) -> None:
         """Net dividend cash received (after withholding tax)."""
         service = PortfolioDividendIncomeService()
         records = service.list_dividends()
-        summary = service.summarize(records)
+        summary = service.summarize(records, rows=rows)
         pivot = service.pivot_net_dataframe(records)
         yearly = service.yearly_summary(records)
         detail = service.detail_dataframe(records)
@@ -2287,4 +2288,3 @@ class PortfolioDetailsView:
         section_key = current_portfolio_section_key()
         render_portfolio_status_line()
         cls._render_portfolio_section(section_key)
-

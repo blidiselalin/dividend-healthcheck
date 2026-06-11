@@ -7,7 +7,7 @@ from __future__ import annotations
 from utils.chart_theme import style_figure
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Any
 
 import pandas as pd
 
@@ -118,6 +118,7 @@ class PortfolioDividendIncomeService:
         records: Optional[List[MonthlyNetDividend]] = None,
         *,
         ytd_year: Optional[int] = None,
+        rows: Optional[List[Any]] = None,
     ) -> DividendIncomeSummary:
         items = records if records is not None else self.list_dividends()
         if not items:
@@ -131,7 +132,15 @@ class PortfolioDividendIncomeService:
 
         yearly = self.yearly_summary(items)
         best_row = yearly.loc[yearly["Net $"].idxmax()]
-        avg_monthly = total_net / len(items)
+
+        if rows:
+            from data_ingestion.dividend_income_store import dividend_tax_rate
+            total_annual_gross = sum(row.annual_income or 0.0 for row in rows)
+            tax_rate = dividend_tax_rate(year)
+            estimated_annual_net = total_annual_gross * (1.0 - tax_rate)
+            avg_monthly = estimated_annual_net / 12.0
+        else:
+            avg_monthly = total_net / len(items) if items else 0.0
 
         return DividendIncomeSummary(
             total_net_usd=round(total_net, 2),

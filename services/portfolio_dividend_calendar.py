@@ -417,7 +417,7 @@ def create_month_comparison_chart(calendar: PortfolioDividendCalendar):
 
     months = [calendar.last_month, calendar.current_month, calendar.next_month]
     labels = [month.label for month in months]
-    totals = [month.confirmed_cash or month.total_cash for month in months]
+    totals = [month.total_cash for month in months]
     colors = ["#90a4ae", "#1976d2", "#43a047"]
 
     fig = go.Figure(

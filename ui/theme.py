@@ -197,14 +197,23 @@ def inject_app_theme() -> None:
             border: 1px solid #e2e8f0;
             border-radius: 10px;
             padding: 0.55rem 0.75rem 0.45rem;
-            min-height: 5.75rem;
+            min-height: 6.5rem;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
             overflow: visible !important;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+        }
+        div[data-testid="stMetric"]:hover {
+            border-color: #0f766e !important;
+            box-shadow: 0 4px 12px rgba(15, 118, 110, 0.12) !important;
+            cursor: pointer;
         }
         div[data-testid="stMetric"] label {
             font-size: 0.72rem;
             color: #64748b;
             line-height: 1.35 !important;
-            min-height: 2.4em;
+            margin-bottom: 0.25rem;
             word-break: break-word;
             overflow-wrap: anywhere;
         }
