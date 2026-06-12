@@ -129,9 +129,9 @@ class YFinanceEnricher:
                         doc.ex_dividend_date = datetime.fromtimestamp(ex_date).date()
 
             # Most recently declared dividend
-            if doc.last_dividend_value is None:  # type: ignore[attr-defined]
+            if getattr(doc, "last_dividend_value", None) is None:
                 doc.last_dividend_value = info.get("lastDividendValue")  # type: ignore[attr-defined]
-            if doc.last_dividend_date is None:  # type: ignore[attr-defined]
+            if getattr(doc, "last_dividend_date", None) is None:
                 last_div_ts = info.get("lastDividendDate")
                 if last_div_ts:
                     with contextlib.suppress(ValueError, TypeError, OSError):

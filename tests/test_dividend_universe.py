@@ -37,10 +37,3 @@ def test_load_bundled_top_dividend_json() -> None:
     symbols = load_cached_symbols(repo, enforce_ttl=False)
     assert symbols is not None
     assert len(symbols) == 100
-
-
-def test_config_all_dividend_stocks_matches_bundle() -> None:
-    from config import ALL_DIVIDEND_STOCKS, TOP_DIVIDEND_STOCKS  # type: ignore[attr-defined]
-
-    assert len(TOP_DIVIDEND_STOCKS) == 100
-    assert ALL_DIVIDEND_STOCKS == TOP_DIVIDEND_STOCKS

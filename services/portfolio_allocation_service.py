@@ -20,10 +20,10 @@ try:
 except ImportError:
     PLOTLY_AVAILABLE = False
 
-BUCKET_ORDER = ["1-10B", "10-200B", ">200B", "<1B", "Unknown"]
+BUCKET_ORDER = ["1–10B", "10–200B", ">200B", "<1B", "Unknown"]
 BUCKET_LABELS = {
-    "1-10B": "$1B - $10B",
-    "10-200B": "$10B - $200B",
+    "1–10B": "$1B - $10B",
+    "10–200B": "$10B - $200B",
     ">200B": "> $200B",
     "<1B": "< $1B",
     "Unknown": "Unknown",
@@ -37,9 +37,9 @@ def classify_market_cap_bucket(market_cap: float | None) -> str:
     if market_cap < 1_000_000_000:
         return "<1B"
     if market_cap < 10_000_000_000:
-        return "1-10B"
+        return "1–10B"
     if market_cap < 200_000_000_000:
-        return "10-200B"
+        return "10–200B"
     return ">200B"
 
 
@@ -180,8 +180,8 @@ class PortfolioAllocationService:
         if df.empty:
             return None
         colors = {
-            "1-10B": "#42a5f5",
-            "10-200B": "#66bb6a",
+            "1–10B": "#42a5f5",
+            "10–200B": "#66bb6a",
             ">200B": "#ab47bc",
             "<1B": "#ffa726",
             "Unknown": "#bdbdbd",

@@ -80,6 +80,7 @@ def test_vector_store_fallback_loads_legacy_finnhub_metadata(tmp_path: Path) -> 
 
 
 @patch("data_ingestion.yfinance_enricher.YFINANCE_AVAILABLE", True)
+@patch("data_ingestion.yfinance_enricher.yf.Ticker")
 @patch.object(YFinanceEnricher, "_enrich_price_data")
 @patch.object(YFinanceEnricher, "_enrich_dividend_history")
 @patch.object(
@@ -92,7 +93,12 @@ def test_vector_store_fallback_loads_legacy_finnhub_metadata(tmp_path: Path) -> 
         "dividendYield": 0.03,
     },
 )
-def test_yfinance_enricher_still_enriches_gaps(_info: Any, _div: Any, _price: Any) -> None:
+def test_yfinance_enricher_still_enriches_gaps(
+    _info: Any,
+    _div: Any,
+    _price: Any,
+    _ticker: Any,
+) -> None:
     enricher = YFinanceEnricher(request_delay=0)
     _div.side_effect = lambda doc, ticker: doc
     _price.side_effect = lambda doc, ticker: doc
@@ -102,13 +108,13 @@ def test_yfinance_enricher_still_enriches_gaps(_info: Any, _div: Any, _price: An
     assert result.source == DataSource.YAHOO
 
 
-@patch("data_ingestion.pipeline.create_stock_enricher")
-def test_pipeline_enrich_uses_stock_enricher(mock_create: Any, tmp_path: Path) -> None:
+@patch("data_ingestion.pipeline.YFinanceEnricher")
+def test_pipeline_enrich_uses_stock_enricher(mock_enricher_cls: Any, tmp_path: Path) -> None:
     mock_enricher = MagicMock()
     mock_enricher.enrich_batch.return_value = [
         StockDocument(symbol="KO", name="Coca-Cola", source=DataSource.YAHOO)
     ]
-    mock_create.return_value = mock_enricher
+    mock_enricher_cls.return_value = mock_enricher
 
     pipeline = DataIngestionPipeline(
         data_dir=str(tmp_path / "downloads"),
@@ -126,7 +132,7 @@ def test_pipeline_enrich_uses_stock_enricher(mock_create: Any, tmp_path: Path) -
 
     pipeline.run(sources=["stockquote"], enrich_with_yfinance=True)
 
-    mock_create.assert_called_once()
+    mock_enricher_cls.assert_called_once()
     mock_enricher.enrich_batch.assert_called_once()
 
 

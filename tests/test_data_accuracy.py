@@ -204,7 +204,7 @@ def test_stock_data_accuracy(store: Any) -> Any:  # noqa: C901
     return passed, failed, not_found
 
 
-def test_data_sanity(store: Any) -> bool:
+def test_data_sanity(store: Any) -> None:
     """Test that all data values are within sane ranges."""
     all_docs = store.get_all_documents()
 
@@ -242,10 +242,10 @@ def test_data_sanity(store: Any) -> bool:
     else:
         print("✓ All data values within sane ranges")
 
-    return len(issues) == 0
+    assert len(issues) == 0
 
 
-def test_service_layer() -> bool | None:
+def test_service_layer() -> None:
     """Test that the VectorDBService works correctly."""
     try:
         from services.vectordb_service import get_vectordb_service
@@ -254,7 +254,7 @@ def test_service_layer() -> bool | None:
 
         if not service.is_available:
             print("⚠ VectorDBService not available (no data)")
-            return False
+            return
 
         # Test getting a stock
         data = service.get_stock("KO")
@@ -269,11 +269,11 @@ def test_service_layer() -> bool | None:
         print(
             f"✓ VectorDBService: {stats['total_documents']} docs, {stats['dividend_kings']} Kings"
         )
-        return True
+        return
 
     except ImportError as e:
         print(f"⚠ VectorDBService import failed: {e}")
-        return False
+        return
 
 
 def main() -> int:
