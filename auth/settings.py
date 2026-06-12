@@ -63,7 +63,7 @@ def auth_required() -> bool:
     section = _auth_section()
     if section.get("require_login") is False:
         return False
-    return auth_configured()
+    return True
 
 
 def dev_bypass_email() -> str | None:

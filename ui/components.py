@@ -1321,7 +1321,7 @@ class UIComponents:
             True if data was displayed, False if no data found
         """
         if not VECTOR_DB_AVAILABLE:
-            st.warning("📦 Vector database not available. Install with: `pip install chromadb`")
+            st.warning("📦 Database not available. Check your PostgreSQL connection.")
             return False
 
         try:
@@ -1330,13 +1330,13 @@ class UIComponents:
 
             if doc is None:
                 st.info(
-                    f"📭 No data found for **{symbol}** in the vector database. "
+                    f"📭 No data found for **{symbol}** in the PostgreSQL database. "
                     f"Run `python ingest_data.py --enrich` to populate."
                 )
                 return False
 
             # Header
-            st.markdown(f"### 📦 Vector Database: {doc.symbol}")
+            st.markdown(f"### 📦 PostgreSQL Record: {doc.symbol}")
             last_updated_str = (
                 doc.last_updated.strftime("%Y-%m-%d %H:%M") if doc.last_updated else "N/A"
             )
@@ -1366,14 +1366,14 @@ class UIComponents:
             True if stats were displayed, False otherwise
         """
         if not VECTOR_DB_AVAILABLE:
-            st.warning("Vector database not available.")
+            st.warning("Database not available.")
             return False
 
         try:
             store = VectorStore()
             stats = store.get_stats()
 
-            st.markdown("### 📊 Vector Database Statistics")
+            st.markdown("### 📊 PostgreSQL Statistics")
 
             col1, col2, col3, col4 = st.columns(4)
 

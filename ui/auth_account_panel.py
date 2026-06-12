@@ -47,7 +47,7 @@ def render_account_sidebar() -> None:
         st.logout()
 
     registered = ensure_user_session()
-    if registered and is_app_admin(user, registered):
+    if registered and is_app_admin():
         render_admin_access_requests()
         _render_admin_users()
 

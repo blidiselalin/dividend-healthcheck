@@ -52,14 +52,14 @@ def _render_data_source_status() -> None:
         is_db_primary = status.get("is_db_primary", False)
 
         if is_db_primary:
-            st.sidebar.success(f"🗄️ **Vector DB** ({doc_count} stocks)")
+            st.sidebar.success(f"🗄️ **PostgreSQL** ({doc_count} stocks)")
             st.sidebar.caption(f"👑 {kings_count} Dividend Kings • Fast local data")
         else:
-            st.sidebar.warning("🌐 **Public API** (DB empty)")
+            st.sidebar.warning("🌐 **Public API** (PostgreSQL empty)")
             st.sidebar.caption("Run `python ingest_data.py --enrich` to populate")
     else:
         st.sidebar.info("🌐 **Public API** only")
-        st.sidebar.caption("Install chromadb for local caching")
+        st.sidebar.caption("Configure PostgreSQL for local data caching")
 
 
 def _render_chatbot() -> None:
