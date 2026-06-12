@@ -7,7 +7,7 @@ from __future__ import annotations
 import calendar
 from dataclasses import dataclass
 from datetime import date
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING
 
 from data_ingestion.dividend_income_store import MONTH_LABELS, DividendIncomeStore
 from data_ingestion.dividend_receipt_store import DividendReceiptStore
@@ -26,7 +26,7 @@ class CurrentMonthPaidDividends:
     month_label: str
     through_date: date
     gross_usd: float
-    net_usd: Optional[float]
+    net_usd: float | None
     payer_count: int
 
     @property
@@ -34,7 +34,7 @@ class CurrentMonthPaidDividends:
         return f"through {self.through_date.day} {MONTH_LABELS[self.through_date.month - 1]}"
 
 
-def net_received_through(gross_usd: float, *, year: int) -> Optional[float]:
+def net_received_through(gross_usd: float, *, year: int) -> float | None:
     """Estimate net cash received after withholding from gross paid through today."""
     if gross_usd <= 0:
         return None
@@ -52,9 +52,9 @@ def gross_paid_in_calendar_month(
     year: int,
     month: int,
     *,
-    through: Optional[date] = None,
-    store: Optional[DividendReceiptStore] = None,
-) -> Tuple[float, int]:
+    through: date | None = None,
+    store: DividendReceiptStore | None = None,
+) -> tuple[float, int]:
     """Sum gross receipts with pay_date in the month, capped at `through` (default today)."""
     through = through or date.today()
     if (year, month) > (through.year, through.month):
@@ -101,8 +101,8 @@ def net_paid_in_calendar_month(
     year: int,
     month: int,
     *,
-    store: Optional[DividendIncomeStore] = None,
-) -> Optional[float]:
+    store: DividendIncomeStore | None = None,
+) -> float | None:
     income_store = store or DividendIncomeStore()
     for item in income_store.list_dividends():
         if item.year == year and item.month == month:
@@ -112,10 +112,10 @@ def net_paid_in_calendar_month(
 
 def current_month_paid_dividends(
     *,
-    rows: Optional[list["PortfolioDetailRow"]] = None,
-    preload: Optional["PortfolioAnalysisPreload"] = None,
-    reference_date: Optional[date] = None,
-) -> Optional[CurrentMonthPaidDividends]:
+    rows: list[PortfolioDetailRow] | None = None,
+    preload: PortfolioAnalysisPreload | None = None,
+    reference_date: date | None = None,
+) -> CurrentMonthPaidDividends | None:
     """
     Paid dividend cash for the current month through `reference_date` (default today).
 
@@ -132,9 +132,7 @@ def current_month_paid_dividends(
     if rows and preload:
         holdings = PortfolioStore().list_holdings()
         if holdings:
-            row_dates = {
-                row.ticker: (row.ex_dividend_date, row.dividend_pay_date) for row in rows
-            }
+            row_dates = {row.ticker: (row.ex_dividend_date, row.dividend_pay_date) for row in rows}
             calendar = build_portfolio_dividend_calendar(
                 holdings,
                 vector_docs=preload.vector_docs,

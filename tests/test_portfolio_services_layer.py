@@ -1,13 +1,16 @@
 """Unit tests for portfolio service layer (deposits, journal, dashboard, allocation)."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
 
-from data_ingestion.deposits_store import DepositsStore, MonthlyDeposit
+from data_ingestion.deposits_store import DepositsStore
 from data_ingestion.portfolio_store import PortfolioStore
 from data_ingestion.purchase_journal_store import PurchaseJournalStore
 from services.portfolio_allocation_service import (
@@ -21,43 +24,43 @@ from services.portfolio_purchase_journal_service import PortfolioPurchaseJournal
 from services.portfolio_zone_overview import zone_to_category
 
 
-def _detail_row(**overrides) -> PortfolioDetailRow:
-    base = dict(
-        company="Test Co",
-        ticker="TST",
-        market_cap=5_000_000_000,
-        pe_ratio=15.0,
-        shares=10.0,
-        current_price=100.0,
-        current_value=1000.0,
-        avg_cost_per_share=90.0,
-        acquisition_value=900.0,
-        profit=100.0,
-        profit_pct=11.1,
-        estimated_avg_price=90.0,
-        medium_price_365d=95.0,
-        price_180d=98.0,
-        price_365d=90.0,
-        change_180d_pct=2.0,
-        change_365d_pct=11.0,
-        weight_pct=5.0,
-        dividend_yield_pct=3.0,
-        dividend_per_share=3.0,
-        annual_income=30.0,
-        dividend_weight_pct=5.0,
-        income_weight_pct=5.0,
-        dividends_paid=0.0,
-        growth_years=10,
-        commission=0.0,
-        sector="Consumer",
-        acquisition_share_pct=5.0,
-        analyst_rating="BUY",
-        price_to_fcf=10.0,
-        computed_dividend="3.00 (3.00%)",
-        ex_dividend_date=None,
-        dividend_pay_date=None,
-        data_source="test",
-    )
+def _detail_row(**overrides: Any) -> PortfolioDetailRow:
+    base = {
+        "company": "Test Co",
+        "ticker": "TST",
+        "market_cap": 5_000_000_000,
+        "pe_ratio": 15.0,
+        "shares": 10.0,
+        "current_price": 100.0,
+        "current_value": 1000.0,
+        "avg_cost_per_share": 90.0,
+        "acquisition_value": 900.0,
+        "profit": 100.0,
+        "profit_pct": 11.1,
+        "estimated_avg_price": 90.0,
+        "medium_price_365d": 95.0,
+        "price_180d": 98.0,
+        "price_365d": 90.0,
+        "change_180d_pct": 2.0,
+        "change_365d_pct": 11.0,
+        "weight_pct": 5.0,
+        "dividend_yield_pct": 3.0,
+        "dividend_per_share": 3.0,
+        "annual_income": 30.0,
+        "dividend_weight_pct": 5.0,
+        "income_weight_pct": 5.0,
+        "dividends_paid": 0.0,
+        "growth_years": 10,
+        "commission": 0.0,
+        "sector": "Consumer",
+        "acquisition_share_pct": 5.0,
+        "analyst_rating": "BUY",
+        "price_to_fcf": 10.0,
+        "computed_dividend": "3.00 (3.00%)",
+        "ex_dividend_date": None,
+        "dividend_pay_date": None,
+        "data_source": "test",
+    }
     base.update(overrides)
     return PortfolioDetailRow(**base)
 
@@ -89,7 +92,7 @@ def test_dashboard_evolution_and_metrics(sample_deposits: DepositsStore) -> None
     assert metrics.deposits.month_count == 2
 
 
-def test_dashboard_evolution_skips_zero_portfolio(tmp_path) -> None:
+def test_dashboard_evolution_skips_zero_portfolio(tmp_path: Path) -> None:
     store = DepositsStore(db_path=tmp_path / "evo.db", seed=False)
     store.upsert_deposit(
         year=2026,
@@ -107,9 +110,7 @@ def test_dashboard_evolution_skips_zero_portfolio(tmp_path) -> None:
         deposit_usd=4821.01,
         portfolio_eur=0.0,
     )
-    dashboard = PortfolioDashboardService(
-        deposits_service=PortfolioDepositsService(store=store)
-    )
+    dashboard = PortfolioDashboardService(deposits_service=PortfolioDepositsService(store=store))
     df = dashboard.evolution_dataframe()
     may = df.iloc[1]
     assert may["deposit_eur"] == 4111.6
@@ -119,15 +120,13 @@ def test_dashboard_evolution_skips_zero_portfolio(tmp_path) -> None:
     assert pd.isna(may["mom_change_pct"])
 
 
-def test_dashboard_empty_deposits_no_keyerror(tmp_path) -> None:
+def test_dashboard_empty_deposits_no_keyerror(tmp_path: Path) -> None:
     empty_store = DepositsStore(db_path=tmp_path / "empty.db", seed=False)
     dashboard = PortfolioDashboardService(
         deposits_service=PortfolioDepositsService(store=empty_store)
     )
     df = dashboard.evolution_dataframe()
-    assert list(df.columns) == list(
-        PortfolioDashboardService._empty_evolution_frame().columns
-    )
+    assert list(df.columns) == list(PortfolioDashboardService._empty_evolution_frame().columns)
     assert dashboard.create_gain_chart() is None
     metrics = dashboard.build_metrics()
     assert metrics.deposits.month_count == 0
@@ -191,8 +190,8 @@ def test_purchase_journal_symbols_without_journal(
     [
         (None, "Unknown"),
         (500_000_000, "<1B"),
-        (5_000_000_000, "1–10B"),
-        (50_000_000_000, "10–200B"),
+        (5_000_000_000, "1–10B"),  # noqa: RUF001
+        (50_000_000_000, "10–200B"),  # noqa: RUF001
         (500_000_000_000, ">200B"),
     ],
 )

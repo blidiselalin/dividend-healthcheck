@@ -1,4 +1,5 @@
 """Tests for dividend amount helpers."""
+# ruff: noqa: S101
 
 import unittest
 from datetime import date
@@ -28,30 +29,30 @@ def _monthly_records(count: int = 12, amount: float = 0.27) -> list[DividendReco
 
 
 class DividendAmountsTests(unittest.TestCase):
-    def test_detect_monthly_from_recent_years(self):
+    def test_detect_monthly_from_recent_years(self) -> None:
         records = _monthly_records(12)
         self.assertEqual(detect_payment_frequency(records), 12)
 
-    def test_trailing_annual_sums_last_twelve_monthly_payments(self):
+    def test_trailing_annual_sums_last_twelve_monthly_payments(self) -> None:
         records = _monthly_records(12, amount=0.25)
         self.assertEqual(trailing_annual_dividend(records), 3.0)
 
-    def test_resolve_annual_prefers_trailing_over_stale_quarterly_annual(self):
+    def test_resolve_annual_prefers_trailing_over_stale_quarterly_annual(self) -> None:
         records = _monthly_records(12, amount=0.27)
         annual = resolve_annual_dividend_per_share(records, document=None, stock=None)
-        self.assertAlmostEqual(annual, 3.24, places=2)
+        self.assertAlmostEqual(annual, 3.24, places=2)  # type: ignore[arg-type]
 
-    def test_per_payment_uses_latest_not_annual_divided_by_wrong_freq(self):
+    def test_per_payment_uses_latest_not_annual_divided_by_wrong_freq(self) -> None:
         records = _monthly_records(12, amount=0.271)
         amount = per_payment_amount(records, document=None, stock=None)
-        self.assertAlmostEqual(amount, 0.271, places=3)
+        self.assertAlmostEqual(amount, 0.271, places=3)  # type: ignore[arg-type]
 
-    def test_normalize_payment_amount_clamps_annual_lump(self):
+    def test_normalize_payment_amount_clamps_annual_lump(self) -> None:
         records = _quarterly_records(amount=0.6775)
         normalized = normalize_payment_amount(2.71, records, document=None, stock=None)
         self.assertAlmostEqual(normalized, 0.6775, places=4)
 
-    def test_expected_payment_months_for_quarterly(self):
+    def test_expected_payment_months_for_quarterly(self) -> None:
         records = _quarterly_records()
         months = expected_payment_months(records, stored_frequency=4)
         self.assertEqual(months, {3, 6, 9, 12})

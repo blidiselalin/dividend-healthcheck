@@ -11,9 +11,8 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 from functools import lru_cache
-from typing import Any, Dict, Optional
+from typing import Any
 
 from data_ingestion.base import BaseFetcher
 from data_ingestion.models import DataSource
@@ -34,12 +33,10 @@ class SecEdgarProvider(BaseFetcher, StockDataProvider):
     field_groups = frozenset({"identity", "valuation", "health", "profitability"})
     priority = 20
 
-    def __init__(self, user_agent: Optional[str] = None, **kwargs):
+    def __init__(self, user_agent: str | None = None, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.user_agent = (
-            user_agent
-            or os.environ.get("SEC_EDGAR_USER_AGENT")
-            or DEFAULT_USER_AGENT
+            user_agent or os.environ.get("SEC_EDGAR_USER_AGENT") or DEFAULT_USER_AGENT
         ).strip()
         if self.session:
             self.session.headers["User-Agent"] = self.user_agent
@@ -48,7 +45,7 @@ class SecEdgarProvider(BaseFetcher, StockDataProvider):
     def available(self) -> bool:
         return bool(self.session)
 
-    def fetch(self, symbol: str) -> Optional[StockSnapshot]:
+    def fetch(self, symbol: str) -> StockSnapshot | None:  # noqa: C901
         if not self.available():
             return None
 
@@ -71,11 +68,12 @@ class SecEdgarProvider(BaseFetcher, StockDataProvider):
             snap.industry = sic.get("description") or snap.industry
             snap.sector = _sic_to_sector(sic.get("code")) or snap.sector
 
-        revenue = _latest_gaap_value(gaap, "Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax")
+        revenue = _latest_gaap_value(
+            gaap, "Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax"
+        )
         net_income = _latest_gaap_value(gaap, "NetIncomeLoss")
         equity = _latest_gaap_value(gaap, "StockholdersEquity")
         eps = _latest_gaap_value(gaap, "EarningsPerShareBasic")
-        shares = _latest_gaap_value(gaap, "CommonStockSharesOutstanding")
         debt = _latest_gaap_value(
             gaap,
             "LongTermDebt",
@@ -101,13 +99,15 @@ class SecEdgarProvider(BaseFetcher, StockDataProvider):
             "CommonStockDividendsPerShareCashPaid",
         )
         if dividends_per_share:
-            snap.annual_dividend = dividends_per_share * 4 if dividends_per_share < 50 else dividends_per_share
+            snap.annual_dividend = (
+                dividends_per_share * 4 if dividends_per_share < 50 else dividends_per_share
+            )
 
         if not snap.populated_scalar_fields():
             return None
         return snap
 
-    def _get_facts(self, cik: int) -> Optional[Dict[str, Any]]:
+    def _get_facts(self, cik: int) -> dict[str, Any] | None:
         if not self.session:
             return None
         try:
@@ -118,12 +118,14 @@ class SecEdgarProvider(BaseFetcher, StockDataProvider):
             if response.status_code == 404:
                 return None
             response.raise_for_status()
-            return response.json()
+            from typing import cast
+
+            return cast(dict[str, Any], response.json())
         except Exception as exc:
             logger.debug("SEC EDGAR facts failed for CIK %s: %s", cik, exc)
             return None
 
-    def _submissions_sic(self, cik: int) -> Optional[Dict[str, Any]]:
+    def _submissions_sic(self, cik: int) -> dict[str, Any] | None:
         if not self.session:
             return None
         self._rate_limit()
@@ -144,7 +146,7 @@ class SecEdgarProvider(BaseFetcher, StockDataProvider):
 
 
 @lru_cache(maxsize=1)
-def _ticker_index() -> Dict[str, int]:
+def _ticker_index() -> dict[str, int]:
     """Load SEC ticker → CIK map (cached for process lifetime)."""
     import requests
 
@@ -160,7 +162,7 @@ def _ticker_index() -> Dict[str, int]:
         logger.warning("SEC ticker list unavailable: %s", exc)
         return {}
 
-    index: Dict[str, int] = {}
+    index: dict[str, int] = {}
     for entry in payload.values():
         ticker = str(entry.get("ticker", "")).upper()
         cik = entry.get("cik_str") or entry.get("cik")
@@ -169,19 +171,22 @@ def _ticker_index() -> Dict[str, int]:
     return index
 
 
-def _cik_for_symbol(symbol: str) -> Optional[int]:
+def _cik_for_symbol(symbol: str) -> int | None:
     return _ticker_index().get(symbol.upper())
 
 
-def _entity_sic(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _entity_sic(payload: dict[str, Any]) -> dict[str, Any] | None:
     """Best-effort SIC from company facts metadata."""
     for key in ("sic", "sicCode", "entitySic"):
         if payload.get(key):
-            return {"code": str(payload[key]), "description": payload.get("sicDescription", "")}
+            return {
+                "code": str(payload[key]),
+                "description": payload.get("sicDescription", ""),
+            }
     return None
 
 
-def _sic_to_sector(code: Optional[str]) -> Optional[str]:
+def _sic_to_sector(code: str | None) -> str | None:  # noqa: C901
     if not code:
         return None
     try:
@@ -209,7 +214,7 @@ def _sic_to_sector(code: Optional[str]) -> Optional[str]:
     return "Other"
 
 
-def _latest_gaap_value(gaap: Dict[str, Any], *names: str) -> Optional[float]:
+def _latest_gaap_value(gaap: dict[str, Any], *names: str) -> float | None:
     for name in names:
         block = gaap.get(name)
         if not block:

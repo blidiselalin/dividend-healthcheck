@@ -1,8 +1,10 @@
 """Tests for scheduled hourly market refresh helpers."""
+# ruff: noqa: S101
 
 import importlib.util
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 _root = Path(__file__).resolve().parents[1]
@@ -23,7 +25,7 @@ def _doc(
     quality: float = 40.0,
     price_points: int = 0,
     div_points: int = 0,
-):
+) -> Any:
     from datetime import date
 
     from data_ingestion.models import DividendRecord, PriceHistory
@@ -56,7 +58,9 @@ def _doc(
 
 @patch("data_ingestion.stock_enricher.create_stock_enricher")
 @patch("services.shared_market_db.get_shared_vector_store")
-def test_enrich_stale_documents_limits_batch(mock_get_store, mock_create_enricher):
+def test_enrich_stale_documents_limits_batch(
+    mock_get_store: Any, mock_create_enricher: Any
+) -> None:
     store = mock_get_store.return_value
     store.get_all_documents.return_value = [
         _doc("AAA", days_old=30),
@@ -80,7 +84,7 @@ def test_enrich_stale_documents_limits_batch(mock_get_store, mock_create_enriche
 
 @patch("services.sp500_peers_service.ensure_sp500_in_vectordb")
 @patch("services.db_price_refresh.refresh_market_library_prices")
-def test_run_hourly_market_update_orchestration(mock_prices, mock_sp500):
+def test_run_hourly_market_update_orchestration(mock_prices: Any, mock_sp500: Any) -> None:
     mock_prices.return_value = {"updated": 12, "total": 20}
     mock_sp500.return_value = {"created": 1, "errors": 0}
 
@@ -102,7 +106,7 @@ def test_run_hourly_market_update_orchestration(mock_prices, mock_sp500):
 
 
 @patch("services.hourly_market_update.run_hourly_market_update")
-def test_ingest_data_hourly_update_cli(mock_run, capsys):
+def test_ingest_data_hourly_update_cli(mock_run: Any, capsys: Any) -> None:
     mock_run.return_value = {
         "prices": {"updated": 5, "total": 10},
         "sp500": {"created": 0},
@@ -120,7 +124,7 @@ def test_ingest_data_hourly_update_cli(mock_run, capsys):
 
 
 @patch("services.sp500_peers_service.ensure_top_dividend_in_vectordb")
-def test_ingest_data_ensure_top_dividend_cli(mock_ensure, capsys):
+def test_ingest_data_ensure_top_dividend_cli(mock_ensure: Any, capsys: Any) -> None:
     mock_ensure.return_value = {"created": 3, "errors": 0, "already_present": 97}
 
     from ingest_data import main
@@ -137,7 +141,7 @@ def test_ingest_data_ensure_top_dividend_cli(mock_ensure, capsys):
 
 
 @patch("services.db_price_refresh.remove_delisted_from_market_library")
-def test_ingest_data_remove_delisted_cli(mock_remove, capsys):
+def test_ingest_data_remove_delisted_cli(mock_remove: Any, capsys: Any) -> None:
     mock_remove.return_value = {"removed": 2, "symbols": ["WBA", "ZZ"]}
 
     from ingest_data import main

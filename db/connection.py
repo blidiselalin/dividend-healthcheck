@@ -11,9 +11,10 @@ from __future__ import annotations
 import logging
 import os
 import sqlite3
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, Optional, Sequence, Tuple, Union
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +22,9 @@ _pool = None
 _schema_ready = False
 
 
-def get_database_url() -> Optional[str]:
+def get_database_url() -> str | None:
     return (
-        os.environ.get("DATABASE_URL")
-        or os.environ.get("DIVIDENDSCOPE_DATABASE_URL")
-        or ""
+        os.environ.get("DATABASE_URL") or os.environ.get("DIVIDENDSCOPE_DATABASE_URL") or ""
     ).strip() or None
 
 
@@ -53,9 +52,7 @@ def _migration_statements_from_path(path: Path) -> list[str]:
     """Split one migration file into executable statements (ignore comment lines)."""
     sql = path.read_text(encoding="utf-8")
     lines = [
-        line
-        for line in sql.splitlines()
-        if line.strip() and not line.strip().startswith("--")
+        line for line in sql.splitlines() if line.strip() and not line.strip().startswith("--")
     ]
     statements: list[str] = []
     for chunk in "\n".join(lines).split(";"):
@@ -111,11 +108,10 @@ def ensure_schema() -> None:
     logger.info("PostgreSQL schema ready (%s new migration(s))", applied)
 
 
-def _get_pool():
+def _get_pool() -> Any:
     global _pool
     if _pool is not None:
         return _pool
-    import psycopg
     from psycopg.rows import dict_row
     from psycopg_pool import ConnectionPool
 
@@ -156,7 +152,7 @@ def portfolio_user_id() -> str:
         uid = current_user_id()
         if uid:
             return uid
-    except Exception:
+    except Exception:  # noqa: S110
         pass
     return "local"
 
@@ -179,14 +175,14 @@ class DbCursor:
     def __init__(self, cursor: Any, *, is_postgres: bool) -> None:
         self._cursor = cursor
         self.is_postgres = is_postgres
-        self.lastrowid: Optional[int] = None
+        self.lastrowid: int | None = None
         self.rowcount: int = 0
 
-    def fetchone(self) -> Optional[Any]:
+    def fetchone(self) -> Any | None:
         return self._cursor.fetchone()
 
     def fetchall(self) -> Sequence[Any]:
-        return self._cursor.fetchall()
+        return list(self._cursor.fetchall())
 
 
 class DbConnection:
@@ -197,7 +193,7 @@ class DbConnection:
         connection: Any,
         *,
         is_postgres: bool,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
     ) -> None:
         self._connection = connection
         self.is_postgres = is_postgres
@@ -229,7 +225,7 @@ class DbConnection:
 
 
 @contextmanager
-def open_app_db(db_path: Optional[Path] = None) -> Iterator[DbConnection]:
+def open_app_db(db_path: Path | None = None) -> Iterator[DbConnection]:
     """Users + access_requests database."""
     if use_cloud_sql():
         ensure_schema()
@@ -255,9 +251,9 @@ def open_app_db(db_path: Optional[Path] = None) -> Iterator[DbConnection]:
 
 @contextmanager
 def open_portfolio_db(
-    db_path: Optional[Path] = None,
+    db_path: Path | None = None,
     *,
-    user_id: Optional[str] = None,
+    user_id: str | None = None,
 ) -> Iterator[DbConnection]:
     """Per-user portfolio tables."""
     if use_cloud_sql():
@@ -309,7 +305,7 @@ def migrate_portfolio_user_id(old_user_id: str, new_user_id: str) -> bool:
     with get_connection() as conn:
         for table in tables:
             cur = conn.execute(
-                f"UPDATE {table} SET user_id = %s WHERE user_id = %s",
+                f"UPDATE {table} SET user_id = %s WHERE user_id = %s",  # noqa: S608
                 (new_user_id, old_user_id),
             )
             if cur.rowcount:
@@ -317,7 +313,7 @@ def migrate_portfolio_user_id(old_user_id: str, new_user_id: str) -> bool:
     return moved
 
 
-def holding_count_for_user(user_id: Optional[str] = None) -> int:
+def holding_count_for_user(user_id: str | None = None) -> int:
     uid = user_id or portfolio_user_id()
     if use_cloud_sql():
         ensure_schema()
@@ -334,4 +330,3 @@ def holding_count_for_user(user_id: Optional[str] = None) -> int:
     from utils.portfolio_db import holding_count
 
     return holding_count(db_path)
-

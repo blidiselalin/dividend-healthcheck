@@ -1,15 +1,15 @@
 """Tests for database-first yield channel readiness."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 from datetime import date, timedelta
+from unittest.mock import patch
 
 import pandas as pd
-from unittest.mock import patch
 
 from data_ingestion.models import DividendRecord, PriceHistory, StockDocument
 from utils.yield_channel_library import (
-    CHART_MIN_UNIQUE_PRICE_DAYS,
     assess_yield_channel_readiness,
     format_history_reload_guidance,
 )
@@ -29,12 +29,11 @@ def _good_prices(n: int = 300) -> list:
     ]
 
 
-def test_readiness_chart_ready_with_trustworthy_prices():
+def test_readiness_chart_ready_with_trustworthy_prices() -> None:
     doc = StockDocument(symbol="INTU", name="Intuit")
     doc.price_history = _good_prices()
     doc.dividend_history = [
-        DividendRecord(ex_date=date(2020, 2, 15), payment_date=None, amount=1.0)
-        for _ in range(8)
+        DividendRecord(ex_date=date(2020, 2, 15), payment_date=None, amount=1.0) for _ in range(8)
     ]
 
     with patch("services.shared_market_db.get_document", return_value=None):
@@ -44,7 +43,7 @@ def test_readiness_chart_ready_with_trustworthy_prices():
     assert readiness.dividend_payments == 8
 
 
-def test_readiness_detects_duplicate_price_rows():
+def test_readiness_detects_duplicate_price_rows() -> None:
     doc = StockDocument(symbol="INTU", name="Intuit")
     doc.price_history = [
         PriceHistory(
@@ -57,8 +56,7 @@ def test_readiness_detects_duplicate_price_rows():
         )
     ] * 200
     doc.dividend_history = [
-        DividendRecord(ex_date=date(2020, 2, 15), payment_date=None, amount=1.0)
-        for _ in range(8)
+        DividendRecord(ex_date=date(2020, 2, 15), payment_date=None, amount=1.0) for _ in range(8)
     ]
 
     with patch("services.shared_market_db.get_document", return_value=None):
@@ -67,11 +65,15 @@ def test_readiness_detects_duplicate_price_rows():
     assert readiness.needs_history_backfill is True
 
 
-def test_reload_guidance_mentions_backfill_when_prices_missing():
+def test_reload_guidance_mentions_backfill_when_prices_missing() -> None:
     doc = StockDocument(symbol="INTU", name="Intuit")
     doc.price_history = []
     doc.dividend_history = [
-        DividendRecord(ex_date=date(2020, 2, 15) + timedelta(days=90 * i), payment_date=None, amount=1.0)
+        DividendRecord(
+            ex_date=date(2020, 2, 15) + timedelta(days=90 * i),
+            payment_date=None,
+            amount=1.0,
+        )
         for i in range(8)
     ]
     with patch("services.shared_market_db.get_document", return_value=None):
@@ -81,13 +83,13 @@ def test_reload_guidance_mentions_backfill_when_prices_missing():
     assert "Backfill thin history" in guidance
 
 
-def test_prepare_history_frame_handles_empty_input():
+def test_prepare_history_frame_handles_empty_input() -> None:
     from services.yield_channel_chart import YieldChannelService
 
     assert YieldChannelService._prepare_history_frame(pd.DataFrame()).empty
 
 
-def test_prepare_history_frame_handles_missing_close_column():
+def test_prepare_history_frame_handles_missing_close_column() -> None:
     from services.yield_channel_chart import YieldChannelService
 
     frame = pd.DataFrame({"Open": [1.0]}, index=pd.date_range("2020-01-01", periods=1))

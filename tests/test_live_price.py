@@ -1,5 +1,7 @@
 """Tests for live market price overlay on vector-DB snapshots."""
+# ruff: noqa: S101
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from models.stock import StockData
@@ -22,7 +24,7 @@ def _stock(*, price: float = 393.0) -> StockData:
 
 
 @patch("services.live_price.fetch_latest_market_price", return_value=307.07)
-def test_apply_live_price_overrides_stale_snapshot(mock_fetch):
+def test_apply_live_price_overrides_stale_snapshot(mock_fetch: Any) -> None:
     data = _stock(price=393.0)
 
     result = apply_live_price(data)
@@ -33,7 +35,7 @@ def test_apply_live_price_overrides_stale_snapshot(mock_fetch):
 
 
 @patch("services.live_price.fetch_latest_market_price", return_value=None)
-def test_apply_live_price_keeps_cached_when_fetch_fails(mock_fetch):
+def test_apply_live_price_keeps_cached_when_fetch_fails(mock_fetch: Any) -> None:
     data = _stock(price=393.0)
 
     result = apply_live_price(data)
@@ -42,13 +44,13 @@ def test_apply_live_price_keeps_cached_when_fetch_fails(mock_fetch):
     assert "Price: Live" not in (result.data_sources or [])
 
 
-def test_fetch_previous_close_rejects_empty_symbol():
+def test_fetch_previous_close_rejects_empty_symbol() -> None:
     assert fetch_previous_close("") is None
     assert fetch_previous_close("   ") is None
 
 
 @patch("yfinance.Ticker")
-def test_fetch_previous_close_reads_fast_info(mock_ticker_cls):
+def test_fetch_previous_close_reads_fast_info(mock_ticker_cls: Any) -> None:
     fast_info = MagicMock()
     fast_info.get.side_effect = lambda key: 645.0 if key == "previousClose" else None
     mock_ticker_cls.return_value.fast_info = fast_info
@@ -57,7 +59,7 @@ def test_fetch_previous_close_reads_fast_info(mock_ticker_cls):
 
 
 @patch("yfinance.Ticker")
-def test_fetch_previous_close_falls_back_to_history(mock_ticker_cls):
+def test_fetch_previous_close_falls_back_to_history(mock_ticker_cls: Any) -> None:
     import pandas as pd
 
     mock_ticker_cls.return_value.fast_info = None
@@ -69,7 +71,7 @@ def test_fetch_previous_close_falls_back_to_history(mock_ticker_cls):
 
 
 @patch("yfinance.Ticker")
-def test_fetch_latest_market_price_reads_fast_info(mock_ticker_cls):
+def test_fetch_latest_market_price_reads_fast_info(mock_ticker_cls: Any) -> None:
     fast_info = MagicMock()
     fast_info.get.side_effect = lambda key: 307.07 if key == "lastPrice" else None
     mock_ticker_cls.return_value.fast_info = fast_info
@@ -78,8 +80,11 @@ def test_fetch_latest_market_price_reads_fast_info(mock_ticker_cls):
 
 
 @patch("services.stock_analysis_service.load_independent_stock_analysis")
-def test_load_stock_data_delegates_to_independent_analysis(mock_load):
-    from services.stock_analysis_service import load_stock_data, IndependentStockAnalysis
+def test_load_stock_data_delegates_to_independent_analysis(mock_load: Any) -> None:
+    from services.stock_analysis_service import (
+        IndependentStockAnalysis,
+        load_stock_data,
+    )
 
     stale = _stock(price=307.07)
     mock_load.return_value = IndependentStockAnalysis(

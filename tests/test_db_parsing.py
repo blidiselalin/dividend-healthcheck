@@ -1,4 +1,5 @@
 """Unit tests for db.parsing helpers."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 

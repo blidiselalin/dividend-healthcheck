@@ -1,4 +1,5 @@
 """Tests for yearly yield / dividend history tables."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ from utils.yield_history_tables import (
 )
 
 
-def test_estimate_annual_dividend_uses_declared_rate():
+def test_estimate_annual_dividend_uses_declared_rate() -> None:
     doc = type("Doc", (), {"annual_dividend": 6.56, "dividend_rate": None})()
     display, status, ytd = estimate_annual_dividend_for_year(
         2026,
@@ -27,7 +28,7 @@ def test_estimate_annual_dividend_uses_declared_rate():
     assert ytd == 1.64
 
 
-def test_estimate_annual_dividend_uses_prior_year():
+def test_estimate_annual_dividend_uses_prior_year() -> None:
     records = [
         DividendRecord(ex_date=date(2024, 2, 1), payment_date=None, amount=4.0),
         DividendRecord(ex_date=date(2025, 2, 1), payment_date=None, amount=0.5),
@@ -43,7 +44,7 @@ def test_estimate_annual_dividend_uses_prior_year():
     assert "prior year" in status.lower()
 
 
-def test_estimate_annual_dividend_scales_ytd_by_month():
+def test_estimate_annual_dividend_scales_ytd_by_month() -> None:
     display, status, _ = estimate_annual_dividend_for_year(
         2025,
         1.0,
@@ -54,7 +55,7 @@ def test_estimate_annual_dividend_scales_ytd_by_month():
     assert "YTD scaled" in status
 
 
-def test_complete_year_returns_summed_total():
+def test_complete_year_returns_summed_total() -> None:
     display, status, ytd = estimate_annual_dividend_for_year(
         2023,
         1.84,
@@ -66,7 +67,7 @@ def test_complete_year_returns_summed_total():
     assert ytd is None
 
 
-def test_yearly_dividend_per_share_from_library():
+def test_yearly_dividend_per_share_from_library() -> None:
     doc = StockDocument(symbol="KO", name="Coca-Cola", source=DataSource.YAHOO)
     doc.dividend_history = [
         DividendRecord(ex_date=date(2023, 2, 1), payment_date=None, amount=0.46),
@@ -80,7 +81,7 @@ def test_yearly_dividend_per_share_from_library():
     assert table.loc[table["Year"] == "2023", "Dividend / share $"].iloc[0] == 0.92
 
 
-def test_current_year_dividend_is_projected_for_comparison():
+def test_current_year_dividend_is_projected_for_comparison() -> None:
     doc = StockDocument(symbol="ABBV", name="AbbVie", source=DataSource.YAHOO)
     doc.annual_dividend = 6.56
     doc.dividend_history = [
@@ -96,7 +97,7 @@ def test_current_year_dividend_is_projected_for_comparison():
     assert current["Dividend / share $"].iloc[0] == 6.56
 
 
-def test_estimate_annual_dividend_scales_partial_payments():
+def test_estimate_annual_dividend_scales_partial_payments() -> None:
     records = [
         DividendRecord(ex_date=date(2024, 2, 1), payment_date=None, amount=1.0),
         DividendRecord(ex_date=date(2024, 5, 1), payment_date=None, amount=1.0),
@@ -116,12 +117,14 @@ def test_estimate_annual_dividend_scales_partial_payments():
     assert ytd == 1.1
 
 
-def test_yearly_yield_exposure_from_channel():
+def test_yearly_yield_exposure_from_channel() -> None:
+    from typing import ClassVar
+
     class Channel:
-        dates = [date(2023, 6, 1), date(2023, 12, 31), date(2024, 6, 1)]
-        yields = [3.0, 3.2, 3.1]
-        prices = [50.0, 52.0, 54.0]
-        annual_dividends = [1.5, 1.6, 1.7]
+        dates: ClassVar[list[date]] = [date(2023, 6, 1), date(2023, 12, 31), date(2024, 6, 1)]
+        yields: ClassVar[list[float]] = [3.0, 3.2, 3.1]
+        prices: ClassVar[list[float]] = [50.0, 52.0, 54.0]
+        annual_dividends: ClassVar[list[float]] = [1.5, 1.6, 1.7]
 
     table = yearly_yield_exposure_table(Channel(), today=date(2024, 6, 1))
     assert "2023" in list(table["Year"])

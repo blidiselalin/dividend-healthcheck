@@ -1,18 +1,20 @@
 """Tests for holding purchase/dividend drill-down."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 from datetime import date
 
-from data_ingestion.models import DividendRecord
+from data_ingestion.models import DividendRecord, StockDocument
 from services.portfolio_holding_detail_service import (
+    HoldingDividendRow,
     PortfolioHoldingDetailService,
     shares_as_of,
 )
 from services.portfolio_purchase_journal_service import EstimatedPurchaseLot
 
 
-def test_shares_as_of_accumulates_lots():
+def test_shares_as_of_accumulates_lots() -> None:
     lots = [
         EstimatedPurchaseLot(
             symbol="X",
@@ -35,7 +37,7 @@ def test_shares_as_of_accumulates_lots():
     assert shares_as_of(lots, date(2024, 7, 1), fallback_shares=99) == 10.0
 
 
-def test_dividend_cash_uses_shares_at_ex_date():
+def test_dividend_cash_uses_shares_at_ex_date() -> None:
     service = PortfolioHoldingDetailService()
     doc = type("Doc", (), {})()
     doc.dividend_history = [
@@ -62,11 +64,18 @@ def test_dividend_cash_uses_shares_at_ex_date():
     assert rows[0].cash_usd == 10.0
 
 
-def test_dividends_dataframe_passes_tracking_since():
+def test_dividends_dataframe_passes_tracking_since() -> None:
     service = PortfolioHoldingDetailService()
     captured: dict = {}
 
-    def fake_history(symbol, document, *, current_shares, tracking_since, prefer_stored):
+    def fake_history(
+        symbol: str,
+        document: StockDocument | None,
+        *,
+        current_shares: float,
+        tracking_since: date | None,
+        prefer_stored: bool,
+    ) -> list[HoldingDividendRow]:
         captured["tracking_since"] = tracking_since
         captured["prefer_stored"] = prefer_stored
         return []

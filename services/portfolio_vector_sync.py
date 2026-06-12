@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 from collections import Counter
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, cast
 
 from config import DELISTED_SYMBOLS
 from data_ingestion.models import DataSource, StockDocument
@@ -16,7 +16,7 @@ from services.portfolio_context import PortfolioContext, create_portfolio_contex
 logger = logging.getLogger(__name__)
 
 
-def _company_name_for(symbol: str, ctx: PortfolioContext) -> Optional[str]:
+def _company_name_for(symbol: str, ctx: PortfolioContext) -> str | None:
     """Company name from the current user's holdings only."""
     symbol = symbol.upper()
     for holding in ctx.portfolio.list_holdings():
@@ -25,10 +25,10 @@ def _company_name_for(symbol: str, ctx: PortfolioContext) -> Optional[str]:
     return None
 
 
-def collect_portfolio_symbols(ctx: Optional[PortfolioContext] = None) -> Set[str]:
+def collect_portfolio_symbols(ctx: PortfolioContext | None = None) -> set[str]:
     """All tickers from holdings and purchase journal."""
     context = ctx or create_portfolio_context()
-    symbols: Set[str] = set()
+    symbols: set[str] = set()
     for holding in context.portfolio.list_holdings():
         symbols.add(holding.symbol.upper())
     for purchase in context.journal.list_purchases(portfolio_only=False):
@@ -39,9 +39,9 @@ def collect_portfolio_symbols(ctx: Optional[PortfolioContext] = None) -> Set[str
 def apply_portfolio_fields(
     document: StockDocument,
     *,
-    holding: Optional[Any] = None,
+    holding: Any | None = None,
     purchase_count: int = 0,
-    company_name: Optional[str] = None,
+    company_name: str | None = None,
 ) -> StockDocument:
     """Attach portfolio position data to a market library document."""
     document.in_portfolio = True
@@ -65,7 +65,7 @@ def apply_portfolio_fields(
     return document
 
 
-def _purchase_counts(ctx: PortfolioContext) -> Dict[str, int]:
+def _purchase_counts(ctx: PortfolioContext) -> dict[str, int]:
     counts: Counter[str] = Counter()
     for purchase in ctx.journal.list_purchases(portfolio_only=False):
         counts[purchase.symbol.upper()] += 1
@@ -78,10 +78,10 @@ def _fetch_or_create_document(
     ctx: PortfolioContext,
     *,
     enrich_missing: bool,
-) -> Optional[StockDocument]:
+) -> StockDocument | None:
     document = store.get_by_symbol(symbol)
     if document is not None:
-        return document
+        return cast(StockDocument, document)
 
     if not enrich_missing:
         return StockDocument(
@@ -95,7 +95,7 @@ def _fetch_or_create_document(
 
         document = create_stock_enricher(request_delay=0.35).fetch_document(symbol)
         if document is not None:
-            return document
+            return cast(StockDocument, document)
     except Exception as exc:
         logger.warning("Market data enrich failed for %s: %s", symbol, exc)
 
@@ -109,9 +109,9 @@ def _fetch_or_create_document(
 def sync_portfolio_to_vector_db(
     *,
     enrich_missing: bool = True,
-    symbols: Optional[List[str]] = None,
-    db_path: Optional[Any] = None,
-) -> Dict[str, Any]:
+    symbols: list[str] | None = None,
+    db_path: Any | None = None,
+) -> dict[str, Any]:
     """
     Link portfolio positions into the market library and create missing stock documents.
 
@@ -126,7 +126,7 @@ def sync_portfolio_to_vector_db(
         for symbol in (symbols or collect_portfolio_symbols(ctx))
         if symbol.upper() not in DELISTED_SYMBOLS
     )
-    stats: Dict[str, Any] = {
+    stats: dict[str, Any] = {
         "symbols": target_symbols,
         "linked": 0,
         "created": 0,
@@ -144,19 +144,15 @@ def sync_portfolio_to_vector_db(
         holding.symbol.upper(): holding for holding in ctx.portfolio.list_holdings()
     }
     purchases = _purchase_counts(ctx)
-    to_store: List[StockDocument] = []
+    to_store: list[StockDocument] = []
     existing_ids = {
-        document.symbol.upper()
-        for document in store.get_all_documents()
-        if document.symbol
+        document.symbol.upper() for document in store.get_all_documents() if document.symbol
     }
 
     for symbol in target_symbols:
         try:
             existed = symbol in existing_ids
-            document = _fetch_or_create_document(
-                symbol, store, ctx, enrich_missing=enrich_missing
-            )
+            document = _fetch_or_create_document(symbol, store, ctx, enrich_missing=enrich_missing)
             if document is None:
                 stats["still_missing"].append(symbol)
                 continue
@@ -184,6 +180,6 @@ def sync_portfolio_to_vector_db(
     return stats
 
 
-def link_portfolio_in_vector_db() -> Dict[str, Any]:
+def link_portfolio_in_vector_db() -> dict[str, Any]:
     """Fast path: update portfolio metadata only (no yfinance fetch)."""
     return sync_portfolio_to_vector_db(enrich_missing=False)

@@ -4,11 +4,10 @@ Persistent storage for dividend cash received per portfolio holding.
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any
 
 from config import DATA_DIR
 from db.connection import open_portfolio_db, use_cloud_sql
@@ -32,19 +31,19 @@ class DividendReceipt:
     per_share_usd: float
     shares_held: float
     gross_usd: float
-    id: Optional[int] = None
+    id: int | None = None
 
 
 class DividendReceiptStore:
     """Record and query dividend payments received for portfolio holdings."""
 
-    def __init__(self, db_path: Optional[Path] = None) -> None:
+    def __init__(self, db_path: Path | None = None) -> None:
         self.db_path = Path(db_path or _default_db_path())
         if not use_cloud_sql():
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
 
-    def _connect(self):
+    def _connect(self) -> Any:
         return open_portfolio_db(self.db_path)
 
     def _ensure_schema(self) -> None:
@@ -67,13 +66,10 @@ class DividendReceiptStore:
                 """
             )
             columns = {
-                row[1]
-                for row in connection.execute("PRAGMA table_info(holdings)").fetchall()
+                row[1] for row in connection.execute("PRAGMA table_info(holdings)").fetchall()
             }
             if "dividend_tracking_since" not in columns:
-                connection.execute(
-                    "ALTER TABLE holdings ADD COLUMN dividend_tracking_since TEXT"
-                )
+                connection.execute("ALTER TABLE holdings ADD COLUMN dividend_tracking_since TEXT")
 
     def upsert_receipt(
         self,
@@ -127,7 +123,7 @@ class DividendReceiptStore:
             )
             return int(getattr(cursor, "rowcount", 0) or 0) > 0
 
-    def list_for_symbol(self, symbol: str) -> List[DividendReceipt]:
+    def list_for_symbol(self, symbol: str) -> list[DividendReceipt]:
         symbol = symbol.strip().upper()
         with self._connect() as connection:
             if connection.is_postgres:
@@ -187,7 +183,7 @@ class DividendReceiptStore:
                 ).fetchone()
         return round(float(row["total"]), 2) if row else 0.0
 
-    def monthly_gross_totals(self) -> Dict[Tuple[int, int], float]:
+    def monthly_gross_totals(self) -> dict[tuple[int, int], float]:
         """Aggregate gross cash by (year, month) of payment date."""
         with self._connect() as connection:
             if connection.is_postgres:
@@ -217,7 +213,7 @@ class DividendReceiptStore:
                     """
                 ).fetchall()
 
-        totals: Dict[Tuple[int, int], float] = {}
+        totals: dict[tuple[int, int], float] = {}
         for row in rows:
             totals[(int(row["year"]), int(row["month"]))] = round(float(row["gross"]), 2)
         return totals

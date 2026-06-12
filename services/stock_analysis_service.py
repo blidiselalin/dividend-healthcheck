@@ -9,17 +9,16 @@ yield-channel data for the analysis UI.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
+from data_ingestion.models import StockDocument
+from models.stock import StockData
+from services.yield_channel_chart import YieldChannelData
 from utils.converters import document_to_stock_data
 from utils.logging_config import get_logger
 from utils.stock_history_enrichment import enrich_stock_data_from_history
 
 logger = get_logger("dividendscope.stock_analysis")
-
-from data_ingestion.models import StockDocument
-from models.stock import StockData
-from services.yield_channel_chart import YieldChannelData
 
 
 @dataclass(frozen=True)
@@ -27,22 +26,22 @@ class IndependentStockAnalysis:
     """Payload for single-stock / S&P research views."""
 
     symbol: str
-    stock_data: "StockData"
-    document: Optional["StockDocument"]
-    yield_channel: Optional["YieldChannelData"]
+    stock_data: StockData
+    document: StockDocument | None
+    yield_channel: YieldChannelData | None
     price_history_points: int
     dividend_history_points: int
     dividend_yield_source: str
-    history_summary: Dict[str, Any]
+    history_summary: dict[str, Any]
 
 
-def _history_counts(doc: Optional["StockDocument"]) -> tuple[int, int]:
+def _history_counts(doc: StockDocument | None) -> tuple[int, int]:
     if doc is None:
         return 0, 0
     return len(doc.price_history or []), len(doc.dividend_history or [])
 
 
-def load_library_document(symbol: str) -> Optional["StockDocument"]:
+def load_library_document(symbol: str) -> StockDocument | None:
     """Load one symbol from the shared market library."""
     try:
         from services.shared_market_db import get_document
@@ -59,7 +58,7 @@ def load_stock_data(
     include_yield_channel: bool = True,
     apply_live_price: bool = True,
     fetch_realtime_prices: bool = False,
-) -> Optional["StockData"]:
+) -> StockData | None:
     """Return stock data for one ticker (library-first, optional API fallback)."""
     try:
         analysis = load_independent_stock_analysis(
@@ -76,17 +75,17 @@ def load_stock_data(
 
 def load_portfolio_statistics_stock(
     symbol: str,
-    document: Optional["StockDocument"] = None,
-) -> Optional["StockData"]:
+    document: StockDocument | None = None,
+) -> StockData | None:
     """Load valuation stats for portfolio rows (no live price overlay)."""
     if document is not None:
         return stock_data_from_document(document, apply_live_price=False)
 
     try:
-        from services.enhanced_stock_service import get_enhanced_stock_service
+        from services.enhanced_stock_service import EnhancedStockService
 
-        return get_enhanced_stock_service(fetch_realtime_prices=False).fetch(symbol)
-    except Exception:
+        return EnhancedStockService(fetch_realtime_prices=False).fetch(symbol)
+    except Exception:  # noqa: S110
         pass
 
     try:
@@ -98,18 +97,18 @@ def load_portfolio_statistics_stock(
 
 
 def stock_data_from_document(
-    document: "StockDocument",
+    document: StockDocument,
     *,
     apply_live_price: bool = True,
-) -> "StockData":
+) -> StockData:
     """Convert a library document to UI stock data with history-based dividend fields."""
     stock = document_to_stock_data(document)
     stock, yield_source = enrich_stock_data_from_history(stock, document)
 
     if apply_live_price:
-        from services.live_price import apply_live_price
+        from services.live_price import apply_live_price as get_live_price
 
-        stock = apply_live_price(stock)
+        stock = get_live_price(stock)
         stock, yield_source = enrich_stock_data_from_history(stock, document)
 
     stock._yield_source = yield_source  # type: ignore[attr-defined]
@@ -120,9 +119,9 @@ def load_yield_channel_data(
     symbol: str,
     *,
     years: int = 10,
-    document: Optional["StockDocument"] = None,
+    document: StockDocument | None = None,
     library_only: bool = True,
-) -> Optional["YieldChannelData"]:
+) -> YieldChannelData | None:
     """Build a yield channel from the shared market library (database-first)."""
     from utils.library_document import resolve_library_document
 
@@ -137,10 +136,11 @@ def load_yield_channel_data(
         return None
 
     try:
-        from services.yield_channel_chart import _default_yield_channel_service
+        from services.yield_channel_chart import YieldChannelService
+
+        service = YieldChannelService()
         from utils.yield_channel_history import plan_yield_channel_attempts
 
-        service = _default_yield_channel_service()
         for attempt_years, min_prices, min_yields in plan_yield_channel_attempts(
             doc,
             requested_years=years,
@@ -166,10 +166,10 @@ def ensure_yield_channel_data(
     symbol: str,
     *,
     years: int = 10,
-    document: Optional["StockDocument"] = None,
+    document: StockDocument | None = None,
     allow_backfill: bool = False,
     library_only: bool = True,
-) -> Optional["YieldChannelData"]:
+) -> YieldChannelData | None:
     """
     Load yield-channel data from library tables / stock_documents.
 
@@ -219,8 +219,8 @@ def load_independent_stock_analysis(
     apply_live_price: bool = True,
     include_yield_channel: bool = True,
     fetch_realtime_prices: bool = False,
-    document: Optional["StockDocument"] = None,
-) -> Optional[IndependentStockAnalysis]:
+    document: StockDocument | None = None,
+) -> IndependentStockAnalysis | None:
     """
     Build a complete analysis bundle for one ticker (portfolio holding or S&P research).
 
@@ -236,19 +236,18 @@ def load_independent_stock_analysis(
         stock = stock_data_from_document(doc, apply_live_price=apply_live_price)
         yield_source = getattr(stock, "_yield_source", "history")
     else:
-        stock = _fallback_stock_data(
+        fallback_stock = _fallback_stock_data(
             sym,
             apply_live_price=apply_live_price,
             fetch_realtime_prices=fetch_realtime_prices,
         )
-        if stock is None:
+        if fallback_stock is None:
             return None
+        stock = fallback_stock
         yield_source = "api"
 
     channel = (
-        ensure_yield_channel_data(sym, years=years, document=doc)
-        if include_yield_channel
-        else None
+        ensure_yield_channel_data(sym, years=years, document=doc) if include_yield_channel else None
     )
     if channel is not None and (stock.dividend_yield_pct is None or yield_source == "history"):
         stock.dividend_yield_pct = channel.current_yield
@@ -282,13 +281,13 @@ def _fallback_stock_data(
     *,
     apply_live_price: bool,
     fetch_realtime_prices: bool = False,
-) -> Optional["StockData"]:
+) -> StockData | None:
     """API fallback when the symbol is not in stock_documents."""
     stock = None
     try:
-        from services.enhanced_stock_service import get_enhanced_stock_service
+        from services.enhanced_stock_service import EnhancedStockService
 
-        stock = get_enhanced_stock_service(
+        stock = EnhancedStockService(
             fetch_realtime_prices=fetch_realtime_prices,
         ).fetch(symbol)
     except Exception:
@@ -303,7 +302,7 @@ def _fallback_stock_data(
     if stock is None:
         return None
     if apply_live_price:
-        from services.live_price import apply_live_price
+        from services.live_price import apply_live_price as get_live_price
 
-        stock = apply_live_price(stock)
+        stock = get_live_price(stock)
     return stock

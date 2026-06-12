@@ -1,4 +1,5 @@
 """Tests for admin console scheduling and coverage helpers."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -9,7 +10,7 @@ import pytest
 from services.sp500_peers_service import top_dividend_coverage_stats
 
 
-def test_top_dividend_coverage_stats_counts_universe(monkeypatch):
+def test_top_dividend_coverage_stats_counts_universe(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "data_ingestion.dividend_universe.get_top_dividend_symbols",
         lambda: ["KO", "PEP", "JNJ"],
@@ -24,14 +25,14 @@ def test_top_dividend_coverage_stats_counts_universe(monkeypatch):
     assert stats["pct_covered"] == pytest.approx(66.67, rel=0.1)
 
 
-def test_schedule_ensure_sp500_requires_admin(monkeypatch):
+def test_schedule_ensure_sp500_requires_admin(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("auth.user_context.is_app_admin", lambda: False)
     from services.deferred_startup import schedule_ensure_sp500
 
     assert schedule_ensure_sp500() is None
 
 
-def test_schedule_ensure_top_dividend_starts_job(monkeypatch):
+def test_schedule_ensure_top_dividend_starts_job(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("auth.user_context.is_app_admin", lambda: True)
     with patch("services.deferred_startup.start_job", return_value="job-1") as start:
         from services.deferred_startup import schedule_ensure_top_dividend
@@ -41,7 +42,7 @@ def test_schedule_ensure_top_dividend_starts_job(monkeypatch):
         assert start.call_args.kwargs.get("admin_only") is True
 
 
-def test_schedule_ensure_sp500_starts_job(monkeypatch):
+def test_schedule_ensure_sp500_starts_job(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("auth.user_context.is_app_admin", lambda: True)
     with patch("services.deferred_startup.start_job", return_value="job-2") as start:
         from services.deferred_startup import schedule_ensure_sp500
@@ -52,14 +53,14 @@ def test_schedule_ensure_sp500_starts_job(monkeypatch):
         assert start.call_args[0][0] == "ensure_sp500"
 
 
-def test_schedule_price_refresh_requires_admin(monkeypatch):
+def test_schedule_price_refresh_requires_admin(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("auth.user_context.is_app_admin", lambda: False)
     from services.deferred_startup import schedule_price_refresh
 
     assert schedule_price_refresh() is None
 
 
-def test_schedule_price_refresh_starts_job(monkeypatch):
+def test_schedule_price_refresh_starts_job(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("auth.user_context.is_app_admin", lambda: True)
     with patch("services.deferred_startup.start_job", return_value="job-3") as start:
         from services.deferred_startup import schedule_price_refresh
@@ -70,7 +71,7 @@ def test_schedule_price_refresh_starts_job(monkeypatch):
         assert start.call_args.kwargs.get("admin_only") is True
 
 
-def test_admin_console_session_helpers(monkeypatch):
+def test_admin_console_session_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
     session: dict = {}
     monkeypatch.setattr("streamlit.session_state", session, raising=False)
 
@@ -86,7 +87,9 @@ def test_admin_console_session_helpers(monkeypatch):
     assert is_admin_console_active() is False
 
 
-def test_navigate_to_portfolio_home_clears_admin_and_holding(monkeypatch):
+def test_navigate_to_portfolio_home_clears_admin_and_holding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     session = {
         "admin_console_active": True,
         "portfolio_view_mode": "holding",

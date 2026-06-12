@@ -1,10 +1,13 @@
 """Tests for legacy ChromaDB → PostgreSQL market library import."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from data_ingestion.models import StockDocument
 from data_ingestion.vector_store import load_legacy_vectordb_documents
@@ -16,7 +19,7 @@ from services.market_library_migration import (
 )
 
 
-def test_load_legacy_vectordb_documents_from_fallback(tmp_path: Path):
+def test_load_legacy_vectordb_documents_from_fallback(tmp_path: Path) -> None:
     vdb = tmp_path / "vectordb"
     vdb.mkdir()
     doc = StockDocument(symbol="KO", name="Coca-Cola")
@@ -28,11 +31,11 @@ def test_load_legacy_vectordb_documents_from_fallback(tmp_path: Path):
     assert docs[0].symbol == "KO"
 
 
-def test_load_legacy_vectordb_documents_missing_dir(tmp_path: Path):
+def test_load_legacy_vectordb_documents_missing_dir(tmp_path: Path) -> None:
     assert load_legacy_vectordb_documents(tmp_path / "missing") == []
 
 
-def test_load_legacy_vectordb_documents_empty_chroma_scaffold(tmp_path: Path):
+def test_load_legacy_vectordb_documents_empty_chroma_scaffold(tmp_path: Path) -> None:
     import chromadb
     from chromadb.config import Settings
 
@@ -51,14 +54,16 @@ def _doc(symbol: str, prices: int, divs: int) -> StockDocument:
     return doc
 
 
-def test_pick_richer_document_prefers_more_history():
+def test_pick_richer_document_prefers_more_history() -> None:
     thin = _doc("AAPL", prices=10, divs=1)
     rich = _doc("AAPL", prices=300, divs=8)
     assert pick_richer_document(thin, rich) is rich
     assert pick_richer_document(rich, thin) is rich
 
 
-def test_should_auto_import_when_postgres_empty(tmp_path: Path, monkeypatch):
+def test_should_auto_import_when_postgres_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     data_dir = tmp_path / "data"
     vdb = data_dir / "vectordb"
     vdb.mkdir(parents=True)
@@ -81,12 +86,12 @@ def test_should_auto_import_when_postgres_empty(tmp_path: Path, monkeypatch):
         assert should_auto_import(data_dir) is True
 
 
-def test_should_auto_import_skips_when_marker_present(tmp_path: Path):
+def test_should_auto_import_skips_when_marker_present(tmp_path: Path) -> None:
     write_import_marker(tmp_path, {"imported": 1})
     assert should_auto_import(tmp_path) is False
 
 
-def test_import_legacy_market_library_writes_postgres(tmp_path: Path):
+def test_import_legacy_market_library_writes_postgres(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     vdb = data_dir / "vectordb"
@@ -96,9 +101,11 @@ def test_import_legacy_market_library_writes_postgres(tmp_path: Path):
     (vdb / "fallback_store.json").write_text(json.dumps(payload))
 
     mock_pg = patch("db.postgres_market_store.PostgresMarketStore")
-    with patch("db.connection.use_cloud_sql", return_value=True), patch(
-        "db.connection.ensure_schema"
-    ), mock_pg as store_cls:
+    with (
+        patch("db.connection.use_cloud_sql", return_value=True),
+        patch("db.connection.ensure_schema"),
+        mock_pg as store_cls,
+    ):
         instance = store_cls.return_value
         instance.get_all_documents.return_value = []
         instance.count.return_value = 0

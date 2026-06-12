@@ -5,25 +5,27 @@ This module provides functionality for comparing stocks within sectors,
 including Dividend Kings, Aristocrats, and external competitors.
 
 Implements the "Dividends Don't Lie" philosophy (Geraldine Weiss, 1988):
-A company's dividend policy is a more honest indicator of its financial 
+A company's dividend policy is a more honest indicator of its financial
 health than reported earnings. High-quality dividend payers with consistent
 histories are prioritized in comparisons.
 """
 
+from __future__ import annotations
+
 import time
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any, ClassVar
 
 import pandas as pd
 
-from config import DIVIDEND_KINGS, DIVIDEND_ARISTOCRATS, ALL_DIVIDEND_STOCKS, API_DELAY_SECONDS
+from config import ALL_DIVIDEND_STOCKS, API_DELAY_SECONDS, DIVIDEND_KINGS
 from models.stock import StockData
-from services.stock_service import StockService
 from services.scoring import ScoringService
+from services.stock_service import StockService
 
 # Top PUBLIC dividend-paying stocks by sector for external reference
 # These are well-known dividend payers NOT in the config list for comparison
 # Prioritizes stocks with long dividend histories (Dividends Don't Lie philosophy)
-SECTOR_REFERENCE_STOCKS: Dict[str, List[str]] = {
+SECTOR_REFERENCE_STOCKS: dict[str, list[str]] = {
     "Technology": ["AAPL", "MSFT", "AVGO", "TXN", "INTC", "HPQ", "KLAC", "LRCX"],
     "Healthcare": ["PFE", "MRK", "LLY", "AMGN", "GILD", "CVS", "UNH", "AZN"],
     "Consumer Staples": ["WMT", "COST", "PG", "CL", "GIS", "K", "SJM", "CAG"],
@@ -45,31 +47,31 @@ SECTOR_REFERENCE_STOCKS: Dict[str, List[str]] = {
 
 class SectorService:
     """Service for sector-based stock analysis and comparison."""
-    
-    _sector_cache: Dict[str, List[Dict[str, Any]]] = {}
-    _external_cache: Dict[str, List[Dict[str, Any]]] = {}
-    
+
+    _sector_cache: ClassVar[dict[str, list[dict[str, Any]]]] = {}
+    _external_cache: ClassVar[dict[str, list[dict[str, Any]]]] = {}
+
     @classmethod
     def clear_cache(cls) -> None:
         """Clear all cached sector data."""
         cls._sector_cache = {}
         cls._external_cache = {}
-    
+
     @staticmethod
     def _build_peer_dict(
         symbol: str,
         name: str,
         score: int,
-        dividend_yield_pct: Optional[float] = None,
-        trailing_pe: Optional[float] = None,
-        payout_ratio_pct: Optional[float] = None,
-        roe_pct: Optional[float] = None,
-        debt_to_equity: Optional[float] = None,
-        div_streak: Optional[int] = None,
-        div_cagr: Optional[float] = None,
+        dividend_yield_pct: float | None = None,
+        trailing_pe: float | None = None,
+        payout_ratio_pct: float | None = None,
+        roe_pct: float | None = None,
+        debt_to_equity: float | None = None,
+        div_streak: int | None = None,
+        div_cagr: float | None = None,
         dividend_tier: str = "Unknown",
         is_dividend_king: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build standardized peer comparison dictionary."""
         return {
             "symbol": symbol,
@@ -85,20 +87,20 @@ class SectorService:
             "dividend_tier": dividend_tier,
             "is_dividend_king": is_dividend_king,
         }
-    
+
     @classmethod
     def _peer_from_stock_data(
         cls,
         data: StockData,
         score: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build peer dictionary from StockData object."""
         div_streak = None
         div_cagr = None
         if data.dividend_history:
             div_streak = data.dividend_history.consecutive_years
             div_cagr = data.dividend_history.cagr_5y
-        
+
         return cls._build_peer_dict(
             symbol=data.symbol,
             name=data.name,
@@ -113,68 +115,68 @@ class SectorService:
             dividend_tier=data.dividend_tier,
             is_dividend_king=data.is_dividend_king,
         )
-    
+
     @classmethod
     def get_sector_stocks(
         cls,
         sector: str,
-        stock_list: Optional[List[str]] = None,
+        stock_list: list[str] | None = None,
         use_cache: bool = True,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get all dividend stocks in a sector, sorted by score.
-        
+
         Args:
             sector: Sector name to filter by.
             stock_list: List of symbols to search (defaults to ALL_DIVIDEND_STOCKS).
             use_cache: Whether to use cached data.
-            
+
         Returns:
             List of peer dictionaries sorted by score (descending).
         """
         stock_list = stock_list or ALL_DIVIDEND_STOCKS
         cache_key = f"{sector}_{','.join(sorted(stock_list[:5]))}"
-        
+
         if use_cache and cache_key in cls._sector_cache:
             return cls._sector_cache[cache_key]
-        
-        sector_stocks: List[Dict[str, Any]] = []
-        
+
+        sector_stocks: list[dict[str, Any]] = []
+
         for symbol in stock_list:
             data = StockService.fetch(symbol)
             if data and data.sector == sector:
                 score = ScoringService.calculate_score(data)
                 sector_stocks.append(cls._peer_from_stock_data(data, score))
             time.sleep(API_DELAY_SECONDS)
-        
+
         sector_stocks.sort(key=lambda x: x["score"], reverse=True)
         cls._sector_cache[cache_key] = sector_stocks
         return sector_stocks
-    
+
     @classmethod
-    def get_external_competitors(
+    def get_external_competitors(  # noqa: C901
         cls,
         sector: str,
-        exclude_symbols: List[str],
+        exclude_symbols: list[str],
         max_count: int = 3,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Fetch top external dividend-paying reference stocks from sector.
-        
+
         Implements "Dividends Don't Lie" philosophy by prioritizing stocks with:
         - Consistent dividend payment history
         - Reasonable yield (not suspiciously high)
         - Strong dividend coverage
-        
+
         Args:
             sector: Sector name.
             exclude_symbols: Symbols to exclude from results.
             max_count: Maximum number of reference stocks to return.
-            
+
         Returns:
             List of peer dictionaries sorted by dividend quality score.
         """
         if not sector or not sector.strip():
             return []
-        
+
         cache_key = f"ext_{sector}_{len(exclude_symbols)}"
         if cache_key in cls._external_cache:
             return cls._external_cache[cache_key][:max_count]
@@ -193,90 +195,87 @@ class SectorService:
                     peer.setdefault("yield_quality", peer.get("interest", 0))
                 cls._external_cache[cache_key] = sp500_peers
                 return sp500_peers[:max_count]
-        except Exception:
+        except Exception:  # noqa: S110
             pass
-        
+
         # Fallback: hardcoded reference list + live API
         candidates = []
         sector_parts = sector.split()
         sector_variations = [sector, sector.replace(" ", "")]
         if sector_parts:
             sector_variations.append(sector_parts[0])
-        
+
         for sector_key in sector_variations:
             candidates = SECTOR_REFERENCE_STOCKS.get(sector_key, [])
             if candidates:
                 break
-        
+
         if not candidates:
             return []
-        
+
         # Exclude symbols already in our config or exclude list
         all_config_stocks = set(ALL_DIVIDEND_STOCKS)
         exclude_set = set(exclude_symbols) | all_config_stocks
         candidates = [s for s in candidates if s not in exclude_set]
-        
-        external_stocks: List[Dict[str, Any]] = []
+
+        external_stocks: list[dict[str, Any]] = []
         for symbol in candidates:
             if len(external_stocks) >= max_count + 2:
                 break
-            
+
             try:
                 data = StockService.fetch(symbol)
                 if not data:
                     continue
-                    
+
                 # Apply "Dividends Don't Lie" filters:
                 # 1. Must pay a dividend
                 if not data.dividend_yield_pct or data.dividend_yield_pct <= 0:
                     continue
-                
+
                 # 2. Yield shouldn't be suspiciously high (possible distress)
                 if data.dividend_yield_pct > 10:
                     continue
-                
+
                 # 3. Should have some dividend history
-                has_history = (
-                    data.dividend_history and 
-                    data.dividend_history.consecutive_years >= 3
-                )
-                
+                has_history = data.dividend_history and data.dividend_history.consecutive_years >= 3
+
                 score = ScoringService.calculate_score(data)
-                
+
                 stock_info = cls._peer_from_stock_data(data, score)
                 stock_info["has_history"] = has_history
                 stock_info["yield_quality"] = cls._assess_yield_quality(data)
-                
+
                 external_stocks.append(stock_info)
-                
-            except Exception:
+
+            except Exception:  # noqa: S110
                 pass
-            
+
             time.sleep(API_DELAY_SECONDS)
-        
+
         # Sort by dividend quality, not just score
         # Prioritize: has history > yield quality > score
         external_stocks.sort(
             key=lambda x: (
                 x.get("has_history", False),
                 x.get("yield_quality", 0),
-                x["score"]
+                x["score"],
             ),
-            reverse=True
+            reverse=True,
         )
-        
+
         cls._external_cache[cache_key] = external_stocks
         return external_stocks[:max_count]
-    
+
     @staticmethod
-    def _assess_yield_quality(data: StockData) -> float:
+    def _assess_yield_quality(data: StockData) -> float:  # noqa: C901
         """
         Assess dividend yield quality based on "Dividends Don't Lie" principles.
-        
+
         Returns score 0-100 where higher = more reliable yield signal.
         """
         score = 50.0  # Base score
-        
+
         # Positive factors
         if data.dividend_history:
             streak = data.dividend_history.consecutive_years
@@ -286,11 +285,11 @@ class SectorService:
                 score += 15
             elif streak >= 5:
                 score += 10
-            
+
             # Growing dividends are a strong signal
             if data.dividend_history.cagr_5y and data.dividend_history.cagr_5y > 5:
                 score += 10
-        
+
         # Payout ratio - sustainable payouts are key
         if data.payout_ratio_pct:
             if 30 <= data.payout_ratio_pct <= 60:
@@ -299,13 +298,13 @@ class SectorService:
                 score += 10  # Conservative
             elif data.payout_ratio_pct > 80:
                 score -= 10  # Risky
-        
+
         # Negative factors (red flags)
         if data.dividend_yield_pct and data.dividend_yield_pct > 7:
             score -= 15  # Unusually high yield may signal trouble
-        
+
         return max(0, min(100, score))
-    
+
     @classmethod
     def get_top_sector_peers(
         cls,
@@ -313,96 +312,98 @@ class SectorService:
         current_score: int,
         include_external: bool = True,
         use_cache: bool = True,
-    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Get sector peers for comparison.
-        
+
         Args:
             current_stock: Stock being analyzed.
             current_score: Score of current stock.
             include_external: Whether to include external competitors.
             use_cache: Whether to use cached sector data.
-            
+
         Returns:
             Tuple of (dividend_stocks_in_sector, external_competitors).
         """
         if current_stock.sector == "N/A":
             return [], []
-        
+
         sector_stocks = cls.get_sector_stocks(current_stock.sector, use_cache=use_cache)
-        
+
         # Add current stock if not in list
         if not any(s["symbol"] == current_stock.symbol for s in sector_stocks):
             sector_stocks = sector_stocks.copy()
             sector_stocks.append(cls._peer_from_stock_data(current_stock, current_score))
             sector_stocks.sort(key=lambda x: x["score"], reverse=True)
-        
-        external: List[Dict[str, Any]] = []
+
+        external: list[dict[str, Any]] = []
         if include_external:
             existing_symbols = [s["symbol"] for s in sector_stocks]
             external = cls.get_external_competitors(
                 current_stock.sector, existing_symbols, max_count=3
             )
-        
+
         return sector_stocks, external
-    
+
     @classmethod
     def get_quick_sector_peers(
         cls,
         current_stock: StockData,
-        current_score: int,
+        _current_score: int,
         cached_df: pd.DataFrame,
         include_external: bool = True,
-    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Get sector peers from cached DataFrame (no API calls for main list).
-        
+
         Args:
             current_stock: Stock being analyzed.
             current_score: Score of current stock.
             cached_df: DataFrame with pre-fetched stock data.
             include_external: Whether to include external competitors.
-            
+
         Returns:
             Tuple of (dividend_stocks_in_sector, external_competitors).
         """
         if cached_df is None or current_stock.sector == "N/A":
             return [], []
-        
+
         sector_df = cached_df[cached_df["Sector"] == current_stock.sector]
-        
-        sector_stocks: List[Dict[str, Any]] = []
+
+        sector_stocks: list[dict[str, Any]] = []
         for _, row in sector_df.iterrows():
             stock_data = row.get("_data")
             if stock_data is None:
                 continue
-            
+
             div_streak = None
             div_cagr = None
             if hasattr(stock_data, "dividend_history") and stock_data.dividend_history:
                 div_streak = stock_data.dividend_history.consecutive_years
                 div_cagr = stock_data.dividend_history.cagr_5y
-            
-            sector_stocks.append(cls._build_peer_dict(
-                symbol=row["Symbol"],
-                name=row["Company"],
-                score=row["Score"],
-                dividend_yield_pct=row.get("Yield %"),
-                trailing_pe=row.get("P/E"),
-                payout_ratio_pct=row.get("Payout %"),
-                roe_pct=getattr(stock_data, "roe_pct", None),
-                debt_to_equity=getattr(stock_data, "debt_to_equity", None),
-                div_streak=div_streak,
-                div_cagr=div_cagr,
-                dividend_tier=getattr(stock_data, "dividend_tier", "Unknown"),
-                is_dividend_king=row["Symbol"] in DIVIDEND_KINGS,
-            ))
-        
+
+            sector_stocks.append(
+                cls._build_peer_dict(
+                    symbol=row["Symbol"],
+                    name=row["Company"],
+                    score=row["Score"],
+                    dividend_yield_pct=row.get("Yield %"),
+                    trailing_pe=row.get("P/E"),
+                    payout_ratio_pct=row.get("Payout %"),
+                    roe_pct=getattr(stock_data, "roe_pct", None),
+                    debt_to_equity=getattr(stock_data, "debt_to_equity", None),
+                    div_streak=div_streak,
+                    div_cagr=div_cagr,
+                    dividend_tier=getattr(stock_data, "dividend_tier", "Unknown"),
+                    is_dividend_king=row["Symbol"] in DIVIDEND_KINGS,
+                )
+            )
+
         sector_stocks.sort(key=lambda x: x["score"], reverse=True)
-        
-        external: List[Dict[str, Any]] = []
+
+        external: list[dict[str, Any]] = []
         if include_external:
             existing_symbols = [s["symbol"] for s in sector_stocks]
             external = cls.get_external_competitors(
                 current_stock.sector, existing_symbols, max_count=3
             )
-        
+
         return sector_stocks, external

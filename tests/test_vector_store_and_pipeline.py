@@ -1,4 +1,5 @@
 """Tests for vector store batch behavior and ingestion pipeline edge cases."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -48,7 +49,9 @@ def test_pipeline_skips_empty_batch_add(tmp_path: Path) -> None:
     assert stats["documents_added"] == 0
 
 
-def test_pipeline_empty_run_enrich_falls_back_to_enrich_existing(tmp_path: Path) -> None:
+def test_pipeline_empty_run_enrich_falls_back_to_enrich_existing(
+    tmp_path: Path,
+) -> None:
     pipeline = DataIngestionPipeline(
         data_dir=str(tmp_path / "downloads"),
         vectordb_dir=str(tmp_path / "vectordb"),
@@ -57,9 +60,10 @@ def test_pipeline_empty_run_enrich_falls_back_to_enrich_existing(tmp_path: Path)
         "stockquote": MagicMock(process_directory=lambda: iter(())),
     }
     expected = {"enriched": 2, "total_documents": 5}
-    with patch("data_ingestion.pipeline.ENRICHER_AVAILABLE", True), patch.object(
-        pipeline, "enrich_existing", return_value=expected
-    ) as enrich:
+    with (
+        patch("data_ingestion.pipeline.ENRICHER_AVAILABLE", True),
+        patch.object(pipeline, "enrich_existing", return_value=expected) as enrich,
+    ):
         stats = pipeline.run(sources=["stockquote"], enrich_with_yfinance=True)
     enrich.assert_called_once()
     assert stats == expected
@@ -85,8 +89,9 @@ def test_enrich_existing_uses_all_documents_not_dividend_kings(tmp_path: Path) -
     mock_enricher = MagicMock()
     mock_enricher.enrich_document.return_value = enriched
 
-    with patch("data_ingestion.pipeline.ENRICHER_AVAILABLE", True), patch(
-        "data_ingestion.pipeline.create_stock_enricher", return_value=mock_enricher
+    with (
+        patch("data_ingestion.pipeline.ENRICHER_AVAILABLE", True),
+        patch("data_ingestion.pipeline.create_stock_enricher", return_value=mock_enricher),
     ):
         stats = pipeline.enrich_existing()
 

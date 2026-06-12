@@ -1,8 +1,10 @@
 """Current-month paid dividend summaries."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 from services.portfolio_dividend_calendar import (
     HoldingMonthDividend,
@@ -56,7 +58,7 @@ def test_month_label_for_may_2026() -> None:
     assert month_label_for(date(2026, 5, 19)) == "May 2026"
 
 
-def test_gross_paid_in_calendar_month_empty_db(tmp_path) -> None:
+def test_gross_paid_in_calendar_month_empty_db(tmp_path: Path) -> None:
     import sqlite3
 
     from data_ingestion.dividend_receipt_store import DividendReceiptStore
@@ -75,7 +77,7 @@ def test_gross_paid_in_calendar_month_empty_db(tmp_path) -> None:
     assert count == 0
 
 
-def test_net_paid_in_calendar_month_from_seed(tmp_path) -> None:
+def test_net_paid_in_calendar_month_from_seed(tmp_path: Path) -> None:
     from data_ingestion.dividend_income_store import DividendIncomeStore
 
     db = tmp_path / "portfolio.db"
@@ -85,14 +87,14 @@ def test_net_paid_in_calendar_month_from_seed(tmp_path) -> None:
 
 
 def test_portfolio_section_labels_renamed() -> None:
-    assert PORTFOLIO_SECTION_LABELS == [
+    assert [
         "Home",
         "Holdings",
         "Dividend income",
         "Dividend growth",
         "Purchase journal",
         "Deposits & benchmarks",
-    ]
+    ] == PORTFOLIO_SECTION_LABELS
 
 
 def test_net_received_through_applies_withholding() -> None:

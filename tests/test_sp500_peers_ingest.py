@@ -1,19 +1,22 @@
 """Tests for S&P 500 and top-dividend library ingest helpers."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from data_ingestion.models import DataSource, StockDocument
 
 
-def test_ensure_top_dividend_all_present(monkeypatch):
+def test_ensure_top_dividend_all_present(monkeypatch: pytest.MonkeyPatch) -> None:
     from services import sp500_peers_service
 
     store = MagicMock()
     store.get_all_documents.return_value = [
-        StockDocument(symbol=s, name=s, source=DataSource.YAHOO)
-        for s in ("KO", "PEP")
+        StockDocument(symbol=s, name=s, source=DataSource.YAHOO) for s in ("KO", "PEP")
     ]
     monkeypatch.setattr(sp500_peers_service, "_store", lambda: store)
     monkeypatch.setattr(
@@ -27,7 +30,7 @@ def test_ensure_top_dividend_all_present(monkeypatch):
     store.add_documents.assert_not_called()
 
 
-def test_ensure_top_dividend_creates_missing(monkeypatch):
+def test_ensure_top_dividend_creates_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     from services import sp500_peers_service
 
     store = MagicMock()
@@ -55,7 +58,7 @@ def test_ensure_top_dividend_creates_missing(monkeypatch):
     assert added[0].symbol == "KO"
 
 
-def test_ensure_sp500_no_store_returns_error(monkeypatch):
+def test_ensure_sp500_no_store_returns_error(monkeypatch: pytest.MonkeyPatch) -> None:
     from services import sp500_peers_service
 
     monkeypatch.setattr(sp500_peers_service, "_store", lambda: None)
@@ -63,7 +66,7 @@ def test_ensure_sp500_no_store_returns_error(monkeypatch):
     assert stats["errors"] == 1
 
 
-def test_remove_delisted_from_market_library(postgres_env):
+def test_remove_delisted_from_market_library(postgres_env: Any) -> None:
     from services.db_price_refresh import remove_delisted_from_market_library
 
     mock_store = MagicMock()

@@ -5,7 +5,7 @@ Classify dividend rows as upcoming vs paid (informational — not risk severity)
 from __future__ import annotations
 
 from datetime import date
-from typing import Optional
+from typing import Any
 
 # Internal keys
 UPCOMING_EX = "upcoming_ex"
@@ -38,9 +38,9 @@ TIMING_ROW_COLORS: dict[str, tuple[str, str]] = {
 def classify_dividend_timing(
     *,
     today: date,
-    ex_date: Optional[date] = None,
-    pay_date: Optional[date] = None,
-    status: Optional[str] = None,
+    ex_date: date | None = None,
+    pay_date: date | None = None,
+    status: str | None = None,
 ) -> str:
     """
     Return a display label for ex-date / payment timing (not a risk severity).
@@ -77,14 +77,13 @@ def label_to_style_key(label: str) -> str:
     return SCHEDULED
 
 
-def style_dividend_timing_dataframe(df, *, timing_column: str = "Timing"):
+def style_dividend_timing_dataframe(df: Any, *, timing_column: str = "Timing") -> Any:
     """Highlight rows by dividend timing (Streamlit-compatible pandas Styler)."""
-    import pandas as pd
 
     if df is None or df.empty or timing_column not in df.columns:
         return df
 
-    def _row_style(row: pd.Series):
+    def _row_style(row: Any) -> Any:
         label = str(row.get(timing_column, ""))
         key = label_to_style_key(label)
         bg, fg = TIMING_ROW_COLORS.get(key, TIMING_ROW_COLORS[SCHEDULED])

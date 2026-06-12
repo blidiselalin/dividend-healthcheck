@@ -1,4 +1,5 @@
 """Tests for access request store and allowlist integration."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ def request_db(tmp_path: Path) -> AccessRequestStore:
     return AccessRequestStore(db_path=tmp_path / "users.db")
 
 
-def test_submit_and_approve(request_db: AccessRequestStore):
+def test_submit_and_approve(request_db: AccessRequestStore) -> None:
     request_db.submit_request(
         email="New.User@Gmail.com",
         user_id="google-sub-1",
@@ -34,7 +35,7 @@ def test_submit_and_approve(request_db: AccessRequestStore):
     assert approved.reviewed_by == "admin@example.com"
 
 
-def test_reject_and_resubmit(request_db: AccessRequestStore):
+def test_reject_and_resubmit(request_db: AccessRequestStore) -> None:
     request_db.submit_request(email="x@example.com", user_id="sub-x")
     assert request_db.reject("x@example.com", reviewer_email="admin@example.com")
 
@@ -49,11 +50,9 @@ def test_reject_and_resubmit(request_db: AccessRequestStore):
 
 
 def test_is_email_allowed_includes_approved_grant(
-    request_db: AccessRequestStore, monkeypatch, tmp_path: Path
-):
-    monkeypatch.setattr(
-        "auth.settings.allowed_emails", lambda: frozenset({"owner@example.com"})
-    )
+    request_db: AccessRequestStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr("auth.settings.allowed_emails", lambda: frozenset({"owner@example.com"}))
     monkeypatch.setattr(
         "auth.access_requests.AccessRequestStore",
         lambda db_path=None: AccessRequestStore(db_path=tmp_path / "users.db"),

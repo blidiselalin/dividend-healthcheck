@@ -1,9 +1,9 @@
 """Tests for portfolio-first history backfill ordering."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
-from unittest.mock import patch
+from datetime import date, datetime, timezone
 
 from data_ingestion.models import DividendRecord, PriceHistory, StockDocument
 from services.stock_history_backfill import sort_backfill_candidates
@@ -28,7 +28,7 @@ def _doc(symbol: str, *, prices: int = 0, divs: int = 4) -> StockDocument:
     return doc
 
 
-def test_sort_backfill_candidates_puts_portfolio_first():
+def test_sort_backfill_candidates_puts_portfolio_first() -> None:
     abbv = _doc("ABBV", prices=0, divs=54)
     ko = _doc("KO", prices=0, divs=8)
     ordered = sort_backfill_candidates(
@@ -38,7 +38,7 @@ def test_sort_backfill_candidates_puts_portfolio_first():
     assert [doc.symbol for doc in ordered] == ["ABBV", "KO"]
 
 
-def test_sort_backfill_candidates_handles_aware_last_updated():
+def test_sort_backfill_candidates_handles_aware_last_updated() -> None:
     aware = _doc("INTU", prices=10, divs=8)
     aware.last_updated = datetime(2026, 6, 1, tzinfo=timezone.utc)
     naive = _doc("MSFT", prices=5, divs=8)

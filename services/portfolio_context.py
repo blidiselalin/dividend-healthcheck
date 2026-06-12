@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from data_ingestion.deposits_store import DepositsStore
 from data_ingestion.dividend_income_store import DividendIncomeStore
@@ -31,7 +30,7 @@ class PortfolioContext:
     journal_service: PortfolioPurchaseJournalService
 
 
-def create_portfolio_context(db_path: Optional[Path] = None) -> PortfolioContext:
+def create_portfolio_context(db_path: Path | None = None) -> PortfolioContext:
     """Create portfolio stores that share one ``db_path`` / Postgres user scope."""
     portfolio = PortfolioStore(db_path=db_path, seed=False)
     path = portfolio.db_path

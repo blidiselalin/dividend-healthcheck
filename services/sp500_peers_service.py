@@ -5,10 +5,9 @@ Ensure S&P 500 coverage in analysed stocks and pick same-sector peers for portfo
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Callable
 
 from config import DELISTED_SYMBOLS
-from services.shared_market_db import get_shared_vector_store
 from data_ingestion.models import DataSource, StockDocument
 from data_ingestion.sp500_universe import (
     get_sp500_symbols,
@@ -18,6 +17,7 @@ from data_ingestion.sp500_universe import (
 )
 from models.stock import StockData
 from services.scoring import ScoringService
+from services.shared_market_db import get_shared_vector_store
 from utils.converters import document_to_stock_data
 
 logger = logging.getLogger(__name__)
@@ -30,21 +30,21 @@ except ImportError:
     VECTOR_STORE_AVAILABLE = False
 
 
-def _store() -> Optional["VectorStore"]:
+def _store() -> VectorStore | None:
     if not VECTOR_STORE_AVAILABLE:
         return None
     try:
-        return get_shared_vector_store()
+        return get_shared_vector_store()  # type: ignore[no-any-return]
     except Exception as exc:
         logger.warning("Vector store unavailable: %s", exc)
         return None
 
 
-_coverage_cache: Optional[Dict[str, Any]] = None
-_top_dividend_coverage_cache: Optional[Dict[str, Any]] = None
+_coverage_cache: dict[str, Any] | None = None
+_top_dividend_coverage_cache: dict[str, Any] | None = None
 
 
-def coverage_stats(*, force: bool = False) -> Dict[str, Any]:
+def coverage_stats(*, force: bool = False) -> dict[str, Any]:
     """How many S&P 500 names exist in analysed stocks (cached per process)."""
     global _coverage_cache
     if _coverage_cache is not None and not force:
@@ -64,9 +64,7 @@ def coverage_stats(*, force: bool = False) -> Dict[str, Any]:
     if hasattr(store, "count_symbols_in"):
         analysed_sp500_count = store.count_symbols_in(list(universe))
     else:
-        analysed_symbols = {
-            doc.symbol.upper() for doc in store.get_all_documents() if doc.symbol
-        }
+        analysed_symbols = {doc.symbol.upper() for doc in store.get_all_documents() if doc.symbol}
         analysed_sp500_count = len(analysed_symbols & universe)
     universe_total = len(universe)
     result = {
@@ -79,7 +77,7 @@ def coverage_stats(*, force: bool = False) -> Dict[str, Any]:
     return dict(result)
 
 
-def top_dividend_coverage_stats(*, force: bool = False) -> Dict[str, Any]:
+def top_dividend_coverage_stats(*, force: bool = False) -> dict[str, Any]:
     """How many top-100 dividend names exist in analysed stocks."""
     global _top_dividend_coverage_cache
     if _top_dividend_coverage_cache is not None and not force:
@@ -100,9 +98,7 @@ def top_dividend_coverage_stats(*, force: bool = False) -> Dict[str, Any]:
     if hasattr(store, "count_symbols_in"):
         analysed_count = store.count_symbols_in(list(universe_set))
     else:
-        analysed_symbols = {
-            doc.symbol.upper() for doc in store.get_all_documents() if doc.symbol
-        }
+        analysed_symbols = {doc.symbol.upper() for doc in store.get_all_documents() if doc.symbol}
         analysed_count = len(analysed_symbols & universe_set)
 
     total = len(universe_set)
@@ -115,12 +111,12 @@ def top_dividend_coverage_stats(*, force: bool = False) -> Dict[str, Any]:
     return dict(result)
 
 
-def ensure_sp500_in_vectordb(
+def ensure_sp500_in_vectordb(  # noqa: C901
     *,
-    limit: Optional[int] = None,
+    limit: int | None = None,
     request_delay: float = 0.35,
-    progress_callback=None,
-) -> Dict[str, int]:
+    progress_callback: Any | None = None,
+) -> dict[str, Any]:
     """
     Create and enrich missing S&P 500 documents in analysed stocks.
 
@@ -155,7 +151,7 @@ def ensure_sp500_in_vectordb(
 
     enricher = create_stock_enricher(request_delay=request_delay)
     total = len(missing)
-    batch: List[StockDocument] = []
+    batch: list[StockDocument] = []
 
     for index, symbol in enumerate(missing, start=1):
         if progress_callback:
@@ -187,12 +183,12 @@ def ensure_sp500_in_vectordb(
     return stats
 
 
-def ensure_top_dividend_in_vectordb(
+def ensure_top_dividend_in_vectordb(  # noqa: C901
     *,
-    limit: Optional[int] = None,
+    limit: int | None = None,
     request_delay: float = 0.35,
-    progress_callback=None,
-) -> Dict[str, int]:
+    progress_callback: Callable[[str, int, int], None] | None = None,
+) -> dict[str, Any]:
     """Create and enrich missing top-100 dividend documents in analysed stocks."""
     from data_ingestion.dividend_universe import get_top_dividend_symbols
 
@@ -224,7 +220,7 @@ def ensure_top_dividend_in_vectordb(
 
     enricher = create_stock_enricher(request_delay=request_delay)
     total = len(missing)
-    batch: List[StockDocument] = []
+    batch: list[StockDocument] = []
 
     for index, symbol in enumerate(missing, start=1):
         if progress_callback:
@@ -279,12 +275,12 @@ def _interest_score(data: StockData, peer_score: int) -> float:
 def find_sector_peers(
     *,
     sector: str,
-    exclude_symbols: Optional[List[str]] = None,
-    portfolio_symbols: Optional[Set[str]] = None,
+    exclude_symbols: list[str] | None = None,
+    portfolio_symbols: set[str] | None = None,
     max_peers: int = 3,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
-    Return 2–3 analysed S&P 500 stocks in the same sector, ranked by dividend interest.
+    Return 2-3 analysed S&P 500 stocks in the same sector, ranked by dividend interest.
     """
     if not sector or sector.strip().lower() in {"unknown", "n/a", ""}:
         return []
@@ -297,7 +293,7 @@ def find_sector_peers(
     exclude = {yahoo_ticker(symbol) for symbol in (exclude_symbols or [])}
     portfolio = {yahoo_ticker(symbol) for symbol in (portfolio_symbols or set())}
 
-    candidates: List[Dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
     for doc in store.get_all_documents():
         symbol = doc.symbol.upper()
         if symbol not in universe:
@@ -314,9 +310,7 @@ def find_sector_peers(
             continue
 
         peer_score = ScoringService.calculate_score(data)
-        div_streak = (
-            data.dividend_history.consecutive_years if data.dividend_history else None
-        )
+        div_streak = data.dividend_history.consecutive_years if data.dividend_history else None
         div_cagr = data.dividend_history.cagr_5y if data.dividend_history else None
         candidates.append(
             {

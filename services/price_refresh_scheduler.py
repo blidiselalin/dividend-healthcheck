@@ -9,16 +9,16 @@ import os
 import threading
 import time
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 _started = False
 _start_lock = threading.Lock()
 _run_lock = threading.Lock()
-_last_stats: Optional[Dict[str, Any]] = None
-_last_run_at: Optional[datetime] = None
-_last_error: Optional[str] = None
+_last_stats: dict[str, Any] | None = None
+_last_run_at: datetime | None = None
+_last_error: str | None = None
 _interval_seconds: int = 300
 
 
@@ -31,7 +31,7 @@ def _scheduler_disabled() -> bool:
     return False
 
 
-def _resolve_interval_seconds(interval_seconds: Optional[int] = None) -> int:
+def _resolve_interval_seconds(interval_seconds: int | None = None) -> int:
     if interval_seconds is not None:
         return max(60, int(interval_seconds))
     override = os.environ.get("DIVIDENDSCOPE_PRICE_REFRESH_SECONDS", "").strip()
@@ -42,7 +42,7 @@ def _resolve_interval_seconds(interval_seconds: Optional[int] = None) -> int:
     return max(60, int(PRICE_REFRESH_INTERVAL_SECONDS))
 
 
-def run_price_refresh_once() -> Dict[str, Any]:
+def run_price_refresh_once() -> dict[str, Any]:
     """Refresh live quotes for all library + portfolio symbols (single pass)."""
     global _last_stats, _last_run_at, _last_error
 
@@ -80,14 +80,14 @@ def _refresh_loop(interval_seconds: int) -> None:
     logger.info("Price refresh scheduler started (every %ss)", interval_seconds)
 
     while True:
-        try:
+        import contextlib
+
+        with contextlib.suppress(Exception):
             run_price_refresh_once()
-        except Exception:
-            pass
         time.sleep(interval_seconds)
 
 
-def start_price_refresh_scheduler(*, interval_seconds: Optional[int] = None) -> bool:
+def start_price_refresh_scheduler(*, interval_seconds: int | None = None) -> bool:
     """
     Start the daemon price refresh thread once per process.
 
@@ -113,7 +113,7 @@ def start_price_refresh_scheduler(*, interval_seconds: Optional[int] = None) -> 
         return True
 
 
-def scheduler_status() -> Dict[str, Any]:
+def scheduler_status() -> dict[str, Any]:
     """Snapshot for admin UI and health checks."""
     return {
         "enabled": not _scheduler_disabled(),

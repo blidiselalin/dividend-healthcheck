@@ -1,4 +1,5 @@
 """Unit tests for SQLite portfolio, journal, and deposits stores."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -8,10 +9,15 @@ import pytest
 
 from data_ingestion.deposits_store import DepositsStore
 from data_ingestion.portfolio_store import PortfolioStore
-from data_ingestion.purchase_journal_store import PurchaseJournalStore, portfolio_symbols
+from data_ingestion.purchase_journal_store import (
+    PurchaseJournalStore,
+    portfolio_symbols,
+)
 
 
-def test_portfolio_upsert_rejects_invalid_shares(portfolio_store: PortfolioStore) -> None:
+def test_portfolio_upsert_rejects_invalid_shares(
+    portfolio_store: PortfolioStore,
+) -> None:
     with pytest.raises(ValueError, match="Shares"):
         portfolio_store.upsert_holding("X", shares=0, avg_cost_per_share=10.0)
 

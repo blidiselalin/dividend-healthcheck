@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Dict, Tuple
-
 # period_key -> (S&P 500, SCHD, Dow Jones, Nasdaq) shares bought that month
-BENCHMARK_SHARES_BY_PERIOD: Dict[str, Tuple[float, float, float, float]] = {
+BENCHMARK_SHARES_BY_PERIOD: dict[str, tuple[float, float, float, float]] = {
     "2022-12": (1.89, 290.26, 0.22, 0.68),
     "2023-01": (0.41, 63.95, 0.05, 0.14),
     "2023-02": (1.05, 167.17, 0.13, 0.37),

@@ -1,4 +1,5 @@
 """Tests for JSON NaN sanitization."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -8,12 +9,12 @@ import math
 from utils.json_safe import finite_float, sanitize_for_json
 
 
-def test_finite_float_rejects_nan():
+def test_finite_float_rejects_nan() -> None:
     assert finite_float(float("nan")) is None
     assert finite_float(1.5) == 1.5
 
 
-def test_sanitize_for_json_replaces_nan_recursively():
+def test_sanitize_for_json_replaces_nan_recursively() -> None:
     payload = {
         "price_history": [
             {"date": "2016-06-08", "open": math.nan, "close": 10.0},
@@ -27,7 +28,7 @@ def test_sanitize_for_json_replaces_nan_recursively():
     assert cleaned["dividend_yield"] is None
 
 
-def test_postgres_store_payload_is_json_safe():
+def test_postgres_store_payload_is_json_safe() -> None:
     from datetime import date
 
     from data_ingestion.models import PriceHistory, StockDocument

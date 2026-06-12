@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import List, Optional, TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
@@ -20,14 +20,14 @@ if TYPE_CHECKING:
     from data_ingestion.models import DividendRecord, StockDocument
 
 
-def _cash_date(record: "DividendRecord") -> date:
+def _cash_date(record: DividendRecord) -> date:
     if record.payment_date:
         return record.payment_date
     return record.ex_date + timedelta(days=14)
 
 
 def shares_as_of(
-    lots: List[EstimatedPurchaseLot],
+    lots: list[EstimatedPurchaseLot],
     as_of: date,
     *,
     fallback_shares: float,
@@ -35,11 +35,7 @@ def shares_as_of(
     """Shares owned on or before the given date (from journal lots)."""
     if not lots:
         return fallback_shares
-    owned = sum(
-        lot.estimated_shares
-        for lot in lots
-        if lot.purchase_date <= as_of
-    )
+    owned = sum(lot.estimated_shares for lot in lots if lot.purchase_date <= as_of)
     return owned if owned > 0 else 0.0
 
 
@@ -77,10 +73,11 @@ class PortfolioHoldingDetailService:
 
     def __init__(
         self,
-        journal: Optional[PortfolioPurchaseJournalService] = None,
-        portfolio: Optional[PortfolioStore] = None,
-        receipts: Optional[Any] = None,
+        journal: PortfolioPurchaseJournalService | None = None,
+        portfolio: PortfolioStore | None = None,
+        receipts: Any | None = None,
     ) -> None:
+        self._receipts: Any
         if journal is None and portfolio is None and receipts is None:
             from services.portfolio_context import create_portfolio_context
 
@@ -93,27 +90,23 @@ class PortfolioHoldingDetailService:
             self.portfolio = portfolio or PortfolioStore(seed=False)
             self._receipts = receipts
 
-    def _receipt_store(self):
+    def _receipt_store(self) -> Any:
         if self._receipts is not None:
             return self._receipts
         from data_ingestion.dividend_receipt_store import DividendReceiptStore
 
         return DividendReceiptStore(db_path=self.portfolio.db_path)
 
-    def estimated_lots_for_symbol(self, symbol: str) -> List[EstimatedPurchaseLot]:
-        return [
-            lot
-            for lot in self.journal.build_estimated_lots()
-            if lot.symbol == symbol
-        ]
+    def estimated_lots_for_symbol(self, symbol: str) -> list[EstimatedPurchaseLot]:
+        return [lot for lot in self.journal.build_estimated_lots() if lot.symbol == symbol]
 
-    def purchase_history(self, symbol: str) -> List[HoldingPurchaseRow]:
+    def purchase_history(self, symbol: str) -> list[HoldingPurchaseRow]:
         lots = sorted(
             self.estimated_lots_for_symbol(symbol),
             key=lambda lot: lot.purchase_date,
         )
         cumulative = 0.0
-        rows: List[HoldingPurchaseRow] = []
+        rows: list[HoldingPurchaseRow] = []
         for lot in lots:
             cumulative += lot.estimated_shares
             rows.append(
@@ -128,7 +121,7 @@ class PortfolioHoldingDetailService:
             )
         return rows
 
-    def stored_dividend_history(self, symbol: str) -> List[HoldingDividendRow]:
+    def stored_dividend_history(self, symbol: str) -> list[HoldingDividendRow]:
         receipts = self._receipt_store().list_for_symbol(symbol)
         return [
             HoldingDividendRow(
@@ -144,12 +137,12 @@ class PortfolioHoldingDetailService:
     def dividend_history(
         self,
         symbol: str,
-        document: Optional["StockDocument"],
+        document: StockDocument | None,
         *,
         current_shares: float,
-        tracking_since: Optional[date] = None,
+        tracking_since: date | None = None,
         prefer_stored: bool = False,
-    ) -> List[HoldingDividendRow]:
+    ) -> list[HoldingDividendRow]:
         if prefer_stored:
             stored = self.stored_dividend_history(symbol)
             if stored:
@@ -161,7 +154,7 @@ class PortfolioHoldingDetailService:
         lots = self.estimated_lots_for_symbol(symbol)
         fallback = current_shares if not lots else 0.0
 
-        rows: List[HoldingDividendRow] = []
+        rows: list[HoldingDividendRow] = []
         for record in sorted(document.dividend_history, key=lambda r: r.ex_date):
             if not lots and tracking_since and record.ex_date < tracking_since:
                 continue
@@ -184,10 +177,10 @@ class PortfolioHoldingDetailService:
     def summarize(
         self,
         symbol: str,
-        document: Optional["StockDocument"],
+        document: StockDocument | None,
         *,
         current_shares: float,
-        tracking_since: Optional[date] = None,
+        tracking_since: date | None = None,
     ) -> HoldingDetailSummary:
         purchases = self.purchase_history(symbol)
         dividends = self.dividend_history(
@@ -196,13 +189,9 @@ class PortfolioHoldingDetailService:
         return HoldingDetailSummary(
             symbol=symbol,
             purchase_count=len(purchases),
-            total_estimated_cost_usd=round(
-                sum(row.estimated_cost_usd for row in purchases), 2
-            ),
+            total_estimated_cost_usd=round(sum(row.estimated_cost_usd for row in purchases), 2),
             dividend_payment_count=len(dividends),
-            total_dividend_cash_usd=round(
-                sum(row.cash_usd for row in dividends), 2
-            ),
+            total_dividend_cash_usd=round(sum(row.cash_usd for row in dividends), 2),
             uses_journal_shares=bool(purchases),
         )
 
@@ -234,10 +223,10 @@ class PortfolioHoldingDetailService:
     def dividends_dataframe(
         self,
         symbol: str,
-        document: Optional["StockDocument"],
+        document: StockDocument | None,
         *,
         current_shares: float,
-        tracking_since: Optional[date] = None,
+        tracking_since: date | None = None,
     ) -> pd.DataFrame:
         rows = self.dividend_history(
             symbol,

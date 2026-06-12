@@ -6,22 +6,22 @@ emphasizing the key metrics that matter most to income investors.
 """
 
 from dataclasses import dataclass
-from typing import List, Tuple
 
-from models.stock import StockData
 from config import RECOMMENDATION_THRESHOLDS
+from models.stock import StockData
 
 
 @dataclass(frozen=True)
 class Recommendation:
     """Investment recommendation with supporting data.
-    
+
     Attributes:
         label: Human-readable recommendation.
         emoji: Visual indicator.
         score: Numeric score (0-100).
         confidence: Data quality confidence (0-100).
     """
+
     label: str
     emoji: str
     score: int
@@ -30,7 +30,7 @@ class Recommendation:
 
 class ScoringService:
     """Service for dividend-focused investment scoring.
-    
+
     Scoring framework emphasizes:
     1. Dividend streak (consecutive years of increases)
     2. Dividend safety (payout ratio, coverage)
@@ -38,11 +38,11 @@ class ScoringService:
     4. Dividend growth (historical CAGR)
     5. Valuation & financial health
     """
-    
+
     @staticmethod
-    def calculate_score(data: StockData) -> int:
+    def calculate_score(data: StockData) -> int:  # noqa: C901
         """Calculate strategic investment score (0-100).
-        
+
         Weights:
         - Dividend Streak: 20 pts
         - Dividend Safety: 15 pts
@@ -54,7 +54,7 @@ class ScoringService:
         - Size/Stability: 5 pts
         """
         score = 0
-        
+
         # === DIVIDEND STREAK (20 points) ===
         # The defining characteristic of Dividend Kings
         if data.dividend_history:
@@ -72,12 +72,12 @@ class ScoringService:
             elif years >= 15:
                 score += 10
             elif years >= 10:
-                score += 8   # Achiever
+                score += 8  # Achiever
             elif years >= 5:
-                score += 5   # Contender
+                score += 5  # Contender
             elif years >= 1:
                 score += 2
-        
+
         # === DIVIDEND SAFETY (15 points) ===
         # Payout ratio - lower is safer
         if data.payout_ratio_pct is not None:
@@ -95,7 +95,7 @@ class ScoringService:
             elif pr <= 100:
                 score += 2
             # >100% is risky, 0 points
-        
+
         # Dividend coverage (EPS/DPS) - higher is safer
         if data.dividend_coverage is not None:
             if data.dividend_coverage >= 3:
@@ -108,7 +108,7 @@ class ScoringService:
                 score += 2
             elif data.dividend_coverage >= 1:
                 score += 1
-        
+
         # === DIVIDEND YIELD (15 points) ===
         # Sweet spot is 2-5% - not too low, not suspiciously high
         if data.dividend_yield_pct is not None:
@@ -124,7 +124,7 @@ class ScoringService:
             elif dy >= 0.5 or 8.0 < dy <= 10:
                 score += 4
             # Very high yields (>10%) often signal risk
-        
+
         # === DIVIDEND GROWTH (15 points) ===
         # Historical CAGR indicates future growth potential
         if data.dividend_history:
@@ -146,7 +146,7 @@ class ScoringService:
                 score += 3
             elif cagr > 0:
                 score += 1
-        
+
         # === VALUATION (10 points) ===
         # P/E ratio assessment
         pe = data.trailing_pe or data.forward_pe
@@ -163,7 +163,7 @@ class ScoringService:
                 score += 2
             elif pe <= 35:
                 score += 1
-        
+
         # Price vs 52-week high (buying opportunity indicator)
         if data.price_to_52w_high_pct is not None:
             off_high = abs(data.price_to_52w_high_pct)
@@ -175,7 +175,7 @@ class ScoringService:
                 score += 2
             else:
                 score += 1  # Near high
-        
+
         # === FINANCIAL STRENGTH (10 points) ===
         # Debt-to-Equity
         if data.debt_to_equity is not None:
@@ -190,7 +190,7 @@ class ScoringService:
                 score += 2
             elif de <= 2.0:
                 score += 1
-        
+
         # Liquidity (Current Ratio)
         if data.current_ratio:
             if data.current_ratio >= 2.0:
@@ -203,7 +203,7 @@ class ScoringService:
                 score += 2
             elif data.current_ratio >= 0.8:
                 score += 1
-        
+
         # === PROFITABILITY (10 points) ===
         # ROE
         if data.roe_pct is not None:
@@ -217,7 +217,7 @@ class ScoringService:
                 score += 2
             elif data.roe_pct >= 5:
                 score += 1
-        
+
         # Profit Margins
         if data.profit_margin_pct is not None:
             if data.profit_margin_pct >= 20:
@@ -230,7 +230,7 @@ class ScoringService:
                 score += 2
             elif data.profit_margin_pct > 0:
                 score += 1
-        
+
         # === SIZE/STABILITY (5 points) ===
         if data.market_cap:
             if data.market_cap >= 100e9:
@@ -243,22 +243,22 @@ class ScoringService:
                 score += 2  # Mid cap
             else:
                 score += 1  # Small cap
-        
+
         return min(score, 100)
-    
+
     @staticmethod
     def get_recommendation(score: int, confidence: float = 100.0) -> Recommendation:
         """Get recommendation based on score.
-        
+
         Args:
             score: Investment score (0-100).
             confidence: Data quality confidence (0-100).
-            
+
         Returns:
             Recommendation with label, emoji, score, and confidence.
         """
         thresholds = RECOMMENDATION_THRESHOLDS
-        
+
         if score >= thresholds["strong_buy"]:
             return Recommendation("STRONG BUY", "🟢", score, confidence)
         if score >= thresholds["buy"]:
@@ -268,16 +268,16 @@ class ScoringService:
         if score >= thresholds["hold"]:
             return Recommendation("HOLD", "⚪", score, confidence)
         return Recommendation("AVOID", "🔴", score, confidence)
-    
+
     @staticmethod
-    def get_investment_thesis(data: StockData) -> Tuple[List[str], List[str]]:
+    def get_investment_thesis(data: StockData) -> tuple[list[str], list[str]]:  # noqa: C901
         """Generate investment thesis with key strengths and concerns.
-        
+
         Focuses on the metrics most important to dividend investors.
         """
-        strengths: List[str] = []
-        concerns: List[str] = []
-        
+        strengths: list[str] = []
+        concerns: list[str] = []
+
         # === DIVIDEND STREAK (Most Important) ===
         if data.dividend_history:
             years = data.dividend_history.consecutive_years
@@ -289,7 +289,7 @@ class ScoringService:
                 strengths.append(f"✓ Proven track record: {years} years of increases")
             elif years < 5:
                 concerns.append(f"Short dividend history ({years} years)")
-        
+
         # === DIVIDEND YIELD ===
         if data.dividend_yield_pct is not None:
             if 2.5 <= data.dividend_yield_pct <= 5:
@@ -298,20 +298,22 @@ class ScoringService:
                 concerns.append(f"High yield may signal risk ({data.dividend_yield_pct:.2f}%)")
             elif data.dividend_yield_pct < 1.5:
                 concerns.append(f"Low current yield ({data.dividend_yield_pct:.2f}%)")
-        
+
         # === DIVIDEND SAFETY ===
         if data.payout_ratio_pct is not None:
             if data.payout_ratio_pct <= 50:
                 strengths.append(f"Safe payout ratio ({data.payout_ratio_pct:.0f}%)")
             elif data.payout_ratio_pct >= 85:
                 concerns.append(f"Elevated payout ratio ({data.payout_ratio_pct:.0f}%)")
-        
+
         # === DIVIDEND GROWTH ===
         if data.dividend_history and data.dividend_history.cagr_5y >= 7:
-            strengths.append(f"Strong dividend growth ({data.dividend_history.cagr_5y:.1f}% 5Y CAGR)")
+            strengths.append(
+                f"Strong dividend growth ({data.dividend_history.cagr_5y:.1f}% 5Y CAGR)"
+            )
         elif data.dividend_history and data.dividend_history.cagr_5y < 3:
             concerns.append(f"Slow dividend growth ({data.dividend_history.cagr_5y:.1f}% 5Y CAGR)")
-        
+
         # === VALUATION ===
         pe = data.trailing_pe
         if pe:
@@ -319,19 +321,19 @@ class ScoringService:
                 strengths.append(f"Attractive valuation (P/E: {pe:.1f})")
             elif pe > 30:
                 concerns.append(f"Expensive valuation (P/E: {pe:.1f})")
-        
+
         # === FINANCIAL HEALTH ===
         if data.debt_to_equity is not None:
             if data.debt_to_equity <= 0.5:
                 strengths.append("Low debt levels")
             elif data.debt_to_equity > 1.5:
                 concerns.append(f"High debt (D/E: {data.debt_to_equity:.1f})")
-        
+
         # === PROFITABILITY ===
         if data.roe_pct is not None:
             if data.roe_pct >= 18:
                 strengths.append(f"High profitability (ROE: {data.roe_pct:.1f}%)")
             elif data.roe_pct < 8:
                 concerns.append(f"Low profitability (ROE: {data.roe_pct:.1f}%)")
-        
+
         return strengths, concerns

@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from contextlib import contextmanager
 from datetime import date, timedelta
-from typing import Any, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -21,17 +21,17 @@ try:
     YFINANCE_AVAILABLE = True
 except ImportError:
     YFINANCE_AVAILABLE = False
-    pd = None  # type: ignore
-    yf = None  # type: ignore
+    pd = None  # type: ignore[assignment]
+    yf = None
 
 
 @contextmanager
-def suppress_yfinance_noise():
+def suppress_yfinance_noise() -> Any:
     """Hide yfinance 'possibly delisted' noise on empty history responses."""
     import logging
 
     names = ("yfinance", "urllib3", "peewee", "yfinance.base", "yfinance.scrapers")
-    previous: List[tuple] = []
+    previous: list[tuple[Any, Any]] = []
     for name in names:
         log = logging.getLogger(name)
         previous.append((log, log.level))
@@ -43,12 +43,12 @@ def suppress_yfinance_noise():
             log.setLevel(level)
 
 
-def _history_kwargs() -> dict:
+def _history_kwargs() -> dict[str, Any]:
     """Extra kwargs supported by the installed yfinance version."""
     return {"auto_adjust": True, "actions": True}
 
 
-def _call_history(ticker: Any, **kwargs) -> Any:
+def _call_history(ticker: Any, **kwargs: Any) -> Any:
     """Call Ticker.history, using repair= when supported."""
     try:
         return ticker.history(repair=True, **kwargs)
@@ -59,9 +59,9 @@ def _call_history(ticker: Any, **kwargs) -> Any:
 def fetch_price_history(
     symbol: str,
     *,
-    years: Optional[int] = 10,
-    period: Optional[str] = None,
-) -> "pd.DataFrame":
+    years: int | None = 10,
+    period: str | None = None,
+) -> pd.DataFrame:
     """
     Fetch OHLCV history for a symbol.
 
@@ -77,7 +77,7 @@ def fetch_price_history(
     ticker = yf.Ticker(sym)
     base_kw = _history_kwargs()
 
-    periods: List[str] = []
+    periods: list[str] = []
     if period:
         periods.append(period)
     elif years:
@@ -90,7 +90,7 @@ def fetch_price_history(
             try:
                 frame = _call_history(ticker, period=p, **base_kw)
                 if frame is not None and not frame.empty:
-                    return frame
+                    return frame  # type: ignore[no-any-return]
             except Exception as exc:
                 logger.debug("%s history period=%s failed: %s", sym, p, exc)
 
@@ -105,7 +105,7 @@ def fetch_price_history(
                     **base_kw,
                 )
                 if frame is not None and not frame.empty:
-                    return frame
+                    return frame  # type: ignore[no-any-return]
             except Exception as exc:
                 logger.debug("%s history start/end failed: %s", sym, exc)
 
@@ -147,7 +147,7 @@ def history_dataframe_from_document(
     *,
     years: int = 10,
     min_rows: int = 100,
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """Build a price history DataFrame from analysed-stock library records."""
     if not YFINANCE_AVAILABLE or doc is None:
         return pd.DataFrame()
@@ -168,11 +168,7 @@ def history_dataframe_from_document(
     index = []
     for point in rows:
         d = point.date
-        close = float(
-            getattr(point, "adjusted_close", None)
-            or getattr(point, "close", None)
-            or 0
-        )
+        close = float(getattr(point, "adjusted_close", None) or getattr(point, "close", None) or 0)
         if close <= 0:
             continue
         index.append(pd.Timestamp(d))
@@ -203,7 +199,7 @@ def history_dataframe_from_document(
     return frame
 
 
-def densify_price_history(frame: "pd.DataFrame") -> "pd.DataFrame":
+def densify_price_history(frame: pd.DataFrame) -> pd.DataFrame:
     """Expand sparse closing prices to business days via forward fill."""
     if not YFINANCE_AVAILABLE or frame is None or frame.empty:
         return frame
@@ -222,7 +218,7 @@ def densify_price_history(frame: "pd.DataFrame") -> "pd.DataFrame":
     return daily.dropna(subset=["Close"])
 
 
-def fetch_price_history_with_fallback(
+def fetch_price_history_with_fallback(  # noqa: C901
     symbol: str,
     *,
     years: int = 10,
@@ -230,7 +226,7 @@ def fetch_price_history_with_fallback(
     min_rows: int = 100,
     prefer_library: bool = False,
     library_only: bool = False,
-) -> tuple["pd.DataFrame", str]:
+) -> tuple[pd.DataFrame, str]:
     """
     Fetch OHLCV history from yfinance and/or analysed-stock price_history.
 
@@ -273,7 +269,9 @@ def fetch_price_history_with_fallback(
 
     if prefer_library and library_ok:
         library = history_dataframe_from_document(
-            document, years=years, min_rows=min(min_needed, unique_price_dates(document))
+            document,
+            years=years,
+            min_rows=min(min_needed, unique_price_dates(document)),
         )
         if not library.empty and len(library) >= min(min_needed, len(library)):
             logger.debug(
@@ -309,12 +307,12 @@ def fetch_price_history_with_fallback(
     return pd.DataFrame(), "none"
 
 
-def dividend_series_from_records(records: Any) -> "pd.Series":
+def dividend_series_from_records(records: Any) -> pd.Series[Any]:  # noqa: C901
     """Cash dividends indexed by ex-date from library DividendRecord rows."""
     if not YFINANCE_AVAILABLE or not records:
         return pd.Series(dtype=float)
 
-    totals: dict = {}
+    totals: dict[pd.Timestamp, float] = {}
     for div in records:
         ex_raw = None
         amount = None
@@ -348,7 +346,7 @@ def dividend_series_from_records(records: Any) -> "pd.Series":
     return pd.Series(totals).sort_index()
 
 
-def dividend_series_from_document(document: Any, *, years: int = 10) -> "pd.Series":
+def dividend_series_from_document(document: Any, *, years: int = 10) -> pd.Series[Any]:
     """Dividend payments from a StockDocument (history, else yield metadata estimate)."""
     if document is None:
         return pd.Series(dtype=float)
@@ -372,7 +370,7 @@ def dividend_series_from_document(document: Any, *, years: int = 10) -> "pd.Seri
         return pd.Series(dtype=float)
 
     today = date.today()
-    payments: dict = {}
+    payments: dict[pd.Timestamp, float] = {}
     for quarter in range(years * 4):
         month = today.month - (quarter * 3)
         year = today.year
@@ -387,22 +385,22 @@ def dividend_series_from_document(document: Any, *, years: int = 10) -> "pd.Seri
     return pd.Series(payments).sort_index()
 
 
-def merge_dividend_series(*series: "pd.Series") -> "pd.Series":
+def merge_dividend_series(*series: pd.Series[Any]) -> pd.Series[Any]:
     """Combine payment series without double-counting the same ex-date."""
     frames = [s for s in series if s is not None and not s.empty]
     if not frames:
         return pd.Series(dtype=float)
     combined = pd.concat(frames)
     combined.index = _to_naive_datetime_index(combined.index)
-    return combined.groupby(level=0).max().sort_index()
+    return combined.groupby(level=0).max().sort_index()  # type: ignore[no-any-return]
 
 
 def compute_ttm_from_payment_series(
-    hist: "pd.DataFrame",
-    payment_series: "pd.Series",
+    hist: pd.DataFrame,
+    payment_series: pd.Series[Any],
     *,
     min_rows: int = 60,
-) -> Optional["pd.DataFrame"]:
+) -> pd.DataFrame | None:
     """
     Trailing 12-month dividend at each price date from ex-date payments.
 
@@ -435,14 +433,14 @@ def compute_ttm_from_payment_series(
 
     cumulative = payments.cumsum()
     paid_to_date = cumulative.reindex(frame.index, method="ffill").fillna(0.0)
-    window_start = frame.index - pd.Timedelta(days=365)
+    window_start = frame.index - pd.Timedelta(days=365)  # type: ignore[operator]
     paid_before_window = cumulative.reindex(window_start, method="ffill").fillna(0.0)
     frame["Div_TTM"] = (paid_to_date.to_numpy() - paid_before_window.to_numpy()).astype(float)
     frame = frame[frame["Div_TTM"] > 0]
     return frame if len(frame) >= min_rows else None
 
 
-def fetch_dividend_series(symbol: str) -> "pd.Series":
+def fetch_dividend_series(symbol: str) -> pd.Series[Any]:
     """
     Cash dividend payments indexed by ex-date (empty Series on failure).
     """
@@ -459,7 +457,7 @@ def fetch_dividend_series(symbol: str) -> "pd.Series":
             if divs is not None and not divs.empty:
                 cleaned = divs[divs > 0].astype(float)
                 if not cleaned.empty:
-                    return cleaned.sort_index()
+                    return cleaned.sort_index()  # type: ignore[no-any-return]
         except Exception as exc:
             logger.debug("%s ticker.dividends failed: %s", sym, exc)
 
@@ -473,7 +471,7 @@ def fetch_dividend_series(symbol: str) -> "pd.Series":
     return pd.Series(dtype=float)
 
 
-def _to_naive_datetime_index(index: Any) -> "pd.DatetimeIndex":
+def _to_naive_datetime_index(index: Any) -> pd.DatetimeIndex:
     """Normalize index for merge (strip timezones, sort)."""
     idx = pd.DatetimeIndex(index)
     if idx.tz is not None:
@@ -482,9 +480,9 @@ def _to_naive_datetime_index(index: Any) -> "pd.DatetimeIndex":
 
 
 def align_dividends_to_price_index(
-    hist: "pd.DataFrame",
-    dividend_series: "pd.Series",
-) -> "pd.DataFrame":
+    hist: pd.DataFrame,
+    dividend_series: pd.Series[Any],
+) -> pd.DataFrame:
     """
     Map each dividend to the first trading day on or after its ex-date.
 
@@ -516,8 +514,8 @@ def align_dividends_to_price_index(
             continue
         if value <= 0:
             continue
-        ex_ts = pd.Timestamp(ex).normalize()
-        position = payments.index.searchsorted(ex_ts, side="left")
+        ex_ts = pd.Timestamp(ex).normalize()  # type: ignore[arg-type]
+        position = int(payments.index.searchsorted(ex_ts, side="left"))
         if position >= len(payments):
             continue
         target = payments.index[position]

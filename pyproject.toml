@@ -1,0 +1,42 @@
+[tool.ruff]
+line-length = 100
+target-version = "py39" # Adjust to your Python version
+
+[tool.ruff.lint]
+# Enable Pyflakes, pycodestyle, isort, bugbear, pyupgrade, flake8-simplify, unused-arguments, flake8-future-annotations
+select = ["E", "W", "F", "I", "B", "C4", "ARG", "SIM", "UP", "C901", "FA"]
+ignore = []
+
+[tool.ruff.lint.mccabe]
+# Increase the default complexity threshold from 10 to 15 to reduce # noqa: C901 noise
+max-complexity = 15
+
+[tool.ruff.lint.per-file-ignores]
+# Pytest fixtures are often unused arguments; ignore them in test files
+"tests/**/*" = ["ARG", "S101", "F841"]
+
+[tool.vulture]
+exclude = [".venv", "venv", "env", "node_modules"]
+min_confidence = 80
+paths = ["."]
+# Ignore pytest fixtures and variables conventionally prefixed with an underscore
+ignore_names = ["_*", "mock_*", "pytest_plugins", "postgres_env", "skip_without_postgres"]
+
+[tool.mypy]
+# Suppress errors for third-party libraries that do not have type stubs
+ignore_missing_imports = true
+disable_error_code = ["import-untyped"]
+
+[[tool.mypy.overrides]]
+module = [
+    "tests.*",
+    "utils.yfinance_history",
+    "utils.yield_channel_history",
+    "services.portfolio_holding_detail_service",
+    "services.portfolio_holdings_summary",
+    "services.portfolio_services_layer",
+    "services.portfolio_ui_cache",
+    "services.portfolio_session",
+    "services.portfolio_risk_integration"
+]
+disable_error_code = ["misc", "no-any-return", "unused-ignore", "attr-defined", "arg-type", "union-attr", "method-assign", "name-defined", "call-arg", "type-arg", "assignment", "has-type", "func-returns-value", "list-item", "index"]

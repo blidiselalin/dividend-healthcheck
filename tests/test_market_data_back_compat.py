@@ -4,10 +4,13 @@ Backwards compatibility for market data enrichment and stored documents.
 Covers legacy DataSource values, YFinanceEnricher, pipeline/hourly entry points,
 vector store round-trips.
 """
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -34,7 +37,7 @@ from services import portfolio_vector_sync as sync
         ("unknown_vendor_xyz", DataSource.MANUAL),
     ],
 )
-def test_parse_data_source_legacy_and_unknown(raw, expected) -> None:
+def test_parse_data_source_legacy_and_unknown(raw: Any, expected: Any) -> None:
     assert parse_data_source(raw) == expected
 
 
@@ -64,7 +67,7 @@ def test_stock_document_roundtrip_preserves_legacy_fmp_source() -> None:
     assert restored.dividend_yield == 3.0
 
 
-def test_vector_store_fallback_loads_legacy_finnhub_metadata(tmp_path) -> None:
+def test_vector_store_fallback_loads_legacy_finnhub_metadata(tmp_path: Path) -> None:
     store = VectorStore(persist_directory=str(tmp_path / "vdb"))
     if not store._use_fallback:
         pytest.skip("ChromaDB installed; fallback path not active")
@@ -89,7 +92,7 @@ def test_vector_store_fallback_loads_legacy_finnhub_metadata(tmp_path) -> None:
         "dividendYield": 0.03,
     },
 )
-def test_yfinance_enricher_still_enriches_gaps(_info, _div, _price) -> None:
+def test_yfinance_enricher_still_enriches_gaps(_info: Any, _div: Any, _price: Any) -> None:
     enricher = YFinanceEnricher(request_delay=0)
     _div.side_effect = lambda doc, ticker: doc
     _price.side_effect = lambda doc, ticker: doc
@@ -100,7 +103,7 @@ def test_yfinance_enricher_still_enriches_gaps(_info, _div, _price) -> None:
 
 
 @patch("data_ingestion.pipeline.create_stock_enricher")
-def test_pipeline_enrich_uses_stock_enricher(mock_create, tmp_path) -> None:
+def test_pipeline_enrich_uses_stock_enricher(mock_create: Any, tmp_path: Path) -> None:
     mock_enricher = MagicMock()
     mock_enricher.enrich_batch.return_value = [
         StockDocument(symbol="KO", name="Coca-Cola", source=DataSource.YAHOO)
@@ -135,13 +138,15 @@ def test_multi_source_enricher_post_process_uses_yfinance_legacy() -> None:
     doc = StockDocument(symbol="KO", name="KO", source=DataSource.MANUAL)
     legacy_doc = StockDocument(symbol="KO", name="Coca-Cola Co", source=DataSource.YAHOO)
 
-    with patch.object(
-        enricher,
-        "fetch_snapshot",
-        return_value=StockSnapshot(symbol="KO", current_price=55.0),
+    with (
+        patch.object(
+            enricher,
+            "fetch_snapshot",
+            return_value=StockSnapshot(symbol="KO", current_price=55.0),
+        ),
+        patch.object(enricher._legacy, "enrich_document", return_value=legacy_doc) as mock_legacy,
     ):
-        with patch.object(enricher._legacy, "enrich_document", return_value=legacy_doc) as mock_legacy:
-            result = enricher.enrich_document(doc)
+        result = enricher.enrich_document(doc)
 
     mock_legacy.assert_called_once()
     assert result.name == "Coca-Cola Co"
@@ -153,18 +158,20 @@ def test_multi_source_enricher_can_disable_yfinance_post_process() -> None:
 
     enricher = MultiSourceEnricher(providers=[], use_yfinance_post_process=False)
     doc = StockDocument(symbol="X", name="X", source=DataSource.MANUAL)
-    with patch.object(
-        enricher,
-        "fetch_snapshot",
-        return_value=StockSnapshot(symbol="X", current_price=1.0),
+    with (
+        patch.object(
+            enricher,
+            "fetch_snapshot",
+            return_value=StockSnapshot(symbol="X", current_price=1.0),
+        ),
+        patch.object(enricher._legacy, "enrich_document") as mock_legacy,
     ):
-        with patch.object(enricher._legacy, "enrich_document") as mock_legacy:
-            enricher.enrich_document(doc)
+        enricher.enrich_document(doc)
     mock_legacy.assert_not_called()
 
 
 @patch("data_ingestion.stock_enricher.create_stock_enricher")
-def test_portfolio_vector_sync_fetch_uses_stock_enricher(mock_create) -> None:
+def test_portfolio_vector_sync_fetch_uses_stock_enricher(mock_create: Any) -> None:
     mock_enricher = MagicMock()
     expected = StockDocument(symbol="NEW", name="New Co", source=DataSource.YAHOO)
     mock_enricher.fetch_document.return_value = expected

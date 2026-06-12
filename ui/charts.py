@@ -4,14 +4,14 @@ Streamlit helpers for Plotly charts (uses utils.chart_theme).
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import streamlit as st
 
 from utils.chart_theme import style_figure
 
 # Clean toolbar: zoom/pan/download only
-PLOTLY_CONFIG: dict = {
+PLOTLY_CONFIG: dict[str, Any] = {
     "displayModeBar": True,
     "displaylogo": False,
     "responsive": True,
@@ -26,8 +26,8 @@ PLOTLY_CONFIG: dict = {
 def show_chart(
     fig: Any,
     *,
-    key: Optional[str] = None,
-    height: Optional[int] = None,
+    key: str | None = None,
+    height: int | None = None,
     **kwargs: Any,
 ) -> Any:
     """Render a styled Plotly figure full width (passes through Streamlit plotly_chart kwargs)."""
@@ -44,4 +44,4 @@ def show_chart(
     )
 
 
-__all__ = ["show_chart", "style_figure", "PLOTLY_CONFIG"]
+__all__ = ["PLOTLY_CONFIG", "show_chart", "style_figure"]

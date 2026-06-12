@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 ProgressCallback = Callable[[float, str], None]
 
@@ -20,17 +20,17 @@ if TYPE_CHECKING:
 class PortfolioAnalysisPreload:
     """In-memory analysis payloads keyed by ticker."""
 
-    stock_data: Dict[str, "StockData"]
-    yield_channels: Dict[str, "YieldChannelData"]
-    vector_docs: Dict[str, "StockDocument"]
+    stock_data: dict[str, StockData]
+    yield_channels: dict[str, YieldChannelData]
+    vector_docs: dict[str, StockDocument]
 
     @classmethod
     def from_caches(
         cls,
-        stock_data: Optional[Dict[str, "StockData"]] = None,
-        yield_channels: Optional[Dict[str, "YieldChannelData"]] = None,
-        vector_docs: Optional[Dict[str, "StockDocument"]] = None,
-    ) -> "PortfolioAnalysisPreload":
+        stock_data: dict[str, StockData] | None = None,
+        yield_channels: dict[str, YieldChannelData] | None = None,
+        vector_docs: dict[str, StockDocument] | None = None,
+    ) -> PortfolioAnalysisPreload:
         return cls(
             stock_data=dict(stock_data or {}),
             yield_channels=dict(yield_channels or {}),
@@ -39,13 +39,13 @@ class PortfolioAnalysisPreload:
 
 
 def preload_portfolio_analysis(
-    symbols: List[str],
-    stock_data: Dict[str, "StockData"],
-    vector_docs: Dict[str, "StockDocument"],
+    symbols: list[str],
+    stock_data: dict[str, StockData],
+    vector_docs: dict[str, StockDocument],
     *,
     years: int = 10,
     max_workers: int = 6,
-    progress_callback: Optional[ProgressCallback] = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> PortfolioAnalysisPreload:
     """
     Fetch yield-channel series and retain vector documents for every holding.
@@ -54,9 +54,8 @@ def preload_portfolio_analysis(
     charts from the updated library.
     """
     from services.portfolio_details_service import PortfolioDetailsService
-    from services.stock_history_backfill import backfill_portfolio_holdings
     from services.stock_analysis_service import load_yield_channel_data
-    from services.yield_channel_chart import YieldChannelData
+    from services.stock_history_backfill import backfill_portfolio_holdings
     from utils.stock_document_history import history_is_thin
 
     docs = dict(vector_docs)
@@ -81,7 +80,7 @@ def preload_portfolio_analysis(
         )
         docs = PortfolioDetailsService()._load_documents(symbols)
 
-    yield_channels: Dict[str, YieldChannelData] = {}
+    yield_channels: dict[str, YieldChannelData] = {}
     if not symbols:
         return PortfolioAnalysisPreload(
             stock_data=dict(stock_data),

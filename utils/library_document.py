@@ -4,7 +4,7 @@ Resolve analysed-library documents for charting (fresh DB + trustworthy history)
 
 from __future__ import annotations
 
-from typing import Any, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from data_ingestion.models import StockDocument
@@ -12,8 +12,8 @@ if TYPE_CHECKING:
 
 def resolve_library_document(
     symbol: str,
-    document: Optional["StockDocument"] = None,
-) -> Optional["StockDocument"]:
+    document: StockDocument | None = None,
+) -> StockDocument | None:
     """
     Load the best library document for yield-channel / history charts.
 

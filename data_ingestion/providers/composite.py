@@ -7,28 +7,28 @@ Chains providers by priority; each provider fills only missing field groups.
 from __future__ import annotations
 
 import logging
-from typing import List, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from data_ingestion.models import StockDocument
 from data_ingestion.providers.base import StockDataProvider
 from data_ingestion.providers.sec_edgar import SecEdgarProvider
-from data_ingestion.providers.stooq import StooqProvider
 from data_ingestion.providers.snapshot import (
     FIELD_GROUPS,
     StockSnapshot,
     apply_snapshot_to_document,
     missing_field_groups,
-    snapshot_from_document,
 )
+from data_ingestion.providers.stooq import StooqProvider
 from data_ingestion.providers.yahoo import YahooFinanceProvider
 from data_ingestion.yfinance_enricher import YFinanceEnricher
 
 logger = logging.getLogger(__name__)
 
 
-def default_providers() -> List[StockDataProvider]:
+def default_providers() -> list[StockDataProvider]:
     """Built-in providers sorted by priority (Yahoo → SEC EDGAR → Stooq). All free, no API keys."""
-    providers: List[StockDataProvider] = [
+    providers: list[StockDataProvider] = [
         YahooFinanceProvider(request_delay=0.35),
         SecEdgarProvider(request_delay=0.2),
         StooqProvider(request_delay=0.2),
@@ -49,16 +49,16 @@ class MultiSourceEnricher:
 
     def __init__(
         self,
-        providers: Optional[Sequence[StockDataProvider]] = None,
+        providers: Sequence[StockDataProvider] | None = None,
         *,
         use_yfinance_post_process: bool = True,
         request_delay: float = 0.35,
-    ):
+    ) -> None:
         self.providers = list(providers) if providers is not None else default_providers()
         self.use_yfinance_post_process = use_yfinance_post_process
         self._legacy = YFinanceEnricher(request_delay=request_delay)
 
-    def fetch_snapshot(self, symbol: str, *, doc: Optional[StockDocument] = None) -> StockSnapshot:
+    def fetch_snapshot(self, symbol: str, *, doc: StockDocument | None = None) -> StockSnapshot:
         """Fetch merged snapshot for ``symbol``, optionally respecting existing doc gaps."""
         symbol = symbol.upper().strip()
         merged = StockSnapshot(symbol=symbol)
@@ -103,10 +103,10 @@ class MultiSourceEnricher:
 
     def enrich_batch(
         self,
-        documents: List[StockDocument],
-        progress_callback=None,
-    ) -> List[StockDocument]:
-        enriched: List[StockDocument] = []
+        documents: list[StockDocument],
+        progress_callback: Any | None = None,
+    ) -> list[StockDocument]:
+        enriched: list[StockDocument] = []
         total = len(documents)
         for index, doc in enumerate(documents):
             enriched.append(self.enrich_document(doc))
@@ -114,14 +114,18 @@ class MultiSourceEnricher:
                 progress_callback(index + 1, total)
         return enriched
 
-    def fetch_document(self, symbol: str) -> Optional[StockDocument]:
+    def fetch_document(self, symbol: str) -> StockDocument | None:
         """Create a new document from merged provider data."""
         from data_ingestion.models import DataSource
 
         snap = self.fetch_snapshot(symbol)
         if not snap.populated_scalar_fields() and not snap.dividend_history:
             return None
-        doc = StockDocument(symbol=symbol.upper(), name=snap.name or symbol.upper(), source=DataSource.MANUAL)
+        doc = StockDocument(
+            symbol=symbol.upper(),
+            name=snap.name or symbol.upper(),
+            source=DataSource.MANUAL,
+        )
         doc = apply_snapshot_to_document(doc, snap)
         if self.use_yfinance_post_process:
             doc = self._legacy.enrich_document(doc)

@@ -4,19 +4,21 @@ Flag portfolio holdings: dividend timing (separate list) vs negative risk signal
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Dict, List, Optional, Sequence, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from data_ingestion.portfolio_store import PortfolioHolding
-from services.portfolio_dividend_calendar import build_portfolio_dividend_calendar
+import pandas as pd
+
 from services.portfolio_details_service import PortfolioDetailRow
+from services.portfolio_dividend_calendar import build_portfolio_dividend_calendar
 from services.portfolio_zone_overview import zone_to_category
 
 if TYPE_CHECKING:
-    from services.portfolio_analysis_preload import PortfolioAnalysisPreload
     from services.news_service import NewsSummary
+    from services.portfolio_analysis_preload import PortfolioAnalysisPreload
 
 EX_DATE_SOON_DAYS = 21
 OVERWEIGHT_WEIGHT_PCT = 10.0
@@ -48,24 +50,24 @@ class AttentionItem:
     score: int
     categories: tuple[str, ...]
     reasons: tuple[str, ...]
-    portfolio_weight_pct: Optional[float] = None
-    profit_pct: Optional[float] = None
-    timing: Optional[str] = None  # dividend list: upcoming ex-date, paid, etc.
-    ex_date: Optional[date] = None
-    pay_date: Optional[date] = None
+    portfolio_weight_pct: float | None = None
+    profit_pct: float | None = None
+    timing: str | None = None  # dividend list: upcoming ex-date, paid, etc.
+    ex_date: date | None = None
+    pay_date: date | None = None
 
 
 @dataclass
 class AttentionSummary:
     """Risk (high severity only), buy opportunities, and dividend timing — separate lists."""
 
-    risk_items: List[AttentionItem] = field(default_factory=list)
-    opportunity_items: List[AttentionItem] = field(default_factory=list)
-    dividend_items: List[AttentionItem] = field(default_factory=list)
+    risk_items: list[AttentionItem] = field(default_factory=list)
+    opportunity_items: list[AttentionItem] = field(default_factory=list)
+    dividend_items: list[AttentionItem] = field(default_factory=list)
     reference_date: date = field(default_factory=date.today)
 
     @property
-    def items(self) -> List[AttentionItem]:
+    def items(self) -> list[AttentionItem]:
         """Backward compatibility: attention watchlist = high-risk only."""
         return self.risk_items
 
@@ -94,8 +96,8 @@ class AttentionSummary:
         return sum(1 for item in self.dividend_items if item.timing == label)
 
     @property
-    def by_category(self) -> Dict[str, int]:
-        counts: Dict[str, int] = {}
+    def by_category(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
         for item in self.risk_items:
             for category in item.categories:
                 counts[category] = counts.get(category, 0) + 1
@@ -104,11 +106,11 @@ class AttentionSummary:
 
 def split_legacy_attention_items(
     items: Sequence[AttentionItem],
-    reference_date: Optional[date] = None,
+    reference_date: date | None = None,
 ) -> AttentionSummary:
     """Convert pre-split cached items into risk + dividend lists."""
-    risk_items: List[AttentionItem] = []
-    dividend_items: List[AttentionItem] = []
+    risk_items: list[AttentionItem] = []
+    dividend_items: list[AttentionItem] = []
     ref = reference_date or date.today()
 
     for item in items:
@@ -157,7 +159,7 @@ def split_legacy_attention_items(
     )
 
 
-def normalize_attention_summary(summary: Any) -> Optional[AttentionSummary]:
+def normalize_attention_summary(summary: Any) -> AttentionSummary | None:
     """Support dict cache, new objects, and legacy session-state summaries."""
     if summary is None:
         return None
@@ -193,18 +195,16 @@ class PortfolioAttentionService:
     def build_summary(
         self,
         rows: Sequence[PortfolioDetailRow],
-        preload: "PortfolioAnalysisPreload",
+        preload: PortfolioAnalysisPreload,
         *,
-        reference_date: Optional[date] = None,
-        news_by_symbol: Optional[Dict[str, "NewsSummary"]] = None,
+        reference_date: date | None = None,
+        news_by_symbol: dict[str, NewsSummary] | None = None,
     ) -> AttentionSummary:
         today = reference_date or date.today()
         from services.portfolio_context import create_portfolio_context
 
         holdings = create_portfolio_context().portfolio.list_holdings()
-        row_dates = {
-            row.ticker: (row.ex_dividend_date, row.dividend_pay_date) for row in rows
-        }
+        row_dates = {row.ticker: (row.ex_dividend_date, row.dividend_pay_date) for row in rows}
         calendar = build_portfolio_dividend_calendar(
             holdings,
             vector_docs=preload.vector_docs,
@@ -221,9 +221,9 @@ class PortfolioAttentionService:
             if item.status in ("scheduled", "projected")
         }
 
-        risk_scored: List[AttentionItem] = []
-        opportunity_scored: List[AttentionItem] = []
-        dividend_scored: List[AttentionItem] = []
+        risk_scored: list[AttentionItem] = []
+        opportunity_scored: list[AttentionItem] = []
+        dividend_scored: list[AttentionItem] = []
         for row in rows:
             dividend_flags = self._evaluate_dividend_attention(
                 row,
@@ -295,7 +295,7 @@ class PortfolioAttentionService:
             reference_date=today,
         )
 
-    def _evaluate_dividend_attention(
+    def _evaluate_dividend_attention(  # noqa: C901
         self,
         row: PortfolioDetailRow,
         *,
@@ -303,10 +303,10 @@ class PortfolioAttentionService:
         current_payers: set[str],
         next_payers: set[str],
         scheduled_now: set[str],
-    ) -> Optional[tuple[str, List[str]]]:
+    ) -> tuple[str, list[str]] | None:
         from services.dividend_timing import classify_dividend_timing
 
-        reasons: List[str] = []
+        reasons: list[str] = []
         timing = classify_dividend_timing(
             today=today,
             ex_date=row.ex_dividend_date,
@@ -316,9 +316,7 @@ class PortfolioAttentionService:
         if row.ex_dividend_date:
             days_to_ex = (row.ex_dividend_date - today).days
             if days_to_ex > 0:
-                reasons.append(
-                    f"Ex-dividend in {days_to_ex} day(s) ({row.ex_dividend_date:%d %b})"
-                )
+                reasons.append(f"Ex-dividend in {days_to_ex} day(s) ({row.ex_dividend_date:%d %b})")
             elif days_to_ex == 0:
                 reasons.append(f"Ex-dividend today ({row.ex_dividend_date:%d %b})")
             elif row.dividend_pay_date and row.dividend_pay_date > today:
@@ -327,9 +325,12 @@ class PortfolioAttentionService:
                     f"payment expected {row.dividend_pay_date:%d %b}"
                 )
 
-        if row.dividend_pay_date and row.dividend_pay_date > today:
-            if not any("payment" in r.lower() or "pay" in r.lower() for r in reasons):
-                reasons.append(f"Payment date {row.dividend_pay_date:%d %b}")
+        if (
+            row.dividend_pay_date
+            and row.dividend_pay_date > today
+            and not any("payment" in r.lower() or "pay" in r.lower() for r in reasons)
+        ):
+            reasons.append(f"Payment date {row.dividend_pay_date:%d %b}")
 
         if row.ticker in scheduled_now:
             reasons.append("Payment scheduled or projected this month")
@@ -338,7 +339,7 @@ class PortfolioAttentionService:
         elif row.ticker in next_payers:
             reasons.append("Dividend expected next month")
 
-        from services.dividend_timing import TIMING_LABELS, PAID
+        from services.dividend_timing import PAID, TIMING_LABELS
 
         if timing == TIMING_LABELS[PAID]:
             return None
@@ -348,17 +349,17 @@ class PortfolioAttentionService:
 
         return timing, reasons[:5]
 
-    def _evaluate_risk_attention(
+    def _evaluate_risk_attention(  # noqa: C901
         self,
         row: PortfolioDetailRow,
         *,
-        preload: "PortfolioAnalysisPreload",
-        news: Optional["NewsSummary"],
-    ) -> Optional[tuple[int, str, set[str], List[str]]]:
+        preload: PortfolioAnalysisPreload,
+        news: NewsSummary | None,
+    ) -> tuple[int, str, set[str], list[str]] | None:
         """Flag only material, compounded risk — surfaced on watchlist if severity is high."""
         score = 0
         categories: set[str] = set()
-        reasons: List[str] = []
+        reasons: list[str] = []
 
         channel = preload.yield_channels.get(row.ticker)
         zone_category = zone_to_category(channel.zone) if channel else "unknown"
@@ -369,15 +370,13 @@ class PortfolioAttentionService:
                 score += 22
                 categories.add("Exposure")
                 reasons.append(
-                    f"Expensive yield zone ({channel.zone}) with "
-                    f"{loss_pct:+.1f}% unrealized loss"
+                    f"Expensive yield zone ({channel.zone}) with {loss_pct:+.1f}% unrealized loss"
                 )
             elif loss_pct is not None and loss_pct < -5:
                 score += 14
                 categories.add("Exposure")
                 reasons.append(
-                    f"Expensive yield zone ({channel.zone}) while underwater "
-                    f"({loss_pct:+.1f}%)"
+                    f"Expensive yield zone ({channel.zone}) while underwater ({loss_pct:+.1f}%)"
                 )
 
         if loss_pct is not None:
@@ -390,22 +389,30 @@ class PortfolioAttentionService:
                 categories.add("Exposure")
                 reasons.append(f"Deep unrealized loss ({loss_pct:+.1f}%)")
 
-        if row.change_365d_pct is not None and row.change_365d_pct <= DECLINE_365_WARN_PCT:
-            if loss_pct is not None and loss_pct < 0:
-                score += 16
-                categories.add("Exposure")
-                reasons.append(
-                    f"Price down {abs(row.change_365d_pct):.1f}% over 12 months "
-                    f"with {loss_pct:+.1f}% position loss"
-                )
-        elif row.change_180d_pct is not None and row.change_180d_pct <= DECLINE_180_WARN_PCT:
-            if loss_pct is not None and loss_pct <= PROFIT_WARN_PCT:
-                score += 12
-                categories.add("Exposure")
-                reasons.append(
-                    f"Price down {abs(row.change_180d_pct):.1f}% over 6 months "
-                    f"with {loss_pct:+.1f}% loss"
-                )
+        if (
+            row.change_365d_pct is not None
+            and row.change_365d_pct <= DECLINE_365_WARN_PCT
+            and loss_pct is not None
+            and loss_pct < 0
+        ):
+            score += 16
+            categories.add("Exposure")
+            reasons.append(
+                f"Price down {abs(row.change_365d_pct):.1f}% over 12 months "
+                f"with {loss_pct:+.1f}% position loss"
+            )
+        elif (
+            row.change_180d_pct is not None
+            and row.change_180d_pct <= DECLINE_180_WARN_PCT
+            and loss_pct is not None
+            and loss_pct <= PROFIT_WARN_PCT
+        ):
+            score += 12
+            categories.add("Exposure")
+            reasons.append(
+                f"Price down {abs(row.change_180d_pct):.1f}% over 6 months "
+                f"with {loss_pct:+.1f}% loss"
+            )
 
         rating = (row.analyst_rating or "").upper()
         if rating in {"AVOID", "SELL", "STRONG SELL", "UNDERPERFORM"}:
@@ -414,15 +421,19 @@ class PortfolioAttentionService:
             reasons.append(f"Analyst view: {row.analyst_rating}")
 
         stock = preload.stock_data.get(row.ticker)
-        if stock and stock.target_upside_pct is not None:
-            if stock.target_upside_pct <= TARGET_DOWNSIDE_WARN_PCT:
-                if loss_pct is not None and loss_pct < 0:
-                    score += 18
-                    categories.add("Estimates")
-                    reasons.append(
-                        f"Consensus target implies {stock.target_upside_pct:+.1f}% "
-                        "downside while at a loss"
-                    )
+        if (
+            stock
+            and stock.target_upside_pct is not None
+            and stock.target_upside_pct <= TARGET_DOWNSIDE_WARN_PCT
+            and loss_pct is not None
+            and loss_pct < 0
+        ):
+            score += 18
+            categories.add("Estimates")
+            reasons.append(
+                f"Consensus target implies {stock.target_upside_pct:+.1f}% "
+                "downside while at a loss"
+            )
 
         if (
             row.weight_pct is not None
@@ -442,8 +453,7 @@ class PortfolioAttentionService:
                 score += 12
                 categories.add("News")
                 reasons.append(
-                    f"Headline skew negative ({news.negative_count} vs "
-                    f"{news.positive_count})"
+                    f"Headline skew negative ({news.negative_count} vs {news.positive_count})"
                 )
 
         if score < RISK_MIN_SCORE or not categories:
@@ -454,12 +464,12 @@ class PortfolioAttentionService:
         severity = "high" if score >= RISK_HIGH_SCORE else "medium"
         return score, severity, categories, reasons[:5]
 
-    def _evaluate_buy_opportunity(
+    def _evaluate_buy_opportunity(  # noqa: C901
         self,
         row: PortfolioDetailRow,
         *,
-        preload: "PortfolioAnalysisPreload",
-    ) -> Optional[tuple[int, str, set[str], List[str]]]:
+        preload: PortfolioAnalysisPreload,
+    ) -> tuple[int, str, set[str], list[str]] | None:
         """Rank holdings that fit a disciplined buy thesis (yield zone + quality signals)."""
         channel = preload.yield_channels.get(row.ticker)
         if not channel:
@@ -477,7 +487,7 @@ class PortfolioAttentionService:
 
         score = 0
         categories: set[str] = set()
-        reasons: List[str] = []
+        reasons: list[str] = []
 
         if channel.zone == "Deep Value":
             score += 38
@@ -488,15 +498,13 @@ class PortfolioAttentionService:
             categories.add(OPPORTUNITY_CATEGORY)
             reasons.append(f"Buy-zone yield ({channel.zone}) vs long-term history")
 
-        gap_fair_pct: Optional[float] = None
+        gap_fair_pct: float | None = None
         if channel.current_price and channel.fair_value_price:
             gap_fair_pct = ((channel.fair_value_price / channel.current_price) - 1) * 100
             if gap_fair_pct >= OPPORTUNITY_MIN_GAP_TO_FAIR_PCT:
                 score += 14
                 categories.add(OPPORTUNITY_CATEGORY)
-                reasons.append(
-                    f"Price {gap_fair_pct:.0f}% below fair-value yield level"
-                )
+                reasons.append(f"Price {gap_fair_pct:.0f}% below fair-value yield level")
             elif zone_category == "yellow" and gap_fair_pct >= 4:
                 score += 20
                 categories.add(OPPORTUNITY_CATEGORY)
@@ -529,10 +537,10 @@ class PortfolioAttentionService:
 
     def to_dataframe(
         self,
-        summary: Optional[AttentionSummary],
+        summary: AttentionSummary | None,
         *,
         list_kind: str = "risk",
-    ):
+    ) -> pd.DataFrame:
         import pandas as pd
 
         summary = normalize_attention_summary(summary)
@@ -554,10 +562,7 @@ class PortfolioAttentionService:
                     for item in items
                 ]
             )
-        if list_kind == "opportunity":
-            items = summary.opportunity_items
-        else:
-            items = summary.risk_items
+        items = summary.opportunity_items if list_kind == "opportunity" else summary.risk_items
         return pd.DataFrame(
             [
                 {
@@ -580,7 +585,7 @@ class PortfolioAttentionService:
         *,
         max_symbols: int = 15,
         max_workers: int = 4,
-    ) -> Dict[str, "NewsSummary"]:
+    ) -> dict[str, NewsSummary]:
         """Fetch recent news summaries for a limited symbol list (network)."""
         from services.news_service import NewsService
 
@@ -589,7 +594,7 @@ class PortfolioAttentionService:
             return {}
 
         service = NewsService(days=7)
-        results: Dict[str, "NewsSummary"] = {}
+        results: dict[str, NewsSummary] = {}
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
@@ -600,6 +605,6 @@ class PortfolioAttentionService:
                 symbol = futures[future]
                 try:
                     results[symbol] = future.result()
-                except Exception:
+                except Exception:  # noqa: S112
                     continue
         return results

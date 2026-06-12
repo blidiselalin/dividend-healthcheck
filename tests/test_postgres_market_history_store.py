@@ -1,4 +1,5 @@
 """Tests for normalized stock market history tables."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -8,7 +9,7 @@ from unittest.mock import MagicMock, patch
 from data_ingestion.models import DividendRecord, PriceHistory, StockDocument
 
 
-def test_upsert_document_history_writes_price_and_dividend_rows():
+def test_upsert_document_history_writes_price_and_dividend_rows() -> None:
     doc = StockDocument(symbol="KO", name="Coke")
     doc.price_history = [
         PriceHistory(
@@ -30,8 +31,9 @@ def test_upsert_document_history_writes_price_and_dividend_rows():
     mock_cm.__enter__ = MagicMock(return_value=mock_conn)
     mock_cm.__exit__ = MagicMock(return_value=False)
 
-    with patch("db.connection.ensure_schema"), patch(
-        "db.connection.get_connection", return_value=mock_cm
+    with (
+        patch("db.connection.ensure_schema"),
+        patch("db.connection.get_connection", return_value=mock_cm),
     ):
         from db.postgres_market_history_store import PostgresMarketHistoryStore
 
@@ -43,7 +45,7 @@ def test_upsert_document_history_writes_price_and_dividend_rows():
     assert "stock_dividend_history" in sql_calls
 
 
-def test_attach_history_prefers_table_when_json_prices_are_duplicated():
+def test_attach_history_prefers_table_when_json_prices_are_duplicated() -> None:
     from datetime import date
 
     doc = StockDocument(symbol="INTU", name="Intuit")
@@ -73,15 +75,16 @@ def test_attach_history_prefers_table_when_json_prices_are_duplicated():
     from db.postgres_market_history_store import PostgresMarketHistoryStore
 
     store = PostgresMarketHistoryStore()
-    with patch.object(store, "load_price_history", return_value=table_prices), patch.object(
-        store, "load_dividend_history", return_value=[]
+    with (
+        patch.object(store, "load_price_history", return_value=table_prices),
+        patch.object(store, "load_dividend_history", return_value=[]),
     ):
         updated = store.attach_history_to_document(doc)
 
     assert len(updated.price_history) == 300
 
 
-def test_attach_history_uses_table_when_equal_or_richer():
+def test_attach_history_uses_table_when_equal_or_richer() -> None:
     doc = StockDocument(symbol="AAPL", name="Apple")
     doc.price_history = []
 
@@ -99,8 +102,9 @@ def test_attach_history_uses_table_when_equal_or_richer():
     from db.postgres_market_history_store import PostgresMarketHistoryStore
 
     store = PostgresMarketHistoryStore()
-    with patch.object(store, "load_price_history", return_value=table_prices), patch.object(
-        store, "load_dividend_history", return_value=[]
+    with (
+        patch.object(store, "load_price_history", return_value=table_prices),
+        patch.object(store, "load_dividend_history", return_value=[]),
     ):
         updated = store.attach_history_to_document(doc)
 

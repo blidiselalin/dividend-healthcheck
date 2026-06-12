@@ -58,9 +58,7 @@ def _render_login_content(*, access_denied: bool) -> None:
     if test_user_enabled():
         st.divider()
         st.markdown("#### Test user (UI check)")
-        st.caption(
-            f"Demo data KO, JNJ, O · no Google needed · {test_user_email()}"
-        )
+        st.caption(f"Demo data KO, JNJ, O · no Google needed · {test_user_email()}")
         if st.button("Continue as test user", use_container_width=True):
             sign_in_as_test_user()
             st.rerun()
@@ -73,7 +71,8 @@ def _render_google_auth_block() -> None:
         st.markdown("### Create your account")
         if invite_only_signup():
             st.caption(
-                "Sign up or sign in with an **invited** Google account, or request access after signing in with Google. "
+                "Sign up or sign in with an **invited** Google account, "
+                "or request access after signing in with Google. "
                 "Your portfolio is private to you."
             )
             allowed = sorted(allowed_emails())

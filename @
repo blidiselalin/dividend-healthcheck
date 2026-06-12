@@ -1,0 +1,12 @@
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Keep this version synchronized with your local Ruff version
+    rev: v0.9.0
+    hooks:
+      # Hook 1: Run the linter and automatically fix safe violations (like sorting imports)
+      - id: ruff
+        args: [ --fix ]
+      # Hook 2: Run the formatter to enforce consistent code styling
+      - id: ruff-format
+

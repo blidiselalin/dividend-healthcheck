@@ -1,32 +1,25 @@
 """Tests for multi-source stock snapshot merge (no live APIs)."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from data_ingestion.deposits_store import DepositsStore
-from data_ingestion.dividend_income_store import DividendIncomeStore
-from data_ingestion.dividend_receipt_store import DividendReceiptStore
 from data_ingestion.models import DataSource, StockDocument
 from data_ingestion.providers.base import StockDataProvider
 from data_ingestion.providers.composite import MultiSourceEnricher, default_providers
 from data_ingestion.providers.sec_edgar import SecEdgarProvider, clear_sec_caches
-from data_ingestion.providers.stooq import StooqProvider, _parse_stooq_csv, _stooq_symbol
 from data_ingestion.providers.snapshot import (
     StockSnapshot,
     apply_snapshot_to_document,
-    missing_field_groups,
 )
-from data_ingestion.providers.yahoo import YahooFinanceProvider
+from data_ingestion.providers.stooq import _parse_stooq_csv, _stooq_symbol
 from data_ingestion.stock_enricher import (
     ENRICHER_AVAILABLE,
     create_stock_enricher,
     provider_status,
 )
-from data_ingestion.portfolio_store import PortfolioStore
-from data_ingestion.purchase_journal_store import PurchaseJournalStore
 
 
 class _StubProvider(StockDataProvider):
@@ -34,13 +27,13 @@ class _StubProvider(StockDataProvider):
     field_groups = frozenset({"dividend", "price"})
     priority = 50
 
-    def __init__(self, snapshot: StockSnapshot):
+    def __init__(self, snapshot: StockSnapshot) -> None:
         self.snapshot = snapshot
 
     def available(self) -> bool:
         return True
 
-    def fetch(self, symbol: str):
+    def fetch(self, symbol: str) -> StockSnapshot:
         return StockSnapshot(
             symbol=symbol.upper(),
             source=self.source,
@@ -57,7 +50,7 @@ class _IdentityProvider(StockDataProvider):
     def available(self) -> bool:
         return True
 
-    def fetch(self, symbol: str):
+    def fetch(self, symbol: str) -> StockSnapshot:
         return StockSnapshot(
             symbol=symbol.upper(),
             source=self.source,
@@ -66,16 +59,16 @@ class _IdentityProvider(StockDataProvider):
         )
 
 
-def test_enricher_available():
+def test_enricher_available() -> None:
     assert ENRICHER_AVAILABLE is True
 
 
-def test_create_stock_enricher_returns_composite():
+def test_create_stock_enricher_returns_composite() -> None:
     enricher = create_stock_enricher(request_delay=0.1)
     assert isinstance(enricher, MultiSourceEnricher)
 
 
-def test_provider_status_includes_free_providers():
+def test_provider_status_includes_free_providers() -> None:
     rows = {row["id"]: row for row in provider_status()}
     assert rows["yahoo"]["available"] is True
     assert rows["sec_edgar"]["available"] is True
@@ -84,7 +77,7 @@ def test_provider_status_includes_free_providers():
     assert "fmp" not in rows
 
 
-def test_default_providers_are_free_sources():
+def test_default_providers_are_free_sources() -> None:
     providers = default_providers()
     ids = {provider.source for provider in providers}
     assert DataSource.YAHOO in ids
@@ -94,12 +87,12 @@ def test_default_providers_are_free_sources():
     assert DataSource.FMP not in ids
 
 
-def test_stooq_symbol_maps_class_shares():
+def test_stooq_symbol_maps_class_shares() -> None:
     assert _stooq_symbol("BRK.B") == "brk-b.us"
     assert _stooq_symbol("KO") == "ko.us"
 
 
-def test_parse_stooq_csv_builds_history():
+def test_parse_stooq_csv_builds_history() -> None:
     csv_text = (
         "Date,Open,High,Low,Close,Volume\n"
         "2024-01-02,10,11,9,10.5,1000\n"
@@ -111,7 +104,7 @@ def test_parse_stooq_csv_builds_history():
 
 
 @patch("data_ingestion.providers.sec_edgar._ticker_index", return_value={"KO": 21344})
-def test_sec_edgar_fetch_parses_company_facts(mock_index):
+def test_sec_edgar_fetch_parses_company_facts(mock_index: Any) -> None:
     clear_sec_caches()
     provider = SecEdgarProvider(request_delay=0)
     facts = {
@@ -137,9 +130,7 @@ def test_sec_edgar_fetch_parses_company_facts(mock_index):
         },
     }
     provider._get_facts = MagicMock(return_value=facts)
-    provider._submissions_sic = MagicMock(
-        return_value={"code": "2080", "description": "Beverages"}
-    )
+    provider._submissions_sic = MagicMock(return_value={"code": "2080", "description": "Beverages"})
 
     snap = provider.fetch("KO")
     assert snap is not None
@@ -149,7 +140,7 @@ def test_sec_edgar_fetch_parses_company_facts(mock_index):
     assert snap.roe == 20.0
 
 
-def test_apply_snapshot_fills_gaps_without_overwrite():
+def test_apply_snapshot_fills_gaps_without_overwrite() -> None:
     doc = StockDocument(symbol="KO", name="KO", source=DataSource.MANUAL)
     doc.dividend_yield = 3.1
     snap = StockSnapshot(
@@ -167,7 +158,7 @@ def test_apply_snapshot_fills_gaps_without_overwrite():
     assert doc.pe_ratio == 22.0
 
 
-def test_composite_calls_second_provider_for_gaps():
+def test_composite_calls_second_provider_for_gaps() -> None:
     doc = StockDocument(symbol="AAA", name="AAA", source=DataSource.MANUAL)
     enricher = MultiSourceEnricher(
         providers=[
@@ -182,7 +173,7 @@ def test_composite_calls_second_provider_for_gaps():
     assert result.sector == "Consumer"
 
 
-def test_snapshot_merge_from_combines_fields():
+def test_snapshot_merge_from_combines_fields() -> None:
     left = StockSnapshot(symbol="KO", source=DataSource.YAHOO)
     right = StockSnapshot(symbol="KO", source=DataSource.STOOQ, dividend_yield=3.0)
     left.merge_from(right)

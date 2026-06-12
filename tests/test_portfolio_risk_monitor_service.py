@@ -1,4 +1,5 @@
 """Tests for portfolio risk monitor serialization and staleness."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -8,33 +9,23 @@ from services.portfolio_attention_service import AttentionItem, AttentionSummary
 from services.portfolio_risk_monitor_service import PortfolioRiskMonitorService
 
 
-def test_is_stale_when_never_checked():
+def test_is_stale_when_never_checked() -> None:
     assert PortfolioRiskMonitorService.is_stale(None) is True
 
 
-def test_is_stale_within_interval():
+def test_is_stale_within_interval() -> None:
     now = datetime(2026, 5, 13, 12, 0, 0)
     checked = now - timedelta(minutes=30)
-    assert (
-        PortfolioRiskMonitorService.is_stale(
-            checked, interval_seconds=3600, now=now
-        )
-        is False
-    )
+    assert PortfolioRiskMonitorService.is_stale(checked, interval_seconds=3600, now=now) is False
 
 
-def test_is_stale_after_interval():
+def test_is_stale_after_interval() -> None:
     now = datetime(2026, 5, 13, 12, 0, 0)
     checked = now - timedelta(hours=2)
-    assert (
-        PortfolioRiskMonitorService.is_stale(
-            checked, interval_seconds=3600, now=now
-        )
-        is True
-    )
+    assert PortfolioRiskMonitorService.is_stale(checked, interval_seconds=3600, now=now) is True
 
 
-def test_summary_round_trip():
+def test_summary_round_trip() -> None:
     item = AttentionItem(
         symbol="ARE",
         company="Alexandria",

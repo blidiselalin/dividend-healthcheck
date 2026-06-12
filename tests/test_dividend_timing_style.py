@@ -1,12 +1,13 @@
 """Styled dividend timing tables."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 import pandas as pd
 
 from services.dividend_timing import (
-    TIMING_LABELS,
     PAID,
+    TIMING_LABELS,
     UPCOMING_EX,
     classify_dividend_timing,
     style_dividend_timing_dataframe,

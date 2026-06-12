@@ -1,4 +1,5 @@
 """Live PostgreSQL integration tests (run in CI with a Postgres service)."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -8,17 +9,15 @@ from pathlib import Path
 
 import pytest
 
-from tests.support.postgres_fixtures import reset_db_connection_state
-
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.usefixtures("reset_db_connection_state"),
 ]
 
 
-def test_schema_and_market_document_roundtrip(pg_user_id: str):
+def test_schema_and_market_document_roundtrip(pg_user_id: str) -> None:
     from data_ingestion.models import StockDocument
-    from db.connection import ensure_schema, get_connection, use_cloud_sql
+    from db.connection import ensure_schema, use_cloud_sql
     from db.postgres_market_store import PostgresMarketStore
 
     assert use_cloud_sql()
@@ -36,9 +35,9 @@ def test_schema_and_market_document_roundtrip(pg_user_id: str):
     store.delete_symbols(["INTC"])
 
 
-def test_portfolio_holdings_roundtrip(pg_user_id: str, monkeypatch):
+def test_portfolio_holdings_roundtrip(pg_user_id: str, monkeypatch: pytest.MonkeyPatch) -> None:
     from data_ingestion.portfolio_store import PortfolioStore
-    from db.connection import ensure_schema, get_connection, open_portfolio_db
+    from db.connection import ensure_schema
 
     ensure_schema()
     monkeypatch.setattr("db.connection.portfolio_user_id", lambda: pg_user_id)
@@ -55,7 +54,7 @@ def test_portfolio_holdings_roundtrip(pg_user_id: str, monkeypatch):
     assert store.list_holdings() == []
 
 
-def test_user_store_upsert_and_admin_preserve(pg_user_id: str):
+def test_user_store_upsert_and_admin_preserve(pg_user_id: str) -> None:
     from auth.user_store import UserStore
     from db.connection import ensure_schema
 
@@ -81,7 +80,7 @@ def test_user_store_upsert_and_admin_preserve(pg_user_id: str):
     assert again.is_admin is True
 
 
-def test_dividend_and_deposit_stores(pg_user_id: str, monkeypatch):
+def test_dividend_and_deposit_stores(pg_user_id: str, monkeypatch: pytest.MonkeyPatch) -> None:
     from data_ingestion.deposits_store import DepositsStore
     from data_ingestion.dividend_income_store import DividendIncomeStore
     from db.connection import ensure_schema
@@ -116,7 +115,7 @@ def test_dividend_and_deposit_stores(pg_user_id: str, monkeypatch):
     assert listed[0].net_usd == pytest.approx(42.50)
 
 
-def test_migrate_script_users_and_portfolio(tmp_path: Path, pg_user_id: str):
+def test_migrate_script_users_and_portfolio(tmp_path: Path, pg_user_id: str) -> None:
     import sqlite3
 
     from db.connection import ensure_schema, get_connection, use_cloud_sql
@@ -154,9 +153,7 @@ def test_migrate_script_users_and_portfolio(tmp_path: Path, pg_user_id: str):
             )
             """
         )
-        conn.execute(
-            "INSERT INTO holdings VALUES ('PEP', 5, 150, 750, 0, 0, 150, 1, 'PepsiCo')"
-        )
+        conn.execute("INSERT INTO holdings VALUES ('PEP', 5, 150, 750, 0, 0, 150, 1, 'PepsiCo')")
 
     assert _import_users(tmp_path) == 1
     stats = _import_portfolio_db(portfolio_db, pg_user_id, data_dir=tmp_path)
@@ -170,7 +167,7 @@ def test_migrate_script_users_and_portfolio(tmp_path: Path, pg_user_id: str):
     assert int(row["count"]) == 1
 
 
-def test_db_admin_validate_and_query(pg_user_id: str):
+def test_db_admin_validate_and_query(pg_user_id: str) -> None:
     from datetime import date
 
     from data_ingestion.models import DividendRecord, PriceHistory, StockDocument
@@ -216,9 +213,7 @@ def test_db_admin_validate_and_query(pg_user_id: str):
     assert probe["price_points"] == 300
     assert probe["dividend_payments"] == 4
 
-    result = run_readonly_query(
-        "SELECT symbol FROM stock_documents WHERE symbol = 'ADMINT'"
-    )
+    result = run_readonly_query("SELECT symbol FROM stock_documents WHERE symbol = 'ADMINT'")
     assert result.ok is True
     assert result.rows[0]["symbol"] == "ADMINT"
 
@@ -226,7 +221,7 @@ def test_db_admin_validate_and_query(pg_user_id: str):
         conn.execute("DELETE FROM stock_documents WHERE symbol = %s", ("ADMINT",))
 
 
-def test_history_tables_populated_on_add_documents():
+def test_history_tables_populated_on_add_documents() -> None:
     """Migration 003 tables receive rows when documents are written."""
     from data_ingestion.models import DividendRecord, PriceHistory, StockDocument
     from db.connection import ensure_schema, get_connection, use_cloud_sql
@@ -273,7 +268,7 @@ def test_history_tables_populated_on_add_documents():
     PostgresMarketStore().delete_symbols(["HISTT"])
 
 
-def test_market_library_migration_from_fallback_json(tmp_path: Path):
+def test_market_library_migration_from_fallback_json(tmp_path: Path) -> None:
     from data_ingestion.models import StockDocument
     from db.connection import ensure_schema, use_cloud_sql
     from scripts.migrate_to_cloud_sql import _import_market_library
@@ -284,9 +279,7 @@ def test_market_library_migration_from_fallback_json(tmp_path: Path):
     vdb = tmp_path / "vectordb"
     vdb.mkdir()
     doc = StockDocument(symbol="MIG", name="Migrate Test")
-    (vdb / "fallback_store.json").write_text(
-        json.dumps({doc.document_id: doc.to_full_dict()})
-    )
+    (vdb / "fallback_store.json").write_text(json.dumps({doc.document_id: doc.to_full_dict()}))
 
     imported = _import_market_library(tmp_path)
     assert imported == 1

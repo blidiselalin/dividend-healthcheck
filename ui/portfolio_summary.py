@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Any
 
 import streamlit as st
 
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from services.portfolio_month_dividends import CurrentMonthPaidDividends
 
 
-def _format_delta(value: Optional[float], pct: Optional[float]) -> Optional[str]:
+def _format_delta(value: float | None, pct: float | None) -> str | None:
     if value is None:
         return None
     if pct is not None:
@@ -21,7 +21,7 @@ def _format_delta(value: Optional[float], pct: Optional[float]) -> Optional[str]
     return None
 
 
-def _metric_columns(count: int) -> list:
+def _metric_columns(count: int) -> list[Any]:
     """Lay out metrics in rows that avoid cramped single-line overlap."""
     if count <= 3:
         return list(st.columns(count))
@@ -35,11 +35,11 @@ def _metric_columns(count: int) -> list:
 
 
 def render_holdings_summary(
-    rows: List[PortfolioDetailRow],
+    rows: list[PortfolioDetailRow],
     *,
-    summary: Optional[HoldingsSummary] = None,
+    summary: HoldingsSummary | None = None,
     show_positions: bool = False,
-    month_paid: Optional["CurrentMonthPaidDividends"] = None,
+    month_paid: CurrentMonthPaidDividends | None = None,
     show_month_received: bool = False,
 ) -> HoldingsSummary:
     """Render broker-style holdings summary metrics."""
@@ -65,7 +65,7 @@ def render_holdings_summary(
     )
     index += 1
 
-    if include_received and index < len(metric_columns):
+    if include_received and index < len(metric_columns) and month_paid is not None:
         received = month_paid
         value = (
             f"${received.net_usd:,.2f}"

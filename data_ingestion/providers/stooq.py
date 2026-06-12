@@ -12,8 +12,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
-from datetime import date, datetime
-from typing import List, Optional
+from datetime import datetime
 
 from data_ingestion.base import BaseFetcher
 from data_ingestion.models import DataSource, PriceHistory
@@ -34,7 +33,7 @@ class StooqProvider(BaseFetcher, StockDataProvider):
     def available(self) -> bool:
         return bool(self.session)
 
-    def fetch(self, symbol: str) -> Optional[StockSnapshot]:
+    def fetch(self, symbol: str) -> StockSnapshot | None:
         if not self.available():
             return None
 
@@ -59,7 +58,7 @@ class StooqProvider(BaseFetcher, StockDataProvider):
 
         return snap
 
-    def _fetch_csv(self, stooq_symbol: str) -> List[PriceHistory]:
+    def _fetch_csv(self, stooq_symbol: str) -> list[PriceHistory]:
         if not self.session:
             return []
         try:
@@ -83,9 +82,9 @@ def _stooq_symbol(symbol: str) -> str:
     return f"{normalized}.us"
 
 
-def _parse_stooq_csv(text: str) -> List[PriceHistory]:
+def _parse_stooq_csv(text: str) -> list[PriceHistory]:
     reader = csv.DictReader(io.StringIO(text))
-    points: List[PriceHistory] = []
+    points: list[PriceHistory] = []
     for row in reader:
         try:
             row_date = datetime.strptime(row["Date"], "%Y-%m-%d").date()

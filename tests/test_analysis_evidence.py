@@ -1,10 +1,16 @@
 """Tests for analysis evidence builders (no Streamlit)."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 from datetime import date, datetime
 
-from data_ingestion.models import DataSource, DividendRecord, PriceHistory, StockDocument
+from data_ingestion.models import (
+    DataSource,
+    DividendRecord,
+    PriceHistory,
+    StockDocument,
+)
 from services.analysis_evidence import (
     build_evidence_rows,
     build_portfolio_session_rows,
@@ -15,7 +21,7 @@ from services.analysis_evidence import (
 from services.yield_channel_chart import YieldChannelData
 
 
-def test_history_bounds_from_document():
+def test_history_bounds_from_document() -> None:
     doc = StockDocument(
         symbol="KO",
         name="Coca-Cola",
@@ -62,7 +68,7 @@ def test_history_bounds_from_document():
     assert d_start == date(2019, 3, 14)
 
 
-def test_build_evidence_rows_includes_intervals():
+def test_build_evidence_rows_includes_intervals() -> None:
     doc = StockDocument(
         symbol="KO",
         name="Coca-Cola",
@@ -90,7 +96,7 @@ def test_build_evidence_rows_includes_intervals():
     assert any("2024-01-01" in detail for _, detail in rows)
 
 
-def test_build_portfolio_session_rows():
+def test_build_portfolio_session_rows() -> None:
     rows = build_portfolio_session_rows(
         loaded_at=datetime(2026, 5, 18),
         holding_count=3,
@@ -101,7 +107,7 @@ def test_build_portfolio_session_rows():
     assert "2 of 3" in rows[2][1]
 
 
-def test_yield_channel_bounds_from_channel_data():
+def test_yield_channel_bounds_from_channel_data() -> None:
     channel = YieldChannelData(
         symbol="KO",
         company_name="Coca-Cola",
@@ -138,7 +144,7 @@ def test_yield_channel_bounds_from_channel_data():
     assert end == date(2026, 4, 30)
 
 
-def test_build_evidence_rows_includes_yield_channel():
+def test_build_evidence_rows_includes_yield_channel() -> None:
     doc = StockDocument(symbol="KO", name="Coca-Cola", source=DataSource.YAHOO)
     channel = YieldChannelData(
         symbol="KO",
@@ -177,7 +183,7 @@ def test_build_evidence_rows_includes_yield_channel():
     assert any("2.70%" in detail and "3.30%" in detail for _, detail in rows)
 
 
-def test_build_evidence_rows_missing_library():
+def test_build_evidence_rows_missing_library() -> None:
     rows = build_evidence_rows("ZZZZ", portfolio_prices_at=None)
     detail = dict(rows)["Analysed stock library"]
     assert "ZZZZ" in detail

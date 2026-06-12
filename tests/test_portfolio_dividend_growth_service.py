@@ -1,8 +1,12 @@
 """Tests for portfolio dividend growth aggregation."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
+
+import pytest
 
 from data_ingestion.models import DataSource, DividendRecord, StockDocument
 from services.portfolio_dividend_growth_service import (
@@ -11,18 +15,18 @@ from services.portfolio_dividend_growth_service import (
 )
 
 
-def test_consecutive_growth_years():
+def test_consecutive_growth_years() -> None:
     annual = {2021: 1.0, 2022: 1.1, 2023: 1.2, 2024: 1.3}
     assert PortfolioDividendGrowthService._consecutive_growth_years(annual) == 3
 
 
-def test_cagr_requires_positive_values():
+def test_cagr_requires_positive_values() -> None:
     assert PortfolioDividendGrowthService._cagr({2021: 1.0, 2022: 1.2}) == 20.0
     assert PortfolioDividendGrowthService._cagr({2021: 0.0, 2022: 1.0}) is None
     assert PortfolioDividendGrowthService._cagr({2021: 1.0}) is None
 
 
-def test_annual_dividends_estimates_current_year(monkeypatch):
+def test_annual_dividends_estimates_current_year(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "services.portfolio_dividend_growth_service.date",
         type(
@@ -38,7 +42,7 @@ def test_annual_dividends_estimates_current_year(monkeypatch):
         DividendRecord(ex_date=date(2024, 5, 1), payment_date=None, amount=0.5),
         DividendRecord(ex_date=date(2025, 2, 1), payment_date=None, amount=0.52),
     ]
-    service = PortfolioDividendGrowthService(portfolio_store=MagicMockPortfolio())
+    service = PortfolioDividendGrowthService(portfolio_store=MagicMockPortfolio())  # type: ignore[arg-type]
     annual = service._annual_dividends_from_history(
         records,
         since_year=2024,
@@ -48,7 +52,7 @@ def test_annual_dividends_estimates_current_year(monkeypatch):
     assert annual[2025] == 2.0
 
 
-def test_portfolio_cash_by_year():
+def test_portfolio_cash_by_year() -> None:
     items = [
         SymbolDividendGrowth(
             symbol="KO",
@@ -60,13 +64,13 @@ def test_portfolio_cash_by_year():
             shares=100.0,
         )
     ]
-    service = PortfolioDividendGrowthService(portfolio_store=MagicMockPortfolio())
+    service = PortfolioDividendGrowthService(portfolio_store=MagicMockPortfolio())  # type: ignore[arg-type]
     cash = service.portfolio_cash_by_year(items)
     assert cash.loc[cash["Year"] == "2024", "Est. dividends $"].iloc[0] == 110.0
     assert cash.loc[cash["Year"] == "2023", "Est. dividends $"].iloc[0] == 100.0
 
 
-def test_yoy_growth_matrix_first_year_is_blank():
+def test_yoy_growth_matrix_first_year_is_blank() -> None:
     items = [
         SymbolDividendGrowth(
             symbol="KO",
@@ -78,12 +82,12 @@ def test_yoy_growth_matrix_first_year_is_blank():
             shares=10.0,
         )
     ]
-    service = PortfolioDividendGrowthService(portfolio_store=MagicMockPortfolio())
+    service = PortfolioDividendGrowthService(portfolio_store=MagicMockPortfolio())  # type: ignore[arg-type]
     matrix = service.yoy_growth_matrix(items)
     assert matrix.loc[0, "2023"] is None
     assert matrix.loc[0, "2024"] == 10.0
 
 
 class MagicMockPortfolio:
-    def list_holdings(self):
+    def list_holdings(self) -> list[Any]:
         return []

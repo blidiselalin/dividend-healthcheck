@@ -5,15 +5,14 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass(frozen=True)
 class CurrentUser:
     id: str
     email: str
-    name: Optional[str] = None
-    picture_url: Optional[str] = None
+    name: str | None = None
+    picture_url: str | None = None
     is_admin: bool = False
 
 

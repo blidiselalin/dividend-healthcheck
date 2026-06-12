@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -15,7 +16,7 @@ pytest_plugins = ["tests.support.postgres_fixtures"]
 
 
 @pytest.fixture(autouse=True)
-def use_sqlite_backend(request, monkeypatch):
+def use_sqlite_backend(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
     """Unit tests use isolated SQLite; integration tests keep DATABASE_URL."""
     if request.node.get_closest_marker("integration"):
         yield
@@ -59,7 +60,7 @@ def deposits_store(temp_db: Path) -> DepositsStore:
 
 
 @pytest.fixture
-def store():
+def store() -> Any:
     """Shared market library for optional data-quality checks (skipped when empty)."""
     from data_ingestion.vector_store import VectorStore
     from db.connection import use_cloud_sql

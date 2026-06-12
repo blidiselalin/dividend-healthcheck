@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Any
 
 
-def as_float(value: Any) -> Optional[float]:
+def as_float(value: Any) -> float | None:
     try:
         if value is None:
             return None
@@ -16,7 +16,7 @@ def as_float(value: Any) -> Optional[float]:
         return None
 
 
-def as_int(value: Any) -> Optional[int]:
+def as_int(value: Any) -> int | None:
     try:
         if value is None:
             return None
@@ -25,7 +25,7 @@ def as_int(value: Any) -> Optional[int]:
         return None
 
 
-def as_percent(value: Any) -> Optional[float]:
+def as_percent(value: Any) -> float | None:
     """Normalize ratios: values in (0, 1) are treated as fractions."""
     result = as_float(value)
     if result is None:
@@ -35,7 +35,7 @@ def as_percent(value: Any) -> Optional[float]:
     return result
 
 
-def parse_iso_date(value: Any) -> Optional[date]:
+def parse_iso_date(value: Any) -> date | None:
     if not value:
         return None
     try:
@@ -44,7 +44,7 @@ def parse_iso_date(value: Any) -> Optional[date]:
         return None
 
 
-def parse_unix_date(value: Any) -> Optional[date]:
+def parse_unix_date(value: Any) -> date | None:
     try:
         return datetime.fromtimestamp(value).date()
     except (ValueError, TypeError, OSError):

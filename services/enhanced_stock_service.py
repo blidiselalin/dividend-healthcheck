@@ -5,19 +5,21 @@ This service prioritizes data from the local vector database and only
 falls back to public API sources when necessary (missing data, stale data).
 """
 
-from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List
-import logging
+from __future__ import annotations
 
-from models.stock import StockData, DividendHistory
-from services.stock_service import StockService
+import logging
+from datetime import datetime, timedelta
+from typing import Any
+
 from data_ingestion.vector_store import VectorStore
-from data_ingestion.models import StockDocument
+from models.stock import DividendHistory, StockData
+from services.stock_service import StockService
 from utils.converters import document_to_stock_data
 
 # Import config for default paths
 try:
     from config import VECTORDB_DIR
+
     DEFAULT_VECTORDB_DIR = str(VECTORDB_DIR)
 except ImportError:
     DEFAULT_VECTORDB_DIR = "data/vectordb"
@@ -28,49 +30,49 @@ logger = logging.getLogger(__name__)
 class EnhancedStockService:
     """
     Stock service that prioritizes vector database over API calls.
-    
+
     Data Source Priority:
     1. Vector database (local, fast, no rate limits)
     2. Public API (yfinance) - only for:
        - Stocks not in vector DB
        - Real-time price updates (if requested)
        - Data older than staleness threshold
-    
+
     This approach:
     - Reduces API calls and rate limiting issues
     - Provides faster response times
     - Works offline with cached data
     - Only hits public sources when necessary
     """
-    
+
     # How old data can be before fetching from API (in days)
     STALENESS_THRESHOLD_DAYS = 7
-    
+
     # Whether to update prices from API (set False for pure DB mode)
     FETCH_REALTIME_PRICES = True
-    
+
     def __init__(
-        self, 
-        vectordb_dir: str = None,
+        self,
+        vectordb_dir: str | None = None,
         staleness_days: int = 7,
         fetch_realtime_prices: bool = True,
-    ):
+    ) -> None:
         """
         Initialize enhanced service.
-        
+
         Args:
             vectordb_dir: Path to vector database. Defaults to ~/.dividendscope/data/vectordb.
             staleness_days: Days before data is considered stale.
             fetch_realtime_prices: Whether to fetch real-time prices from API.
         """
-        self._vector_store: Optional[VectorStore] = None
+        self._vector_store: VectorStore | None = None
         self._vectordb_dir = vectordb_dir or DEFAULT_VECTORDB_DIR
         self._vector_db_available = False
         self._staleness_threshold = timedelta(days=staleness_days)
         self._fetch_realtime = fetch_realtime_prices
-        
+
         self._init_vector_store()
-    
+
     def _init_vector_store(self) -> None:
         """Initialize vector store if available."""
         try:
@@ -84,64 +86,64 @@ class EnhancedStockService:
         except Exception as e:
             logger.warning(f"Vector store not available: {e}")
             self._vector_db_available = False
-    
-    def fetch(self, symbol: str) -> Optional[StockData]:
+
+    def fetch(self, symbol: str) -> StockData | None:
         """
         Fetch stock data, prioritizing complete vector database data.
-        
+
         Strategy:
         1. Try to get from vector DB first
         2. If found, fresh, AND complete - use it (optionally update price)
         3. If incomplete/stale/missing - fetch from API and enhance with DB data
-        
+
         Args:
             symbol: Stock ticker symbol.
-            
+
         Returns:
             StockData or None.
         """
         symbol = symbol.upper().strip()
-        
+
         db_data = None
-        
+
         # === Check Vector Database ===
         if self._vector_db_available:
             db_data = self._fetch_from_vector_db(symbol)
-            
+
             if db_data and self._is_data_complete(db_data) and self._is_data_fresh(db_data):
                 logger.debug(f"{symbol}: Using complete vector DB data")
-                
+
                 # Optionally update real-time price only
                 if self._fetch_realtime:
                     db_data = self._update_realtime_price(db_data)
-                
+
                 return db_data
-        
+
         # === Fetch from API (primary source when DB data incomplete) ===
         logger.info(f"{symbol}: Fetching from API (DB data missing or incomplete)")
         api_data = StockService.fetch(symbol)
-        
+
         if api_data:
             api_data.data_sources = ["Public API"]
-            
+
             # Enhance API data with any useful DB data
             if db_data:
                 api_data = self._enhance_with_db_data(api_data, db_data)
-            
+
             return api_data
-        
+
         # === FALLBACK: Return incomplete DB data if API fails ===
         if db_data:
             logger.warning(f"{symbol}: API failed, using incomplete DB data")
             db_data.data_sources = ["Vector DB (incomplete)"]
             return db_data
-        
+
         return None
-    
+
     def _is_data_complete(self, data: StockData) -> bool:
         """
         Check if stock data has the essential fields populated.
-        
+
         Essential fields for dividend analysis:
         - Price
         - Dividend yield or dividend rate
@@ -149,169 +151,181 @@ class EnhancedStockService:
         """
         # Must have price
         has_price = data.price is not None and data.price > 0
-        
+
         # Must have dividend info
-        has_dividend = (
-            (data.dividend_yield_pct is not None and data.dividend_yield_pct > 0) or
-            (data.dividend_rate is not None and data.dividend_rate > 0)
+        has_dividend = (data.dividend_yield_pct is not None and data.dividend_yield_pct > 0) or (
+            data.dividend_rate is not None and data.dividend_rate > 0
         )
-        
+
         # Should have some valuation metric
         has_valuation = (
-            (data.trailing_pe is not None and data.trailing_pe > 0) or
-            (data.forward_pe is not None and data.forward_pe > 0) or
-            (data.payout_ratio_pct is not None and data.payout_ratio_pct > 0)
+            (data.trailing_pe is not None and data.trailing_pe > 0)
+            or (data.forward_pe is not None and data.forward_pe > 0)
+            or (data.payout_ratio_pct is not None and data.payout_ratio_pct > 0)
         )
-        
+
         # Data quality check (if score exists and is high enough)
-        quality_ok = (
-            data.data_quality_score is None or 
-            data.data_quality_score >= 50
-        )
-        
+        quality_ok = data.data_quality_score is None or data.data_quality_score >= 50
+
         is_complete = has_price and has_dividend and (has_valuation or quality_ok)
-        
+
         if not is_complete:
             logger.debug(
                 f"{data.symbol}: Incomplete - price={has_price}, "
                 f"dividend={has_dividend}, valuation={has_valuation}, "
                 f"quality={data.data_quality_score}"
             )
-        
+
         return is_complete
-    
+
     def _enhance_with_db_data(self, api_data: StockData, db_data: StockData) -> StockData:
         """Enhance API data with useful fields from DB data."""
-        if db_data.dividend_history and api_data.dividend_history:
-            best_streak = max(
-                db_data.dividend_history.consecutive_years,
-                api_data.dividend_history.consecutive_years,
-            )
-            if best_streak != api_data.dividend_history.consecutive_years:
+        # Add dividend streak if DB has better data
+        if db_data.dividend_history and db_data.dividend_history.consecutive_years:
+            if not api_data.dividend_history or api_data.dividend_history.consecutive_years == 0:
+                api_data.dividend_history = db_data.dividend_history
+            elif (
+                db_data.dividend_history.consecutive_years
+                > api_data.dividend_history.consecutive_years
+            ):
                 api_data.dividend_history = DividendHistory(
-                    consecutive_years=best_streak,
+                    consecutive_years=db_data.dividend_history.consecutive_years,
                     total_years=api_data.dividend_history.total_years,
                     cagr_5y=api_data.dividend_history.cagr_5y or db_data.dividend_history.cagr_5y,
-                    cagr_10y=api_data.dividend_history.cagr_10y or db_data.dividend_history.cagr_10y,
+                    cagr_10y=api_data.dividend_history.cagr_10y
+                    or db_data.dividend_history.cagr_10y,
                     current_annual=api_data.dividend_history.current_annual,
                     ex_dividend_date=api_data.dividend_history.ex_dividend_date,
-                    payment_frequency=api_data.dividend_history.payment_frequency,
                 )
-        elif db_data.dividend_history and not api_data.dividend_history:
-            api_data.dividend_history = db_data.dividend_history
-        
+
         # Track sources
         api_data.data_sources = ["Public API", "Enhanced: Vector DB"]
-        
+
         return api_data
-    
-    def fetch_from_db_only(self, symbol: str) -> Optional[StockData]:
+
+    def fetch_from_db_only(self, symbol: str) -> StockData | None:
         """
         Fetch stock data from vector DB only (no API calls).
-        
+
         Args:
             symbol: Stock ticker symbol.
-            
+
         Returns:
             StockData or None.
         """
         if not self._vector_db_available:
             return None
-        
+
         return self._fetch_from_vector_db(symbol)
-    
-    def _fetch_from_vector_db(self, symbol: str) -> Optional[StockData]:
+
+    def _fetch_from_vector_db(self, symbol: str) -> StockData | None:
         """Get stock data from vector database."""
         if not self._vector_store:
             return None
-        
+
         doc = self._vector_store.get_by_symbol(symbol)
         if not doc:
             return None
-        
+
         return document_to_stock_data(doc)
-    
+
     def _is_data_fresh(self, data: StockData) -> bool:
         """Check if stock data is fresh enough."""
         # If no timestamp info, assume it's fresh
         if not hasattr(data, "_last_updated") or data._last_updated is None:
             return True
-        
+
         age = datetime.now() - data._last_updated
         return age < self._staleness_threshold
-    
+
     def _update_realtime_price(self, data: StockData) -> StockData:
         """Update only the real-time price from API (minimal API call)."""
-        from services.live_price import apply_live_price
+        try:
+            import yfinance as yf
 
-        return apply_live_price(data)
-    
+            ticker = yf.Ticker(data.symbol)
+            info = ticker.fast_info
+
+            if hasattr(info, "last_price") and info.last_price:
+                data.price = info.last_price
+
+                if "Vector DB" in str(data.data_sources):
+                    data.data_sources.append("Price: Live")
+                else:
+                    data.data_sources = ["Vector DB", "Price: Live"]
+
+        except Exception as e:
+            logger.debug(f"Could not update real-time price for {data.symbol}: {e}")
+
+        return data
+
     # === Batch Operations (DB-first) ===
-    
-    def fetch_multiple(self, symbols: List[str]) -> Dict[str, Optional[StockData]]:
+
+    def fetch_multiple(self, symbols: list[str]) -> dict[str, StockData | None]:
         """
         Fetch multiple stocks, using DB for complete data only.
-        
+
         Args:
             symbols: List of stock symbols.
-            
+
         Returns:
             Dict mapping symbol to StockData.
         """
         import time
-        
-        results = {}
+
+        results: dict[str, StockData | None] = {}
         api_needed = []
         db_cache = {}  # Cache DB data for enhancement
-        
+
         # First pass: check DB for complete data
         for symbol in symbols:
             symbol = symbol.upper().strip()
-            
+
             if self._vector_db_available:
                 db_data = self._fetch_from_vector_db(symbol)
                 if db_data:
                     db_cache[symbol] = db_data  # Cache for potential enhancement
-                    
+
                     if self._is_data_complete(db_data) and self._is_data_fresh(db_data):
                         if self._fetch_realtime:
                             db_data = self._update_realtime_price(db_data)
                         results[symbol] = db_data
                         continue
-            
+
             api_needed.append(symbol)
-        
+
         logger.info(f"Complete DB hits: {len(results)}, API needed: {len(api_needed)}")
-        
+
         # Second pass: fetch from API for incomplete/missing data
         for symbol in api_needed:
             api_data = StockService.fetch(symbol)
             if api_data:
                 api_data.data_sources = ["Public API"]
-                
+
                 # Enhance with DB data if available
                 if symbol in db_cache:
                     api_data = self._enhance_with_db_data(api_data, db_cache[symbol])
-                
+
                 results[symbol] = api_data
             else:
                 # Fallback to incomplete DB data
                 if symbol in db_cache:
-                    db_cache[symbol].data_sources = ["Vector DB (incomplete)"]
-                    results[symbol] = db_cache[symbol]
+                    db_data = db_cache[symbol]
+                    db_data.data_sources = ["Vector DB (incomplete)"]
+                    results[symbol] = db_data
                 else:
                     results[symbol] = None
-            
+
             # Small delay to avoid rate limiting
             time.sleep(0.1)
-        
+
         return results
-    
-    def get_all_from_db(self) -> List[StockData]:
+
+    def get_all_from_db(self) -> list[StockData]:
         """Get all stocks from vector DB (no API calls)."""
         if not self._vector_db_available or not self._vector_store:
             return []
-        
+
         try:
             # Get all documents
             results = self._vector_store.search("dividend stock", n_results=1000)
@@ -319,80 +333,84 @@ class EnhancedStockService:
         except Exception as e:
             logger.error(f"Error getting all from DB: {e}")
             return []
-    
-    def get_dividend_kings_from_db(self) -> List[StockData]:
+
+    def get_dividend_kings_from_db(self) -> list[StockData]:
         """Get all Dividend Kings from vector DB (no API calls)."""
         if not self._vector_db_available or not self._vector_store:
             return []
-        
+
         docs = self._vector_store.get_dividend_kings(min_streak=50)
         return [document_to_stock_data(doc) for doc in docs]
-    
-    def get_sector_from_db(self, sector: str) -> List[StockData]:
+
+    def get_sector_from_db(self, sector: str) -> list[StockData]:
         """Get all stocks in a sector from vector DB (no API calls)."""
         if not self._vector_db_available or not self._vector_store:
             return []
-        
+
         docs = self._vector_store.get_by_sector(sector)
         return [document_to_stock_data(doc) for doc in docs]
-    
+
     def search(
         self,
         query: str,
         n_results: int = 10,
-        min_streak: Optional[int] = None,
-        sector: Optional[str] = None,
-    ) -> List[StockData]:
+        min_streak: int | None = None,
+        sector: str | None = None,
+    ) -> list[StockData]:
         """
         Semantic search in vector DB (no API calls).
-        
+
         Args:
             query: Natural language query.
             n_results: Maximum results.
             min_streak: Minimum dividend streak filter.
             sector: Filter by sector.
-            
+
         Returns:
             List of matching StockData.
         """
         if not self._vector_db_available or not self._vector_store:
             logger.warning("Vector DB not available for search")
             return []
-        
-        where = {}
+
+        where: dict[str, Any] = {}
         if min_streak:
             where["dividend_streak_years"] = {"$gte": min_streak}
         if sector:
             where["sector"] = sector
-        
+
         results = self._vector_store.search(
-            query, 
-            n_results=n_results, 
+            query,
+            n_results=n_results,
             where=where if where else None,
         )
-        
+
         return [document_to_stock_data(r.document) for r in results]
-    
+
     # === Status & Info ===
-    
+
     @property
     def has_vector_data(self) -> bool:
         """Check if vector database has data."""
-        return self._vector_db_available and self._vector_store.count() > 0
-    
+        return (
+            self._vector_db_available
+            and self._vector_store is not None
+            and self._vector_store.count() > 0
+        )
+
     @property
     def document_count(self) -> int:
         """Get number of documents in vector DB."""
-        if not self._vector_store:
+        if self._vector_store is None:
             return 0
         return self._vector_store.count()
-    
+
     @property
     def is_db_primary(self) -> bool:
         """Check if DB is being used as primary source."""
         return self._vector_db_available and self.document_count > 0
-    
-    def get_status(self) -> Dict[str, Any]:
+
+    def get_status(self) -> dict[str, Any]:
         """Get service status information."""
         return {
             "vector_db_available": self._vector_db_available,
@@ -402,21 +420,3 @@ class EnhancedStockService:
             "fetch_realtime_prices": self._fetch_realtime,
             "mode": "DB-first" if self.is_db_primary else "API-only",
         }
-
-
-_enhanced_instances: Dict[tuple, EnhancedStockService] = {}
-
-
-def get_enhanced_stock_service(
-    *,
-    fetch_realtime_prices: bool = False,
-    staleness_days: int = 7,
-) -> EnhancedStockService:
-    """Shared EnhancedStockService instances keyed by runtime config."""
-    key = (fetch_realtime_prices, staleness_days)
-    if key not in _enhanced_instances:
-        _enhanced_instances[key] = EnhancedStockService(
-            staleness_days=staleness_days,
-            fetch_realtime_prices=fetch_realtime_prices,
-        )
-    return _enhanced_instances[key]

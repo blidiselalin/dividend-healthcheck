@@ -7,8 +7,9 @@ Used by portfolio details (annual income) and the monthly dividend calendar
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date, timedelta
-from typing import TYPE_CHECKING, List, Optional, Sequence
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from data_ingestion.models import DividendRecord, StockDocument
@@ -25,9 +26,9 @@ SEMI_ANNUAL_THRESHOLD = 1.5
 
 
 def payments_per_year(
-    records: Sequence["DividendRecord"],
+    records: Sequence[DividendRecord],
     *,
-    stored_frequency: Optional[int] = None,
+    stored_frequency: int | None = None,
 ) -> int:
     """Payments per year from history; prefer detected over stale stored value."""
     if records:
@@ -46,7 +47,7 @@ def payments_per_year(
     return FREQUENCY_QUARTERLY
 
 
-def detect_payment_frequency(dividend_history: Sequence["DividendRecord"]) -> int:
+def detect_payment_frequency(dividend_history: Sequence[DividendRecord]) -> int:
     """
     Detect dividend payment frequency from recent complete calendar years.
 
@@ -82,10 +83,10 @@ def detect_payment_frequency(dividend_history: Sequence["DividendRecord"]) -> in
 
 
 def trailing_annual_dividend(
-    records: Sequence["DividendRecord"],
+    records: Sequence[DividendRecord],
     *,
-    frequency: Optional[int] = None,
-) -> Optional[float]:
+    frequency: int | None = None,
+) -> float | None:
     """Sum of the last N per-share payments (N = payments per year)."""
     if not records:
         return None
@@ -97,7 +98,7 @@ def trailing_annual_dividend(
     return round(sum(record.amount for record in window), 4)
 
 
-def latest_payment_amount(records: Sequence["DividendRecord"]) -> Optional[float]:
+def latest_payment_amount(records: Sequence[DividendRecord]) -> float | None:
     if not records:
         return None
     recent = max(records, key=lambda record: record.ex_date)
@@ -105,10 +106,10 @@ def latest_payment_amount(records: Sequence["DividendRecord"]) -> Optional[float
 
 
 def resolve_annual_dividend_per_share(
-    records: Sequence["DividendRecord"],
-    document: Optional["StockDocument"] = None,
-    stock: Optional["StockData"] = None,
-) -> Optional[float]:
+    records: Sequence[DividendRecord],
+    document: StockDocument | None = None,
+    stock: StockData | None = None,
+) -> float | None:
     """
     Best estimate of annual dividend per share.
 
@@ -118,8 +119,10 @@ def resolve_annual_dividend_per_share(
     if document and document.payment_frequency:
         stored_freq = document.payment_frequency
 
-    ttm = trailing_annual_dividend(records, frequency=payments_per_year(records, stored_frequency=stored_freq))
-    candidates: List[float] = []
+    ttm = trailing_annual_dividend(
+        records, frequency=payments_per_year(records, stored_frequency=stored_freq)
+    )
+    candidates: list[float] = []
     if ttm is not None and ttm > 0:
         candidates.append(ttm)
 
@@ -143,10 +146,10 @@ def resolve_annual_dividend_per_share(
 
 
 def _canonical_per_payment(
-    records: Sequence["DividendRecord"],
-    document: Optional["StockDocument"] = None,
-    stock: Optional["StockData"] = None,
-) -> Optional[float]:
+    records: Sequence[DividendRecord],
+    document: StockDocument | None = None,
+    stock: StockData | None = None,
+) -> float | None:
     """Typical per-payment amount without trusting a single outlier row."""
     if not records:
         annual = resolve_annual_dividend_per_share(records, document, stock)
@@ -184,9 +187,9 @@ def _canonical_per_payment(
 
 def normalize_payment_amount(
     raw_amount: float,
-    records: Sequence["DividendRecord"],
-    document: Optional["StockDocument"] = None,
-    stock: Optional["StockData"] = None,
+    records: Sequence[DividendRecord],
+    document: StockDocument | None = None,
+    stock: StockData | None = None,
 ) -> float:
     """
     Return a per-payment cash amount.
@@ -219,10 +222,10 @@ def normalize_payment_amount(
 
 
 def per_payment_amount(
-    records: Sequence["DividendRecord"],
-    document: Optional["StockDocument"] = None,
-    stock: Optional["StockData"] = None,
-) -> Optional[float]:
+    records: Sequence[DividendRecord],
+    document: StockDocument | None = None,
+    stock: StockData | None = None,
+) -> float | None:
     """Cash dividend per payment (not annualized)."""
     latest = latest_payment_amount(records)
     if latest is not None and latest > 0:
@@ -232,11 +235,11 @@ def per_payment_amount(
 
 
 def expected_payment_months(
-    records: Sequence["DividendRecord"],
+    records: Sequence[DividendRecord],
     *,
-    stored_frequency: Optional[int] = None,
+    stored_frequency: int | None = None,
 ) -> set[int]:
-    """Calendar months (1–12) that should include a cash dividend payment."""
+    """Calendar months (1-12) that should include a cash dividend payment."""
     freq = payments_per_year(records, stored_frequency=stored_frequency)
     if freq == FREQUENCY_MONTHLY:
         return set(range(1, 13))
@@ -248,7 +251,7 @@ def expected_payment_months(
     return months
 
 
-def _cash_date(record: "DividendRecord") -> date:
+def _cash_date(record: DividendRecord) -> date:
     if record.payment_date:
         return record.payment_date
     return record.ex_date + timedelta(days=14)

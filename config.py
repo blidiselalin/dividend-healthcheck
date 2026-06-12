@@ -13,76 +13,87 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from pathlib import Path
-from typing import Dict, List, Final, FrozenSet
+from typing import Final
 
 # =============================================================================
 # DATA DIRECTORY CONFIGURATION
 # =============================================================================
 
-def is_cloud_runtime() -> bool:
-    """True on Streamlit Community Cloud and similar ephemeral hosts."""
-    flag = os.environ.get("DIVIDENDSCOPE_CLOUD", "").strip().lower()
-    if flag in ("1", "true", "yes"):
-        return True
-    if os.environ.get("STREAMLIT_RUNTIME_ENV", "").strip().lower() == "cloud":
-        return True
-    host = " ".join(
-        (
-            os.environ.get("HOSTNAME", ""),
-            os.environ.get("STREAMLIT_SERVER_ADDRESS", ""),
-            os.environ.get("STREAMLIT_SHARING_BASE_URL", ""),
-        )
-    ).lower()
-    return "streamlit.app" in host
+
+def _resolve_google_drive_data_dir() -> Path | None:
+    """Resolve a Google Drive-backed data directory if configured."""
+    explicit = os.environ.get("DIVIDENDSCOPE_GOOGLE_DRIVE_DATA_DIR")
+    if explicit:
+        return Path(explicit)
+
+    use_drive = os.environ.get("DIVIDENDSCOPE_USE_GOOGLE_DRIVE", "").strip().lower()
+    if use_drive not in {"1", "true", "yes", "on"}:
+        return None
+
+    # Common Google Drive Desktop location on macOS.
+    cloud_storage = Path.home() / "Library" / "CloudStorage"
+    if not cloud_storage.exists():
+        return None
+
+    drive_roots = sorted(cloud_storage.glob("GoogleDrive-*"))
+    for root in drive_roots:
+        # Drive folder naming can differ across locales/accounts.
+        candidates = [
+            root / "My Drive" / "DividendScopeData",
+            root / "MyDrive" / "DividendScopeData",
+            root / "Drive" / "DividendScopeData",
+        ]
+        for candidate in candidates:
+            # Return first candidate path (created later by mkdir).
+            if candidate.parent.exists():
+                return candidate
+
+    return None
 
 
 def _resolve_data_dir() -> Path:
-    override = os.environ.get("DIVIDENDSCOPE_DATA_DIR")
-    if override:
-        return Path(override)
-    if is_cloud_runtime():
-        return Path(__file__).resolve().parent / "data"
+    """Resolve app data directory from env vars with sensible fallback."""
+    explicit = os.environ.get("DIVIDENDSCOPE_DATA_DIR")
+    if explicit:
+        return Path(explicit)
+
+    drive_path = _resolve_google_drive_data_dir()
+    if drive_path is not None:
+        return drive_path
+
     return Path.home() / ".dividendscope" / "data"
 
 
+# Uses ~/.dividendscope/data by default, can be overridden with env vars.
 DATA_DIR: Final[Path] = _resolve_data_dir()
 
-# Subdirectories — shared by all users (not per-account)
+# Subdirectories
 VECTORDB_DIR: Final[Path] = DATA_DIR / "vectordb"
-SHARED_MARKET_DB_DIR: Final[Path] = VECTORDB_DIR
 DOWNLOADS_DIR: Final[Path] = DATA_DIR / "downloads"
 REPORTS_DIR: Final[Path] = Path("reports")
 
-
-def _database_url_configured() -> bool:
-    return bool(
-        (os.environ.get("DATABASE_URL") or os.environ.get("DIVIDENDSCOPE_DATABASE_URL") or "").strip()
-    )
-
-
-# Ensure directories exist (local Chroma only when not using Postgres)
+# Ensure directories exist
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+VECTORDB_DIR.mkdir(parents=True, exist_ok=True)
 DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
-if not _database_url_configured():
-    VECTORDB_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # =============================================================================
 # DIVIDEND TIER DEFINITIONS
 # =============================================================================
 
+
 class DividendTier:
     """Dividend tier classification based on consecutive years of increases."""
-    
-    KING = 50        # 50+ years - Elite status
+
+    KING = 50  # 50+ years - Elite status
     ARISTOCRAT = 25  # 25+ years - S&P 500 Dividend Aristocrats
-    ACHIEVER = 10    # 10+ years - Dividend Achievers
-    CONTENDER = 5    # 5+ years - Dividend Contenders
-    STARTER = 1      # 1+ years - Beginning dividend history
+    ACHIEVER = 10  # 10+ years - Dividend Achievers
+    CONTENDER = 5  # 5+ years - Dividend Contenders
+    STARTER = 1  # 1+ years - Beginning dividend history
 
 
-DIVIDEND_TIERS: Final[Dict[str, int]] = {
+DIVIDEND_TIERS: Final[dict[str, int]] = {
     "king": DividendTier.KING,
     "aristocrat": DividendTier.ARISTOCRAT,
     "achiever": DividendTier.ACHIEVER,
@@ -95,84 +106,110 @@ DIVIDEND_TIERS: Final[Dict[str, int]] = {
 # =============================================================================
 
 # Dividend stocks for analysis - including Kings (50+ years) and high-quality payers
-DIVIDEND_KINGS: Final[List[str]] = [
-    "ABBV", "ADM", "ADP", "AFG", "AMAT", "AMT", "ARCC", "ARE", "AWK",
-    "BAC", "BBY", "BEN", "BMY", "BTI",
-    "CMCSA", "CSCO",
+DIVIDEND_KINGS: Final[list[str]] = [
+    "ABBV",
+    "ADM",
+    "ADP",
+    "AFG",
+    "AMAT",
+    "AMT",
+    "ARCC",
+    "ARE",
+    "AWK",
+    "BAC",
+    "BBY",
+    "BEN",
+    "BMY",
+    "BTI",
+    "CMCSA",
+    "CSCO",
     "DVN",
     "ESS",
     "HSY",
     "IBM",
+    "INTU",
     "JNJ",
     "KO",
-    "MDLZ", "MDT", "MMM", "MO",
-    "NEE", "NKE", "NNN", "NSP",
+    "MDLZ",
+    "MDT",
+    "MMM",
+    "MO",
+    "NEE",
+    "NKE",
+    "NNN",
+    "NSP",
     "O",
-    "PEP", "PRU",
+    "PEP",
+    "PRU",
     "QCOM",
-    "SBUX", "SWK", "SWKS",
-    "T", "TROW",
+    "SBUX",
+    "SWK",
+    "SWKS",
+    "T",
+    "TROW",
     "UGI",
-    "VSNT", "VZ",
+    "VSNT",
+    "VZ",
     "WPC",
     "XOM",
     "ZTS",
 ]
 
-# Tickers removed from lists and purged from the vector DB (no reliable Yahoo quotes)
-DELISTED_SYMBOLS: Final[FrozenSet[str]] = frozenset({
-    "WBA",   # Delisted / acquired (Walgreens Boots Alliance)
-    "SJW",   # Acquired; no active Yahoo quote
-    "LANC",  # Lancaster Colony — invalid history on Yahoo
-    "BF.B",  # Brown-Forman Class B — use BF-B on Yahoo; kept out of DB
-    "BF-B",
-})
-
 # Dividend Aristocrats for comparison (25+ years)
-DIVIDEND_ARISTOCRATS: Final[List[str]] = [
-    "ABBV", "ADM", "ADP", "AFL", "ALB", "AMCR", "AOS", "APD", "ATO", "BDX",
-    "BEN", "BRO", "CAH", "CAT", "CB", "CHRW", "CINF", "CLX", "CTAS",
-    "CVX", "ECL", "ED", "ESS", "EXPD", "FAST", "FDS", "GD", "IBM", "KMB",
-    "LIN", "MCD", "MDT", "MKC", "NEE", "NUE", "O", "PEP", "ROP", "SPGI",
-    "T", "TROW", "VFC", "WMT", "WST", "XOM",
+DIVIDEND_ARISTOCRATS: Final[list[str]] = [
+    "ABBV",
+    "ADM",
+    "ADP",
+    "AFL",
+    "ALB",
+    "AMCR",
+    "AOS",
+    "APD",
+    "ATO",
+    "BDX",
+    "BEN",
+    "BF.B",
+    "BRO",
+    "CAH",
+    "CAT",
+    "CB",
+    "CHRW",
+    "CINF",
+    "CLX",
+    "CTAS",
+    "CVX",
+    "ECL",
+    "ED",
+    "ESS",
+    "EXPD",
+    "FAST",
+    "FDS",
+    "GD",
+    "IBM",
+    "KMB",
+    "LIN",
+    "MCD",
+    "MDT",
+    "MKC",
+    "NEE",
+    "NUE",
+    "O",
+    "PEP",
+    "ROP",
+    "SPGI",
+    "T",
+    "TROW",
+    "VFC",
+    "WBA",
+    "WMT",
+    "WST",
+    "XOM",
 ]
 
 # Combined list for full analysis (frozen for immutability)
-def _load_bundled_top_dividend_symbols() -> List[str]:
-    path = Path(__file__).resolve().parent / "data" / "top_dividend_symbols.json"
-    if not path.exists():
-        return sorted(
-            symbol
-            for symbol in set(DIVIDEND_KINGS + DIVIDEND_ARISTOCRATS)
-            if symbol not in DELISTED_SYMBOLS
-        )
-    try:
-        import json
-
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        symbols = [_normalize_symbol(symbol) for symbol in payload.get("symbols") or []]
-        symbols = [symbol for symbol in symbols if symbol and symbol not in DELISTED_SYMBOLS]
-        if symbols:
-            return sorted(set(symbols))
-    except Exception:
-        pass
-    return sorted(
-        symbol
-        for symbol in set(DIVIDEND_KINGS + DIVIDEND_ARISTOCRATS)
-        if symbol not in DELISTED_SYMBOLS
-    )
-
-
-def _normalize_symbol(symbol: str) -> str:
-    return symbol.strip().upper().replace(".", "-")
-
-
-# Top 100 S&P dividend names (Aristocrats + quality supplemental payers)
-TOP_DIVIDEND_STOCKS: Final[List[str]] = _load_bundled_top_dividend_symbols()
-
-# Combined list for full analysis (frozen for immutability)
-ALL_DIVIDEND_STOCKS: Final[List[str]] = TOP_DIVIDEND_STOCKS
-DIVIDEND_SYMBOLS_SET: Final[FrozenSet[str]] = frozenset(ALL_DIVIDEND_STOCKS)
+ALL_DIVIDEND_STOCKS: Final[list[str]] = sorted(set(DIVIDEND_KINGS + DIVIDEND_ARISTOCRATS))
+DIVIDEND_SYMBOLS_SET: Final[frozenset[str]] = frozenset(ALL_DIVIDEND_STOCKS)
+DELISTED_SYMBOLS: Final[frozenset[str]] = frozenset()
 
 
 # =============================================================================
@@ -180,19 +217,19 @@ DIVIDEND_SYMBOLS_SET: Final[FrozenSet[str]] = frozenset(ALL_DIVIDEND_STOCKS)
 # =============================================================================
 
 # Scoring weights - total = 100 points (investor-focused)
-SCORING_WEIGHTS: Final[Dict[str, int]] = {
-    "dividend_streak": 20,      # Years of consecutive increases (core criterion)
-    "dividend_safety": 15,      # Payout ratio sustainability
-    "dividend_yield": 15,       # Current income potential
-    "dividend_growth": 15,      # CAGR of dividend increases
-    "valuation": 10,            # P/E, forward P/E
-    "financial_strength": 10,   # Debt levels, coverage ratios
-    "profitability": 10,        # ROE, margins
-    "size_stability": 5,        # Market cap (larger = more stable)
+SCORING_WEIGHTS: Final[dict[str, int]] = {
+    "dividend_streak": 20,  # Years of consecutive increases (core criterion)
+    "dividend_safety": 15,  # Payout ratio sustainability
+    "dividend_yield": 15,  # Current income potential
+    "dividend_growth": 15,  # CAGR of dividend increases
+    "valuation": 10,  # P/E, forward P/E
+    "financial_strength": 10,  # Debt levels, coverage ratios
+    "profitability": 10,  # ROE, margins
+    "size_stability": 5,  # Market cap (larger = more stable)
 }
 
 # Recommendation score thresholds
-RECOMMENDATION_THRESHOLDS: Final[Dict[str, int]] = {
+RECOMMENDATION_THRESHOLDS: Final[dict[str, int]] = {
     "strong_buy": 80,
     "buy": 65,
     "accumulate": 50,
@@ -218,8 +255,6 @@ PAYOUT_VERY_SAFE: Final[float] = 40.0
 PAYOUT_SAFE: Final[float] = 60.0
 PAYOUT_MODERATE: Final[float] = 75.0
 PAYOUT_ELEVATED: Final[float] = 90.0
-# Max payout ratio to store/display; values above are capped (avoids bad data showing 500%+)
-MAX_PAYOUT_RATIO_PCT: Final[float] = 150.0
 
 
 # =============================================================================
@@ -235,7 +270,7 @@ MAX_RETRIES: Final[int] = 3
 # DATA SOURCE ATTRIBUTION
 # =============================================================================
 
-DATA_SOURCES: Final[Dict[str, str]] = {
+DATA_SOURCES: Final[dict[str, str]] = {
     "primary": "Market Data Aggregator",
     "fundamentals": "Public Financial Filings",
     "analyst": "Consensus Estimates",
@@ -246,20 +281,9 @@ DATA_SOURCES: Final[Dict[str, str]] = {
 # =============================================================================
 # HISTORY LIMITS
 # =============================================================================
-
 MAX_HISTORY_YEARS: Final[int] = 10
 DEFAULT_STALENESS_DAYS: Final[int] = 7
-
-# Yield channel + library history tables (≈1 trading year of daily prices).
+PORTFOLIO_RISK_REFRESH_SECONDS: Final[int] = 3600
 MIN_YIELD_PRICE_POINTS: Final[int] = 252
 MIN_YIELD_DIVIDEND_PAYMENTS: Final[int] = 4
-
-# Portfolio risk scan: only refreshed when the user clicks Reload / Refresh (not on a timer).
-PORTFOLIO_RISK_REFRESH_SECONDS: Final[int] = 86400 * 365
-
-# Shared library live price refresh (background daemon in the Streamlit process).
-PRICE_REFRESH_INTERVAL_SECONDS: Final[int] = 300  # 5 minutes
-
-# In-app assistant (sidebar chat). Optional HUGGINGFACE_API_KEY for LLM fallback.
-CHATBOT_ENABLED_DEFAULT: Final[bool] = True
-CHATBOT_HF_MODEL_DEFAULT: Final[str] = "facebook/blenderbot-400M-distill"
+PRICE_REFRESH_INTERVAL_SECONDS: Final[int] = 300

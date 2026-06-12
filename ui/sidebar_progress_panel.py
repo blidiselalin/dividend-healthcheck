@@ -19,7 +19,7 @@ from services.deferred_startup import (
 )
 
 
-@st.fragment(run_every=timedelta(seconds=2))
+@st.fragment(run_every=timedelta(seconds=2))  # type: ignore[misc]
 def _background_progress_fragment() -> None:
     applied_kinds = apply_background_results()
     jobs = visible_jobs(admin=is_app_admin())

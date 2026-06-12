@@ -35,6 +35,6 @@ def holding_count(db_path: Path) -> int:
 
             if path.resolve() == resolve_portfolio_db_path().resolve():
                 return holding_count_for_user()
-    except Exception:
+    except Exception:  # noqa: S110
         pass
     return sqlite_holding_count(path)

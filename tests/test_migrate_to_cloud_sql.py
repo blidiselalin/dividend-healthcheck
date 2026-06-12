@@ -1,4 +1,5 @@
 """Tests for legacy SQLite → Postgres migration helpers."""
+# ruff: noqa: S101
 
 import sqlite3
 from pathlib import Path
@@ -6,12 +7,10 @@ from pathlib import Path
 from scripts.migrate_to_cloud_sql import _sqlite_has_table, _sqlite_rows
 
 
-def test_sqlite_rows_skips_missing_table(tmp_path: Path):
+def test_sqlite_rows_skips_missing_table(tmp_path: Path) -> None:
     db_path = tmp_path / "portfolio.db"
     with sqlite3.connect(db_path) as conn:
-        conn.execute(
-            "CREATE TABLE holdings (symbol TEXT PRIMARY KEY, shares REAL NOT NULL)"
-        )
+        conn.execute("CREATE TABLE holdings (symbol TEXT PRIMARY KEY, shares REAL NOT NULL)")
         conn.execute("INSERT INTO holdings VALUES ('AAPL', 10)")
 
     with sqlite3.connect(db_path) as conn:

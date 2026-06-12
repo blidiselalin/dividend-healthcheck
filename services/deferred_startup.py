@@ -4,7 +4,7 @@ Defer heavy startup work to background threads so the UI paints immediately.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from services.background_jobs import (
     ProgressCallback,
@@ -31,7 +31,7 @@ JOB_ENSURE_TOP_DIVIDEND = "ensure_top_dividend"
 JOB_PRICE_REFRESH = "price_refresh"
 
 
-def apply_background_results() -> List[str]:
+def apply_background_results() -> list[str]:
     """Merge completed background jobs into Streamlit session state."""
     import streamlit as st
 
@@ -48,7 +48,7 @@ def apply_background_results() -> List[str]:
         JOB_ENSURE_TOP_DIVIDEND: _apply_ensure_top_dividend,
         JOB_PRICE_REFRESH: _apply_price_refresh,
     }
-    applied_kinds = apply_completed_jobs(handlers)
+    applied_kinds = apply_completed_jobs(handlers)  # type: ignore[arg-type]
     if applied_kinds:
         st.session_state["_background_jobs_applied"] = True
     return applied_kinds
@@ -67,6 +67,8 @@ def _library_reload_needed() -> bool:
 
     if is_demo_session() or not user_has_holdings_in_db():
         return False
+    if st.session_state.get("_portfolio_stale_cache_loaded"):
+        return True
     if st.session_state.get("portfolio_details_rows"):
         return False
     if st.session_state.get("_portfolio_library_sync_done"):
@@ -81,7 +83,7 @@ def _library_reload_needed() -> bool:
         import pickle
 
         with cache_path.open("rb") as handle:
-            bundle = pickle.load(handle)
+            bundle = pickle.load(handle)  # noqa: S301
         return cache_is_stale(bundle)
     except Exception:
         clear_session_cache()
@@ -111,7 +113,9 @@ def schedule_dividend_sync_if_needed() -> None:
 
     def _worker(progress: ProgressCallback) -> Any:
         progress(0.05, "Scanning holdings…")
-        from services.portfolio_dividend_sync_service import maybe_sync_received_dividends
+        from services.portfolio_dividend_sync_service import (
+            maybe_sync_received_dividends,
+        )
 
         stats = maybe_sync_received_dividends()
         progress(1.0, "Dividend sync complete")
@@ -135,7 +139,7 @@ def schedule_yield_preload_if_needed() -> None:
     stock_cache = dict(st.session_state.get("portfolio_stock_cache") or {})
     vector_docs = dict(st.session_state.get("portfolio_vector_docs") or {})
 
-    def _worker(progress: ProgressCallback) -> Dict[str, Any]:
+    def _worker(progress: ProgressCallback) -> dict[str, Any]:
         from services.portfolio_ui_cache import compute_yield_preload_payload
 
         return compute_yield_preload_payload(
@@ -160,7 +164,7 @@ def schedule_portfolio_warm_if_needed() -> None:
     if has_active_jobs(scope=session_scope()) and _job_running(JOB_WARM_PORTFOLIO):
         return
 
-    def _worker(progress: ProgressCallback) -> Dict[str, Any]:
+    def _worker(progress: ProgressCallback) -> dict[str, Any]:
         progress(0.05, "Loading holdings from library…")
         from services.portfolio_ui_cache import compute_fast_portfolio_payload
 
@@ -175,7 +179,7 @@ def schedule_library_reload_if_needed() -> None:
     if not _library_reload_needed():
         return
 
-    def _worker(progress: ProgressCallback) -> Dict[str, Any]:
+    def _worker(progress: ProgressCallback) -> dict[str, Any]:
         progress(0.05, "Reloading after library update…")
         from services.portfolio_ui_cache import compute_live_portfolio_payload
 
@@ -196,7 +200,7 @@ def schedule_coverage_badge_refresh() -> None:
     if doc_count <= 0:
         return
 
-    def _worker(progress: ProgressCallback) -> Dict[str, Any]:
+    def _worker(progress: ProgressCallback) -> dict[str, Any]:
         progress(0.1, "Counting S&P coverage…")
         from services.sp500_peers_service import coverage_stats
 
@@ -205,14 +209,14 @@ def schedule_coverage_badge_refresh() -> None:
     start_job(JOB_COVERAGE_STATS, "Updating library stats", _worker)
 
 
-def schedule_history_backfill(*, limit: int = 40) -> Optional[str]:
+def schedule_history_backfill(*, limit: int = 40) -> str | None:
     """Admin-triggered backfill for thin price/dividend history."""
     from auth.user_context import is_app_admin
 
     if not is_app_admin():
         return None
 
-    def _worker(progress: ProgressCallback) -> Dict[str, Any]:
+    def _worker(progress: ProgressCallback) -> dict[str, Any]:
         from services.stock_history_backfill import backfill_thin_history
 
         return backfill_thin_history(limit=limit, progress_callback=progress)
@@ -225,14 +229,14 @@ def schedule_history_backfill(*, limit: int = 40) -> Optional[str]:
     )
 
 
-def schedule_history_table_sync(*, limit: int = 200) -> Optional[str]:
+def schedule_history_table_sync(*, limit: int = 200) -> str | None:
     """Admin-triggered JSONB → normalized history table sync."""
     from auth.user_context import is_app_admin
 
     if not is_app_admin():
         return None
 
-    def _worker(progress: ProgressCallback) -> Dict[str, Any]:
+    def _worker(progress: ProgressCallback) -> dict[str, Any]:
         from db.postgres_market_history_store import PostgresMarketHistoryStore
 
         progress(0.05, "Finding symbols pending history sync…")
@@ -248,14 +252,14 @@ def schedule_history_table_sync(*, limit: int = 200) -> Optional[str]:
     )
 
 
-def schedule_hourly_market_update(*, enrich_limit: int = 40) -> Optional[str]:
+def schedule_hourly_market_update(*, enrich_limit: int = 40) -> str | None:
     """Admin-triggered hourly market refresh (prices + stale enrich)."""
     from auth.user_context import is_app_admin
 
     if not is_app_admin():
         return None
 
-    def _worker(progress: ProgressCallback) -> Dict[str, Any]:
+    def _worker(progress: ProgressCallback) -> dict[str, Any]:
         from services.hourly_market_update import run_hourly_market_update
 
         progress(0.05, "Refreshing prices…")
@@ -271,15 +275,18 @@ def schedule_hourly_market_update(*, enrich_limit: int = 40) -> Optional[str]:
     )
 
 
-def schedule_ensure_sp500(*, limit: Optional[int] = None) -> Optional[str]:
+def schedule_ensure_sp500(*, limit: int | None = None) -> str | None:
     """Admin-triggered ingest of missing S&P 500 symbols into analysed stocks."""
     from auth.user_context import is_app_admin
 
     if not is_app_admin():
         return None
 
-    def _worker(progress: ProgressCallback) -> Dict[str, Any]:
-        from services.sp500_peers_service import coverage_stats, ensure_sp500_in_vectordb
+    def _worker(progress: ProgressCallback) -> dict[str, Any]:
+        from services.sp500_peers_service import (
+            coverage_stats,
+            ensure_sp500_in_vectordb,
+        )
 
         def _cb(msg: str, current: int, total: int) -> None:
             progress(current / total if total else 0.05, msg)
@@ -297,15 +304,18 @@ def schedule_ensure_sp500(*, limit: Optional[int] = None) -> Optional[str]:
     )
 
 
-def schedule_ensure_top_dividend(*, limit: Optional[int] = None) -> Optional[str]:
+def schedule_ensure_top_dividend(*, limit: int | None = None) -> str | None:
     """Admin-triggered ingest of missing top-100 dividend symbols."""
     from auth.user_context import is_app_admin
 
     if not is_app_admin():
         return None
 
-    def _worker(progress: ProgressCallback) -> Dict[str, Any]:
-        from services.sp500_peers_service import ensure_top_dividend_in_vectordb, top_dividend_coverage_stats
+    def _worker(progress: ProgressCallback) -> dict[str, Any]:
+        from services.sp500_peers_service import (
+            ensure_top_dividend_in_vectordb,
+            top_dividend_coverage_stats,
+        )
 
         def _cb(msg: str, current: int, total: int) -> None:
             progress(current / total if total else 0.05, msg)
@@ -323,14 +333,14 @@ def schedule_ensure_top_dividend(*, limit: Optional[int] = None) -> Optional[str
     )
 
 
-def schedule_price_refresh() -> Optional[str]:
+def schedule_price_refresh() -> str | None:
     """On-demand price refresh for all library symbols (background thread)."""
     from auth.user_context import is_app_admin
 
     if not is_app_admin():
         return None
 
-    def _worker(progress: ProgressCallback) -> Dict[str, Any]:
+    def _worker(progress: ProgressCallback) -> dict[str, Any]:
         from services.price_refresh_scheduler import run_price_refresh_once
 
         progress(0.1, "Fetching live prices…")
@@ -346,23 +356,29 @@ def schedule_price_refresh() -> Optional[str]:
     )
 
 
-def visible_jobs(*, admin: bool) -> List:
+def visible_jobs(*, admin: bool) -> list[Any]:
     jobs = list_jobs(include_finished=True)
     visible = []
     for job in jobs:
         if job.admin_only and not admin:
             continue
-        if job.status in ("queued", "running"):
-            visible.append(job)
-        elif job.status == "done" and not job.applied:
-            visible.append(job)
-        elif job.status == "error" and job.finished_at and not job.applied:
+        if (
+            job.status in ("queued", "running")
+            or job.status == "done"
+            and not job.applied
+            or job.status == "error"
+            and job.finished_at
+            and not job.applied
+        ):
             visible.append(job)
     return visible[-6:]
 
 
 def _job_running(kind: str) -> bool:
-    return any(job.kind == kind and job.status in ("queued", "running") for job in list_jobs(include_finished=False))
+    return any(
+        job.kind == kind and job.status in ("queued", "running")
+        for job in list_jobs(include_finished=False)
+    )
 
 
 def _apply_dividend_sync(result: Any) -> None:
@@ -375,7 +391,7 @@ def _apply_dividend_sync(result: Any) -> None:
     )
 
 
-def _apply_yield_preload(result: Dict[str, Any]) -> None:
+def _apply_yield_preload(result: dict[str, Any]) -> None:
     import streamlit as st
 
     from services.portfolio_ui_cache import save_session_cache
@@ -394,7 +410,7 @@ def _apply_yield_preload(result: Dict[str, Any]) -> None:
         logger.debug("Risk watchlist rebuild after yield preload skipped: %s", exc)
 
 
-def _apply_warm_portfolio(result: Dict[str, Any]) -> None:
+def _apply_warm_portfolio(result: dict[str, Any]) -> None:
     import streamlit as st
 
     from ui.portfolio_risk_panel import store_portfolio_payload
@@ -413,7 +429,7 @@ def _apply_warm_portfolio(result: Dict[str, Any]) -> None:
     logger.info("Background warm portfolio: %d holdings", len(rows))
 
 
-def _apply_live_reload(result: Dict[str, Any]) -> None:
+def _apply_live_reload(result: dict[str, Any]) -> None:
     import streamlit as st
 
     from ui.portfolio_risk_panel import refresh_portfolio_risks, store_portfolio_payload
@@ -426,10 +442,11 @@ def _apply_live_reload(result: Dict[str, Any]) -> None:
     refresh_portfolio_risks(force=True, rows=rows, preload=preload)
     st.session_state["_portfolio_library_sync_done"] = True
     st.session_state.pop("portfolio_fast_loaded", None)
+    st.session_state.pop("_portfolio_stale_cache_loaded", None)
     logger.info("Background live reload: %d holdings", len(rows))
 
 
-def _apply_coverage_stats(result: Dict[str, Any]) -> None:
+def _apply_coverage_stats(result: dict[str, Any]) -> None:
     import streamlit as st
 
     status = dict(st.session_state.get("market_db_status") or {})
@@ -437,7 +454,7 @@ def _apply_coverage_stats(result: Dict[str, Any]) -> None:
     st.session_state["market_db_status"] = status
 
 
-def _apply_history_table_sync(result: Dict[str, Any]) -> None:
+def _apply_history_table_sync(result: dict[str, Any]) -> None:
     import streamlit as st
 
     st.session_state["last_history_table_sync_summary"] = result
@@ -445,7 +462,7 @@ def _apply_history_table_sync(result: Dict[str, Any]) -> None:
         from ui.market_library_cache import clear_thin_history_summary_cache
 
         clear_thin_history_summary_cache()
-    except Exception:
+    except Exception:  # noqa: S110
         pass
     logger.info(
         "Background history table sync: synced=%s pending=%s",
@@ -454,7 +471,7 @@ def _apply_history_table_sync(result: Dict[str, Any]) -> None:
     )
 
 
-def _apply_history_backfill(result: Dict[str, Any]) -> None:
+def _apply_history_backfill(result: dict[str, Any]) -> None:
     import streamlit as st
 
     st.session_state["last_history_backfill_summary"] = result
@@ -462,13 +479,13 @@ def _apply_history_backfill(result: Dict[str, Any]) -> None:
         from ui.portfolio_details_view import _load_dividend_growth
 
         _load_dividend_growth.clear()
-    except Exception:
+    except Exception:  # noqa: S110
         pass
     try:
         from ui.market_library_cache import clear_thin_history_summary_cache
 
         clear_thin_history_summary_cache()
-    except Exception:
+    except Exception:  # noqa: S110
         pass
     logger.info(
         "Background history backfill: enriched=%s ready=%s",
@@ -477,7 +494,7 @@ def _apply_history_backfill(result: Dict[str, Any]) -> None:
     )
 
 
-def _apply_hourly_update(result: Dict[str, Any]) -> None:
+def _apply_hourly_update(result: dict[str, Any]) -> None:
     import streamlit as st
 
     st.session_state["last_hourly_update_summary"] = result
@@ -489,7 +506,7 @@ def _apply_hourly_update(result: Dict[str, Any]) -> None:
     )
 
 
-def _apply_ensure_sp500(result: Dict[str, Any]) -> None:
+def _apply_ensure_sp500(result: dict[str, Any]) -> None:
     import streamlit as st
 
     from services.shared_market_db import reset_shared_vector_store_cache
@@ -508,7 +525,7 @@ def _apply_ensure_sp500(result: Dict[str, Any]) -> None:
     )
 
 
-def _apply_ensure_top_dividend(result: Dict[str, Any]) -> None:
+def _apply_ensure_top_dividend(result: dict[str, Any]) -> None:
     import streamlit as st
 
     from services.shared_market_db import reset_shared_vector_store_cache
@@ -527,7 +544,7 @@ def _apply_ensure_top_dividend(result: Dict[str, Any]) -> None:
     )
 
 
-def _apply_price_refresh(result: Dict[str, Any]) -> None:
+def _apply_price_refresh(result: dict[str, Any]) -> None:
     import streamlit as st
 
     st.session_state["last_price_refresh_summary"] = result

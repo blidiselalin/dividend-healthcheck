@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Optional
+from typing import Any
 
 
-def parse_date(value) -> date:
+def parse_date(value: Any) -> date:
     """Parse a DB column to ``date`` (never call ``date.fromisoformat`` on row values)."""
     if value is None:
         raise ValueError("date value is null")
@@ -24,7 +24,7 @@ def parse_date(value) -> date:
     return date.fromisoformat(text)
 
 
-def parse_optional_date(value) -> Optional[date]:
+def parse_optional_date(value: Any) -> date | None:
     if value is None:
         return None
     text = str(value).strip()

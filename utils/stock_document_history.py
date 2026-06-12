@@ -9,9 +9,12 @@ sometimes only persisted ``price_history_json`` / ``dividend_history_json``.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, TYPE_CHECKING
+import logging
+from typing import TYPE_CHECKING, Any
 
 from config import MIN_YIELD_DIVIDEND_PAYMENTS, MIN_YIELD_PRICE_POINTS
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from data_ingestion.models import StockDocument
@@ -39,10 +42,13 @@ def yield_channel_ready(doc: Any) -> bool:
     from utils.yfinance_history import library_prices_trustworthy
 
     _, div_n = history_counts(doc)
-    return library_prices_trustworthy(doc, min_unique=MIN_YIELD_PRICE_POINTS) and div_n >= MIN_YIELD_DIVIDEND_PAYMENTS
+    return (
+        library_prices_trustworthy(doc, min_unique=MIN_YIELD_PRICE_POINTS)
+        and div_n >= MIN_YIELD_DIVIDEND_PAYMENTS
+    )
 
 
-def parse_history_payload(data: Dict[str, Any]) -> tuple[List[Any], List[Any]]:
+def parse_history_payload(data: dict[str, Any]) -> tuple[list[Any], list[Any]]:
     """
     Extract price/dividend history lists from a document dict.
 
@@ -63,7 +69,7 @@ def parse_history_payload(data: Dict[str, Any]) -> tuple[List[Any], List[Any]]:
     return price_raw, div_raw
 
 
-def hydrate_document_history(doc: "StockDocument") -> "StockDocument":
+def hydrate_document_history(doc: StockDocument) -> StockDocument:  # noqa: C901
     """Fill in-memory history from legacy JSON string metadata when arrays are empty."""
     from data_ingestion.models import DividendRecord, PriceHistory
 
@@ -73,7 +79,8 @@ def hydrate_document_history(doc: "StockDocument") -> "StockDocument":
             for item in _loads_json_field(payload):
                 try:
                     doc.price_history.append(PriceHistory.from_dict(item))
-                except Exception:
+                except Exception as exc:
+                    logger.debug("Failed to hydrate price history: %s", exc)
                     continue
 
     if not doc.dividend_history:
@@ -82,7 +89,8 @@ def hydrate_document_history(doc: "StockDocument") -> "StockDocument":
             for item in _loads_json_field(payload):
                 try:
                     doc.dividend_history.append(DividendRecord.from_dict(item))
-                except Exception:
+                except Exception as exc:
+                    logger.debug("Failed to hydrate dividend history: %s", exc)
                     continue
 
     if doc.price_history:
@@ -92,7 +100,7 @@ def hydrate_document_history(doc: "StockDocument") -> "StockDocument":
     return doc
 
 
-def _loads_json_field(value: Any) -> List[Any]:
+def _loads_json_field(value: Any) -> list[Any]:
     if value is None:
         return []
     if isinstance(value, list):

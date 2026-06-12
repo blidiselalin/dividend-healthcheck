@@ -5,21 +5,32 @@ Provides semantic search capabilities for stock documents,
 enabling intelligent querying based on stock characteristics.
 """
 
+from __future__ import annotations
+
+import contextlib
 import json
 import logging
-from pathlib import Path
-from typing import List, Optional, Dict, Any
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
-from .models import StockDocument, SearchResult, DataSource, PriceHistory, DividendRecord, parse_data_source
+from .models import (
+    DataSource,
+    DividendRecord,
+    PriceHistory,
+    SearchResult,
+    StockDocument,
+    parse_data_source,
+)
 
 # Import config for default paths and constants
 try:
-    from config import VECTORDB_DIR, MAX_PAYOUT_RATIO_PCT
+    from config import MAX_PAYOUT_RATIO_PCT, VECTORDB_DIR
+
     DEFAULT_VECTORDB_DIR = str(VECTORDB_DIR)
 except ImportError:
     DEFAULT_VECTORDB_DIR = "data/vectordb"
-    MAX_PAYOUT_RATIO_PCT = 150.0
+    MAX_PAYOUT_RATIO_PCT = 150.0  # type: ignore[misc]
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +38,7 @@ logger = logging.getLogger(__name__)
 try:
     import chromadb
     from chromadb.config import Settings
+
     CHROMADB_AVAILABLE = True
 except ImportError:
     CHROMADB_AVAILABLE = False
@@ -36,32 +48,33 @@ except ImportError:
 class VectorStore:
     """
     Vector database for stock documents using ChromaDB.
-    
+
     Features:
     - Semantic search by stock characteristics
     - Metadata filtering (sector, yield, streak, etc.)
     - Persistent storage
     - Document deduplication
     """
-    
+
     COLLECTION_NAME = "dividend_stocks"
-    
+
     def __init__(
         self,
-        persist_directory: str = None,
-        embedding_model: str = "default",
-    ):
+        persist_directory: str | None = None,
+        _embedding_model: str = "default",
+    ) -> None:
         """
         Initialize vector store.
-        
+
         Args:
-            persist_directory: Directory for persistent storage. Defaults to ~/.dividendscope/data/vectordb.
-            embedding_model: Embedding model to use (default uses ChromaDB's built-in).
+            persist_directory: Directory for persistent storage.
+                Defaults to ~/.dividendscope/data/vectordb.
+            _embedding_model: Embedding model to use (default uses ChromaDB's built-in).
         """
         from db.connection import use_cloud_sql
 
         self._use_postgres = use_cloud_sql()
-        self._pg_store = None
+        self._pg_store: Any = None
         if self._use_postgres:
             from db.postgres_market_store import PostgresMarketStore
 
@@ -75,18 +88,18 @@ class VectorStore:
             persist_directory = DEFAULT_VECTORDB_DIR
         self.persist_directory = Path(persist_directory)
         self.persist_directory.mkdir(parents=True, exist_ok=True)
-        
-        self._client = None
-        self._collection = None
-        self._fallback_store: Dict[str, StockDocument] = {}
+
+        self._client: Any = None
+        self._collection: Any = None
+        self._fallback_store: dict[str, StockDocument] = {}
         self._fallback_file = self.persist_directory / "fallback_store.json"
         self._use_fallback = not CHROMADB_AVAILABLE
-        
+
         if CHROMADB_AVAILABLE:
             self._init_chromadb()
         else:
             self._init_fallback()
-    
+
     def _init_chromadb(self) -> None:
         """Initialize ChromaDB client and collection."""
         try:
@@ -94,7 +107,7 @@ class VectorStore:
                 path=str(self.persist_directory),
                 settings=Settings(anonymized_telemetry=False),
             )
-            
+
             self._collection = self._client.get_or_create_collection(
                 name=self.COLLECTION_NAME,
                 metadata={
@@ -102,32 +115,31 @@ class VectorStore:
                     "created": datetime.now().isoformat(),
                 },
             )
-            
+
             logger.info(f"ChromaDB initialized at {self.persist_directory}")
-            logger.info(f"Collection '{self.COLLECTION_NAME}' has {self._collection.count()} documents")
-            
+            logger.info(
+                f"Collection '{self.COLLECTION_NAME}' has {self._collection.count()} documents"
+            )
+
         except Exception as e:
             logger.error(f"Error initializing ChromaDB: {e}")
             self._use_fallback = True
             self._init_fallback()
-    
+
     def _init_fallback(self) -> None:
         """Initialize fallback JSON-based storage."""
         if self._fallback_file.exists():
             try:
-                with open(self._fallback_file, "r") as f:
+                with open(self._fallback_file) as f:
                     data = json.load(f)
-                    self._fallback_store = {
-                        k: StockDocument.from_dict(v) 
-                        for k, v in data.items()
-                    }
+                    self._fallback_store = {k: StockDocument.from_dict(v) for k, v in data.items()}
                 logger.info(f"Loaded {len(self._fallback_store)} documents from fallback store")
             except Exception as e:
                 logger.error(f"Error loading fallback store: {e}")
                 self._fallback_store = {}
-        
+
         logger.info("Using fallback JSON storage (install chromadb for vector search)")
-    
+
     def _save_fallback(self) -> None:
         """Save fallback store to disk."""
         try:
@@ -136,30 +148,31 @@ class VectorStore:
                 json.dump(data, f, indent=2)
         except Exception as e:
             logger.error(f"Error saving fallback store: {e}")
-    
+
     def add_document(self, document: StockDocument) -> str:
-        if getattr(self, "_use_postgres", False):
-            return self._pg_store.add_document(document)
         """
         Add a document to the vector store.
-        
+
         Args:
             document: StockDocument to add.
-            
+
         Returns:
             Document ID.
         """
+        if getattr(self, "_use_postgres", False):
+            assert self._pg_store is not None  # noqa: S101
+            return self._pg_store.add_document(document)  # type: ignore[no-any-return]
         doc_id = document.document_id
-        
+
         if self._use_fallback:
             self._fallback_store[doc_id] = document
             self._save_fallback()
             return doc_id
-        
+
         try:
             # Check if document exists
             existing = self._collection.get(ids=[doc_id])
-            
+
             if existing and existing["ids"]:
                 # Update existing document
                 self._collection.update(
@@ -174,33 +187,33 @@ class VectorStore:
                     documents=[document.embedding_text],
                     metadatas=[document.to_metadata()],
                 )
-            
+
             return doc_id
-            
+
         except Exception as e:
             logger.error(f"Error adding document {doc_id}: {e}")
             # Fallback to JSON
             self._fallback_store[doc_id] = document
             self._save_fallback()
             return doc_id
-    
-    def add_documents(self, documents: List[StockDocument]) -> List[str]:
-        if getattr(self, "_use_postgres", False):
-            return self._pg_store.add_documents(documents)
+
+    def add_documents(self, documents: list[StockDocument]) -> list[str]:
         """
         Add multiple documents to the vector store.
-        
+
         Args:
             documents: List of StockDocuments to add.
-            
+
         Returns:
             List of document IDs.
         """
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.add_documents(documents)  # type: ignore[no-any-return]
         if not documents:
             return []
 
         ids = []
-        
+
         if self._use_fallback:
             for doc in documents:
                 doc_id = doc.document_id
@@ -208,43 +221,45 @@ class VectorStore:
                 ids.append(doc_id)
             self._save_fallback()
             return ids
-        
+
         # Batch add for ChromaDB
         try:
             doc_ids = [d.document_id for d in documents]
             doc_texts = [d.embedding_text for d in documents]
             doc_metadatas = [d.to_metadata() for d in documents]
-            
+
             # Split into add vs update
             existing = self._collection.get(ids=doc_ids)
             existing_ids = set(existing["ids"]) if existing else set()
-            
+
             new_docs = [
-                (i, t, m) for i, t, m in zip(doc_ids, doc_texts, doc_metadatas)
+                (i, t, m)
+                for i, t, m in zip(doc_ids, doc_texts, doc_metadatas, strict=False)
                 if i not in existing_ids
             ]
-            
+
             update_docs = [
-                (i, t, m) for i, t, m in zip(doc_ids, doc_texts, doc_metadatas)
+                (i, t, m)
+                for i, t, m in zip(doc_ids, doc_texts, doc_metadatas, strict=False)
                 if i in existing_ids
             ]
-            
+
             if new_docs:
                 self._collection.add(
                     ids=[d[0] for d in new_docs],
                     documents=[d[1] for d in new_docs],
                     metadatas=[d[2] for d in new_docs],
                 )
-            
+
             if update_docs:
                 self._collection.update(
                     ids=[d[0] for d in update_docs],
                     documents=[d[1] for d in update_docs],
                     metadatas=[d[2] for d in update_docs],
                 )
-            
+
             return doc_ids
-            
+
         except Exception as e:
             logger.error(f"Error batch adding documents: {e}")
             # Fallback
@@ -253,121 +268,126 @@ class VectorStore:
                 ids.append(doc.document_id)
             self._save_fallback()
             return ids
-    
+
     def search(
         self,
         query: str,
         n_results: int = 10,
-        where: Optional[Dict[str, Any]] = None,
-    ) -> List[SearchResult]:
-        if getattr(self, "_use_postgres", False):
-            return self._pg_store.search(query, n_results, where)
+        where: dict[str, Any] | None = None,
+    ) -> list[SearchResult]:
         """
         Search for documents by semantic similarity.
-        
+
         Args:
             query: Search query text.
             n_results: Maximum number of results.
             where: Metadata filter (ChromaDB where clause).
-            
+
         Returns:
             List of SearchResults sorted by relevance.
         """
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.search(query, n_results, where)  # type: ignore[no-any-return]
         if self._use_fallback:
             return self._fallback_search(query, n_results, where)
-        
+
         try:
             results = self._collection.query(
                 query_texts=[query],
                 n_results=n_results,
                 where=where,
             )
-            
+
             search_results = []
-            
+
             if results and results["ids"] and results["ids"][0]:
-                for i, doc_id in enumerate(results["ids"][0]):
+                for i, _doc_id in enumerate(results["ids"][0]):
                     metadata = results["metadatas"][0][i] if results["metadatas"] else {}
                     distance = results["distances"][0][i] if results["distances"] else 0
-                    
+
                     # Convert distance to similarity score (0-1)
                     score = 1 / (1 + distance)
-                    
+
                     # Reconstruct document from metadata
                     doc = self._metadata_to_document(metadata)
-                    
+
                     search_results.append(SearchResult(document=doc, score=score))
-            
+
             return search_results
-            
+
         except Exception as e:
             logger.error(f"Error searching: {e}")
             return self._fallback_search(query, n_results, where)
-    
+
     def _fallback_search(
         self,
         query: str,
         n_results: int,
-        where: Optional[Dict[str, Any]],
-    ) -> List[SearchResult]:
+        where: dict[str, Any] | None,
+    ) -> list[SearchResult]:
         """Simple keyword-based fallback search."""
         query_lower = query.lower()
         query_terms = query_lower.split()
-        
+
         results = []
-        
+
         for doc in self._fallback_store.values():
             # Apply where filter
             if where and not self._matches_filter(doc, where):
                 continue
-            
+
             # Calculate simple relevance score
             text = doc.embedding_text.lower()
             score = sum(1 for term in query_terms if term in text)
-            
+
             if score > 0:
                 results.append(SearchResult(document=doc, score=score / len(query_terms)))
-        
+
         # Sort by score and limit
         results.sort(key=lambda x: x.score, reverse=True)
         return results[:n_results]
-    
-    def _matches_filter(self, doc: StockDocument, where: Dict[str, Any]) -> bool:
+
+    def _matches_filter(self, doc: StockDocument, where: dict[str, Any]) -> bool:  # noqa: C901
         """Check if document matches filter criteria."""
         metadata = doc.to_metadata()
-        
+
         for key, value in where.items():
             if key.startswith("$"):
                 # Handle operators like $gt, $lt, etc.
                 continue
-            
+
             if key not in metadata:
                 return False
-            
+
             if isinstance(value, dict):
                 # Handle comparison operators
                 for op, val in value.items():
-                    if op == "$gt" and not (metadata[key] and metadata[key] > val):
-                        return False
-                    elif op == "$gte" and not (metadata[key] and metadata[key] >= val):
-                        return False
-                    elif op == "$lt" and not (metadata[key] and metadata[key] < val):
-                        return False
-                    elif op == "$lte" and not (metadata[key] and metadata[key] <= val):
-                        return False
-                    elif op == "$eq" and metadata[key] != val:
+                    if (
+                        op == "$gt"
+                        and not (metadata[key] and metadata[key] > val)
+                        or op == "$gte"
+                        and not (metadata[key] and metadata[key] >= val)
+                        or (
+                            op == "$lt"
+                            and not (metadata[key] and metadata[key] < val)
+                            or op == "$lte"
+                            and not (metadata[key] and metadata[key] <= val)
+                        )
+                        or op == "$eq"
+                        and metadata[key] != val
+                    ):
                         return False
             else:
                 if metadata[key] != value:
                     return False
-        
+
         return True
-    
-    def _metadata_to_document(self, metadata: Dict[str, Any]) -> StockDocument:
+
+    def _metadata_to_document(self, metadata: dict[str, Any]) -> StockDocument:
         """Reconstruct StockDocument from metadata."""
         import json
         from datetime import date
-        
+
         # Deserialize price history from JSON
         price_history = []
         if metadata.get("price_history_json"):
@@ -376,7 +396,7 @@ class VectorStore:
                 price_history = [PriceHistory.from_dict(p) for p in price_data]
             except (json.JSONDecodeError, Exception) as e:
                 logger.debug(f"Error deserializing price history: {e}")
-        
+
         # Deserialize dividend history from JSON
         dividend_history = []
         if metadata.get("dividend_history_json"):
@@ -385,15 +405,13 @@ class VectorStore:
                 dividend_history = [DividendRecord.from_dict(d) for d in div_data]
             except (json.JSONDecodeError, Exception) as e:
                 logger.debug(f"Error deserializing dividend history: {e}")
-        
+
         # Parse ex-dividend date
         ex_div_date = None
         if metadata.get("ex_dividend_date"):
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 ex_div_date = date.fromisoformat(metadata["ex_dividend_date"])
-            except (ValueError, TypeError):
-                pass
-        
+
         return StockDocument(
             symbol=metadata.get("symbol", ""),
             name=metadata.get("name", ""),
@@ -467,48 +485,44 @@ class VectorStore:
             portfolio_dividends_paid=metadata.get("portfolio_dividends_paid"),
             portfolio_purchase_count=metadata.get("portfolio_purchase_count"),
         )
-    
-    def get_by_symbol(self, symbol: str) -> Optional[StockDocument]:
-        if getattr(self, "_use_postgres", False):
-            return self._pg_store.get_by_symbol(symbol)
+
+    def get_by_symbol(self, symbol: str) -> StockDocument | None:  # noqa: C901
         """
         Get document by stock symbol.
-        
+
         Returns the highest quality document if multiple exist for the same symbol.
-        
+
         Args:
             symbol: Stock ticker symbol.
-            
+
         Returns:
             StockDocument or None.
         """
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.get_by_symbol(symbol)  # type: ignore[no-any-return]
         if self._use_fallback:
             matches = [
-                doc for doc in self._fallback_store.values()
-                if doc.symbol.upper() == symbol.upper()
+                doc for doc in self._fallback_store.values() if doc.symbol.upper() == symbol.upper()
             ]
             if not matches:
                 return None
             # Return highest quality
             return max(matches, key=lambda d: d.data_quality or 0)
-        
+
         try:
             # Get ALL documents for this symbol
             results = self._collection.get(
                 where={"symbol": symbol.upper()},
             )
-            
+
             if results and results["ids"]:
                 # Reconstruct all documents
-                documents = [
-                    self._metadata_to_document(meta)
-                    for meta in results["metadatas"]
-                ]
-                
+                documents = [self._metadata_to_document(meta) for meta in results["metadatas"]]
+
                 # Prefer documents with enriched data (valuation, profitability, etc.)
                 def completeness_score(doc: StockDocument) -> float:
                     score = doc.data_quality or 0
-                    
+
                     # Bonus for enriched fields that only come from yfinance
                     if doc.forward_pe is not None:
                         score += 5
@@ -526,85 +540,85 @@ class VectorStore:
                         score += 5
                     if doc.analyst_rating is not None:
                         score += 3
-                    
+
                     # Prefer yahoo source for real-time enriched data
                     if doc.source.value == "yahoo":
                         score += 10
-                    
+
                     return score
-                
+
                 return max(documents, key=completeness_score)
-            
+
             return None
-            
+
         except Exception as e:
             logger.error(f"Error getting {symbol}: {e}")
             return None
-    
-    def get_dividend_kings(self, min_streak: int = 50) -> List[StockDocument]:
-        if getattr(self, "_use_postgres", False):
-            return self._pg_store.get_dividend_kings(min_streak)
+
+    def get_dividend_kings(self, min_streak: int = 50) -> list[StockDocument]:
         """
         Get all Dividend Kings (50+ years of increases).
-        
+
         Args:
             min_streak: Minimum consecutive years.
-            
+
         Returns:
             List of StockDocuments.
         """
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.get_dividend_kings(min_streak)  # type: ignore[no-any-return]
         if self._use_fallback:
             return [
-                doc for doc in self._fallback_store.values()
+                doc
+                for doc in self._fallback_store.values()
                 if doc.dividend_streak_years and doc.dividend_streak_years >= min_streak
             ]
-        
+
         try:
             results = self._collection.get(
                 where={"dividend_streak_years": {"$gte": min_streak}},
             )
-            
+
             documents = []
             if results and results["ids"]:
                 for metadata in results["metadatas"]:
                     documents.append(self._metadata_to_document(metadata))
-            
+
             return documents
-            
+
         except Exception as e:
             logger.error(f"Error getting dividend kings: {e}")
             return []
-    
-    def get_by_sector(self, sector: str) -> List[StockDocument]:
-        if getattr(self, "_use_postgres", False):
-            return self._pg_store.get_by_sector(sector)
+
+    def get_by_sector(self, sector: str) -> list[StockDocument]:
         """Get all documents in a sector."""
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.get_by_sector(sector)  # type: ignore[no-any-return]
         if self._use_fallback:
             return [
-                doc for doc in self._fallback_store.values()
-                if doc.sector.lower() == sector.lower()
+                doc for doc in self._fallback_store.values() if doc.sector.lower() == sector.lower()
             ]
-        
+
         try:
             results = self._collection.get(
                 where={"sector": sector},
             )
-            
+
             documents = []
             if results and results["ids"]:
                 for metadata in results["metadatas"]:
                     documents.append(self._metadata_to_document(metadata))
-            
+
             return documents
-            
+
         except Exception as e:
             logger.error(f"Error getting sector {sector}: {e}")
             return []
-    
-    def count_symbols_in(self, symbols) -> int:
-        if getattr(self, "_use_postgres", False):
-            return self._pg_store.count_symbols_in(list(symbols))
+
+    def count_symbols_in(self, symbols: Any) -> int:
         """Count documents whose symbol is in the given set."""
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.count_symbols_in(list(symbols))  # type: ignore[no-any-return]
         if self._use_fallback:
             wanted = {str(s).upper() for s in symbols if s}
             return sum(1 for doc in self._fallback_store.values() if doc.symbol.upper() in wanted)
@@ -623,27 +637,27 @@ class VectorStore:
             return 0
 
     def count(self) -> int:
-        if getattr(self, "_use_postgres", False):
-            return self._pg_store.count()
         """Get total number of documents."""
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.count()  # type: ignore[no-any-return]
         if self._use_fallback:
             return len(self._fallback_store)
-        
+
         try:
-            return self._collection.count()
+            return int(self._collection.count())
         except Exception:
             return len(self._fallback_store)
-    
-    def get_stats(self) -> Dict[str, Any]:
-        if getattr(self, "_use_postgres", False):
-            return self._pg_store.get_stats()
+
+    def get_stats(self) -> dict[str, Any]:
         """
         Get comprehensive statistics about the vector store.
-        
+
         Returns:
             Dict with statistics including document counts, sectors, etc.
         """
-        stats: Dict[str, Any] = {
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.get_stats()  # type: ignore[no-any-return]
+        stats: dict[str, Any] = {
             "total_documents": 0,
             "dividend_kings": 0,
             "dividend_aristocrats": 0,
@@ -651,7 +665,7 @@ class VectorStore:
             "sectors": {},
             "sources": {},
         }
-        
+
         try:
             # Get all documents
             if self._use_fallback:
@@ -662,54 +676,55 @@ class VectorStore:
                 if results and results["metadatas"]:
                     for metadata in results["metadatas"]:
                         documents.append(self._metadata_to_document(metadata))
-            
+
             stats["total_documents"] = len(documents)
-            
+
             symbols = set()
-            sectors: Dict[str, int] = {}
-            sources: Dict[str, int] = {}
+            sectors: dict[str, int] = {}
+            sources: dict[str, int] = {}
             kings = 0
             aristocrats = 0
-            
+
             for doc in documents:
                 symbols.add(doc.symbol)
-                
+
                 # Count by sector
                 sector = doc.sector or "Unknown"
                 sectors[sector] = sectors.get(sector, 0) + 1
-                
+
                 # Count by source
                 source = doc.source.value if doc.source else "unknown"
                 sources[source] = sources.get(source, 0) + 1
-                
+
                 # Count dividend tiers
                 if doc.dividend_streak_years:
                     if doc.dividend_streak_years >= 50:
                         kings += 1
                     elif doc.dividend_streak_years >= 25:
                         aristocrats += 1
-            
+
             stats["unique_symbols"] = len(symbols)
             stats["dividend_kings"] = kings
             stats["dividend_aristocrats"] = aristocrats
             stats["sectors"] = dict(sorted(sectors.items(), key=lambda x: x[1], reverse=True))
             stats["sources"] = dict(sorted(sources.items(), key=lambda x: x[1], reverse=True))
-            
+
         except Exception as e:
             logger.error(f"Error getting stats: {e}")
-        
+
         return stats
-    
+
     def clear(self) -> None:
+        """Clear all documents from the store."""
         if getattr(self, "_use_postgres", False):
+            assert self._pg_store is not None  # noqa: S101
             self._pg_store.clear()
             return
-        """Clear all documents from the store."""
         if self._use_fallback:
             self._fallback_store = {}
             self._save_fallback()
             return
-        
+
         try:
             self._client.delete_collection(self.COLLECTION_NAME)
             self._collection = self._client.create_collection(
@@ -720,15 +735,15 @@ class VectorStore:
         except Exception as e:
             logger.error(f"Error clearing store: {e}")
 
-    def delete_symbols(self, symbols: List[str]) -> int:
-        if getattr(self, "_use_postgres", False):
-            return self._pg_store.delete_symbols(symbols)
+    def delete_symbols(self, symbols: list[str]) -> int:
         """
         Remove all documents for the given ticker symbols.
 
         Returns:
             Number of documents removed.
         """
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.delete_symbols(symbols)  # type: ignore[no-any-return]
         if not symbols:
             return 0
 
@@ -759,19 +774,19 @@ class VectorStore:
             logger.error("Error deleting symbols %s: %s", targets, e)
 
         return removed
-    
+
     def export_to_json(self, filepath: str) -> int:
         """
         Export all documents to JSON file.
-        
+
         Args:
             filepath: Output file path.
-            
+
         Returns:
             Number of documents exported.
         """
         documents = []
-        
+
         if self._use_fallback:
             documents = list(self._fallback_store.values())
         else:
@@ -782,40 +797,40 @@ class VectorStore:
                         documents.append(self._metadata_to_document(metadata))
             except Exception as e:
                 logger.error(f"Error exporting: {e}")
-        
+
         with open(filepath, "w") as f:
             json.dump([d.to_full_dict() for d in documents], f, indent=2)
-        
+
         return len(documents)
-    
+
     def import_from_json(self, filepath: str) -> int:
         """
         Import documents from JSON file.
-        
+
         Args:
             filepath: Input file path.
-            
+
         Returns:
             Number of documents imported.
         """
         try:
-            with open(filepath, "r") as f:
+            with open(filepath) as f:
                 data = json.load(f)
-            
+
             documents = [StockDocument.from_dict(d) for d in data]
             self.add_documents(documents)
-            
+
             return len(documents)
         except Exception as e:
             logger.error(f"Error importing: {e}")
             return 0
-    
-    def get_all_documents(self) -> List[StockDocument]:
+
+    def get_all_documents(self) -> list[StockDocument]:
         if getattr(self, "_use_postgres", False):
-            return self._pg_store.get_all_documents()
+            return self._pg_store.get_all_documents()  # type: ignore[no-any-return]
         return self._load_all_from_disk()
 
-    def _load_all_from_disk(self) -> List[StockDocument]:
+    def _load_all_from_disk(self) -> list[StockDocument]:
         """Read all documents from local ChromaDB or fallback JSON."""
         if self._use_fallback:
             return list(self._fallback_store.values())
@@ -828,16 +843,16 @@ class VectorStore:
             logger.error(f"Error getting all documents: {e}")
 
         return []
-    
-    def consolidate_duplicates(self) -> Dict[str, Any]:
+
+    def consolidate_duplicates(self) -> dict[str, Any]:
         """
         Consolidate duplicate documents by symbol, keeping the best version.
-        
+
         This removes duplicates by:
         1. Grouping all documents by symbol
         2. Merging data from all versions (preferring enriched data)
         3. Replacing all duplicates with a single consolidated document
-        
+
         Returns:
             Stats about the consolidation.
         """
@@ -847,27 +862,27 @@ class VectorStore:
             "duplicates_removed": 0,
             "total_after": 0,
         }
-        
+
         all_docs = self.get_all_documents()
         stats["total_before"] = len(all_docs)
-        
+
         if not all_docs:
             return stats
-        
+
         # Group by symbol
-        by_symbol: Dict[str, List[StockDocument]] = {}
+        by_symbol: dict[str, list[StockDocument]] = {}
         for doc in all_docs:
             symbol = doc.symbol.upper()
             if symbol not in by_symbol:
                 by_symbol[symbol] = []
             by_symbol[symbol].append(doc)
-        
+
         stats["unique_symbols"] = len(by_symbol)
-        
+
         # Merge duplicates - keep best data from each version
-        consolidated: List[StockDocument] = []
-        
-        for symbol, docs in by_symbol.items():
+        consolidated: list[StockDocument] = []
+
+        for _symbol, docs in by_symbol.items():
             if len(docs) == 1:
                 # No duplicates - trim history and keep
                 docs[0].trim_history()
@@ -877,26 +892,26 @@ class VectorStore:
                 best = self._merge_documents(docs)
                 best.trim_history()
                 consolidated.append(best)
-        
+
         stats["duplicates_removed"] = stats["total_before"] - len(consolidated)
-        
+
         # Clear and rebuild with consolidated documents
         self.clear()
         self.add_documents(consolidated)
-        
+
         stats["total_after"] = len(consolidated)
-        
+
         return stats
-    
-    def fix_invalid_values(self) -> Dict[str, Any]:
+
+    def fix_invalid_values(self) -> dict[str, Any]:  # noqa: C901
         """
         Fix invalid/corrupt values in the database.
-        
+
         Fixes:
         - Dividend yields > 30% (likely multiplied by 100 twice)
         - Payout ratios > 150% (capped; likely corrupt)
         - Missing dividend streak for known Dividend Kings
-        
+
         Returns:
             Stats about the fixes applied.
         """
@@ -906,22 +921,22 @@ class VectorStore:
             "payout_fixes": 0,
             "streak_fixes": 0,
         }
-        
+
         all_docs = self.get_all_documents()
         stats["total_documents"] = len(all_docs)
-        
+
         modified = []
-        
+
         for doc in all_docs:
             changed = False
-            
+
             # Fix dividend yield > 30% (divide by 100)
             if doc.dividend_yield is not None and doc.dividend_yield > 30:
                 doc.dividend_yield = doc.dividend_yield / 100
                 stats["yield_fixes"] += 1
                 changed = True
                 logger.info(f"{doc.symbol}: Fixed dividend yield to {doc.dividend_yield:.2f}%")
-            
+
             # Fix payout ratio that's way too high (> 1000% stored as multiplied 10000x)
             # e.g., 13333 should be 133.33%
             if doc.payout_ratio is not None and doc.payout_ratio > 1000:
@@ -929,8 +944,8 @@ class VectorStore:
                 stats["payout_fixes"] += 1
                 changed = True
                 logger.info(f"{doc.symbol}: Fixed payout ratio (10000x) to {doc.payout_ratio:.2f}%")
-            
-            # Fix likely double-multiplied payout: 300–500% often means 3–5% (stored as 5 then *100)
+
+            # Fix likely double-multiplied payout: 300-500% often means 3-5% (stored as 5 then *100)
             # e.g. 500 might mean 5%, 350 might mean 3.5%
             if doc.payout_ratio is not None and 300 < doc.payout_ratio <= 500:
                 candidate = doc.payout_ratio / 100
@@ -938,19 +953,25 @@ class VectorStore:
                     doc.payout_ratio = candidate
                     stats["payout_fixes"] += 1
                     changed = True
-                    logger.info(f"{doc.symbol}: Fixed payout ratio (double-multiplied) to {doc.payout_ratio:.2f}%")
-            
-            # Only treat decimal ratio (0, 1) as needing *100. Values in [1, 10] are already % (e.g. 5 = 5%)
+                    logger.info(
+                        f"{doc.symbol}: Fixed payout ratio (double-multiplied) to {doc.payout_ratio:.2f}%"  # noqa: E501
+                    )
+
+            # Only treat decimal ratio (0, 1) as needing *100. Values in [1, 10] are already % (e.g. 5 = 5%)  # noqa: E501
             # so we must NOT multiply them or we get 500% from 5%.
             if doc.payout_ratio is not None and 0 < doc.payout_ratio < 1:
                 doc.payout_ratio = doc.payout_ratio * 100
                 stats["payout_fixes"] += 1
                 changed = True
-                logger.info(f"{doc.symbol}: Fixed payout ratio (decimal) to {doc.payout_ratio:.2f}%")
-            
-            # Cap extreme payout (REITs/special cases can be 100–150%; higher is usually bad data)
+                logger.info(
+                    f"{doc.symbol}: Fixed payout ratio (decimal) to {doc.payout_ratio:.2f}%"
+                )
+
+            # Cap extreme payout (REITs/special cases can be 100-150%; higher is usually bad data)
             if doc.payout_ratio is not None and doc.payout_ratio > MAX_PAYOUT_RATIO_PCT:
-                logger.warning(f"{doc.symbol}: Capping payout ratio {doc.payout_ratio:.1f}% to {MAX_PAYOUT_RATIO_PCT:.0f}%")
+                logger.warning(
+                    f"{doc.symbol}: Capping payout ratio {doc.payout_ratio:.1f}% to {MAX_PAYOUT_RATIO_PCT:.0f}%"  # noqa: E501
+                )
                 doc.payout_ratio = float(MAX_PAYOUT_RATIO_PCT)
                 stats["payout_fixes"] += 1
                 changed = True
@@ -962,25 +983,23 @@ class VectorStore:
             if doc.dividend_streak_years != previous_streak:
                 stats["streak_fixes"] += 1
                 changed = True
-                logger.info(
-                    f"{doc.symbol}: Updated dividend streak to {doc.dividend_streak_years}"
-                )
-            
+                logger.info(f"{doc.symbol}: Updated dividend streak to {doc.dividend_streak_years}")
+
             if changed:
                 doc.last_updated = datetime.now()
                 modified.append(doc)
-        
+
         # Update modified documents
         if modified:
             for doc in modified:
                 self.add_document(doc)
-        
+
         return stats
-    
-    def _merge_documents(self, docs: List[StockDocument]) -> StockDocument:
+
+    def _merge_documents(self, docs: list[StockDocument]) -> StockDocument:  # noqa: C901
         """
         Merge multiple documents for the same symbol into one.
-        
+
         Prioritizes:
         1. Yahoo/enriched data over basic data
         2. More recent last_updated timestamps
@@ -989,22 +1008,22 @@ class VectorStore:
         """
         if not docs:
             raise ValueError("Cannot merge empty document list")
-        
+
         if len(docs) == 1:
             return docs[0]
-        
+
         # Sort by preference: yahoo source first, then by quality, then by recency
-        def sort_key(d: StockDocument) -> tuple:
+        def sort_key(d: StockDocument) -> tuple[int, float, float]:
             is_yahoo = 1 if d.source == DataSource.YAHOO else 0
             quality = d.data_quality or 0
             updated = d.last_updated.timestamp() if d.last_updated else 0
             return (is_yahoo, quality, updated)
-        
+
         docs.sort(key=sort_key, reverse=True)
-        
+
         # Start with the best document
         best = docs[0]
-        
+
         # Merge fields from other documents (fill in missing values)
         for doc in docs[1:]:
             # Core fields - prefer non-empty values
@@ -1014,7 +1033,7 @@ class VectorStore:
                 best.sector = doc.sector
             if best.industry in ("Unknown", "") and doc.industry not in ("Unknown", ""):
                 best.industry = doc.industry
-            
+
             # Dividend fields
             if best.dividend_yield is None and doc.dividend_yield is not None:
                 best.dividend_yield = doc.dividend_yield
@@ -1024,7 +1043,7 @@ class VectorStore:
                 best.dividend_streak_years = doc.dividend_streak_years
             if best.payout_ratio is None and doc.payout_ratio is not None:
                 best.payout_ratio = doc.payout_ratio
-            
+
             # Valuation metrics
             if best.pe_ratio is None and doc.pe_ratio is not None:
                 best.pe_ratio = doc.pe_ratio
@@ -1032,51 +1051,55 @@ class VectorStore:
                 best.forward_pe = doc.forward_pe
             if best.price_to_book is None and doc.price_to_book is not None:
                 best.price_to_book = doc.price_to_book
-            
+
             # Profitability
             if best.roe is None and doc.roe is not None:
                 best.roe = doc.roe
             if best.profit_margin is None and doc.profit_margin is not None:
                 best.profit_margin = doc.profit_margin
-            
+
             # Financial health
             if best.debt_to_equity is None and doc.debt_to_equity is not None:
                 best.debt_to_equity = doc.debt_to_equity
             if best.current_ratio is None and doc.current_ratio is not None:
                 best.current_ratio = doc.current_ratio
-            
+
             # Analyst data
             if best.target_price is None and doc.target_price is not None:
                 best.target_price = doc.target_price
             if best.analyst_rating is None and doc.analyst_rating is not None:
                 best.analyst_rating = doc.analyst_rating
-            
+
             # Merge historical data (combine and deduplicate)
             if doc.price_history:
-                existing_dates = {p.date for p in best.price_history} if best.price_history else set()
+                existing_dates = (
+                    {p.date for p in best.price_history} if best.price_history else set()
+                )
                 for price in doc.price_history:
                     if price.date not in existing_dates:
                         if best.price_history is None:
                             best.price_history = []
                         best.price_history.append(price)
                         existing_dates.add(price.date)
-            
+
             if doc.dividend_history:
-                existing_dates = {d.ex_date for d in best.dividend_history} if best.dividend_history else set()
+                existing_dates = (
+                    {d.ex_date for d in best.dividend_history} if best.dividend_history else set()
+                )
                 for div in doc.dividend_history:
                     if div.ex_date not in existing_dates:
                         if best.dividend_history is None:
                             best.dividend_history = []
                         best.dividend_history.append(div)
                         existing_dates.add(div.ex_date)
-        
+
         # Update timestamp
         best.last_updated = datetime.now()
 
         from utils.dividend_streak import apply_dividend_streak_to_document
 
         apply_dividend_streak_to_document(best)
-        
+
         return best
 
 
@@ -1116,7 +1139,9 @@ def _pick_chroma_collection(collections: list[Any]) -> Any | None:
     return collections[0]
 
 
-def load_legacy_vectordb_documents(persist_directory: str | Path) -> List[StockDocument]:
+def load_legacy_vectordb_documents(
+    persist_directory: str | Path,
+) -> list[StockDocument]:
     """
     Read stock documents from on-disk ChromaDB/fallback JSON.
 
@@ -1166,14 +1191,14 @@ def load_legacy_vectordb_documents(persist_directory: str | Path) -> List[StockD
             results = collection.get(include=["metadatas"])
             metadatas = results.get("metadatas") if results else None
             if not metadatas:
-                logger.warning("Chroma collection %r at %s returned no metadata", collection.name, root)
+                logger.warning(
+                    "Chroma collection %r at %s returned no metadata",
+                    collection.name,
+                    root,
+                )
                 continue
 
-            docs = [
-                reader._metadata_to_document(metadata)
-                for metadata in metadatas
-                if metadata
-            ]
+            docs = [reader._metadata_to_document(metadata) for metadata in metadatas if metadata]
             logger.info(
                 "Loaded %s documents from Chroma collection %r at %s",
                 len(docs),

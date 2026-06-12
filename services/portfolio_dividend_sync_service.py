@@ -8,7 +8,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any
 
 from data_ingestion.models import StockDocument
 from services.portfolio_context import create_portfolio_context
@@ -24,7 +24,7 @@ class DividendSyncStats:
     monthly_periods: int
 
 
-def _load_documents(symbols: List[str]) -> Dict[str, Optional[StockDocument]]:
+def _load_documents(symbols: list[str]) -> dict[str, StockDocument | None]:
     from services.shared_market_db import load_documents
 
     found = load_documents(symbols)
@@ -34,9 +34,9 @@ def _load_documents(symbols: List[str]) -> Dict[str, Optional[StockDocument]]:
 def maybe_sync_received_dividends(
     *,
     force: bool = False,
-    db_path: Optional[Path] = None,
-    symbols: Optional[List[str]] = None,
-) -> Optional[DividendSyncStats]:
+    db_path: Path | None = None,
+    symbols: list[str] | None = None,
+) -> DividendSyncStats | None:
     """
     Sync paid dividends when stale or forced (skips work on every app rerun).
 
@@ -49,22 +49,22 @@ def maybe_sync_received_dividends(
             if not should_sync_dividends_on_startup():
                 logger.debug("Dividend sync skipped (recently completed)")
                 return None
-        except Exception:
+        except Exception:  # noqa: S110
             pass
     stats = sync_received_dividends(db_path=db_path, symbols=symbols)
     try:
         from services.portfolio_ui_cache import mark_dividend_sync_completed
 
         mark_dividend_sync_completed()
-    except Exception:
+    except Exception:  # noqa: S110
         pass
     return stats
 
 
 def sync_received_dividends(
     *,
-    db_path: Optional[Path] = None,
-    symbols: Optional[List[str]] = None,
+    db_path: Path | None = None,
+    symbols: list[str] | None = None,
 ) -> DividendSyncStats:
     """
     Record paid dividends for current holdings and refresh lifetime/monthly totals.
@@ -129,7 +129,7 @@ def sync_received_dividends(
     )
 
 
-def _sync_monthly_net_from_receipts(ctx) -> int:
+def _sync_monthly_net_from_receipts(ctx: Any) -> int:
     from data_ingestion.dividend_income_store import dividend_tax_rate
 
     totals = ctx.receipts.monthly_gross_totals()

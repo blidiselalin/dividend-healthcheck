@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from data_ingestion.models import StockDocument
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +23,7 @@ try:
 except ImportError:
     SHARED_MARKET_DB_DIR = Path("data/vectordb")
 
-_store_instance: Optional[Any] = None
+_store_instance: Any | None = None
 
 
 def shared_market_db_path() -> Path:
@@ -28,13 +31,13 @@ def shared_market_db_path() -> Path:
     return Path(SHARED_MARKET_DB_DIR)
 
 
-def _vector_store_class():
+def _vector_store_class() -> Any:
     from data_ingestion.vector_store import VectorStore
 
     return VectorStore
 
 
-def get_shared_vector_store():
+def get_shared_vector_store() -> Any:
     """Return the shared market library store (PostgreSQL or local Chroma)."""
     global _store_instance
     if _store_instance is None:
@@ -53,18 +56,19 @@ def reset_shared_vector_store_cache() -> None:
 
 def document_count() -> int:
     try:
-        return get_shared_vector_store().count()
+        store = get_shared_vector_store()
+        return int(store.count()) if store else 0
     except Exception:
         return 0
 
 
-def shared_market_db_status(*, include_coverage: bool = True) -> Dict[str, Any]:
+def shared_market_db_status(*, include_coverage: bool = True) -> dict[str, Any]:
     """Status for UI and startup logs (same for every logged-in user)."""
     from db.connection import use_cloud_sql
 
     count = document_count()
     storage = "postgresql" if use_cloud_sql() else "local"
-    status: Dict[str, Any] = {
+    status: dict[str, Any] = {
         "path": "postgresql:stock_documents" if use_cloud_sql() else str(shared_market_db_path()),
         "storage": storage,
         "document_count": count,
@@ -81,17 +85,17 @@ def shared_market_db_status(*, include_coverage: bool = True) -> Dict[str, Any]:
     return status
 
 
-def get_document(symbol: str):
+def get_document(symbol: str) -> StockDocument | None:
     """Lookup one symbol in the shared library (any user)."""
     try:
-        return get_shared_vector_store().get_by_symbol(symbol.upper())
+        return get_shared_vector_store().get_by_symbol(symbol.upper())  # type: ignore[no-any-return]
     except Exception:
         return None
 
 
-def load_documents(symbols: list[str]) -> Dict[str, Any]:
+def load_documents(symbols: list[str]) -> dict[str, Any]:
     """Load library documents for many tickers (missing symbols omitted)."""
-    documents: Dict[str, Any] = {}
+    documents: dict[str, Any] = {}
     for symbol in symbols:
         document = get_document(symbol)
         if document is not None:

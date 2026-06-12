@@ -1,8 +1,13 @@
 """Chart layout helpers — margins and axis ticks."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
-from utils.chart_theme import bottom_legend, evolution_chart_margins, monthly_category_axis
+from utils.chart_theme import (
+    bottom_legend,
+    evolution_chart_margins,
+    monthly_category_axis,
+)
 
 
 def test_evolution_chart_margins_grow_with_categories_and_legend() -> None:

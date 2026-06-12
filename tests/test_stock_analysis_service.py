@@ -1,11 +1,12 @@
 """Tests for independent stock analysis service."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 
-from data_ingestion.models import DataSource, DividendRecord, PriceHistory, StockDocument
+from data_ingestion.models import DividendRecord, PriceHistory, StockDocument
 
 
 def _library_doc(*, chart_ready: bool = False) -> StockDocument:
@@ -41,16 +42,19 @@ def _library_doc(*, chart_ready: bool = False) -> StockDocument:
     return doc
 
 
-def test_ensure_yield_channel_data_skips_backfill_by_default():
+def test_ensure_yield_channel_data_skips_backfill_by_default() -> None:
     from services.stock_analysis_service import ensure_yield_channel_data
 
     doc = _library_doc()
     mock_channel = MagicMock()
 
-    with patch(
-        "services.stock_analysis_service.load_yield_channel_data",
-        return_value=mock_channel,
-    ) as mock_load, patch("services.stock_history_backfill.backfill_thin_history") as mock_backfill:
+    with (
+        patch(
+            "services.stock_analysis_service.load_yield_channel_data",
+            return_value=mock_channel,
+        ) as mock_load,
+        patch("services.stock_history_backfill.backfill_thin_history") as mock_backfill,
+    ):
         result = ensure_yield_channel_data("INTU", document=doc)
 
     assert result is mock_channel
@@ -59,34 +63,39 @@ def test_ensure_yield_channel_data_skips_backfill_by_default():
     assert mock_load.call_args.kwargs.get("library_only") is True
 
 
-def test_ensure_yield_channel_data_skips_backfill_when_channel_exists():
+def test_ensure_yield_channel_data_skips_backfill_when_channel_exists() -> None:
     from services.stock_analysis_service import ensure_yield_channel_data
 
     doc = _library_doc()
     mock_channel = MagicMock()
 
-    with patch(
-        "services.stock_analysis_service.load_yield_channel_data",
-        return_value=mock_channel,
-    ), patch("services.stock_history_backfill.backfill_thin_history") as mock_backfill:
+    with (
+        patch(
+            "services.stock_analysis_service.load_yield_channel_data",
+            return_value=mock_channel,
+        ),
+        patch("services.stock_history_backfill.backfill_thin_history") as mock_backfill,
+    ):
         result = ensure_yield_channel_data("INTU", document=doc, allow_backfill=True)
 
     assert result is mock_channel
     mock_backfill.assert_not_called()
 
 
-def test_ensure_yield_channel_data_backfills_thin_history():
+def test_ensure_yield_channel_data_backfills_thin_history() -> None:
     from services.stock_analysis_service import ensure_yield_channel_data
 
     doc = _library_doc()
     mock_channel = MagicMock()
 
-    with patch(
-        "services.stock_analysis_service.load_yield_channel_data",
-        side_effect=[None, mock_channel],
-    ), patch(
-        "services.shared_market_db.get_document", return_value=doc
-    ), patch("services.stock_history_backfill.backfill_thin_history") as mock_backfill:
+    with (
+        patch(
+            "services.stock_analysis_service.load_yield_channel_data",
+            side_effect=[None, mock_channel],
+        ),
+        patch("services.shared_market_db.get_document", return_value=doc),
+        patch("services.stock_history_backfill.backfill_thin_history") as mock_backfill,
+    ):
         result = ensure_yield_channel_data("INTU", document=doc, allow_backfill=True)
 
     mock_backfill.assert_called_once_with(
@@ -97,7 +106,7 @@ def test_ensure_yield_channel_data_backfills_thin_history():
     assert result is mock_channel
 
 
-def test_stock_data_from_document_uses_history():
+def test_stock_data_from_document_uses_history() -> None:
     from services.stock_analysis_service import stock_data_from_document
 
     doc = _library_doc()
@@ -109,15 +118,18 @@ def test_stock_data_from_document_uses_history():
     assert stock.dividend_yield_pct > 0
 
 
-def test_load_independent_stock_analysis_from_library():
+def test_load_independent_stock_analysis_from_library() -> None:
     from services.stock_analysis_service import load_independent_stock_analysis
 
     doc = _library_doc()
     mock_channel = MagicMock(current_yield=0.68)
 
-    with patch("services.live_price.apply_live_price", side_effect=lambda s: s), patch(
-        "services.stock_analysis_service.ensure_yield_channel_data",
-        return_value=mock_channel,
+    with (
+        patch("services.live_price.apply_live_price", side_effect=lambda s: s),
+        patch(
+            "services.stock_analysis_service.ensure_yield_channel_data",
+            return_value=mock_channel,
+        ),
     ):
         analysis = load_independent_stock_analysis("INTU", document=doc)
 
@@ -128,30 +140,34 @@ def test_load_independent_stock_analysis_from_library():
     assert analysis.yield_channel is mock_channel
 
 
-def test_load_yield_channel_data_skips_when_not_chart_ready():
+def test_load_yield_channel_data_skips_when_not_chart_ready() -> None:
     from services.stock_analysis_service import load_yield_channel_data
 
     doc = _library_doc()
 
-    with patch("services.shared_market_db.get_document", return_value=None), patch(
-        "services.yield_channel_chart._default_yield_channel_service"
-    ) as mock_service_factory:
+    with (
+        patch("services.shared_market_db.get_document", return_value=None),
+        patch(
+            "services.yield_channel_chart._default_yield_channel_service"
+        ) as mock_service_factory,
+    ):
         result = load_yield_channel_data("INTU", document=doc)
 
     assert result is None
     mock_service_factory.assert_not_called()
 
 
-def test_load_yield_channel_data_passes_library_document():
+def test_load_yield_channel_data_passes_library_document() -> None:
     from services.stock_analysis_service import load_yield_channel_data
 
     doc = _library_doc(chart_ready=True)
     mock_channel = MagicMock()
 
-    with patch(
-        "services.yield_channel_chart._default_yield_channel_service"
-    ) as mock_service_factory, patch(
-        "services.shared_market_db.get_document", return_value=None
+    with (
+        patch(
+            "services.yield_channel_chart._default_yield_channel_service"
+        ) as mock_service_factory,
+        patch("services.shared_market_db.get_document", return_value=None),
     ):
         service = MagicMock()
         service.fetch_yield_channel_data.return_value = mock_channel
@@ -166,7 +182,7 @@ def test_load_yield_channel_data_passes_library_document():
     assert first_call.kwargs.get("library_only") is True
 
 
-def test_postgres_document_from_row_merges_indexed_columns():
+def test_postgres_document_from_row_merges_indexed_columns() -> None:
     from db.postgres_market_store import _document_from_row
 
     row = {

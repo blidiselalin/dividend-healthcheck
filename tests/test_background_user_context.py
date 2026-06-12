@@ -1,19 +1,21 @@
 """Tests for background user binding in worker threads."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 import threading
 import time
+from typing import Any
 from unittest.mock import patch
 
 from auth.user_context import bind_background_user_id, current_user_id
 from services.background_jobs import apply_completed_jobs, start_job
 
 
-def test_bind_background_user_id_visible_in_worker_thread():
+def test_bind_background_user_id_visible_in_worker_thread() -> None:
     seen: list[str | None] = []
 
-    def run():
+    def run() -> None:
         with bind_background_user_id("user-abc"):
             seen.append(current_user_id())
 
@@ -23,10 +25,10 @@ def test_bind_background_user_id_visible_in_worker_thread():
     assert seen == ["user-abc"]
 
 
-def test_background_job_binds_scheduled_user_id():
+def test_background_job_binds_scheduled_user_id() -> None:
     captured: list[str | None] = []
 
-    def worker(progress):
+    def worker(progress: Any) -> Any:
         captured.append(current_user_id())
         return {"ok": True}
 

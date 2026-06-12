@@ -11,10 +11,9 @@ import pickle
 from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from services.background_jobs import ProgressCallback
-
 from utils.logging_config import get_logger
 
 logger = get_logger("dividendscope.portfolio")
@@ -25,12 +24,13 @@ MAX_PORTFOLIO_CACHE_AGE = timedelta(hours=24)
 # Dividend receipt sync is heavy (history per holding); run at most this often on app open.
 DIVIDEND_SYNC_INTERVAL = timedelta(hours=6)
 
+
 def _cache_path() -> Path:
     try:
         from auth.user_context import resolve_user_session_cache_path
 
         return resolve_user_session_cache_path()
-    except Exception:
+    except Exception:  # noqa: S110
         pass
     try:
         from config import DATA_DIR
@@ -39,10 +39,11 @@ def _cache_path() -> Path:
     except ImportError:
         return Path("data/portfolio_ui_session.pkl")
 
+
 _DATE_FIELDS = ("ex_dividend_date", "dividend_pay_date")
 
 
-def _row_to_dict(row: Any) -> Dict[str, Any]:
+def _row_to_dict(row: Any) -> dict[str, Any]:
     payload = asdict(row)
     for key in _DATE_FIELDS:
         value = payload.get(key)
@@ -51,7 +52,7 @@ def _row_to_dict(row: Any) -> Dict[str, Any]:
     return payload
 
 
-def _row_from_dict(payload: Dict[str, Any]) -> Any:
+def _row_from_dict(payload: dict[str, Any]) -> Any:
     from services.portfolio_details_service import PortfolioDetailRow
 
     data = dict(payload)
@@ -62,7 +63,7 @@ def _row_from_dict(payload: Dict[str, Any]) -> Any:
     return PortfolioDetailRow(**data)
 
 
-def _coerce_datetime(value: Any) -> Optional[datetime]:
+def _coerce_datetime(value: Any) -> datetime | None:
     if value is None:
         return None
     if isinstance(value, datetime):
@@ -73,7 +74,7 @@ def _coerce_datetime(value: Any) -> Optional[datetime]:
         return None
 
 
-def market_library_latest_update() -> Optional[datetime]:
+def market_library_latest_update() -> datetime | None:
     """Latest ``last_updated`` across PostgreSQL stock_documents (None if empty/local)."""
     try:
         from db.connection import ensure_schema, get_connection, use_cloud_sql
@@ -82,9 +83,7 @@ def market_library_latest_update() -> Optional[datetime]:
             return None
         ensure_schema()
         with get_connection() as conn:
-            row = conn.execute(
-                "SELECT MAX(last_updated) AS latest FROM stock_documents"
-            ).fetchone()
+            row = conn.execute("SELECT MAX(last_updated) AS latest FROM stock_documents").fetchone()
         if not row or not row.get("latest"):
             return None
         return _coerce_datetime(row["latest"])
@@ -93,14 +92,14 @@ def market_library_latest_update() -> Optional[datetime]:
         return None
 
 
-def cache_saved_at_from_bundle(bundle: Dict[str, Any]) -> Optional[datetime]:
+def cache_saved_at_from_bundle(bundle: dict[str, Any]) -> datetime | None:
     saved = _coerce_datetime(bundle.get("saved_at"))
     if saved:
         return saved
     return _coerce_datetime(bundle.get("portfolio_details_time"))
 
 
-def cache_is_stale(bundle: Dict[str, Any]) -> bool:
+def cache_is_stale(bundle: dict[str, Any]) -> bool:
     """True when the on-disk snapshot should not be shown (library or age)."""
     saved_at = cache_saved_at_from_bundle(bundle)
     if saved_at is None:
@@ -126,7 +125,7 @@ def save_session_cache() -> None:
     if not rows:
         return
 
-    bundle: Dict[str, Any] = {
+    bundle: dict[str, Any] = {
         "version": 1,
         "saved_at": datetime.now().isoformat(timespec="seconds"),
         "rows": [_row_to_dict(row) for row in rows],
@@ -152,7 +151,7 @@ def save_session_cache() -> None:
         logger.warning("Could not save portfolio UI cache: %s", exc)
 
 
-def hydrate_session_from_disk() -> bool:
+def hydrate_session_from_disk() -> bool:  # noqa: C901
     """
     Restore portfolio session from disk if the in-memory session is empty.
 
@@ -172,31 +171,47 @@ def hydrate_session_from_disk() -> bool:
 
     cache_path = _cache_path()
     if not cache_path.exists():
+        if user_has_holdings_in_db():
+            logger.info(
+                "No portfolio UI cache found; warming synchronously from DB to prevent empty UI."
+            )
+            return warm_portfolio_session_from_db(preload_charts=False)
         return False
 
     try:
         with cache_path.open("rb") as handle:
-            bundle = pickle.load(handle)
+            bundle = pickle.load(handle)  # noqa: S301
     except Exception as exc:
         logger.warning("Could not load portfolio UI cache: %s", exc)
+        if user_has_holdings_in_db():
+            logger.info(
+                "Portfolio UI cache corrupted; warming synchronously from DB to prevent empty UI."
+            )
+            return warm_portfolio_session_from_db(preload_charts=False)
         return False
 
     rows_payload = bundle.get("rows") or []
     if not rows_payload:
+        if user_has_holdings_in_db():
+            logger.info(
+                "Portfolio UI cache empty; warming synchronously from DB to prevent empty UI."
+            )
+            return warm_portfolio_session_from_db(preload_charts=False)
         return False
 
     if cache_is_stale(bundle):
         logger.info(
-            "Portfolio UI cache stale (saved_at=%s); clearing",
+            "Portfolio UI cache stale (saved_at=%s); utilizing as "
+            "fallback and scheduling background reload",
             bundle.get("saved_at", "?"),
         )
-        clear_session_cache()
-        return False
+        st.session_state["_portfolio_stale_cache_loaded"] = True
 
     from services.portfolio_details_service import PortfolioDetailsService
 
-    st.session_state["portfolio_details_rows"] = PortfolioDetailsService().enrich_rows_previous_close(
-        [_row_from_dict(item) for item in rows_payload]
+    restored_rows = [_row_from_dict(item) for item in rows_payload]
+    st.session_state["portfolio_details_rows"] = (
+        PortfolioDetailsService().enrich_rows_previous_close(restored_rows)
     )
     if bundle.get("attention_summary") is not None:
         st.session_state[SESSION_SUMMARY_KEY] = bundle["attention_summary"]
@@ -291,12 +306,12 @@ def warm_portfolio_session_from_db(*, preload_charts: bool = False) -> bool:
 
 
 def compute_yield_preload_payload(
-    symbols: List[str],
-    stock_cache: Dict[str, Any],
-    vector_docs: Dict[str, Any],
+    symbols: list[str],
+    stock_cache: dict[str, Any],
+    vector_docs: dict[str, Any],
     *,
-    progress_callback: Optional[ProgressCallback] = None,
-) -> Dict[str, Any]:
+    progress_callback: ProgressCallback | None = None,
+) -> dict[str, Any]:
     """Build yield-channel preload payload (safe to run off the UI thread)."""
     from services.portfolio_analysis_preload import preload_portfolio_analysis
     from services.portfolio_details_service import PortfolioDetailsService
@@ -320,8 +335,8 @@ def compute_yield_preload_payload(
 
 def compute_fast_portfolio_payload(
     *,
-    progress_callback: Optional[ProgressCallback] = None,
-) -> Dict[str, Any]:
+    progress_callback: ProgressCallback | None = None,
+) -> dict[str, Any]:
     """Library-only portfolio rows without live prices (background-safe)."""
     from services.portfolio_details_service import PortfolioDetailsService
 
@@ -343,8 +358,8 @@ def compute_fast_portfolio_payload(
 
 def compute_live_portfolio_payload(
     *,
-    progress_callback: Optional[ProgressCallback] = None,
-) -> Dict[str, Any]:
+    progress_callback: ProgressCallback | None = None,
+) -> dict[str, Any]:
     """Full live portfolio reload (background-safe)."""
     from services.portfolio_details_service import PortfolioDetailsService
 
@@ -426,7 +441,7 @@ def refresh_portfolio_after_library_update() -> bool:
     if cache_path.is_file():
         try:
             with cache_path.open("rb") as handle:
-                bundle = pickle.load(handle)
+                bundle = pickle.load(handle)  # noqa: S301
             if not cache_is_stale(bundle):
                 return False
         except Exception:

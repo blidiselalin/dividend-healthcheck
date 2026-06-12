@@ -1,6 +1,9 @@
 """S&P 500 research picker helpers."""
+# ruff: noqa: S101
 
 from __future__ import annotations
+
+from typing import Any
 
 from ui.sp500_research_picker import filter_sp500_symbols, sp500_symbol_list
 
@@ -33,7 +36,7 @@ def test_set_sp500_research_selection_keys() -> None:
     from ui.portfolio_home import set_sp500_research_selection
 
     class FakeState(dict):
-        def get(self, key, default=None):
+        def get(self, key: str, default: Any = None) -> Any:
             return super().get(key, default)
 
     state = FakeState()
@@ -45,7 +48,7 @@ def test_set_sp500_research_selection_keys() -> None:
         session_state = state
 
         @staticmethod
-        def rerun():
+        def rerun() -> None:
             pass
 
     home.st = FakeSt()

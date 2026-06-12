@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ def enrich_stale_documents(
     stale_days: int = 7,
     limit: int = 40,
     request_delay: float = 0.35,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Re-enrich stale or thin-history documents in the shared market library.
 
@@ -40,7 +40,7 @@ def enrich_stale_documents(
     all_documents = store.get_all_documents()
     portfolio = portfolio_backfill_symbols()
 
-    candidates: List[Any] = list(documents_needing_history_backfill(all_documents))
+    candidates: list[Any] = list(documents_needing_history_backfill(all_documents))
     seen = {(doc.symbol or "").upper() for doc in candidates}
 
     for document in all_documents:
@@ -63,7 +63,7 @@ def enrich_stale_documents(
     )
     batch = candidates[: max(0, limit)]
 
-    stats: Dict[str, Any] = {
+    stats: dict[str, Any] = {
         "candidates": len(candidates),
         "processed": 0,
         "enriched": 0,
@@ -76,7 +76,7 @@ def enrich_stale_documents(
         return stats
 
     enricher = create_stock_enricher(request_delay=request_delay)
-    enriched: List[Any] = []
+    enriched: list[Any] = []
     for document in batch:
         stats["processed"] += 1
         try:
@@ -98,7 +98,7 @@ def run_hourly_market_update(
     stale_days: int = 7,
     enrich_limit: int = 40,
     sp500_new_limit: int = 5,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Hourly job: refresh prices, add a few missing S&P tickers, enrich stale documents.
 
@@ -108,7 +108,7 @@ def run_hourly_market_update(
     from services.sp500_peers_service import ensure_sp500_in_vectordb
 
     started = datetime.now()
-    summary: Dict[str, Any] = {"started_at": started.isoformat()}
+    summary: dict[str, Any] = {"started_at": started.isoformat()}
 
     logger.info("Hourly market update: refreshing prices (also runs every 5 min in app)")
     summary["prices"] = refresh_market_library_prices()
@@ -127,7 +127,5 @@ def run_hourly_market_update(
     )
 
     summary["finished_at"] = datetime.now().isoformat()
-    summary["elapsed_seconds"] = round(
-        (datetime.now() - started).total_seconds(), 1
-    )
+    summary["elapsed_seconds"] = round((datetime.now() - started).total_seconds(), 1)
     return summary

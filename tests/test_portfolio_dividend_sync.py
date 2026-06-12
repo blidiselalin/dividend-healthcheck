@@ -1,8 +1,10 @@
 """Tests for automatic dividend receipt tracking."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -32,7 +34,7 @@ def _doc_with_dividends() -> StockDocument:
     )
 
 
-def test_sync_records_paid_dividends_and_updates_holding(tmp_path):
+def test_sync_records_paid_dividends_and_updates_holding(tmp_path: Path) -> None:
     db = tmp_path / "portfolio.db"
     portfolio = PortfolioStore(db_path=db, seed=False)
     journal = PurchaseJournalStore(db_path=db, seed=False)
@@ -51,7 +53,7 @@ def test_sync_records_paid_dividends_and_updates_holding(tmp_path):
     assert holding.dividends_paid == pytest.approx(9.80, rel=0.01)
 
 
-def test_sync_respects_purchase_journal_shares(tmp_path):
+def test_sync_respects_purchase_journal_shares(tmp_path: Path) -> None:
     db = tmp_path / "portfolio.db"
     portfolio = PortfolioStore(db_path=db, seed=False)
     journal = PurchaseJournalStore(db_path=db, seed=False)
@@ -70,7 +72,7 @@ def test_sync_respects_purchase_journal_shares(tmp_path):
     assert holding.dividends_paid == pytest.approx(4.62, rel=0.01)
 
 
-def test_delete_holding_removes_dividend_receipts(tmp_path):
+def test_delete_holding_removes_dividend_receipts(tmp_path: Path) -> None:
     db = tmp_path / "portfolio.db"
     portfolio = PortfolioStore(db_path=db, seed=False)
     portfolio.upsert_holding("KO", shares=10, avg_cost_per_share=50.0)
@@ -87,7 +89,7 @@ def test_delete_holding_removes_dividend_receipts(tmp_path):
     assert DividendReceiptStore(db_path=db).list_for_symbol("KO") == []
 
 
-def test_tracking_since_limits_history_without_journal(tmp_path):
+def test_tracking_since_limits_history_without_journal(tmp_path: Path) -> None:
     db = tmp_path / "portfolio.db"
     portfolio = PortfolioStore(db_path=db, seed=False)
     portfolio.upsert_holding("KO", shares=10, avg_cost_per_share=50.0)

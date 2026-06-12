@@ -11,7 +11,7 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable
 
 from utils.logging_config import get_logger
 
@@ -19,7 +19,7 @@ logger = get_logger("dividendscope.background")
 
 ProgressCallback = Callable[[float, str], None]
 
-_JOB_STORE: Dict[str, Dict[str, "BackgroundJob"]] = {}
+_JOB_STORE: dict[str, dict[str, BackgroundJob]] = {}
 _STORE_LOCK = threading.Lock()
 
 _DONE_TTL = timedelta(minutes=3)
@@ -34,11 +34,11 @@ class BackgroundJob:
     progress: float = 0.0
     message: str = ""
     result: Any = None
-    error: Optional[str] = None
+    error: str | None = None
     applied: bool = False
     admin_only: bool = False
     started_at: datetime = field(default_factory=datetime.now)
-    finished_at: Optional[datetime] = None
+    finished_at: datetime | None = None
 
 
 def session_scope() -> str:
@@ -49,7 +49,7 @@ def session_scope() -> str:
         user = current_user()
         if user and user.id:
             return str(user.id)
-    except Exception:
+    except Exception:  # noqa: S110
         pass
     return "local"
 
@@ -66,7 +66,7 @@ def _prune_scope(scope: str) -> None:
                 del jobs[job_id]
 
 
-def list_jobs(*, scope: Optional[str] = None, include_finished: bool = True) -> List[BackgroundJob]:
+def list_jobs(*, scope: str | None = None, include_finished: bool = True) -> list[BackgroundJob]:
     scope_key = scope or session_scope()
     with _STORE_LOCK:
         _prune_scope(scope_key)
@@ -77,17 +77,20 @@ def list_jobs(*, scope: Optional[str] = None, include_finished: bool = True) -> 
     return [job for job in jobs if job.status in ("queued", "running")]
 
 
-def has_active_jobs(*, scope: Optional[str] = None) -> bool:
-    return any(job.status in ("queued", "running") for job in list_jobs(scope=scope, include_finished=False))
+def has_active_jobs(*, scope: str | None = None) -> bool:
+    return any(
+        job.status in ("queued", "running")
+        for job in list_jobs(scope=scope, include_finished=False)
+    )
 
 
-def get_job(job_id: str, *, scope: Optional[str] = None) -> Optional[BackgroundJob]:
+def get_job(job_id: str, *, scope: str | None = None) -> BackgroundJob | None:
     scope_key = scope or session_scope()
     with _STORE_LOCK:
         return _JOB_STORE.get(scope_key, {}).get(job_id)
 
 
-def _find_running_kind(scope: str, kind: str) -> Optional[BackgroundJob]:
+def _find_running_kind(scope: str, kind: str) -> BackgroundJob | None:
     with _STORE_LOCK:
         for job in _JOB_STORE.get(scope, {}).values():
             if job.kind == kind and job.status in ("queued", "running"):
@@ -95,15 +98,15 @@ def _find_running_kind(scope: str, kind: str) -> Optional[BackgroundJob]:
     return None
 
 
-def start_job(
+def start_job(  # noqa: C901
     kind: str,
     label: str,
     worker: Callable[[ProgressCallback], Any],
     *,
     dedupe: bool = True,
     admin_only: bool = False,
-    scope: Optional[str] = None,
-) -> Optional[str]:
+    scope: str | None = None,
+) -> str | None:
     """
     Start a background job. Returns job id, or None when dedupe skips a duplicate.
     """
@@ -113,12 +116,12 @@ def start_job(
 
     job_id = uuid.uuid4().hex[:12]
     job = BackgroundJob(id=job_id, kind=kind, label=label, admin_only=admin_only)
-    captured_user_id: Optional[str] = None
+    captured_user_id: str | None = None
     try:
         from auth.user_context import current_user_id
 
         captured_user_id = current_user_id()
-    except Exception:
+    except Exception:  # noqa: S110
         pass
 
     def _progress(value: float, message: str = "") -> None:
@@ -168,17 +171,17 @@ def start_job(
 
 
 def apply_completed_jobs(
-    handlers: Dict[str, Callable[[Any], None]],
+    handlers: dict[str, Callable[[Any], None]],
     *,
-    scope: Optional[str] = None,
-) -> List[str]:
+    scope: str | None = None,
+) -> list[str]:
     """
     Apply finished job results on the main thread.
 
     Returns kinds of jobs that were applied (empty when none).
     """
     scope_key = scope or session_scope()
-    applied_kinds: List[str] = []
+    applied_kinds: list[str] = []
     with _STORE_LOCK:
         jobs = list(_JOB_STORE.get(scope_key, {}).values())
 
@@ -203,7 +206,7 @@ def apply_completed_jobs(
 def acknowledge_jobs(
     *,
     statuses: tuple[str, ...] = ("error",),
-    scope: Optional[str] = None,
+    scope: str | None = None,
 ) -> None:
     """Mark finished jobs acknowledged so UI polling can stop (e.g. shown errors)."""
     scope_key = scope or session_scope()

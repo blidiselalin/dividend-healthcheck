@@ -1,11 +1,11 @@
 """Tests for history-based dividend yield enrichment."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 from datetime import date
 
 from data_ingestion.models import DividendRecord, PriceHistory, StockDocument
-from models.stock import StockData
 from utils.converters import document_to_stock_data
 from utils.stock_history_enrichment import enrich_stock_data_from_history
 
@@ -32,7 +32,7 @@ def _sample_document() -> StockDocument:
     return doc
 
 
-def test_enrich_computes_yield_from_dividend_history():
+def test_enrich_computes_yield_from_dividend_history() -> None:
     doc = _sample_document()
     stock = document_to_stock_data(doc)
     stock.price = 600.0
@@ -45,7 +45,7 @@ def test_enrich_computes_yield_from_dividend_history():
     assert enriched.dividend_yield_pct == round((4.0 / 600.0) * 100, 2)
 
 
-def test_enrich_uses_price_history_when_price_missing():
+def test_enrich_uses_price_history_when_price_missing() -> None:
     doc = _sample_document()
     stock = document_to_stock_data(doc)
     stock.price = None

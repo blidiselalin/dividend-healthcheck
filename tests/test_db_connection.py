@@ -1,4 +1,5 @@
 """Unit tests for db.connection helpers."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -19,12 +20,16 @@ from db.connection import (
 )
 
 
-def test_adapt_sql_replaces_placeholders():
-    assert adapt_sql("SELECT * FROM users WHERE id = ?", True) == "SELECT * FROM users WHERE id = %s"
-    assert adapt_sql("SELECT * FROM users WHERE id = ?", False) == "SELECT * FROM users WHERE id = ?"
+def test_adapt_sql_replaces_placeholders() -> None:
+    assert (
+        adapt_sql("SELECT * FROM users WHERE id = ?", True) == "SELECT * FROM users WHERE id = %s"
+    )
+    assert (
+        adapt_sql("SELECT * FROM users WHERE id = ?", False) == "SELECT * FROM users WHERE id = ?"
+    )
 
 
-def test_migration_statements_include_core_tables():
+def test_migration_statements_include_core_tables() -> None:
     statements = _migration_statements()
     assert statements, "migration file should produce statements"
     joined = "\n".join(statements).upper()
@@ -33,12 +38,12 @@ def test_migration_statements_include_core_tables():
         assert table in joined
 
 
-def test_migration_file_exists():
+def test_migration_file_exists() -> None:
     assert _migration_path().is_file()
 
 
 @pytest.mark.postgres_mock
-def test_use_cloud_sql_matches_database_url(monkeypatch):
+def test_use_cloud_sql_matches_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("DIVIDENDSCOPE_DATABASE_URL", raising=False)
     assert use_cloud_sql() is False
@@ -49,7 +54,7 @@ def test_use_cloud_sql_matches_database_url(monkeypatch):
 
 
 @pytest.mark.postgres_mock
-def test_holding_count_for_user_postgres(monkeypatch):
+def test_holding_count_for_user_postgres(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://local/test")
 
     mock_conn = MagicMock()
@@ -58,14 +63,16 @@ def test_holding_count_for_user_postgres(monkeypatch):
     mock_cm.__enter__ = MagicMock(return_value=mock_conn)
     mock_cm.__exit__ = MagicMock(return_value=False)
 
-    with patch("db.connection.ensure_schema"), patch(
-        "db.connection.get_connection", return_value=mock_cm
-    ), patch("db.connection.portfolio_user_id", return_value="uid-1"):
+    with (
+        patch("db.connection.ensure_schema"),
+        patch("db.connection.get_connection", return_value=mock_cm),
+        patch("db.connection.portfolio_user_id", return_value="uid-1"),
+    ):
         assert holding_count_for_user("uid-1") == 7
 
 
 @pytest.mark.postgres_mock
-def test_migrate_portfolio_user_id_postgres(monkeypatch):
+def test_migrate_portfolio_user_id_postgres(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://local/test")
 
     mock_conn = MagicMock()
@@ -79,16 +86,14 @@ def test_migrate_portfolio_user_id_postgres(monkeypatch):
     assert mock_conn.execute.call_count == 5
 
 
-def test_open_app_db_sqlite_roundtrip(tmp_path: Path, monkeypatch):
+def test_open_app_db_sqlite_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DATABASE_URL", raising=False)
     db_path = tmp_path / "users.db"
 
     from db.connection import open_app_db
 
     with open_app_db(db_path) as conn:
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL)"
-        )
+        conn.execute("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL)")
         conn.execute("INSERT INTO users (id, email) VALUES (?, ?)", ("u1", "a@b.com"))
 
     with open_app_db(db_path) as conn:
@@ -97,7 +102,9 @@ def test_open_app_db_sqlite_roundtrip(tmp_path: Path, monkeypatch):
 
 
 @pytest.mark.postgres_mock
-def test_ensure_schema_bootstraps_schema_migrations_table(tmp_path: Path, monkeypatch):
+def test_ensure_schema_bootstraps_schema_migrations_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import db.connection as db
 
     monkeypatch.setenv("DATABASE_URL", "postgresql://local/test")
@@ -117,16 +124,14 @@ def test_ensure_schema_bootstraps_schema_migrations_table(tmp_path: Path, monkey
         mock_cm.__enter__ = MagicMock(return_value=mock_conn)
         mock_cm.__exit__ = MagicMock(return_value=False)
 
-        with patch("db.connection.get_connection", return_value=mock_cm), patch(
-            "db.connection._migrations_dir", return_value=tmp_path
+        with (
+            patch("db.connection.get_connection", return_value=mock_cm),
+            patch("db.connection._migrations_dir", return_value=tmp_path),
         ):
             ensure_schema()
 
-        executed_sql = [call.args[0] for call in mock_conn.execute.call_args_list]
-        assert any(
-            "CREATE TABLE IF NOT EXISTS schema_migrations" in sql
-            for sql in executed_sql
-        )
+        executed_sql = [call.args[0] for call in mock_conn.execute.call_args_list]  # type: ignore[index]
+        assert any("CREATE TABLE IF NOT EXISTS schema_migrations" in sql for sql in executed_sql)
         assert any("CREATE TABLE IF NOT EXISTS users" in sql for sql in executed_sql)
     finally:
         db._schema_ready = previous_schema_ready

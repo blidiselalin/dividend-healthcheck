@@ -5,15 +5,22 @@ Read-only database inspection for admins — table validation and SELECT queries
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any
 
 from psycopg import sql as pg_sql
 
-from db.connection import ensure_schema, get_connection, open_app_db, open_portfolio_db, use_cloud_sql
+from db.connection import (
+    ensure_schema,
+    get_connection,
+    open_app_db,
+    open_portfolio_db,
+    use_cloud_sql,
+)
 
-MANAGED_TABLES: Tuple[str, ...] = (
+MANAGED_TABLES: tuple[str, ...] = (
     "users",
     "access_requests",
     "holdings",
@@ -27,7 +34,7 @@ MANAGED_TABLES: Tuple[str, ...] = (
     "schema_migrations",
 )
 
-_SQLITE_PORTFOLIO_TABLES: Tuple[str, ...] = (
+_SQLITE_PORTFOLIO_TABLES: tuple[str, ...] = (
     "holdings",
     "purchase_journal",
     "monthly_deposits",
@@ -35,7 +42,7 @@ _SQLITE_PORTFOLIO_TABLES: Tuple[str, ...] = (
     "dividend_receipts",
 )
 
-_SQLITE_APP_TABLES: Tuple[str, ...] = ("users", "access_requests", "schema_migrations")
+_SQLITE_APP_TABLES: tuple[str, ...] = ("users", "access_requests", "schema_migrations")
 
 _THIN_LIBRARY_WHERE = """
 WHERE GREATEST(
@@ -73,14 +80,14 @@ class TableCheck:
     ok: bool
     row_count: int
     message: str
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class QueryResult:
     ok: bool
-    columns: List[str]
-    rows: List[Dict[str, Any]]
+    columns: list[str]
+    rows: list[dict[str, Any]]
     message: str
     truncated: bool = False
 
@@ -89,7 +96,7 @@ def storage_label() -> str:
     return "PostgreSQL" if use_cloud_sql() else "SQLite (local dev)"
 
 
-def is_safe_select_sql(sql: str) -> Tuple[bool, str]:
+def is_safe_select_sql(sql: str) -> tuple[bool, str]:
     """Return (allowed, reason). Only single-statement SELECT queries are permitted."""
     if not sql or not sql.strip():
         return False, "Query is empty."
@@ -107,7 +114,7 @@ def is_safe_select_sql(sql: str) -> Tuple[bool, str]:
     return True, ""
 
 
-def _apply_row_limit(sql: str, limit: int) -> Tuple[str, bool]:
+def _apply_row_limit(sql: str, limit: int) -> tuple[str, bool]:
     """Append LIMIT when missing; return (sql, was_truncated_by_us)."""
     body = sql.strip().rstrip(";")
     # Only treat LIMIT as present when it appears at the end of the statement.
@@ -117,8 +124,8 @@ def _apply_row_limit(sql: str, limit: int) -> Tuple[str, bool]:
     return f"{body} LIMIT {limit}", True
 
 
-def _rows_to_dicts(columns: Sequence[str], rows: Sequence[Any]) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
+def _rows_to_dicts(columns: Sequence[str], rows: Sequence[Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
     for row in rows:
         if isinstance(row, dict):
             out.append(dict(row))
@@ -127,7 +134,7 @@ def _rows_to_dicts(columns: Sequence[str], rows: Sequence[Any]) -> List[Dict[str
     return out
 
 
-def _safe_table_name(name: str, allowed: Sequence[str]) -> Optional[str]:
+def _safe_table_name(name: str, allowed: Sequence[str]) -> str | None:
     if name not in allowed or not _TABLE_NAME.fullmatch(name):
         return None
     return name
@@ -147,7 +154,7 @@ def _fetch_scalar(conn: Any, sql: str, params: Sequence[Any] = ()) -> Any:
         return row
 
 
-def list_managed_tables() -> List[str]:
+def list_managed_tables() -> list[str]:
     if use_cloud_sql():
         ensure_schema()
         with get_connection() as conn:
@@ -165,7 +172,7 @@ def list_managed_tables() -> List[str]:
             t for t in names if t not in MANAGED_TABLES
         ]
 
-    tables: List[str] = []
+    tables: list[str] = []
     with open_app_db() as conn:
         rows = conn.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
@@ -182,9 +189,9 @@ def list_managed_tables() -> List[str]:
     return tables
 
 
-def table_row_counts(tables: Optional[Sequence[str]] = None) -> Dict[str, int]:
+def table_row_counts(tables: Sequence[str] | None = None) -> dict[str, int]:  # noqa: C901
     names = list(tables) if tables is not None else list_managed_tables()
-    counts: Dict[str, int] = {}
+    counts: dict[str, int] = {}
     if use_cloud_sql():
         ensure_schema()
         with get_connection() as conn:
@@ -193,7 +200,8 @@ def table_row_counts(tables: Optional[Sequence[str]] = None) -> Dict[str, int]:
                 if not safe:
                     continue
                 try:
-                    counts[table] = int(_fetch_scalar(conn, f"SELECT COUNT(*) FROM {safe}"))
+                    query = f"SELECT COUNT(*) FROM {safe}"  # noqa: S608
+                    counts[table] = int(_fetch_scalar(conn, query))
                 except Exception:
                     counts[table] = -1
         return counts
@@ -204,8 +212,9 @@ def table_row_counts(tables: Optional[Sequence[str]] = None) -> Dict[str, int]:
             if not safe:
                 continue
             try:
-                counts[table] = int(_fetch_scalar(conn, f"SELECT COUNT(*) FROM {safe}"))
-            except Exception:
+                query = f"SELECT COUNT(*) FROM {safe}"  # noqa: S608
+                counts[table] = int(_fetch_scalar(conn, query))
+            except Exception:  # noqa: S110
                 pass
     with open_portfolio_db() as conn:
         for table in names:
@@ -215,8 +224,9 @@ def table_row_counts(tables: Optional[Sequence[str]] = None) -> Dict[str, int]:
             if not safe:
                 continue
             try:
-                counts[table] = int(_fetch_scalar(conn, f"SELECT COUNT(*) FROM {safe}"))
-            except Exception:
+                query = f"SELECT COUNT(*) FROM {safe}"  # noqa: S608
+                counts[table] = int(_fetch_scalar(conn, query))
+            except Exception:  # noqa: S110
                 pass
     return counts
 
@@ -255,7 +265,7 @@ def _validate_holdings(conn: Any) -> TableCheck:
     if use_cloud_sql():
         users = int(_fetch_scalar(conn, "SELECT COUNT(DISTINCT user_id) FROM holdings"))
         message = f"{users} users, {symbols} symbols"
-        details: Dict[str, Any] = {"users": users, "symbols": symbols}
+        details: dict[str, Any] = {"users": users, "symbols": symbols}
     else:
         message = f"{symbols} symbols"
         details = {"symbols": symbols}
@@ -269,7 +279,8 @@ def _validate_holdings(conn: Any) -> TableCheck:
 
 
 def _validate_simple_count(conn: Any, table: str) -> TableCheck:
-    total = int(_fetch_scalar(conn, f"SELECT COUNT(*) FROM {table}"))
+    query = f"SELECT COUNT(*) FROM {table}"  # noqa: S608
+    total = int(_fetch_scalar(conn, query))
     return TableCheck(name=table, ok=True, row_count=total, message="Row count OK")
 
 
@@ -328,10 +339,7 @@ def _validate_stock_documents(conn: Any) -> TableCheck:
     price_ok = int(details.get("price_year_plus") or 0)
     div_ok = int(details.get("div_ttm_ready") or 0)
     ok = price_ok > 0 and div_ok > 0
-    msg = (
-        f"{price_ok}/{total} with 1yr+ prices, "
-        f"{div_ok}/{total} with 4+ dividend payments"
-    )
+    msg = f"{price_ok}/{total} with 1yr+ prices, {div_ok}/{total} with 4+ dividend payments"
     return TableCheck(
         name="stock_documents",
         ok=ok,
@@ -346,9 +354,7 @@ def _validate_schema_migrations(conn: Any) -> TableCheck:
     versions = conn.execute(
         "SELECT version, applied_at FROM schema_migrations ORDER BY version"
     ).fetchall()
-    version_list = [
-        v["version"] if isinstance(v, dict) else v[0] for v in versions
-    ]
+    version_list = [v["version"] if isinstance(v, dict) else v[0] for v in versions]
     ok = total > 0 and "001_initial" in version_list
     return TableCheck(
         name="schema_migrations",
@@ -374,8 +380,8 @@ _TABLE_VALIDATORS = {
 }
 
 
-def _collect_table_checks(conn: Any, tables: Sequence[str]) -> List[TableCheck]:
-    checks: List[TableCheck] = []
+def _collect_table_checks(conn: Any, tables: Sequence[str]) -> list[TableCheck]:
+    checks: list[TableCheck] = []
     for table in tables:
         validator = _TABLE_VALIDATORS.get(table)
         if validator is None:
@@ -394,8 +400,8 @@ def _collect_table_checks(conn: Any, tables: Sequence[str]) -> List[TableCheck]:
     return checks
 
 
-def validate_all_tables() -> List[TableCheck]:
-    checks: List[TableCheck] = []
+def validate_all_tables() -> list[TableCheck]:
+    checks: list[TableCheck] = []
     if use_cloud_sql():
         ensure_schema()
         with get_connection() as conn:
@@ -431,7 +437,7 @@ def validate_all_tables() -> List[TableCheck]:
     return checks
 
 
-def inspect_stock_symbol(symbol: str) -> Dict[str, Any]:
+def inspect_stock_symbol(symbol: str) -> dict[str, Any]:
     """Deep validation for one ticker in stock_documents (PostgreSQL)."""
     sym = (symbol or "").strip().upper()
     if not sym:
@@ -442,7 +448,11 @@ def inspect_stock_symbol(symbol: str) -> Dict[str, Any]:
 
             doc = get_shared_vector_store().get_by_symbol(sym)
             if doc is None:
-                return {"ok": False, "symbol": sym, "message": "Not found in local library"}
+                return {
+                    "ok": False,
+                    "symbol": sym,
+                    "message": "Not found in local library",
+                }
             price_n = len(doc.price_history or [])
             div_n = len(doc.dividend_history or [])
             return {
@@ -474,13 +484,19 @@ def inspect_stock_symbol(symbol: str) -> Dict[str, Any]:
                 jsonb_array_length(COALESCE(s.document->'price_history', '[]'::jsonb))
               ) AS price_points,
               GREATEST(
-                COALESCE((SELECT COUNT(*) FROM stock_dividend_history d WHERE d.symbol = s.symbol), 0),
+                COALESCE(
+                  (SELECT COUNT(*) FROM stock_dividend_history d WHERE d.symbol = s.symbol), 0
+                ),
                 jsonb_array_length(COALESCE(s.document->'dividend_history', '[]'::jsonb))
               ) AS dividend_payments,
-              (SELECT MIN(price_date) FROM stock_price_history p WHERE p.symbol = s.symbol) AS first_price_date,
-              (SELECT MAX(price_date) FROM stock_price_history p WHERE p.symbol = s.symbol) AS last_price_date,
-              (SELECT MIN(ex_date) FROM stock_dividend_history d WHERE d.symbol = s.symbol) AS first_dividend_date,
-              (SELECT MAX(ex_date) FROM stock_dividend_history d WHERE d.symbol = s.symbol) AS last_dividend_date
+              (SELECT MIN(price_date) FROM stock_price_history p
+               WHERE p.symbol = s.symbol) AS first_price_date,
+              (SELECT MAX(price_date) FROM stock_price_history p
+               WHERE p.symbol = s.symbol) AS last_price_date,
+              (SELECT MIN(ex_date) FROM stock_dividend_history d
+               WHERE d.symbol = s.symbol) AS first_dividend_date,
+              (SELECT MAX(ex_date) FROM stock_dividend_history d
+               WHERE d.symbol = s.symbol) AS last_dividend_date
             FROM stock_documents s
             WHERE s.symbol = %s
             """,
@@ -501,7 +517,7 @@ def inspect_stock_symbol(symbol: str) -> Dict[str, Any]:
     return data
 
 
-def sample_stock_documents_issues(*, limit: int = 25) -> List[Dict[str, Any]]:
+def sample_stock_documents_issues(*, limit: int = 25) -> list[dict[str, Any]]:
     """Symbols with thin price or dividend history (PostgreSQL only)."""
     if not use_cloud_sql():
         return []
@@ -512,8 +528,12 @@ def sample_stock_documents_issues(*, limit: int = 25) -> List[Dict[str, Any]]:
             f"""
             SELECT
               symbol,
-              jsonb_array_length(COALESCE(document->'price_history', '[]'::jsonb)) AS price_points,
-              jsonb_array_length(COALESCE(document->'dividend_history', '[]'::jsonb)) AS dividend_payments,
+              jsonb_array_length(
+                COALESCE(document->'price_history', '[]'::jsonb)
+              ) AS price_points,
+              jsonb_array_length(
+                COALESCE(document->'dividend_history', '[]'::jsonb)
+              ) AS dividend_payments,
               last_updated
             FROM stock_documents
             {_THIN_LIBRARY_WHERE}
@@ -538,10 +558,11 @@ def sample_table_rows(
             rows=[],
             message="Invalid or disallowed table name.",
         )
-    return run_readonly_query(f"SELECT * FROM {safe}", row_limit=limit)
+    query = f"SELECT * FROM {safe}"  # noqa: S608
+    return run_readonly_query(query, row_limit=limit)
 
 
-def run_readonly_query(
+def run_readonly_query(  # noqa: C901
     sql: str,
     *,
     row_limit: int = _DEFAULT_ROW_LIMIT,
@@ -609,7 +630,7 @@ def _run_sqlite_select(sql: str, auto_limit: bool, row_limit: int) -> QueryResul
     last_error = ""
     for opener in (open_app_db, open_portfolio_db):
         try:
-            with opener() as conn:
+            with opener() as conn:  # type: ignore[operator]
                 cur = conn.execute(sql)
                 rows = cur.fetchall()
                 if isinstance(rows, list) and rows and isinstance(rows[0], dict):
@@ -634,7 +655,7 @@ def _run_sqlite_select(sql: str, auto_limit: bool, row_limit: int) -> QueryResul
     return QueryResult(ok=False, columns=[], rows=[], message=last_error or "Query failed")
 
 
-def preset_queries() -> Dict[str, str]:
+def preset_queries() -> dict[str, str]:
     return {
         "All tables (row counts)": """
 SELECT 'users' AS table_name, COUNT(*)::bigint AS rows FROM users
@@ -653,8 +674,12 @@ ORDER BY table_name
         "Library coverage summary": """
 SELECT
   COUNT(*) AS symbols,
-  COUNT(*) FILTER (WHERE jsonb_array_length(COALESCE(document->'price_history', '[]'::jsonb)) >= 252) AS price_1yr_plus,
-  COUNT(*) FILTER (WHERE jsonb_array_length(COALESCE(document->'dividend_history', '[]'::jsonb)) >= 4) AS div_4_plus,
+  COUNT(*) FILTER (
+    WHERE jsonb_array_length(COALESCE(document->'price_history', '[]'::jsonb)) >= 252
+  ) AS price_1yr_plus,
+  COUNT(*) FILTER (
+    WHERE jsonb_array_length(COALESCE(document->'dividend_history', '[]'::jsonb)) >= 4
+  ) AS div_4_plus,
   MIN(last_updated) AS oldest_update,
   MAX(last_updated) AS newest_update
 FROM stock_documents

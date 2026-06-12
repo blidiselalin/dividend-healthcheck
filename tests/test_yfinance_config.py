@@ -1,15 +1,21 @@
 """Tests for yfinance cache configuration and log filtering."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
-from utils.yfinance_config import YfinanceNoiseFilter, configure_yfinance, yfinance_cache_dir
+import pytest
+
+from utils.yfinance_config import YfinanceNoiseFilter, configure_yfinance
 
 
-def test_yfinance_noise_filter_drops_tzcache_and_delisted():
+def test_yfinance_noise_filter_drops_tzcache_and_delisted() -> None:
     filt = YfinanceNoiseFilter()
-    tz = logging.LogRecord("yfinance", logging.INFO, "", 0, "Failed to create TzCache folder", (), None)
+    tz = logging.LogRecord(
+        "yfinance", logging.INFO, "", 0, "Failed to create TzCache folder", (), None
+    )
     delisted = logging.LogRecord(
         "yfinance",
         logging.ERROR,
@@ -26,7 +32,9 @@ def test_yfinance_noise_filter_drops_tzcache_and_delisted():
     assert filt.filter(normal) is True
 
 
-def test_configure_yfinance_uses_data_cache_dir(tmp_path, monkeypatch):
+def test_configure_yfinance_uses_data_cache_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import utils.yfinance_config as mod
 
     monkeypatch.setattr(mod, "yfinance_cache_dir", lambda: tmp_path / "cache" / "yfinance")

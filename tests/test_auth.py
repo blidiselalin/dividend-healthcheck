@@ -1,4 +1,5 @@
 """Tests for user registry and auth settings."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -6,27 +7,27 @@ from pathlib import Path
 
 import pytest
 
-from auth.settings import is_email_allowed
 from auth.models import sanitize_user_id
+from auth.settings import is_email_allowed
 from auth.user_store import UserStore, _admin_update_expr
 
 
-def test_postgres_admin_update_expr():
+def test_postgres_admin_update_expr() -> None:
     assert "GREATEST" not in _admin_update_expr(is_postgres=True)
     assert "is_admin::int" in _admin_update_expr(is_postgres=True)
 
 
-def test_sanitize_user_id():
+def test_sanitize_user_id() -> None:
     assert sanitize_user_id("google-oauth2|12345")
     assert "/" not in sanitize_user_id("a/b/c")
 
 
-def test_is_email_allowed_open_by_default(monkeypatch):
+def test_is_email_allowed_open_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("auth.settings.allowed_emails", lambda: frozenset())
     assert is_email_allowed("anyone@example.com") is True
 
 
-def test_user_store_upsert(tmp_path: Path):
+def test_user_store_upsert(tmp_path: Path) -> None:
     db = tmp_path / "users.db"
     store = UserStore(db_path=db)
     user = store.upsert_from_login(
@@ -52,10 +53,10 @@ def test_user_store_upsert(tmp_path: Path):
     assert len(listed) == 1
 
     store.set_active("uid1", active=False)
-    assert store.get_by_id("uid1").is_active is False
+    assert store.get_by_id("uid1").is_active is False  # type: ignore[union-attr]
 
 
-def test_user_store_upsert_same_email_new_id(tmp_path: Path):
+def test_user_store_upsert_same_email_new_id(tmp_path: Path) -> None:
     """Dev login id then Google id for the same email should not raise."""
     store = UserStore(db_path=tmp_path / "users.db")
     store.upsert_from_login(
@@ -76,7 +77,9 @@ def test_user_store_upsert_same_email_new_id(tmp_path: Path):
     assert store.count_users() == 1
 
 
-def test_restore_owner_portfolio_when_user_db_empty(tmp_path: Path, monkeypatch):
+def test_restore_owner_portfolio_when_user_db_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from auth import migration
 
     data_dir = tmp_path / "data"
@@ -87,18 +90,12 @@ def test_restore_owner_portfolio_when_user_db_empty(tmp_path: Path, monkeypatch)
     import sqlite3
 
     with sqlite3.connect(legacy_db) as connection:
-        connection.execute(
-            "CREATE TABLE holdings (symbol TEXT PRIMARY KEY, shares REAL NOT NULL)"
-        )
-        connection.execute(
-            "INSERT INTO holdings (symbol, shares) VALUES ('KO', 10)"
-        )
+        connection.execute("CREATE TABLE holdings (symbol TEXT PRIMARY KEY, shares REAL NOT NULL)")
+        connection.execute("INSERT INTO holdings (symbol, shares) VALUES ('KO', 10)")
 
     user_dir.mkdir(parents=True)
     with sqlite3.connect(user_dir / "portfolio.db") as connection:
-        connection.execute(
-            "CREATE TABLE holdings (symbol TEXT PRIMARY KEY, shares REAL NOT NULL)"
-        )
+        connection.execute("CREATE TABLE holdings (symbol TEXT PRIMARY KEY, shares REAL NOT NULL)")
 
     monkeypatch.setattr(migration, "DATA_DIR", data_dir)
     monkeypatch.setattr(migration, "LEGACY_PORTFOLIO_DB", legacy_db)
@@ -109,7 +106,7 @@ def test_restore_owner_portfolio_when_user_db_empty(tmp_path: Path, monkeypatch)
     assert migration._holding_count(user_dir / "portfolio.db") == 1
 
 
-def test_user_store_set_admin(tmp_path: Path):
+def test_user_store_set_admin(tmp_path: Path) -> None:
     store = UserStore(db_path=tmp_path / "users.db")
     store.upsert_from_login(
         user_id="u2",
@@ -118,4 +115,4 @@ def test_user_store_set_admin(tmp_path: Path):
         picture_url=None,
     )
     store.set_admin("u2", admin=True)
-    assert store.get_by_id("u2").is_admin is True
+    assert store.get_by_id("u2").is_admin is True  # type: ignore[union-attr]

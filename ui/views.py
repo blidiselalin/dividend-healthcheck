@@ -5,35 +5,42 @@ This module contains the main view classes optimized for dividend investors,
 with key metrics prominently displayed on the first page.
 """
 
+from __future__ import annotations
+
+import logging
 from datetime import datetime
-from typing import Optional
+from typing import Any, cast
 
 import streamlit as st
 
 from config import DATA_SOURCES
+from data_ingestion.models import StockDocument
 from models.stock import StockData
-from services.stock_service import StockService
-from services.scoring import ScoringService, Recommendation
+from services.scoring import Recommendation, ScoringService
 from services.sector_service import SectorService
+from services.stock_service import StockService
 from ui.components import UIComponents
+
+logger = logging.getLogger(__name__)
 
 # Try to import Analysed-stocks-first service (primary data source)
 try:
-    from services.vectordb_service import VectorDBService, get_vectordb_service
+    from services.vectordb_service import get_vectordb_service
+
     VECTORDB_SERVICE_AVAILABLE = True
 except ImportError:
     VECTORDB_SERVICE_AVAILABLE = False
 
 # Try to import enhanced service (fallback with API calls)
 try:
-    from services.enhanced_stock_service import get_enhanced_stock_service
+    from services.enhanced_stock_service import EnhancedStockService
 
     ENHANCED_SERVICE_AVAILABLE = True
 except ImportError:
     ENHANCED_SERVICE_AVAILABLE = False
 
 
-def get_stock_data(symbol: str) -> Optional[StockData]:
+def get_stock_data(symbol: str) -> StockData | None:
     """
     Load stock data for single-stock analysis.
 
@@ -52,17 +59,17 @@ def get_stock_data(symbol: str) -> Optional[StockData]:
     if ENHANCED_SERVICE_AVAILABLE:
         from services.live_price import apply_live_price
 
-        data = get_enhanced_stock_service(fetch_realtime_prices=True).fetch(symbol)
+        data = EnhancedStockService(fetch_realtime_prices=True).fetch(symbol)
         if data:
-            return apply_live_price(data)
+            return cast(StockData, apply_live_price(data))
 
     from services.live_price import apply_live_price
 
     data = StockService.fetch(symbol)
-    return apply_live_price(data) if data else None
+    return cast(StockData, apply_live_price(data)) if data else None
 
 
-def get_service_status() -> dict:
+def get_service_status() -> dict[str, Any]:
     """Get status of the stock service."""
     status = {
         "mode": "API-only",
@@ -84,8 +91,8 @@ def get_service_status() -> dict:
             status["document_count"] = doc_count
             status["sp500_coverage"] = market.get("sp500_coverage")
             return status
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("shared_market_db_status lookup failed: %s", exc)
 
     if VECTORDB_SERVICE_AVAILABLE:
         try:
@@ -99,17 +106,18 @@ def get_service_status() -> dict:
                 status["document_count"] = doc_count
                 try:
                     from services.sp500_peers_service import coverage_stats
+
                     cov = coverage_stats()
                     status["sp500_coverage"] = cov
                 except Exception:
                     status["sp500_coverage"] = None
                 status["dividend_kings"] = stats.get("dividend_kings", 0)
-        except Exception:
-            pass
-    
+        except Exception as exc:
+            logger.debug("get_vectordb_service failed: %s", exc)
+
     if ENHANCED_SERVICE_AVAILABLE and status["mode"] == "API-only":
         status["mode"] = "Enhanced (API + DB)"
-    
+
     return status
 
 
@@ -117,7 +125,8 @@ USE_ENHANCED_SERVICE = ENHANCED_SERVICE_AVAILABLE or VECTORDB_SERVICE_AVAILABLE
 
 # Try to import PDF report generator
 try:
-    from services.report_generator import ReportGenerator, generate_stock_report
+    from services.report_generator import generate_stock_report
+
     REPORTLAB_AVAILABLE = True
 except ImportError:
     REPORTLAB_AVAILABLE = False
@@ -134,19 +143,34 @@ class SingleStockView:
         streak = data.dividend_history.consecutive_years if data.dividend_history else 0
         st.header(f"{tier_badge} {data.name}")
         st.caption(
-            f"**{data.symbol}** · {data.sector} · "
-            f"{streak} years of consecutive dividend growth"
+            f"**{data.symbol}** · {data.sector} · {streak} years of consecutive dividend growth"
         )
-    
+
+    @classmethod
+    def render(cls) -> None:
+        """Render the single-stock selection and analysis view."""
+        st.subheader("Analyze a stock")
+        st.markdown(
+            "Enter any US stock ticker symbol (e.g., KO, JNJ, PG, AAPL, MSFT) "
+            "to load its dividend yield channel, scoring card, and key metrics."
+        )
+        symbol = (
+            st.text_input("Ticker symbol", value="KO", key="single_stock_search_input")
+            .strip()
+            .upper()
+        )
+        if symbol:
+            cls.render_analysis_for_symbol(symbol)
+
     @classmethod
     def render_analysis_for_symbol(
         cls,
         symbol: str,
         *,
         show_sector: bool = True,
-        data: Optional[StockData] = None,
-        yield_channel_data=None,
-        vector_doc=None,
+        data: StockData | None = None,
+        yield_channel_data: Any | None = None,
+        vector_doc: StockDocument | None = None,
     ) -> None:
         """Render the full single-stock dashboard for a symbol."""
         if data is None:
@@ -169,7 +193,8 @@ class SingleStockView:
         cls._render_header(data, rec)
 
         st.subheader("Key highlights")
-        UIComponents.display_key_highlights(data, score, rec)
+        UIComponents.display_recommendation(rec.label, score, confidence)
+        UIComponents.display_prime_metrics(data, score)
 
         st.divider()
         UIComponents.display_yield_channel_chart(
@@ -221,22 +246,23 @@ class SingleStockView:
                     score,
                     sector_peers,
                     external,
-                    yield_channels=(
-                        {symbol.upper(): yield_channel_data} if yield_channel_data else None
-                    ),
-                    vector_docs={symbol.upper(): vector_doc} if vector_doc else None,
+                    _yield_channels={symbol.upper(): yield_channel_data}
+                    if yield_channel_data
+                    else None,
+                    _vector_docs={symbol.upper(): vector_doc} if vector_doc else None,
                 )
 
         with st.expander("Data sources & library record", expanded=False):
-            UIComponents.display_vector_db_data(symbol, document=vector_doc)
+            UIComponents.display_vector_db_data(
+                symbol,
+                document=vector_doc,
+            )
 
         st.divider()
         cls._render_report_section(data, score, rec, pros, cons, symbol)
 
         st.divider()
-        cls._render_data_source_footer(
-            data, confidence, symbol=symbol, vector_doc=vector_doc
-        )
+        cls._render_data_source_footer(data, confidence, symbol=symbol, vector_doc=vector_doc)
 
     @classmethod
     def _render_report_section(
@@ -244,8 +270,8 @@ class SingleStockView:
         data: StockData,
         score: int,
         rec: Recommendation,
-        pros: list,
-        cons: list,
+        pros: list[str],
+        cons: list[str],
         symbol: str,
     ) -> None:
         """Render the report generation and export section."""
@@ -254,9 +280,7 @@ class SingleStockView:
         sector_txt = data.sector if data.sector and data.sector != "N/A" else "—"
         streak = data.dividend_history.consecutive_years if data.dividend_history else 0
         yield_txt = (
-            f"{data.dividend_yield_pct:.2f}%"
-            if data.dividend_yield_pct is not None
-            else "—"
+            f"{data.dividend_yield_pct:.2f}%" if data.dividend_yield_pct is not None else "—"
         )
         payout_txt = (
             f"{data.payout_ratio_pct:.0f}% of earnings"
@@ -265,25 +289,26 @@ class SingleStockView:
         )
 
         # Report preview in a styled container
+        generated_date = datetime.now().strftime("%B %d, %Y")
         with st.container():
             st.markdown(
                 f"""
-                <div style="border: 1px solid #ddd; border-radius: 8px; padding: 16px; 
+                <div style="border: 1px solid #ddd; border-radius: 8px; padding: 16px;
                             background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);">
                     <h4 style="margin: 0 0 8px 0; color: #1a237e;">
                         📊 {data.name} ({symbol}) - Research Report
                     </h4>
                     <p style="color: #666; margin: 0 0 12px 0;">
-                        {data.dividend_tier} | {sector_txt} | Generated {datetime.now().strftime('%B %d, %Y')}
+                        {data.dividend_tier} | {sector_txt} | Generated {generated_date}
                     </p>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
-        
+
         # Report contents preview
         col1, col2 = st.columns(2)
-        
+
         with col1:
             st.markdown("**Report Contents:**")
             st.markdown("""
@@ -293,7 +318,7 @@ class SingleStockView:
             - Investment Thesis (Pros/Cons)
             - Financial Strength Ratings
             """)
-        
+
         with col2:
             st.markdown("**Key Highlights:**")
             st.markdown(f"""
@@ -302,13 +327,13 @@ class SingleStockView:
             - **Streak:** {streak} years
             - **Payout:** {payout_txt}
             """)
-        
+
         st.markdown("")
-        
+
         # Export buttons
         st.markdown("**Export Options:**")
         export_cols = st.columns([1, 1, 1, 2])
-        
+
         with export_cols[0]:
             if REPORTLAB_AVAILABLE:
                 # Generate PDF immediately for download
@@ -333,7 +358,7 @@ class SingleStockView:
             else:
                 st.button("📥 PDF Report", disabled=True, width="stretch")
                 st.caption("Install: `pip install reportlab`")
-        
+
         with export_cols[1]:
             # CSV export of key metrics
             csv_data = cls._generate_csv_report(data, score, rec, pros, cons)
@@ -344,7 +369,7 @@ class SingleStockView:
                 mime="text/csv",
                 width="stretch",
             )
-        
+
         with export_cols[2]:
             # JSON export
             json_data = cls._generate_json_report(data, score, rec, pros, cons)
@@ -355,30 +380,30 @@ class SingleStockView:
                 mime="application/json",
                 width="stretch",
             )
-        
+
         with export_cols[3]:
             if not REPORTLAB_AVAILABLE:
                 st.info("💡 Install `reportlab` for PDF reports")
-    
+
     @staticmethod
     def _generate_csv_report(
         data: StockData,
         score: int,
         rec: Recommendation,
-        pros: list,
-        cons: list,
+        pros: list[str],
+        cons: list[str],
     ) -> str:
         """Generate CSV report data."""
         import csv
         import io
-        
+
         output = io.StringIO()
         writer = csv.writer(output)
-        
+
         # Header
         writer.writerow(["Metric", "Value"])
         writer.writerow([])
-        
+
         # Basic Info
         writer.writerow(["=== COMPANY INFO ===", ""])
         writer.writerow(["Symbol", data.symbol])
@@ -386,72 +411,119 @@ class SingleStockView:
         writer.writerow(["Sector", data.sector])
         writer.writerow(["Industry", data.industry])
         writer.writerow([])
-        
+
         # Score
         writer.writerow(["=== ANALYSIS ===", ""])
         writer.writerow(["Score", f"{score}/100"])
         writer.writerow(["Recommendation", rec.label])
         writer.writerow(["Dividend Tier", data.dividend_tier])
         writer.writerow([])
-        
+
         # Key Metrics
         writer.writerow(["=== KEY METRICS ===", ""])
         writer.writerow(["Current Price", f"${data.price:.2f}" if data.price else "N/A"])
-        writer.writerow(["Dividend Yield", f"{data.dividend_yield_pct:.2f}%" if data.dividend_yield_pct else "N/A"])
-        writer.writerow(["Annual Dividend", f"${data.dividend_rate:.2f}" if data.dividend_rate else "N/A"])
-        
+        writer.writerow(
+            [
+                "Dividend Yield",
+                f"{data.dividend_yield_pct:.2f}%" if data.dividend_yield_pct else "N/A",
+            ]
+        )
+        writer.writerow(
+            [
+                "Annual Dividend",
+                f"${data.dividend_rate:.2f}" if data.dividend_rate else "N/A",
+            ]
+        )
+
         dh = data.dividend_history
         writer.writerow(["Consecutive Years", dh.consecutive_years if dh else "N/A"])
         writer.writerow(["5Y Div CAGR", f"{dh.cagr_5y:.2f}%" if dh and dh.cagr_5y else "N/A"])
         writer.writerow(["10Y Div CAGR", f"{dh.cagr_10y:.2f}%" if dh and dh.cagr_10y else "N/A"])
         writer.writerow([])
-        
+
         # Safety
         writer.writerow(["=== DIVIDEND SAFETY ===", ""])
-        writer.writerow(["Payout Ratio", f"{data.payout_ratio_pct:.1f}%" if data.payout_ratio_pct else "N/A"])
-        writer.writerow(["FCF Payout", f"{data.fcf_payout_ratio_pct:.1f}%" if data.fcf_payout_ratio_pct else "N/A"])
-        writer.writerow(["Dividend Coverage", f"{data.dividend_coverage:.2f}x" if data.dividend_coverage else "N/A"])
+        writer.writerow(
+            [
+                "Payout Ratio",
+                f"{data.payout_ratio_pct:.1f}%" if data.payout_ratio_pct else "N/A",
+            ]
+        )
+        writer.writerow(
+            [
+                "FCF Payout",
+                f"{data.fcf_payout_ratio_pct:.1f}%" if data.fcf_payout_ratio_pct else "N/A",
+            ]
+        )
+        writer.writerow(
+            [
+                "Dividend Coverage",
+                f"{data.dividend_coverage:.2f}x" if data.dividend_coverage else "N/A",
+            ]
+        )
         writer.writerow([])
-        
+
         # Valuation
         writer.writerow(["=== VALUATION ===", ""])
         writer.writerow(["P/E Ratio", f"{data.trailing_pe:.2f}" if data.trailing_pe else "N/A"])
         writer.writerow(["Forward P/E", f"{data.forward_pe:.2f}" if data.forward_pe else "N/A"])
-        writer.writerow(["Price/Book", f"{data.price_to_book:.2f}" if data.price_to_book else "N/A"])
-        writer.writerow(["Market Cap", f"${data.market_cap/1e9:.2f}B" if data.market_cap else "N/A"])
+        writer.writerow(
+            ["Price/Book", f"{data.price_to_book:.2f}" if data.price_to_book else "N/A"]
+        )
+        writer.writerow(
+            [
+                "Market Cap",
+                f"${data.market_cap / 1e9:.2f}B" if data.market_cap else "N/A",
+            ]
+        )
         writer.writerow([])
-        
+
         # Financial Health
         writer.writerow(["=== FINANCIAL HEALTH ===", ""])
-        writer.writerow(["Debt/Equity", f"{data.debt_to_equity:.2f}" if data.debt_to_equity else "N/A"])
-        writer.writerow(["Current Ratio", f"{data.current_ratio:.2f}" if data.current_ratio else "N/A"])
+        writer.writerow(
+            [
+                "Debt/Equity",
+                f"{data.debt_to_equity:.2f}" if data.debt_to_equity else "N/A",
+            ]
+        )
+        writer.writerow(
+            [
+                "Current Ratio",
+                f"{data.current_ratio:.2f}" if data.current_ratio else "N/A",
+            ]
+        )
         writer.writerow(["ROE", f"{data.roe_pct:.2f}%" if data.roe_pct else "N/A"])
-        writer.writerow(["Operating Margin", f"{data.operating_margin_pct:.2f}%" if data.operating_margin_pct else "N/A"])
+        writer.writerow(
+            [
+                "Operating Margin",
+                f"{data.operating_margin_pct:.2f}%" if data.operating_margin_pct else "N/A",
+            ]
+        )
         writer.writerow([])
-        
+
         # Thesis
         writer.writerow(["=== INVESTMENT THESIS ===", ""])
         writer.writerow(["Strengths", "; ".join(pros[:5])])
         writer.writerow(["Concerns", "; ".join(cons[:5])])
         writer.writerow([])
-        
+
         writer.writerow(["Generated", datetime.now().strftime("%Y-%m-%d %H:%M")])
-        
+
         return output.getvalue()
-    
+
     @staticmethod
     def _generate_json_report(
         data: StockData,
         score: int,
         rec: Recommendation,
-        pros: list,
-        cons: list,
+        pros: list[str],
+        cons: list[str],
     ) -> str:
         """Generate JSON report data."""
         import json
-        
+
         dh = data.dividend_history
-        
+
         report = {
             "report_info": {
                 "generated_at": datetime.now().isoformat(),
@@ -501,16 +573,16 @@ class SingleStockView:
                 "concerns": cons[:5],
             },
         }
-        
+
         return json.dumps(report, indent=2, default=str)
-    
+
     @staticmethod
     def _render_data_source_footer(
         data: StockData,
-        confidence: float,
+        _confidence: float,
         *,
         symbol: str = "",
-        vector_doc=None,
+        vector_doc: StockDocument | None = None,
     ) -> None:
         """Render the data source footer with status information."""
         from ui.analysis_evidence import render_analysis_evidence_footer
@@ -530,3 +602,90 @@ class SingleStockView:
                 st.caption("Live API mode — run ingest to persist history locally")
         else:
             st.caption(f"Data: {DATA_SOURCES['primary']} (API only)")
+
+
+class PortfolioView:
+    """Wrapper view to render the portfolio details table, avoiding circular imports."""
+
+    @classmethod
+    def render(cls) -> None:
+        from ui.portfolio_details_view import PortfolioDetailsView
+
+        PortfolioDetailsView.render()
+
+
+class FullAnalysisView:
+    """View to run and show full analysis for all Dividend Kings/Aristocrats."""
+
+    @classmethod
+    def render(cls) -> None:
+        st.subheader("All Dividend Kings Analysis")
+        st.markdown(
+            "Analyze and rank the entire universe of elite dividend stocks. "
+            "Filter by dividend streak or yield to discover high-quality income opportunities."
+        )
+
+        import pandas as pd
+
+        from config import DIVIDEND_KINGS
+        from services.vectordb_service import get_vectordb_service
+
+        db_service = get_vectordb_service()
+        symbols = DIVIDEND_KINGS
+
+        if st.button("Run Full Analysis", type="primary", key="run_full_analysis_btn"):
+            with st.spinner("Analyzing all stocks... This may take a few moments..."):
+                results = []
+                for symbol in symbols:
+                    data = db_service.get_stock(symbol)
+                    if not data:
+                        data = get_stock_data(symbol)
+                    if data:
+                        score = ScoringService.calculate_score(data)
+                        results.append(
+                            {
+                                "Ticker": data.symbol,
+                                "Company": data.name,
+                                "Sector": data.sector,
+                                "Score": score,
+                                "Yield %": data.dividend_yield_pct or 0.0,
+                                "Streak (Yrs)": data.dividend_history.consecutive_years
+                                if data.dividend_history
+                                else 0,
+                                "Payout %": data.payout_ratio_pct or 0.0,
+                                "P/E": data.trailing_pe or 0.0,
+                            }
+                        )
+                st.session_state["full_analysis_results"] = results
+
+        results = st.session_state.get("full_analysis_results")
+        if results:
+            df = pd.DataFrame(results)
+
+            # Filters
+            col1, col2 = st.columns(2)
+            with col1:
+                min_streak = st.slider("Min Streak (Years)", min_value=0, max_value=100, value=50)
+            with col2:
+                min_yield = st.slider(
+                    "Min Yield %", min_value=0.0, max_value=10.0, value=0.0, step=0.5
+                )
+
+            filtered_df = df[(df["Streak (Yrs)"] >= min_streak) & (df["Yield %"] >= min_yield)]
+
+            st.markdown(f"### Results ({len(filtered_df)} stocks found)")
+            st.dataframe(
+                filtered_df,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            # Export
+            csv = filtered_df.to_csv(index=False)
+            st.download_button(
+                "Export CSV",
+                csv,
+                "dividend_kings_analysis.csv",
+                "text/csv",
+                key="export_full_analysis_csv",
+            )

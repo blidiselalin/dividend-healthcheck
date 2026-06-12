@@ -7,14 +7,14 @@ from __future__ import annotations
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
 def remove_delisted_from_market_library(
-    symbols: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    symbols: list[str] | None = None,
+) -> dict[str, Any]:
     """Delete delisted / broken-quote symbols from the shared market library."""
     from config import DELISTED_SYMBOLS
     from services.shared_market_db import get_shared_vector_store
@@ -29,14 +29,14 @@ def remove_delisted_from_market_library(
     }
 
 
-def _fetch_latest_price(symbol: str) -> Optional[float]:
+def _fetch_latest_price(symbol: str) -> float | None:
     """Fetch the latest trade price from Yahoo Finance."""
     from services.live_price import fetch_latest_market_price
 
     return fetch_latest_market_price(symbol)
 
 
-def _apply_latest_price(document, price: float) -> None:
+def _apply_latest_price(document: Any, price: float) -> None:
     """Update document current price and today's price-history bar."""
     from data_ingestion.models import PriceHistory
 
@@ -67,12 +67,12 @@ def _apply_latest_price(document, price: float) -> None:
     document.price_history.sort(key=lambda point: point.date, reverse=True)
 
 
-def _collect_symbols() -> List[str]:
+def _collect_symbols() -> list[str]:
     """Symbols to refresh: market library entries plus portfolio holdings."""
     from config import DELISTED_SYMBOLS
     from services.shared_market_db import get_shared_vector_store
 
-    symbols: Set[str] = set()
+    symbols: set[str] = set()
 
     try:
         store = get_shared_vector_store()
@@ -87,17 +87,17 @@ def _collect_symbols() -> List[str]:
 
         for holding in create_portfolio_context().portfolio.list_holdings():
             symbols.add(holding.symbol.upper())
-    except Exception:
+    except Exception:  # noqa: S110
         pass
 
     return sorted(symbol for symbol in symbols if symbol not in DELISTED_SYMBOLS)
 
 
 def refresh_market_library_prices(
-    symbols: Optional[List[str]] = None,
+    symbols: list[str] | None = None,
     *,
     max_workers: int = 8,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Pull latest prices and persist them on shared market library documents.
 
@@ -107,10 +107,9 @@ def refresh_market_library_prices(
     from services.shared_market_db import get_shared_vector_store
 
     target_symbols = [
-        symbol.upper()
-        for symbol in (symbols if symbols is not None else _collect_symbols())
+        symbol.upper() for symbol in (symbols if symbols is not None else _collect_symbols())
     ]
-    stats: Dict[str, Any] = {
+    stats: dict[str, Any] = {
         "total": len(target_symbols),
         "updated": 0,
         "skipped": 0,
@@ -128,11 +127,10 @@ def refresh_market_library_prices(
         if document.symbol
     }
 
-    prices: Dict[str, float] = {}
+    prices: dict[str, float] = {}
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(_fetch_latest_price, symbol): symbol
-            for symbol in target_symbols
+            executor.submit(_fetch_latest_price, symbol): symbol for symbol in target_symbols
         }
         for future in as_completed(futures):
             symbol = futures[future]

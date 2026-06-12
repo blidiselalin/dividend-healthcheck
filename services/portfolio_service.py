@@ -7,10 +7,11 @@ the Streamlit UI can expose all available portfolio details and charts.
 
 from __future__ import annotations
 
+import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-import re
-from typing import Dict, Iterable, Optional, Tuple
+from typing import Any, ClassVar
 
 import pandas as pd
 
@@ -39,7 +40,7 @@ class PortfolioService:
     DEFAULT_WORKBOOK = Path("data_ingestion") / "Investment_Plan.xlsx"
     DEFAULT_SHEET = "Portofoliu InteractiveBroker"
 
-    _COLUMN_SYNONYMS: Dict[str, Tuple[str, ...]] = {
+    _COLUMN_SYNONYMS: ClassVar[dict[str, tuple[str, ...]]] = {
         "symbol": ("symbol", "ticker", "simbol"),
         "status": ("status", "stare"),
         "shares": ("shares", "nr actiuni", "nractiuni", "qty", "quantity"),
@@ -56,7 +57,12 @@ class PortfolioService:
         ),
         "day_gain_pct": ("day gain unrl (%)", "day gain (%)", "day gain %"),
         "day_gain_value": ("day gain unrl ($)", "day gain ($)", "day gain"),
-        "total_gain_pct": ("tot gain unrl (%)", "tot gain (%)", "profit %", "total gain %"),
+        "total_gain_pct": (
+            "tot gain unrl (%)",
+            "tot gain (%)",
+            "profit %",
+            "total gain %",
+        ),
         "total_gain_value": ("tot gain unrl ($)", "total gain ($)", "profit"),
         "realized_gain_value": ("realized gain ($)", "realized gain"),
         "sector": ("sector",),
@@ -68,13 +74,18 @@ class PortfolioService:
         "weight_pct": ("pondere", "weight", "procent/total achizitii"),
     }
 
-    _REQUIRED_CANDIDATES: Tuple[str, ...] = ("symbol", "ticker")
-    _STATIC_FIELDS: Tuple[str, ...] = ("symbol", "shares", "avg_cost", "total_div_income")
+    _REQUIRED_CANDIDATES: tuple[str, ...] = ("symbol", "ticker")
+    _STATIC_FIELDS: tuple[str, ...] = (
+        "symbol",
+        "shares",
+        "avg_cost",
+        "total_div_income",
+    )
 
     @classmethod
     def load_portfolio(
         cls,
-        workbook_path: Optional[str] = None,
+        workbook_path: str | None = None,
         sheet_name: str = DEFAULT_SHEET,
     ) -> pd.DataFrame:
         """Load and normalize holdings from workbook sheet."""
@@ -108,7 +119,7 @@ class PortfolioService:
         return holdings.reset_index(drop=True)
 
     @classmethod
-    def split_positions(cls, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def split_positions(cls, df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         """Return (open_positions, closed_positions)."""
         if df.empty:
             return df.copy(), df.copy()
@@ -155,7 +166,7 @@ class PortfolioService:
 
     @classmethod
     def _rename_columns(cls, df: pd.DataFrame) -> pd.DataFrame:
-        rename_map: Dict[str, str] = {}
+        rename_map: dict[str, str] = {}
         normalized = {col: cls._norm(col) for col in df.columns}
 
         for canonical, candidates in cls._COLUMN_SYNONYMS.items():
@@ -168,9 +179,9 @@ class PortfolioService:
     @classmethod
     def _find_matching_column(
         cls,
-        normalized_cols: Dict[str, str],
+        normalized_cols: dict[str, str],
         candidates: Iterable[str],
-    ) -> Optional[str]:
+    ) -> str | None:
         candidate_set = tuple(cls._norm(c) for c in candidates)
 
         for col, norm in normalized_cols.items():
@@ -193,9 +204,7 @@ class PortfolioService:
                 break
 
         if symbol_col is None:
-            raise ValueError(
-                "Could not identify Symbol/Ticker column in portfolio sheet."
-            )
+            raise ValueError("Could not identify Symbol/Ticker column in portfolio sheet.")
 
         out = df.copy()
         out["symbol"] = out[symbol_col].astype(str).str.upper().str.strip()
@@ -214,7 +223,7 @@ class PortfolioService:
         out = out[~out["symbol"].isin(excluded_symbols)]
 
         # Keep columns that are in _COLUMN_SYNONYMS or _STATIC_FIELDS
-        static_cols = [c for c in cls._COLUMN_SYNONYMS.keys() if c in out.columns]
+        static_cols = [c for c in cls._COLUMN_SYNONYMS if c in out.columns]
         if "symbol" not in static_cols:
             static_cols.append("symbol")
 
@@ -228,15 +237,24 @@ class PortfolioService:
         return out
 
     @classmethod
-    def _enrich_from_vectordb(cls, df: pd.DataFrame) -> pd.DataFrame:
+    def _enrich_from_vectordb(cls, df: pd.DataFrame) -> pd.DataFrame:  # noqa: C901
         """Populate dynamic fields automatically from vector DB by symbol."""
         out = df.copy()
 
         # Initialize missing dynamic columns in out with NA if they do not exist
         dynamic_cols = {
-            "name", "sector", "analyst_rating", "dividend_yield_pct", "last_price",
-            "market_cap", "pfcf", "day_gain_pct", "day_gain_value", "realized_gain_value",
-            "ex_dividend_date", "dividend_pay_date"
+            "name",
+            "sector",
+            "analyst_rating",
+            "dividend_yield_pct",
+            "last_price",
+            "market_cap",
+            "pfcf",
+            "day_gain_pct",
+            "day_gain_value",
+            "realized_gain_value",
+            "ex_dividend_date",
+            "dividend_pay_date",
         }
         for col in dynamic_cols:
             if col not in out.columns:
@@ -248,7 +266,7 @@ class PortfolioService:
             try:
                 symbols = out["symbol"].dropna().astype(str).unique().tolist()
                 stocks = vdb.get_stocks(symbols)
-            except Exception:
+            except Exception:  # noqa: S110
                 pass
 
         enriched_rows = []
@@ -257,8 +275,8 @@ class PortfolioService:
             stock = stocks.get(symbol) if stocks else None
 
             # Get existing values from the spreadsheet as primary, fall back to DB
-            def get_val(col, db_val):
-                excel_val = row.get(col)
+            def get_val(col: str, db_val: Any) -> Any:
+                excel_val = row.get(col)  # noqa: B023
                 if pd.notna(excel_val):
                     return excel_val
                 return db_val if db_val is not None else pd.NA
@@ -266,8 +284,12 @@ class PortfolioService:
             dynamic = {
                 "name": get_val("name", stock.name if stock else None),
                 "sector": get_val("sector", stock.sector if stock else None),
-                "analyst_rating": get_val("analyst_rating", stock.analyst_rating if stock else None),
-                "dividend_yield_pct": get_val("dividend_yield_pct", stock.dividend_yield_pct if stock else None),
+                "analyst_rating": get_val(
+                    "analyst_rating", stock.analyst_rating if stock else None
+                ),
+                "dividend_yield_pct": get_val(
+                    "dividend_yield_pct", stock.dividend_yield_pct if stock else None
+                ),
                 "last_price": get_val("last_price", stock.price if stock else None),
                 "market_cap": get_val("market_cap", stock.market_cap if stock else None),
                 "pfcf": get_val("pfcf", None),
@@ -276,7 +298,9 @@ class PortfolioService:
                 "realized_gain_value": get_val("realized_gain_value", None),
                 "ex_dividend_date": get_val(
                     "ex_dividend_date",
-                    stock.dividend_history.ex_dividend_date if stock and stock.dividend_history else None
+                    stock.dividend_history.ex_dividend_date
+                    if stock and stock.dividend_history
+                    else None,
                 ),
                 "dividend_pay_date": get_val("dividend_pay_date", None),
             }
@@ -289,7 +313,12 @@ class PortfolioService:
             excel_total_cost = row.get("total_cost")
             if pd.notna(excel_total_cost):
                 total_cost = excel_total_cost
-            elif pd.notna(shares) and pd.notna(avg_cost):
+            elif (
+                pd.notna(shares)
+                and pd.notna(avg_cost)
+                and shares is not None
+                and avg_cost is not None
+            ):
                 total_cost = float(shares) * float(avg_cost)
             else:
                 total_cost = pd.NA
@@ -298,7 +327,12 @@ class PortfolioService:
             excel_market_value = row.get("market_value")
             if pd.notna(excel_market_value):
                 market_value = excel_market_value
-            elif pd.notna(shares) and pd.notna(last_price):
+            elif (
+                pd.notna(shares)
+                and pd.notna(last_price)
+                and shares is not None
+                and last_price is not None
+            ):
                 market_value = float(shares) * float(last_price)
             else:
                 market_value = pd.NA
@@ -307,7 +341,12 @@ class PortfolioService:
             excel_gain_val = row.get("total_gain_value")
             if pd.notna(excel_gain_val):
                 total_gain_value = excel_gain_val
-            elif pd.notna(total_cost) and pd.notna(market_value):
+            elif (
+                pd.notna(total_cost)
+                and pd.notna(market_value)
+                and total_cost is not None
+                and market_value is not None
+            ):
                 total_gain_value = market_value - total_cost
             else:
                 total_gain_value = pd.NA
@@ -320,12 +359,14 @@ class PortfolioService:
             else:
                 total_gain_pct = pd.NA
 
-            dynamic.update({
-                "total_cost": total_cost,
-                "market_value": market_value,
-                "total_gain_value": total_gain_value,
-                "total_gain_pct": total_gain_pct,
-            })
+            dynamic.update(
+                {
+                    "total_cost": total_cost,
+                    "market_value": market_value,
+                    "total_gain_value": total_gain_value,
+                    "total_gain_pct": total_gain_pct,
+                }
+            )
 
             enriched_rows.append(dynamic)
 
@@ -350,7 +391,12 @@ class PortfolioService:
             "realized_gain_value",
             "pfcf",
         }
-        percent_cols = {"day_gain_pct", "total_gain_pct", "dividend_yield_pct", "weight_pct"}
+        percent_cols = {
+            "day_gain_pct",
+            "total_gain_pct",
+            "dividend_yield_pct",
+            "weight_pct",
+        }
 
         for col in numeric_cols.intersection(out.columns):
             out[col] = out[col].apply(cls._to_number)
@@ -374,10 +420,16 @@ class PortfolioService:
         if "market_value" not in out.columns and {"shares", "last_price"}.issubset(out.columns):
             out["market_value"] = out["shares"] * out["last_price"]
 
-        if "total_gain_value" not in out.columns and {"market_value", "total_cost"}.issubset(out.columns):
+        if "total_gain_value" not in out.columns and {
+            "market_value",
+            "total_cost",
+        }.issubset(out.columns):
             out["total_gain_value"] = out["market_value"] - out["total_cost"]
 
-        if "total_gain_pct" not in out.columns and {"market_value", "total_cost"}.issubset(out.columns):
+        if "total_gain_pct" not in out.columns and {
+            "market_value",
+            "total_cost",
+        }.issubset(out.columns):
             base = out["total_cost"].replace(0, pd.NA)
             out["total_gain_pct"] = ((out["market_value"] - out["total_cost"]) / base) * 100
 
@@ -390,7 +442,7 @@ class PortfolioService:
         return float(pd.to_numeric(df[col], errors="coerce").fillna(0).sum())
 
     @staticmethod
-    def _to_number(value: object) -> float:
+    def _to_number(value: Any) -> float:
         if pd.isna(value):
             return float("nan")
         if isinstance(value, (int, float)):
@@ -409,7 +461,7 @@ class PortfolioService:
         return float(match.group())
 
     @classmethod
-    def _to_percent(cls, value: object) -> float:
+    def _to_percent(cls, value: Any) -> float:
         num = cls._to_number(value)
         if pd.isna(num):
             return num

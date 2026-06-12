@@ -8,10 +8,13 @@ is configured. Live API fallbacks are not used on the analysis UI path.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
-from config import MIN_YIELD_DIVIDEND_PAYMENTS, MIN_YIELD_PRICE_POINTS
+from config import MIN_YIELD_PRICE_POINTS
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from data_ingestion.models import StockDocument
@@ -52,7 +55,7 @@ class YieldChannelReadiness:
 
 def assess_yield_channel_readiness(
     symbol: str,
-    document: Optional["StockDocument"] = None,
+    document: StockDocument | None = None,
 ) -> YieldChannelReadiness:
     """Summarize price/dividend coverage from DB tables and the library document."""
     from utils.library_document import resolve_library_document
@@ -72,8 +75,8 @@ def assess_yield_channel_readiness(
             counts = PostgresMarketHistoryStore().symbol_history_counts(sym)
             table_prices = int(counts.get("price_points") or 0)
             table_divs = int(counts.get("dividend_payments") or 0)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Failed to fetch history table counts: %s", exc)
 
     if doc is None:
         return YieldChannelReadiness(
@@ -119,13 +122,17 @@ def format_history_coverage_summary(readiness: YieldChannelReadiness) -> str:
 
 def format_history_reload_guidance(readiness: YieldChannelReadiness) -> str:
     """Actionable steps to populate historical tables from admin / ingest."""
-    steps: List[str] = []
+    steps: list[str] = []
     if not readiness.document_found:
         steps.append(
-            "Symbol is missing from **stock_documents** — run S&P ingest or add the holding to the library first."
+            "Symbol is missing from **stock_documents** — run S&P ingest or add the holding "
+            "to the library first."
         )
     elif readiness.needs_history_backfill:
-        if readiness.dividend_payments >= CHART_MIN_DIVIDEND_PAYMENTS and readiness.unique_price_days == 0:
+        if (
+            readiness.dividend_payments >= CHART_MIN_DIVIDEND_PAYMENTS
+            and readiness.unique_price_days == 0
+        ):
             steps.append(
                 "Dividend history is present but **price history is missing** — run "
                 "**Backfill thin history** in the admin console (or "

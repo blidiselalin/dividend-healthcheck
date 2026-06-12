@@ -4,10 +4,10 @@ Shared Plotly styling for DividendScope — clean, consistent charts app-wide.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 # Match portfolio UI (teal) and readable neutrals
-PALETTE: Dict[str, str] = {
+PALETTE: dict[str, str] = {
     "primary": "#0f766e",
     "primary_light": "#14b8a6",
     "accent": "#c2410c",
@@ -19,7 +19,7 @@ PALETTE: Dict[str, str] = {
 }
 
 # Weiss yield zones (low → high yield / cheap → expensive price)
-YIELD_ZONE_COLORS: Dict[str, str] = {
+YIELD_ZONE_COLORS: dict[str, str] = {
     "Deep Value": "#166534",
     "Value": "#16a34a",
     "Fair Value": "#ca8a04",
@@ -27,7 +27,7 @@ YIELD_ZONE_COLORS: Dict[str, str] = {
     "Expensive": "#dc2626",
 }
 
-CATEGORICAL: tuple = (
+CATEGORICAL: tuple[str, ...] = (
     "#0f766e",
     "#0369a1",
     "#7c3aed",
@@ -40,15 +40,15 @@ CATEGORICAL: tuple = (
 def style_figure(
     fig: Any,
     *,
-    title: Optional[str] = None,
-    height: Optional[int] = None,
+    title: str | None = None,
+    height: int | None = None,
     legend: bool = True,
     horizontal_legend: bool = False,
-    margin: Optional[Dict[str, int]] = None,
+    margin: dict[str, int] | None = None,
 ) -> Any:
     """Apply DividendScope defaults without removing trace-specific layout."""
     top = 56 if title else 36
-    default_margin = dict(l=52, r=28, t=top, b=44)
+    default_margin = {"l": 52, "r": 28, "t": top, "b": 44}
     if margin:
         default_margin.update(margin)
     else:
@@ -59,70 +59,70 @@ def style_figure(
                 if value is not None and value > default_margin[edge]:
                     default_margin[edge] = value
 
-    layout: Dict[str, Any] = dict(
-        template="plotly_white",
-        font=dict(
-            family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-            size=12,
-            color=PALETTE["text"],
-        ),
-        paper_bgcolor=PALETTE["paper"],
-        plot_bgcolor=PALETTE["plot_bg"],
-        hovermode="x unified",
-        hoverlabel=dict(bgcolor="white", font_size=12, font_color=PALETTE["text"]),
-        margin=default_margin,
-        showlegend=legend,
-    )
+    layout: dict[str, Any] = {
+        "template": "plotly_white",
+        "font": {
+            "family": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            "size": 12,
+            "color": PALETTE["text"],
+        },
+        "paper_bgcolor": PALETTE["paper"],
+        "plot_bgcolor": PALETTE["plot_bg"],
+        "hovermode": "x unified",
+        "hoverlabel": {"bgcolor": "white", "font_size": 12, "font_color": PALETTE["text"]},
+        "margin": default_margin,
+        "showlegend": legend,
+    }
     if height is not None:
         layout["height"] = height
     if title:
-        layout["title"] = dict(
-            text=title,
-            x=0,
-            xanchor="left",
-            font=dict(size=14, color=PALETTE["text"]),
-        )
+        layout["title"] = {
+            "text": title,
+            "x": 0,
+            "xanchor": "left",
+            "font": {"size": 14, "color": PALETTE["text"]},
+        }
     if horizontal_legend and legend:
-        layout["legend"] = dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="left",
-            x=0,
-            font=dict(size=10),
-            bgcolor="rgba(255,255,255,0.85)",
-        )
+        layout["legend"] = {
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.02,
+            "xanchor": "left",
+            "x": 0,
+            "font": {"size": 10},
+            "bgcolor": "rgba(255,255,255,0.85)",
+        }
 
     fig.update_layout(**layout)
     fig.update_xaxes(
         showgrid=True,
         gridcolor=PALETTE["grid"],
         linecolor=PALETTE["grid"],
-        tickfont=dict(size=11, color=PALETTE["muted"]),
-        title_font=dict(size=12, color=PALETTE["muted"]),
+        tickfont={"size": 11, "color": PALETTE["muted"]},
+        title_font={"size": 12, "color": PALETTE["muted"]},
     )
     fig.update_yaxes(
         showgrid=True,
         gridcolor=PALETTE["grid"],
         linecolor=PALETTE["grid"],
-        tickfont=dict(size=11, color=PALETTE["muted"]),
-        title_font=dict(size=12, color=PALETTE["muted"]),
+        tickfont={"size": 11, "color": PALETTE["muted"]},
+        title_font={"size": 12, "color": PALETTE["muted"]},
     )
     return fig
 
 
-def monthly_category_axis(category_count: int) -> Dict[str, Any]:
+def monthly_category_axis(category_count: int) -> dict[str, Any]:
     """X-axis settings for month labels — reduces tick overlap on long histories."""
     if category_count <= 6:
-        return dict(tickangle=0, automargin=True)
+        return {"tickangle": 0, "automargin": True}
     if category_count <= 12:
-        return dict(tickangle=-35, nticks=min(category_count, 10), automargin=True)
-    return dict(
-        tickangle=-55,
-        nticks=min(category_count, 12),
-        tickfont=dict(size=9),
-        automargin=True,
-    )
+        return {"tickangle": -35, "nticks": min(category_count, 10), "automargin": True}
+    return {
+        "tickangle": -55,
+        "nticks": min(category_count, 12),
+        "tickfont": {"size": 9},
+        "automargin": True,
+    }
 
 
 def evolution_chart_margins(
@@ -130,7 +130,7 @@ def evolution_chart_margins(
     *,
     legend_bottom: bool = False,
     dual_y: bool = False,
-) -> Dict[str, int]:
+) -> dict[str, int]:
     """Margins sized for month labels and optional bottom legend (no in-chart title)."""
     if category_count <= 6:
         bottom = 64
@@ -140,31 +140,31 @@ def evolution_chart_margins(
         bottom = 128
     if legend_bottom:
         bottom += 40
-    return dict(
-        t=40,
-        b=bottom,
-        l=56,
-        r=52 if dual_y else 32,
-    )
+    return {
+        "t": 40,
+        "b": bottom,
+        "l": 56,
+        "r": 52 if dual_y else 32,
+    }
 
 
-def bottom_legend() -> Dict[str, Any]:
+def bottom_legend() -> dict[str, Any]:
     """Horizontal legend below the plot — avoids overlapping Streamlit section titles."""
-    return dict(
-        orientation="h",
-        yanchor="top",
-        y=-0.22,
-        x=0.5,
-        xanchor="center",
-        font=dict(size=10),
-        bgcolor="rgba(255,255,255,0.92)",
-    )
+    return {
+        "orientation": "h",
+        "yanchor": "top",
+        "y": -0.22,
+        "x": 0.5,
+        "xanchor": "center",
+        "font": {"size": 10},
+        "bgcolor": "rgba(255,255,255,0.92)",
+    }
 
 
-def style_subplot_titles(fig: Any, *, size: int = 13, color: Optional[str] = None) -> Any:
+def style_subplot_titles(fig: Any, *, size: int = 13, color: str | None = None) -> Any:
     """Normalize subplot title typography."""
     color = color or PALETTE["text"]
     fig.update_annotations(
-        font=dict(size=size, color=color, family="system-ui, sans-serif"),
+        font={"size": size, "color": color, "family": "system-ui, sans-serif"},
     )
     return fig

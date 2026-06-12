@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from functools import lru_cache
-from typing import Dict, List, Optional, Tuple
+from typing import Any
 
 import yfinance as yf
 
@@ -16,9 +16,9 @@ from data_ingestion.models import StockDocument
 from data_ingestion.portfolio_store import PortfolioHolding, PortfolioStore
 from models.stock import StockData
 from services.live_price import fetch_latest_market_price, fetch_previous_close
+from services.portfolio_analysis_preload import PortfolioAnalysisPreload, preload_portfolio_analysis
 from services.scoring import ScoringService
 from services.stock_analysis_service import load_portfolio_statistics_stock
-from services.portfolio_analysis_preload import PortfolioAnalysisPreload, preload_portfolio_analysis
 from utils.logging_config import get_logger
 
 logger = get_logger("dividendscope.portfolio")
@@ -28,11 +28,11 @@ logger = get_logger("dividendscope.portfolio")
 class PriceSnapshot:
     """Historical price metrics for a symbol."""
 
-    medium_price_365d: Optional[float]
-    price_180d: Optional[float]
-    price_365d: Optional[float]
-    change_180d_pct: Optional[float]
-    change_365d_pct: Optional[float]
+    medium_price_365d: float | None
+    price_180d: float | None
+    price_365d: float | None
+    change_180d_pct: float | None
+    change_365d_pct: float | None
 
 
 @dataclass(frozen=True)
@@ -41,57 +41,57 @@ class PortfolioDetailRow:
 
     company: str
     ticker: str
-    market_cap: Optional[float]
-    pe_ratio: Optional[float]
+    market_cap: float | None
+    pe_ratio: float | None
     shares: float
-    current_price: Optional[float]
-    current_value: Optional[float]
+    current_price: float | None
+    current_value: float | None
     avg_cost_per_share: float
     acquisition_value: float
-    profit: Optional[float]
-    profit_pct: Optional[float]
+    profit: float | None
+    profit_pct: float | None
     estimated_avg_price: float
-    medium_price_365d: Optional[float]
-    price_180d: Optional[float]
-    price_365d: Optional[float]
-    change_180d_pct: Optional[float]
-    change_365d_pct: Optional[float]
-    weight_pct: Optional[float]
-    dividend_yield_pct: Optional[float]
-    dividend_per_share: Optional[float]
-    annual_income: Optional[float]
-    dividend_weight_pct: Optional[float]
-    income_weight_pct: Optional[float]
+    medium_price_365d: float | None
+    price_180d: float | None
+    price_365d: float | None
+    change_180d_pct: float | None
+    change_365d_pct: float | None
+    weight_pct: float | None
+    dividend_yield_pct: float | None
+    dividend_per_share: float | None
+    annual_income: float | None
+    dividend_weight_pct: float | None
+    income_weight_pct: float | None
     dividends_paid: float
-    growth_years: Optional[int]
+    growth_years: int | None
     commission: float
     sector: str
-    acquisition_share_pct: Optional[float]
+    acquisition_share_pct: float | None
     analyst_rating: str
-    price_to_fcf: Optional[float]
+    price_to_fcf: float | None
     computed_dividend: str
-    ex_dividend_date: Optional[date]
-    dividend_pay_date: Optional[date]
+    ex_dividend_date: date | None
+    dividend_pay_date: date | None
     data_source: str
-    previous_close: Optional[float] = None
+    previous_close: float | None = None
 
 
 class PortfolioDetailsService:
     """Merge portfolio holdings with market data for the details page."""
 
-    def __init__(self, store: Optional[PortfolioStore] = None) -> None:
+    def __init__(self, store: PortfolioStore | None = None) -> None:
         self.store = store or PortfolioStore(seed=False)
 
-    def build_rows(self) -> List[PortfolioDetailRow]:
+    def build_rows(self) -> list[PortfolioDetailRow]:
         rows, _ = self.build_rows_with_cache()
         return rows
 
-    def build_rows_with_cache(
+    def build_rows_with_cache(  # noqa: C901
         self,
         *,
         use_live_prices: bool = False,
         preload_analysis: bool = True,
-    ) -> Tuple[List[PortfolioDetailRow], PortfolioAnalysisPreload]:
+    ) -> tuple[list[PortfolioDetailRow], PortfolioAnalysisPreload]:
         holdings = self.store.list_holdings()
         symbols = [holding.symbol for holding in holdings]
         if use_live_prices:
@@ -103,14 +103,14 @@ class PortfolioDetailsService:
         elif not symbols:
             logger.info("Portfolio empty (no holdings in database)")
         documents = self._load_documents(symbols)
-        stats_cache: Dict[str, Optional[StockData]] = {}
-        live_prices: Dict[str, Optional[float]] = {}
-        previous_closes: Dict[str, Optional[float]] = {}
-        price_cache: Dict[str, PriceSnapshot] = {}
-        market_cache: Dict[str, Tuple[Optional[float], Optional[date], Optional[date]]] = {}
+        stats_cache: dict[str, StockData | None] = {}
+        live_prices: dict[str, float | None] = {}
+        previous_closes: dict[str, float | None] = {}
+        price_cache: dict[str, PriceSnapshot] = {}
+        market_cache: dict[str, tuple[float | None, date | None, date | None]] = {}
 
         with ThreadPoolExecutor(max_workers=8) as executor:
-            stats_futures = {
+            stats_futures: dict[Any, str] = {
                 executor.submit(
                     load_portfolio_statistics_stock,
                     symbol,
@@ -118,16 +118,14 @@ class PortfolioDetailsService:
                 ): symbol
                 for symbol in symbols
             }
-            price_futures = {}
-            previous_close_futures = {}
+            price_futures: dict[Any, str] = {}
+            previous_close_futures: dict[Any, str] = {}
             if use_live_prices:
                 price_futures = {
-                    executor.submit(fetch_latest_market_price, symbol): symbol
-                    for symbol in symbols
+                    executor.submit(fetch_latest_market_price, symbol): symbol for symbol in symbols
                 }
                 previous_close_futures = {
-                    executor.submit(fetch_previous_close, symbol): symbol
-                    for symbol in symbols
+                    executor.submit(fetch_previous_close, symbol): symbol for symbol in symbols
                 }
             for future in as_completed(stats_futures):
                 symbol = stats_futures[future]
@@ -195,8 +193,8 @@ class PortfolioDetailsService:
             if income is not None
         )
 
-        rows: List[PortfolioDetailRow] = []
-        resolved_stock_cache: Dict[str, StockData] = {}
+        rows: list[PortfolioDetailRow] = []
+        resolved_stock_cache: dict[str, StockData] = {}
         for holding in holdings:
             stats = stats_cache.get(holding.symbol)
             live_price = live_prices.get(holding.symbol)
@@ -245,28 +243,24 @@ class PortfolioDetailsService:
             )
         return rows, preload
 
-    def _load_documents(self, symbols: List[str]) -> Dict[str, StockDocument]:
+    def _load_documents(self, symbols: list[str]) -> dict[str, StockDocument]:
         from services.shared_market_db import load_documents
 
         return load_documents(symbols)
 
     @staticmethod
     def _previous_close_from_history(
-        price_history,
+        price_history: list[Any] | None,
         *,
-        as_of: Optional[date] = None,
-    ) -> Optional[float]:
+        as_of: date | None = None,
+    ) -> float | None:
         """Prior session close from stored daily bars (day-change without a live quote)."""
         if not price_history:
             return None
 
         today = as_of or date.today()
         bars = sorted(
-            (
-                point
-                for point in price_history
-                if point.close is not None and point.close > 0
-            ),
+            (point for point in price_history if point.close is not None and point.close > 0),
             key=lambda point: point.date,
         )
         if not bars:
@@ -279,9 +273,9 @@ class PortfolioDetailsService:
 
     def _fill_previous_closes_from_history(
         self,
-        symbols: List[str],
-        documents: Dict[str, StockDocument],
-        previous_closes: Dict[str, Optional[float]],
+        symbols: list[str],
+        documents: dict[str, StockDocument],
+        previous_closes: dict[str, float | None],
     ) -> None:
         for symbol in symbols:
             if previous_closes.get(symbol) is not None:
@@ -295,22 +289,20 @@ class PortfolioDetailsService:
 
     def enrich_rows_previous_close(
         self,
-        rows: List[PortfolioDetailRow],
-    ) -> List[PortfolioDetailRow]:
+        rows: list[PortfolioDetailRow],
+    ) -> list[PortfolioDetailRow]:
         """Fill missing previous_close from stored price history (cached sessions)."""
         missing = [row.ticker for row in rows if row.previous_close is None]
         if not missing:
             return rows
         documents = self._load_documents(missing)
-        enriched: List[PortfolioDetailRow] = []
+        enriched: list[PortfolioDetailRow] = []
         for row in rows:
             if row.previous_close is not None:
                 enriched.append(row)
                 continue
             document = documents.get(row.ticker)
-            prior = self._previous_close_from_history(
-                document.price_history if document else None
-            )
+            prior = self._previous_close_from_history(document.price_history if document else None)
             if prior is None:
                 enriched.append(row)
             else:
@@ -320,28 +312,24 @@ class PortfolioDetailsService:
     def _build_row(
         self,
         holding: PortfolioHolding,
-        stats: Optional[StockData],
-        document: Optional[StockDocument],
-        live_price: Optional[float],
+        stats: StockData | None,
+        document: StockDocument | None,
+        live_price: float | None,
         prices: PriceSnapshot,
         total_value: float,
         total_acquisition: float,
         total_income: float,
-        price_to_fcf: Optional[float],
-        dividend_pay_date: Optional[date],
-        ex_dividend_date: Optional[date],
+        price_to_fcf: float | None,
+        dividend_pay_date: date | None,
+        ex_dividend_date: date | None,
         has_db_stats: bool,
         *,
         use_live_prices: bool = False,
-        previous_close: Optional[float] = None,
+        previous_close: float | None = None,
     ) -> PortfolioDetailRow:
         current_price = live_price
         current_value = current_price * holding.shares if current_price is not None else None
-        profit = (
-            current_value - holding.acquisition_value
-            if current_value is not None
-            else None
-        )
+        profit = current_value - holding.acquisition_value if current_value is not None else None
         profit_pct = (
             (profit / holding.acquisition_value) * 100
             if profit is not None and holding.acquisition_value
@@ -361,14 +349,10 @@ class PortfolioDetailsService:
             else None
         )
         acquisition_share_pct = (
-            (holding.acquisition_value / total_acquisition) * 100
-            if total_acquisition
-            else None
+            (holding.acquisition_value / total_acquisition) * 100 if total_acquisition else None
         )
         growth_years = (
-            stats.dividend_history.consecutive_years
-            if stats and stats.dividend_history
-            else None
+            stats.dividend_history.consecutive_years if stats and stats.dividend_history else None
         )
         ex_date = ex_dividend_date
         if ex_date is None and stats and stats.dividend_history:
@@ -426,21 +410,19 @@ class PortfolioDetailsService:
     @staticmethod
     def _annual_income(
         holding: PortfolioHolding,
-        stock: Optional[StockData],
-        document: Optional[StockDocument] = None,
-    ) -> Optional[float]:
-        dividend_per_share = PortfolioDetailsService._dividend_per_share(
-            stock, document
-        )
+        stock: StockData | None,
+        document: StockDocument | None = None,
+    ) -> float | None:
+        dividend_per_share = PortfolioDetailsService._dividend_per_share(stock, document)
         if dividend_per_share is None:
             return None
         return dividend_per_share * holding.shares
 
     @staticmethod
     def _dividend_per_share(
-        stock: Optional[StockData],
-        document: Optional[StockDocument] = None,
-    ) -> Optional[float]:
+        stock: StockData | None,
+        document: StockDocument | None = None,
+    ) -> float | None:
         from utils.dividend_amounts import resolve_annual_dividend_per_share
 
         records = document.dividend_history if document and document.dividend_history else []
@@ -448,8 +430,8 @@ class PortfolioDetailsService:
 
     @staticmethod
     def _format_computed_dividend(
-        dividend_per_share: Optional[float],
-        dividend_yield_pct: Optional[float],
+        dividend_per_share: float | None,
+        dividend_yield_pct: float | None,
     ) -> str:
         if dividend_per_share is None and dividend_yield_pct is None:
             return "N/A"
@@ -460,7 +442,7 @@ class PortfolioDetailsService:
         return f"{dividend_per_share:.2f} ({dividend_yield_pct:.2f}%)"
 
     @staticmethod
-    def _format_analyst_rating(stock: Optional[StockData], score: int) -> str:
+    def _format_analyst_rating(stock: StockData | None, score: int) -> str:
         if stock and stock.analyst_rating:
             rating = stock.analyst_rating.strip().upper()
             if rating in {"BUY", "STRONG_BUY", "STRONG BUY"}:
@@ -484,8 +466,8 @@ class PortfolioDetailsService:
     def _get_price_snapshot(
         self,
         symbol: str,
-        live_price: Optional[float],
-        document: Optional[StockDocument],
+        live_price: float | None,
+        document: StockDocument | None,
     ) -> PriceSnapshot:
         if document and document.price_history:
             snapshot = self._price_snapshot_from_history(
@@ -499,9 +481,9 @@ class PortfolioDetailsService:
 
     @staticmethod
     def _price_snapshot_from_history(
-        price_history,
-        current_price: Optional[float],
-    ) -> Optional[PriceSnapshot]:
+        price_history: list[Any],
+        current_price: float | None,
+    ) -> PriceSnapshot | None:
         if not price_history:
             return None
 
@@ -517,8 +499,12 @@ class PortfolioDetailsService:
             return None
 
         medium_365 = PortfolioDetailsService._mean_close_from_points(closes, today, 365)
-        price_180 = PortfolioDetailsService._close_on_or_before_points(closes, today - timedelta(days=180))
-        price_365 = PortfolioDetailsService._close_on_or_before_points(closes, today - timedelta(days=365))
+        price_180 = PortfolioDetailsService._close_on_or_before_points(
+            closes, today - timedelta(days=180)
+        )
+        price_365 = PortfolioDetailsService._close_on_or_before_points(
+            closes, today - timedelta(days=365)
+        )
 
         return PriceSnapshot(
             medium_price_365d=medium_365,
@@ -560,9 +546,9 @@ class PortfolioDetailsService:
     def _get_market_extras(
         self,
         symbol: str,
-        stats: Optional[StockData],
-        document: Optional[StockDocument],
-    ) -> Tuple[Optional[float], Optional[date], Optional[date]]:
+        stats: StockData | None,
+        document: StockDocument | None,
+    ) -> tuple[float | None, date | None, date | None]:
         pay_date = None
         ex_date = None
         if document and document.dividend_history:
@@ -583,8 +569,8 @@ class PortfolioDetailsService:
     @lru_cache(maxsize=128)
     def _fetch_market_extras(
         symbol: str,
-        ex_date: Optional[date],
-    ) -> Tuple[Optional[float], Optional[date], Optional[date]]:
+        ex_date: date | None,
+    ) -> tuple[float | None, date | None, date | None]:
         try:
             info = yf.Ticker(symbol).info or {}
         except Exception:
@@ -602,7 +588,9 @@ class PortfolioDetailsService:
         return price_to_fcf, pay_date, ex_date or fetched_ex
 
     @staticmethod
-    def _mean_close_from_points(points, end_date: date, window_days: int) -> Optional[float]:
+    def _mean_close_from_points(
+        points: list[Any], end_date: date, window_days: int
+    ) -> float | None:
         start_date = end_date - timedelta(days=window_days)
         window = [point.close for point in points if start_date <= point.date <= end_date]
         if not window:
@@ -610,14 +598,14 @@ class PortfolioDetailsService:
         return float(sum(window) / len(window))
 
     @staticmethod
-    def _close_on_or_before_points(points, target_date: date) -> Optional[float]:
+    def _close_on_or_before_points(points: list[Any], target_date: date) -> float | None:
         eligible = [point for point in points if point.date <= target_date]
         if not eligible:
             return None
         return float(eligible[-1].close)
 
     @staticmethod
-    def _mean_close(closes, end_date: date, window_days: int) -> Optional[float]:
+    def _mean_close(closes: Any, end_date: date, window_days: int) -> float | None:
         start_date = end_date - timedelta(days=window_days)
         window = closes[closes.index.date >= start_date]
         if window.empty:
@@ -625,20 +613,20 @@ class PortfolioDetailsService:
         return float(window.mean())
 
     @staticmethod
-    def _close_on_or_before(closes, target_date: date) -> Optional[float]:
+    def _close_on_or_before(closes: Any, target_date: date) -> float | None:
         eligible = closes[closes.index.date <= target_date]
         if eligible.empty:
             return None
         return float(eligible.iloc[-1])
 
     @staticmethod
-    def _pct_change(current: float, prior: Optional[float]) -> Optional[float]:
+    def _pct_change(current: float, prior: float | None) -> float | None:
         if prior is None or prior == 0:
             return None
         return ((current / prior) - 1) * 100
 
     @staticmethod
-    def _parse_timestamp(value) -> Optional[date]:
+    def _parse_timestamp(value: Any) -> date | None:
         if value in (None, 0, "0"):
             return None
         try:

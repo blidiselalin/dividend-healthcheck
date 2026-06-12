@@ -8,7 +8,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any
 
 from config import DATA_DIR
 from db.connection import open_portfolio_db, use_cloud_sql
@@ -29,8 +29,8 @@ def _default_seed() -> bool:
 
 DIVIDEND_INCOME_DB_PATH = DATA_DIR / "portfolio.db"
 
-# (year, month, net_dividend_usd) — net = brut × (1 − tax_rate)
-DIVIDEND_NET_SEED: List[Tuple[int, int, float]] = [
+# (year, month, net_dividend_usd) — net = brut x (1 - tax_rate)
+DIVIDEND_NET_SEED: list[tuple[int, int, float]] = [
     (2022, 12, 3.24),
     (2023, 1, 20.05),
     (2023, 2, 19.95),
@@ -124,9 +124,9 @@ class DividendIncomeStore:
 
     def __init__(
         self,
-        db_path: Optional[Path] = None,
+        db_path: Path | None = None,
         *,
-        seed: Optional[bool] = None,
+        seed: bool | None = None,
     ) -> None:
         self.db_path = Path(db_path or _default_db_path())
         if not use_cloud_sql():
@@ -137,7 +137,7 @@ class DividendIncomeStore:
             self._seed_if_empty()
             self.sync_seed()
 
-    def _connect(self):
+    def _connect(self) -> Any:
         return open_portfolio_db(self.db_path)
 
     def _ensure_schema(self) -> None:
@@ -199,7 +199,7 @@ class DividendIncomeStore:
                         (key, year, month, net_usd),
                     )
 
-    def list_dividends(self) -> List[MonthlyNetDividend]:
+    def list_dividends(self) -> list[MonthlyNetDividend]:
         with self._connect() as connection:
             if connection.is_postgres:
                 rows = connection.execute(
@@ -220,7 +220,7 @@ class DividendIncomeStore:
                     """
                 ).fetchall()
 
-        records: List[MonthlyNetDividend] = []
+        records: list[MonthlyNetDividend] = []
         for row in rows:
             year = int(row["year"])
             month = int(row["month"])

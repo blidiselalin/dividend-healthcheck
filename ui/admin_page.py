@@ -4,8 +4,9 @@ Consolidated admin console — market library, history pipelines, and database t
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
-from typing import Any, Dict, Optional
+from typing import Any
 
 import streamlit as st
 
@@ -21,12 +22,14 @@ from services.deferred_startup import (
     schedule_price_refresh,
     visible_jobs,
 )
-from ui.market_library_cache import cached_thin_history_summary, clear_thin_history_summary_cache
 from services.price_refresh_scheduler import scheduler_status
 from services.shared_market_db import shared_market_db_status
 from services.sp500_peers_service import coverage_stats, top_dividend_coverage_stats
 from ui.db_admin_panel import render_database_admin_tabs
+from ui.market_library_cache import cached_thin_history_summary, clear_thin_history_summary_cache
 from ui.theme import render_notice
+
+logger = logging.getLogger(__name__)
 
 _ADMIN_VIEW_KEY = "admin_console_active"
 
@@ -86,9 +89,7 @@ def render_admin_page_if_active() -> bool:
             navigate_to_portfolio_home()
     with head_right:
         st.markdown("### Admin console")
-        st.caption(
-            "Shared market library, history pipelines, and database inspection"
-        )
+        st.caption("Shared market library, history pipelines, and database inspection")
     _render_status_metrics()
     _render_background_jobs_panel()
 
@@ -151,7 +152,7 @@ def _inject_admin_styles() -> None:
     )
 
 
-def _library_status() -> Dict[str, Any]:
+def _library_status() -> dict[str, Any]:
     status = dict(st.session_state.get("market_db_status") or {})
     if "document_count" not in status:
         try:
@@ -162,7 +163,7 @@ def _library_status() -> Dict[str, Any]:
     return status
 
 
-def _coverage_from_status(status: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, Any]]:
+def _coverage_from_status(status: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """Read coverage KPIs from session; avoid repeated DB counts on every paint."""
     sp_cov = status.get("sp500_coverage")
     top_cov = status.get("top_dividend_coverage")
@@ -224,10 +225,12 @@ def _render_status_metrics() -> None:
     )
     c4.metric("Yield-ready symbols", f"{yield_ready}/{total_symbols or '—'}")
     c5.metric("Need backfill", thin_count)
-    st.caption(f"Storage: **{storage}** · Jobs run in the background so the portfolio UI stays responsive.")
+    st.caption(
+        f"Storage: **{storage}** · Jobs run in the background so the portfolio UI stays responsive."
+    )
 
 
-@st.fragment(run_every=timedelta(seconds=2))
+@st.fragment(run_every=timedelta(seconds=2))  # type: ignore[misc]
 def _admin_jobs_poll_fragment() -> None:
     applied = apply_background_results()
     jobs = visible_jobs(admin=True)
@@ -310,7 +313,7 @@ def _render_overview_tab() -> None:
         st.caption("Completed admin job summaries will appear here after the first run.")
 
 
-def _format_job_summary(payload: Dict[str, Any]) -> str:
+def _format_job_summary(payload: dict[str, Any]) -> str:
     if not payload:
         return "—"
     parts = []
@@ -320,9 +323,7 @@ def _format_job_summary(payload: Dict[str, Any]) -> str:
     coverage = payload.get("coverage")
     if isinstance(coverage, dict):
         if "analysed_sp500" in coverage:
-            parts.append(
-                f"sp500={coverage.get('analysed_sp500')}/{coverage.get('universe_total')}"
-            )
+            parts.append(f"sp500={coverage.get('analysed_sp500')}/{coverage.get('universe_total')}")
         if "analysed_top_dividend" in coverage:
             parts.append(
                 f"top_div={coverage.get('analysed_top_dividend')}/{coverage.get('universe_total')}"
@@ -337,9 +338,9 @@ def _render_market_library_tab() -> None:
     refresh_status = scheduler_status()
     if refresh_status.get("running"):
         last_run = refresh_status.get("last_run_at") or "not yet"
+        interval_mins = refresh_status.get("interval_seconds", 300) // 60
         st.caption(
-            f"Automatic price refresh every **{refresh_status.get('interval_seconds', 300) // 60} minutes** "
-            f"(last run: {last_run})."
+            f"Automatic price refresh every **{interval_mins} minutes** (last run: {last_run})."
         )
     else:
         st.caption(
@@ -351,7 +352,8 @@ def _render_market_library_tab() -> None:
         """
         <div class="ds-admin-card">
             <h4>Shared analysed-stocks library</h4>
-            <p>Populate and refresh the shared S&P library used by every user for charts, peers, and portfolio analysis.</p>
+            <p>Populate and refresh the shared S&P library used by every user for
+            charts, peers, and portfolio analysis.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -439,7 +441,8 @@ def _render_history_tab() -> None:
         """
         <div class="ds-admin-card">
             <h4>Price &amp; dividend history</h4>
-            <p>Backfill thin JSONB history, then sync into normalized tables for database-first yield charts.</p>
+            <p>Backfill thin JSONB history, then sync into normalized tables
+            for database-first yield charts.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -453,8 +456,8 @@ def _render_history_tab() -> None:
                 f"**{thin['yield_ready']}/{thin['total']}** yield-ready in the library.",
                 kind="warning",
             )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Failed to get thin history summary: %s", exc)
 
     col_backfill, col_sync = st.columns(2)
 

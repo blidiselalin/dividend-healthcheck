@@ -6,10 +6,13 @@ Uses ``MultiSourceEnricher``: Yahoo Finance → SEC EDGAR → Stooq (all free, n
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 try:
-    from data_ingestion.providers.composite import MultiSourceEnricher, default_providers
+    from data_ingestion.providers.composite import (
+        MultiSourceEnricher,
+        default_providers,
+    )
 
     ENRICHER_AVAILABLE = True
 except ImportError:
@@ -17,19 +20,19 @@ except ImportError:
     MultiSourceEnricher = None  # type: ignore[misc, assignment]
 
 
-def create_stock_enricher(request_delay: float = 0.35) -> "MultiSourceEnricher":
+def create_stock_enricher(request_delay: float = 0.35) -> MultiSourceEnricher:
     """Return the shared multi-source enricher (Yahoo + SEC + Stooq)."""
     if not ENRICHER_AVAILABLE:
         raise RuntimeError("Stock enricher dependencies are not installed")
     return MultiSourceEnricher(request_delay=request_delay)
 
 
-def provider_status() -> List[Dict[str, Any]]:
+def provider_status() -> list[dict[str, Any]]:
     """Report which market-data providers are active (all should be on when deps exist)."""
     if not ENRICHER_AVAILABLE:
         return []
 
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for provider in default_providers():
         rows.append(
             {
@@ -42,7 +45,7 @@ def provider_status() -> List[Dict[str, Any]]:
     return rows
 
 
-def log_provider_status(logger) -> None:
+def log_provider_status(logger: Any) -> None:
     """Log configured market data providers at INFO level."""
     for row in provider_status():
         state = "on" if row["available"] else "off"

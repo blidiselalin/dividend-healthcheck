@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import statistics
+from collections.abc import Mapping, Sequence
 from datetime import date
-from typing import Dict, Mapping, Optional, Sequence
+from typing import Any
 
 
 def annualize_year_payments(payments: Sequence[float]) -> float:
@@ -26,18 +27,15 @@ def annualize_year_payments(payments: Sequence[float]) -> float:
 
 def annual_totals_from_payments(
     year_to_payments: Mapping[int, Sequence[float]],
-) -> Dict[int, float]:
+) -> dict[int, float]:
     """Convert per-year payment lists into normalized annual dividend totals."""
-    return {
-        year: annualize_year_payments(payments)
-        for year, payments in year_to_payments.items()
-    }
+    return {year: annualize_year_payments(payments) for year, payments in year_to_payments.items()}
 
 
 def calculate_consecutive_increase_years(
     annual_totals: Mapping[int, float],
     *,
-    reference_date: Optional[date] = None,
+    reference_date: date | None = None,
 ) -> int:
     """Count consecutive years of maintained or increased annual dividends."""
     if not annual_totals:
@@ -67,9 +65,9 @@ def calculate_consecutive_increase_years(
 
 def resolve_consecutive_years(
     *,
-    curated_years: Optional[int] = None,
-    annual_totals: Optional[Mapping[int, float]] = None,
-    reference_date: Optional[date] = None,
+    curated_years: int | None = None,
+    annual_totals: Mapping[int, float] | None = None,
+    reference_date: date | None = None,
 ) -> int:
     """Prefer curated streak data and never downgrade below computed history."""
     computed = (
@@ -87,7 +85,7 @@ def resolve_consecutive_years(
     return max(curated_years, computed)
 
 
-def apply_dividend_streak_to_document(doc) -> None:
+def apply_dividend_streak_to_document(doc: Any) -> None:
     """Refresh dividend_streak_years from curated data and payment history."""
     curated = doc.dividend_streak_years
     records = doc.dividend_history
@@ -95,13 +93,11 @@ def apply_dividend_streak_to_document(doc) -> None:
         doc.dividend_streak_years = 0
         return
 
-    year_to_payments: Dict[int, list[float]] = {}
+    year_to_payments: dict[int, list[float]] = {}
     for record in records or []:
         year_to_payments.setdefault(record.ex_date.year, []).append(record.amount)
 
-    annual_totals = (
-        annual_totals_from_payments(year_to_payments) if year_to_payments else None
-    )
+    annual_totals = annual_totals_from_payments(year_to_payments) if year_to_payments else None
     doc.dividend_streak_years = resolve_consecutive_years(
         curated_years=curated,
         annual_totals=annual_totals,

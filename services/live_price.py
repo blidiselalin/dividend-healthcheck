@@ -5,12 +5,12 @@ Fetch and apply live market prices on top of vector-DB snapshots.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-def _read_fast_info_value(fast_info: Any, key: str) -> Optional[float]:
+def _read_fast_info_value(fast_info: Any, key: str) -> float | None:
     """Read a numeric field from yfinance FastInfo (dict-like or attribute)."""
     value = None
     if hasattr(fast_info, "get"):
@@ -29,7 +29,7 @@ def _read_fast_info_value(fast_info: Any, key: str) -> Optional[float]:
     return price if price > 0 else None
 
 
-def fetch_latest_market_price(symbol: str) -> Optional[float]:
+def fetch_latest_market_price(symbol: str) -> float | None:
     """
     Fetch the latest trade price from Yahoo Finance.
 
@@ -70,7 +70,7 @@ def fetch_latest_market_price(symbol: str) -> Optional[float]:
     return None
 
 
-def fetch_previous_close(symbol: str) -> Optional[float]:
+def fetch_previous_close(symbol: str) -> float | None:
     """Previous session close from Yahoo Finance (for day-change on holdings)."""
     symbol = (symbol or "").strip().upper()
     if not symbol:

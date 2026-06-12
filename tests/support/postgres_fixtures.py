@@ -12,7 +12,9 @@ _postgres_reachable: bool | None = None
 
 def postgres_configured() -> bool:
     return bool(
-        (os.environ.get("DATABASE_URL") or os.environ.get("DIVIDENDSCOPE_DATABASE_URL") or "").strip()
+        (
+            os.environ.get("DATABASE_URL") or os.environ.get("DIVIDENDSCOPE_DATABASE_URL") or ""
+        ).strip()
     )
 
 
@@ -37,7 +39,7 @@ def postgres_reachable() -> bool:
 
 
 @pytest.fixture
-def postgres_env(monkeypatch):
+def postgres_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Enable Postgres mode for tests that mock the database layer."""
     monkeypatch.delenv("PYTEST_USE_SQLITE", raising=False)
     monkeypatch.setenv("DATABASE_URL", "postgresql://mock:mock@127.0.0.1:59999/mockdb")
@@ -51,7 +53,7 @@ def postgres_env(monkeypatch):
 
 
 @pytest.fixture(autouse=False)
-def reset_db_connection_state():
+def reset_db_connection_state() -> None:
     """Clear connection pool between tests so schema can re-apply cleanly."""
     import db.connection as db
 
@@ -68,6 +70,6 @@ def pg_user_id() -> str:
 
 
 @pytest.fixture
-def skip_without_postgres():
+def skip_without_postgres() -> None:
     if not postgres_reachable():
         pytest.skip("PostgreSQL unavailable — integration test requires a live DATABASE_URL")

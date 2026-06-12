@@ -8,7 +8,7 @@ Best for: price, dividends, history, baseline fundamentals.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Any
 
 from data_ingestion.base import BaseFetcher
 from data_ingestion.models import DataSource, DividendRecord, PriceHistory
@@ -46,7 +46,7 @@ class YahooFinanceProvider(BaseFetcher, StockDataProvider):
     def available(self) -> bool:
         return YFINANCE_AVAILABLE
 
-    def fetch(self, symbol: str) -> Optional[StockSnapshot]:
+    def fetch(self, symbol: str) -> StockSnapshot | None:
         if not self.available():
             return None
 
@@ -116,7 +116,7 @@ class YahooFinanceProvider(BaseFetcher, StockDataProvider):
             return None
 
     @staticmethod
-    def _info(ticker) -> Optional[dict]:
+    def _info(ticker: Any) -> dict[str, Any] | None:
         try:
             info = ticker.info
             return info if info else None
@@ -134,7 +134,7 @@ class YahooFinanceProvider(BaseFetcher, StockDataProvider):
                 return None
 
     @staticmethod
-    def _attach_history(ticker, snap: StockSnapshot) -> None:
+    def _attach_history(ticker: Any, snap: StockSnapshot) -> None:
         try:
             hist = ticker.history(period="10y", auto_adjust=True)
             if hist is not None and not hist.empty:
@@ -158,7 +158,7 @@ class YahooFinanceProvider(BaseFetcher, StockDataProvider):
                             adjusted_close=finite_float(row.get("Close"), default=close) or close,
                         )
                     )
-        except Exception:
+        except Exception:  # noqa: S110
             pass
 
         try:
@@ -170,5 +170,5 @@ class YahooFinanceProvider(BaseFetcher, StockDataProvider):
                         snap.dividend_history.append(
                             DividendRecord(ex_date=ex, payment_date=None, amount=float(amount))
                         )
-        except Exception:
+        except Exception:  # noqa: S110
             pass

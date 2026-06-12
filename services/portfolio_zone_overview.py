@@ -4,23 +4,21 @@ Portfolio-level dividend yield zone summary (Weiss methodology).
 
 from __future__ import annotations
 
-from utils.chart_theme import style_figure
-
-from typing import Dict, List, Optional, Tuple
+from typing import Any
 
 import pandas as pd
 
 from services.yield_channel_chart import YieldChannelData, YieldChannelService
+from utils.chart_theme import style_figure
 
 try:
     import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
 
     PLOTLY_AVAILABLE = True
 except ImportError:
     PLOTLY_AVAILABLE = False
 
-ZONE_CATEGORY_META: Dict[str, Dict[str, str]] = {
+ZONE_CATEGORY_META: dict[str, dict[str, str]] = {
     "green": {
         "label": "Green — Buy zone",
         "short": "Green",
@@ -60,15 +58,15 @@ def zone_to_category(zone: str) -> str:
 
 
 def build_zone_dataframe(
-    yield_channels: Dict[str, YieldChannelData],
+    yield_channels: dict[str, YieldChannelData],
     *,
-    labels: Optional[Dict[str, str]] = None,
-    weights: Optional[Dict[str, float]] = None,
+    labels: dict[str, str] | None = None,
+    weights: dict[str, float] | None = None,
 ) -> pd.DataFrame:
     """Build one row per holding with yield-zone fields."""
     labels = labels or {}
     weights = weights or {}
-    rows: List[dict] = []
+    rows: list[dict[str, Any]] = []
 
     for symbol, channel in sorted(yield_channels.items()):
         category = zone_to_category(channel.zone)
@@ -128,7 +126,7 @@ def build_zone_dataframe(
     )
 
 
-def summarize_categories(zone_df: pd.DataFrame) -> Dict[str, int]:
+def summarize_categories(zone_df: pd.DataFrame) -> dict[str, int]:
     """Count holdings per green / yellow / red."""
     if zone_df.empty:
         return {"green": 0, "yellow": 0, "red": 0, "unknown": 0}
@@ -141,15 +139,15 @@ def summarize_categories(zone_df: pd.DataFrame) -> Dict[str, int]:
     }
 
 
-def create_category_count_chart(zone_df: pd.DataFrame) -> Optional["go.Figure"]:
+def create_category_count_chart(zone_df: pd.DataFrame) -> go.Figure | None:
     """Donut chart of holdings by green / yellow / red."""
     if not PLOTLY_AVAILABLE or zone_df.empty:
         return None
 
     counts = summarize_categories(zone_df)
-    labels: List[str] = []
-    values: List[int] = []
-    colors: List[str] = []
+    labels: list[str] = []
+    values: list[int] = []
+    colors: list[str] = []
 
     for key in ("green", "yellow", "red"):
         count = counts[key]
@@ -169,7 +167,7 @@ def create_category_count_chart(zone_df: pd.DataFrame) -> Optional["go.Figure"]:
                 labels=labels,
                 values=values,
                 hole=0.45,
-                marker=dict(colors=colors),
+                marker={"colors": colors},
                 textinfo="label+percent",
                 hovertemplate="%{label}<br>%{value} holdings<extra></extra>",
             )
@@ -178,13 +176,13 @@ def create_category_count_chart(zone_df: pd.DataFrame) -> Optional["go.Figure"]:
     fig.update_layout(
         title="Holdings by yield zone",
         height=320,
-        margin=dict(t=50, b=20, l=20, r=20),
+        margin={"t": 50, "b": 20, "l": 20, "r": 20},
         showlegend=False,
     )
     return style_figure(fig)
 
 
-def create_position_zone_chart(zone_df: pd.DataFrame) -> Optional["go.Figure"]:
+def create_position_zone_chart(zone_df: pd.DataFrame) -> go.Figure | None:
     """Horizontal bar chart: each ticker colored by zone category."""
     if not PLOTLY_AVAILABLE or zone_df.empty:
         return None
@@ -198,9 +196,7 @@ def create_position_zone_chart(zone_df: pd.DataFrame) -> Optional["go.Figure"]:
             x=ordered["Percentile"],
             orientation="h",
             marker_color=ordered["Color"].tolist(),
-            customdata=ordered[
-                ["Ticker", "Zone", "Current Yield %", "Gap to Fair %"]
-            ].values,
+            customdata=ordered[["Ticker", "Zone", "Current Yield %", "Gap to Fair %"]].values,
             hovertemplate=(
                 "<b>%{customdata[0]}</b><br>"
                 "Zone: %{customdata[1]}<br>"
@@ -216,15 +212,15 @@ def create_position_zone_chart(zone_df: pd.DataFrame) -> Optional["go.Figure"]:
         xaxis_title="Historical yield percentile",
         yaxis_title="",
         height=max(400, 28 * len(ordered)),
-        margin=dict(l=10, r=10, t=50, b=40),
-        xaxis=dict(range=[0, 100]),
+        margin={"l": 10, "r": 10, "t": 50, "b": 40},
+        xaxis={"range": [0, 100]},
     )
     return style_figure(fig)
 
 
 def tickers_missing_zones(
-    all_symbols: List[str],
-    yield_channels: Dict[str, YieldChannelData],
-) -> List[str]:
+    all_symbols: list[str],
+    yield_channels: dict[str, YieldChannelData],
+) -> list[str]:
     """Symbols with no preloaded yield-channel data."""
     return [symbol for symbol in all_symbols if symbol not in yield_channels]

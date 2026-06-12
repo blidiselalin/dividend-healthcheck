@@ -1,13 +1,16 @@
 """Ensure production paths write to PostgreSQL, not local SQLite files."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 
-def test_vector_store_uses_postgres_when_database_url_set(postgres_env):
+def test_vector_store_uses_postgres_when_database_url_set(postgres_env: Any) -> None:
     from data_ingestion.vector_store import VectorStore
 
     with patch("db.postgres_market_store.PostgresMarketStore") as mock_pg:
@@ -17,7 +20,7 @@ def test_vector_store_uses_postgres_when_database_url_set(postgres_env):
         assert store._pg_store is not None
 
 
-def test_hourly_enrich_uses_shared_store(postgres_env):
+def test_hourly_enrich_uses_shared_store(postgres_env: Any) -> None:
     from services.hourly_market_update import enrich_stale_documents
 
     mock_store = MagicMock()
@@ -30,14 +33,15 @@ def test_hourly_enrich_uses_shared_store(postgres_env):
     mock_store.add_documents.assert_not_called()
 
 
-def test_price_refresh_uses_shared_store(postgres_env):
+def test_price_refresh_uses_shared_store(postgres_env: Any) -> None:
     from services.db_price_refresh import refresh_market_library_prices
 
     mock_store = MagicMock()
     mock_store.get_all_documents.return_value = []
 
-    with patch("services.shared_market_db.get_shared_vector_store", return_value=mock_store), patch(
-        "services.db_price_refresh._collect_symbols", return_value=[]
+    with (
+        patch("services.shared_market_db.get_shared_vector_store", return_value=mock_store),
+        patch("services.db_price_refresh._collect_symbols", return_value=[]),
     ):
         stats = refresh_market_library_prices(symbols=[])
 
@@ -45,7 +49,7 @@ def test_price_refresh_uses_shared_store(postgres_env):
     mock_store.add_documents.assert_not_called()
 
 
-def test_legacy_file_migration_skipped_when_postgres(postgres_env, tmp_path):
+def test_legacy_file_migration_skipped_when_postgres(postgres_env: Any, tmp_path: Path) -> None:
     from auth import migration
 
     user_dir = tmp_path / "users" / "owner"
@@ -55,7 +59,9 @@ def test_legacy_file_migration_skipped_when_postgres(postgres_env, tmp_path):
     assert migration.migrate_user_data_dir("old", "new") is False
 
 
-def test_portfolio_store_does_not_create_sqlite_dir(postgres_env, tmp_path, monkeypatch):
+def test_portfolio_store_does_not_create_sqlite_dir(
+    postgres_env: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from data_ingestion.portfolio_store import PortfolioStore
 
     db_path = tmp_path / "users" / "u1" / "portfolio.db"

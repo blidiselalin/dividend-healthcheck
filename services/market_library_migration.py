@@ -12,7 +12,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +31,9 @@ class LegacyImportDiagnostics:
     postgres_document_count: int = 0
     postgres_ready_for_yield: int = 0
     message: str = ""
-    extra_paths_checked: List[str] = field(default_factory=list)
+    extra_paths_checked: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "data_dir": str(self.data_dir),
             "vectordb_dir": str(self.vectordb_dir),
@@ -49,7 +49,7 @@ class LegacyImportDiagnostics:
         }
 
 
-def candidate_vectordb_dirs(data_dir: Path) -> List[Path]:
+def candidate_vectordb_dirs(data_dir: Path) -> list[Path]:
     """Search order for legacy market library files."""
     data_dir = data_dir.expanduser()
     candidates = [
@@ -60,7 +60,7 @@ def candidate_vectordb_dirs(data_dir: Path) -> List[Path]:
     if home not in candidates:
         candidates.append(home)
     seen: set[str] = set()
-    ordered: List[Path] = []
+    ordered: list[Path] = []
     for path in candidates:
         key = str(path.resolve()) if path.exists() else str(path)
         if key not in seen:
@@ -74,20 +74,20 @@ def _chroma_present(path: Path) -> bool:
         return False
     if (path / "chroma.sqlite3").is_file():
         return True
-    return any(
-        child.is_dir() and (child / "chroma.sqlite3").is_file()
-        for child in path.iterdir()
+    return any(child.is_dir() and (child / "chroma.sqlite3").is_file() for child in path.iterdir())
+
+
+def diagnose_legacy_import(data_dir: Path) -> LegacyImportDiagnostics:  # noqa: C901
+    """Explain why legacy Chroma may not have reached PostgreSQL."""
+    from data_ingestion.vector_store import (
+        CHROMADB_AVAILABLE,
+        load_legacy_vectordb_documents,
     )
 
-
-def diagnose_legacy_import(data_dir: Path) -> LegacyImportDiagnostics:
-    """Explain why legacy Chroma may not have reached PostgreSQL."""
-    from data_ingestion.vector_store import CHROMADB_AVAILABLE, load_legacy_vectordb_documents
-
     data_dir = data_dir.expanduser()
-    checked: List[str] = []
+    checked: list[str] = []
     vectordb_dir = data_dir / "vectordb"
-    legacy_docs: List[Any] = []
+    legacy_docs: list[Any] = []
 
     for candidate in candidate_vectordb_dirs(data_dir):
         checked.append(str(candidate))
@@ -130,22 +130,30 @@ def diagnose_legacy_import(data_dir: Path) -> LegacyImportDiagnostics:
         )
     elif diag.legacy_document_count == 0:
         if diag.fallback_json:
-            diag.message = "fallback_store.json exists but parsed 0 documents — file may be empty or corrupt."
+            diag.message = (
+                "fallback_store.json exists but parsed 0 documents — file may be empty or corrupt."
+            )
         elif diag.chroma_sqlite and not diag.chromadb_available:
-            diag.message = "Chroma files found but chromadb package unavailable in this environment."
+            diag.message = (
+                "Chroma files found but chromadb package unavailable in this environment."
+            )
         elif diag.chroma_sqlite:
-            diag.message = "Chroma database exists but all collections are empty — run local ingest first."
+            diag.message = (
+                "Chroma database exists but all collections are empty — run local ingest first."
+            )
         else:
-            diag.message = f"Directory {vectordb_dir} exists but contains no Chroma or fallback_store.json."
+            diag.message = (
+                f"Directory {vectordb_dir} exists but contains no Chroma or fallback_store.json."
+            )
     elif diag.postgres_document_count == 0:
         diag.message = (
-            f"Found {diag.legacy_document_count} legacy documents but PostgreSQL stock_documents is empty — "
+            f"Found {diag.legacy_document_count} legacy documents but PostgreSQL stock_documents is empty — "  # noqa: E501
             "run: python scripts/migrate_to_cloud_sql.py --data-dir /data"
         )
     elif diag.postgres_ready_for_yield < diag.legacy_document_count:
         diag.message = (
             f"PostgreSQL has {diag.postgres_document_count} symbols but only "
-            f"{diag.postgres_ready_for_yield} are yield-ready; legacy has {diag.legacy_document_count} — "
+            f"{diag.postgres_ready_for_yield} are yield-ready; legacy has {diag.legacy_document_count} — "  # noqa: E501
             "re-import with merge to restore history."
         )
     else:
@@ -196,20 +204,20 @@ def import_already_recorded(data_dir: Path) -> bool:
     return path.is_file()
 
 
-def write_import_marker(data_dir: Path, stats: Dict[str, Any]) -> None:
+def write_import_marker(data_dir: Path, stats: dict[str, Any]) -> None:
     path = import_marker_path(data_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"finished_at": datetime.now().isoformat(timespec="seconds"), **stats}
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def import_legacy_market_library(
+def import_legacy_market_library(  # noqa: C901
     data_dir: Path,
     *,
-    vectordb_dir: Optional[Path] = None,
+    vectordb_dir: Path | None = None,
     merge_with_postgres: bool = True,
     force: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Import legacy Chroma/fallback JSON into PostgreSQL ``stock_documents``.
 
@@ -218,10 +226,13 @@ def import_legacy_market_library(
     from data_ingestion.vector_store import load_legacy_vectordb_documents
     from db.connection import ensure_schema, use_cloud_sql
     from db.postgres_market_store import PostgresMarketStore
-    from utils.stock_document_history import hydrate_document_history, yield_channel_ready
+    from utils.stock_document_history import (
+        hydrate_document_history,
+        yield_channel_ready,
+    )
 
     data_dir = data_dir.expanduser()
-    stats: Dict[str, Any] = {
+    stats: dict[str, Any] = {
         "imported": 0,
         "merged": 0,
         "skipped": 0,
@@ -241,11 +252,17 @@ def import_legacy_market_library(
     stats["diagnostics"] = diag.to_dict()
     stats["postgres_before"] = diag.postgres_document_count
 
-    if not force and import_already_recorded(data_dir) and diag.postgres_document_count > 0:
-        if diag.legacy_document_count <= diag.postgres_ready_for_yield:
-            stats["message"] = "Import marker present and Postgres looks complete — use --force to re-import"
-            stats["skipped"] = diag.legacy_document_count
-            return stats
+    if (
+        not force
+        and import_already_recorded(data_dir)
+        and diag.postgres_document_count > 0
+        and diag.legacy_document_count <= diag.postgres_ready_for_yield
+    ):
+        stats["message"] = (
+            "Import marker present and Postgres looks complete — use --force to re-import"
+        )
+        stats["skipped"] = diag.legacy_document_count
+        return stats
 
     source = vectordb_dir
     if source is None:
@@ -265,13 +282,13 @@ def import_legacy_market_library(
         return stats
 
     store = PostgresMarketStore()
-    existing_by_symbol: Dict[str, Any] = {}
+    existing_by_symbol: dict[str, Any] = {}
     if merge_with_postgres:
         for doc in store.get_all_documents():
             if doc.symbol:
                 existing_by_symbol[doc.symbol.upper()] = doc
 
-    to_write: List[Any] = []
+    to_write: list[Any] = []
     for doc in legacy_docs:
         sym = (doc.symbol or "").upper()
         if not sym:
@@ -316,7 +333,17 @@ def import_legacy_market_library(
         {
             "legacy_source": stats["legacy_source"],
             "written": len(to_write),
-            **{k: stats[k] for k in ("imported", "merged", "skipped", "errors", "postgres_after", "yield_ready_after")},
+            **{
+                k: stats[k]
+                for k in (
+                    "imported",
+                    "merged",
+                    "skipped",
+                    "errors",
+                    "postgres_after",
+                    "yield_ready_after",
+                )
+            },
         },
     )
     logger.info("Legacy market library import: %s", stats["message"])
@@ -327,7 +354,11 @@ def should_auto_import(data_dir: Path) -> bool:
     """True when legacy files exist but Postgres is empty or mostly missing history."""
     import os
 
-    if os.environ.get("DIVIDENDSCOPE_SKIP_LEGACY_IMPORT", "").strip().lower() in ("1", "true", "yes"):
+    if os.environ.get("DIVIDENDSCOPE_SKIP_LEGACY_IMPORT", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
         return False
     if import_already_recorded(data_dir):
         return False

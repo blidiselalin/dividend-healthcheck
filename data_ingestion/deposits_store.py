@@ -4,11 +4,10 @@ Monthly account deposits and portfolio value snapshots (PostgreSQL or SQLite).
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any
 
 from config import DATA_DIR
 from db.connection import open_portfolio_db, use_cloud_sql
@@ -30,7 +29,7 @@ def _default_seed() -> bool:
 DEPOSITS_DB_PATH = DATA_DIR / "portfolio.db"
 
 # (year, month, label, deposit_eur, deposit_usd, portfolio_eur)
-DEPOSITS_SEED: List[Tuple[int, int, str, float, float, float]] = [
+DEPOSITS_SEED: list[tuple[int, int, str, float, float, float]] = [
     (2022, 12, "December 2022", 6800.00, 7215.89, 6691.00),
     (2023, 1, "January 2023", 1500.00, 1631.40, 8519.38),
     (2023, 2, "February 2023", 4000.00, 4279.60, 12213.37),
@@ -97,9 +96,9 @@ class DepositsStore:
 
     def __init__(
         self,
-        db_path: Optional[Path] = None,
+        db_path: Path | None = None,
         *,
-        seed: Optional[bool] = None,
+        seed: bool | None = None,
     ) -> None:
         self.db_path = Path(db_path or _default_db_path())
         if not use_cloud_sql():
@@ -109,7 +108,7 @@ class DepositsStore:
         if do_seed:
             self._seed_if_empty()
 
-    def _connect(self):
+    def _connect(self) -> Any:
         return open_portfolio_db(self.db_path)
 
     def _ensure_schema(self) -> None:
@@ -147,9 +146,14 @@ class DepositsStore:
                     portfolio_eur,
                     index,
                 )
-                for index, (year, month, label, deposit_eur, deposit_usd, portfolio_eur) in enumerate(
-                    DEPOSITS_SEED, start=1
-                )
+                for index, (
+                    year,
+                    month,
+                    label,
+                    deposit_eur,
+                    deposit_usd,
+                    portfolio_eur,
+                ) in enumerate(DEPOSITS_SEED, start=1)
             ]
             connection.executemany(
                 """
@@ -161,7 +165,7 @@ class DepositsStore:
                 rows,
             )
 
-    def list_deposits(self) -> List[MonthlyDeposit]:
+    def list_deposits(self) -> list[MonthlyDeposit]:
         with self._connect() as connection:
             if connection.is_postgres:
                 rows = connection.execute(
@@ -258,7 +262,8 @@ class DepositsStore:
             else:
                 if connection.is_postgres:
                     max_order = connection.execute(
-                        "SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order FROM monthly_deposits WHERE user_id = ?",
+                        "SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order "
+                        "FROM monthly_deposits WHERE user_id = ?",
                         (connection.user_id,),
                     ).fetchone()
                     sort_order = int(max_order["next_order"])
@@ -322,4 +327,4 @@ class DepositsStore:
                     "DELETE FROM monthly_deposits WHERE period_key = ?",
                     (period_key,),
                 )
-            return cursor.rowcount > 0
+            return bool(cursor.rowcount > 0)

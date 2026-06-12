@@ -1,17 +1,17 @@
 """
-Helpers for adaptive yield-channel history windows (2–10 years).
+Helpers for adaptive yield-channel history windows (2-10 years).
 """
 
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, List, Optional, Sequence, Tuple
+from typing import Any
 
 import pandas as pd
 
 
-def _collect_history_dates(document: Any) -> List[date]:
-    dates: List[date] = []
+def _collect_history_dates(document: Any) -> list[date]:
+    dates: list[date] = []
     if document is None:
         return dates
     for point in getattr(document, "price_history", None) or []:
@@ -25,7 +25,7 @@ def _collect_history_dates(document: Any) -> List[date]:
     return dates
 
 
-def estimate_history_years(document: Any, *, minimum: int = 1) -> Optional[int]:
+def estimate_history_years(document: Any, *, minimum: int = 1) -> int | None:
     """Calendar years spanned by library price/dividend history."""
     dates = _collect_history_dates(document)
     if not dates:
@@ -50,7 +50,7 @@ def plan_yield_channel_attempts(
     document: Any,
     *,
     requested_years: int = 10,
-) -> List[Tuple[int, int, int]]:
+) -> list[tuple[int, int, int]]:
     """
     Return (years, min_price_rows, min_yield_rows) attempts from richest to leanest.
 
@@ -58,7 +58,7 @@ def plan_yield_channel_attempts(
     shorter windows so newer payers still get a chart.
     """
     available = estimate_history_years(document)
-    year_candidates: List[int] = []
+    year_candidates: list[int] = []
     for years in (requested_years, 7, 5, 3, 2):
         if years < 2:
             continue
@@ -67,8 +67,8 @@ def plan_yield_channel_attempts(
     if not year_candidates:
         year_candidates = [requested_years, 5, 3, 2]
 
-    attempts: List[Tuple[int, int, int]] = []
-    seen: set[Tuple[int, int, int]] = set()
+    attempts: list[tuple[int, int, int]] = []
+    seen: set[tuple[int, int, int]] = set()
     for years in year_candidates:
         for min_prices, min_yields in ((120, 60), (52, 26), (52, 13)):
             key = (years, min_prices, min_yields)

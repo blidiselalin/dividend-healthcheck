@@ -4,11 +4,11 @@ Portfolio allocation by sector and market-cap bucket.
 
 from __future__ import annotations
 
-from utils.chart_theme import style_figure
-
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+
+from utils.chart_theme import style_figure
 
 if TYPE_CHECKING:
     from services.portfolio_details_service import PortfolioDetailRow
@@ -20,41 +20,41 @@ try:
 except ImportError:
     PLOTLY_AVAILABLE = False
 
-BUCKET_ORDER = ["1–10B", "10–200B", ">200B", "<1B", "Unknown"]
+BUCKET_ORDER = ["1-10B", "10-200B", ">200B", "<1B", "Unknown"]
 BUCKET_LABELS = {
-    "1–10B": "$1B – $10B",
-    "10–200B": "$10B – $200B",
+    "1-10B": "$1B - $10B",
+    "10-200B": "$10B - $200B",
     ">200B": "> $200B",
     "<1B": "< $1B",
     "Unknown": "Unknown",
 }
 
 
-def classify_market_cap_bucket(market_cap: Optional[float]) -> str:
+def classify_market_cap_bucket(market_cap: float | None) -> str:
     """Classify market cap (USD) into portfolio buckets."""
     if market_cap is None or market_cap <= 0:
         return "Unknown"
     if market_cap < 1_000_000_000:
         return "<1B"
     if market_cap < 10_000_000_000:
-        return "1–10B"
+        return "1-10B"
     if market_cap < 200_000_000_000:
-        return "10–200B"
+        return "10-200B"
     return ">200B"
 
 
-def _position_value(row: "PortfolioDetailRow") -> float:
+def _position_value(row: PortfolioDetailRow) -> float:
     return row.current_value if row.current_value is not None else row.acquisition_value
 
 
 class PortfolioAllocationService:
     """Sector and market-cap allocation from loaded portfolio rows."""
 
-    def sector_allocation(self, rows: List["PortfolioDetailRow"]) -> pd.DataFrame:
+    def sector_allocation(self, rows: list[PortfolioDetailRow]) -> pd.DataFrame:
         if not rows:
             return pd.DataFrame()
 
-        groups: dict[str, dict] = {}
+        groups: dict[str, Any] = {}
         total = 0.0
         for row in rows:
             value = _position_value(row)
@@ -85,11 +85,11 @@ class PortfolioAllocationService:
             )
         return pd.DataFrame(records).sort_values("Weight %", ascending=False)
 
-    def market_cap_allocation(self, rows: List["PortfolioDetailRow"]) -> pd.DataFrame:
+    def market_cap_allocation(self, rows: list[PortfolioDetailRow]) -> pd.DataFrame:
         if not rows:
             return pd.DataFrame()
 
-        groups: dict[str, dict] = {}
+        groups: dict[str, Any] = {}
         total = 0.0
         for row in rows:
             value = _position_value(row)
@@ -124,7 +124,7 @@ class PortfolioAllocationService:
             )
         return pd.DataFrame(records)
 
-    def holdings_by_bucket(self, rows: List["PortfolioDetailRow"]) -> pd.DataFrame:
+    def holdings_by_bucket(self, rows: list[PortfolioDetailRow]) -> pd.DataFrame:
         """Per-holding detail for market-cap breakdown table."""
         records = []
         for row in rows:
@@ -148,7 +148,7 @@ class PortfolioAllocationService:
             na_position="last",
         )
 
-    def create_sector_pie(self, rows: List["PortfolioDetailRow"]):
+    def create_sector_pie(self, rows: list[PortfolioDetailRow]) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         df = self.sector_allocation(rows)
@@ -168,20 +168,20 @@ class PortfolioAllocationService:
         fig.update_layout(
             title="Sector allocation (by portfolio weight)",
             height=420,
-            margin=dict(t=50, b=20, l=20, r=20),
+            margin={"t": 50, "b": 20, "l": 20, "r": 20},
             showlegend=False,
         )
         return style_figure(fig)
 
-    def create_market_cap_pie(self, rows: List["PortfolioDetailRow"]):
+    def create_market_cap_pie(self, rows: list[PortfolioDetailRow]) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         df = self.market_cap_allocation(rows)
         if df.empty:
             return None
         colors = {
-            "1–10B": "#42a5f5",
-            "10–200B": "#66bb6a",
+            "1-10B": "#42a5f5",
+            "10-200B": "#66bb6a",
             ">200B": "#ab47bc",
             "<1B": "#ffa726",
             "Unknown": "#bdbdbd",
@@ -194,20 +194,20 @@ class PortfolioAllocationService:
                 marker_colors=[colors.get(b, "#9e9e9e") for b in df["Bucket"]],
                 textinfo="label+percent",
                 textposition="outside",
-                hovertemplate="<b>%{label}</b><br>%{percent}<br>$%{customdata:,.0f}<br>%{meta} holdings<extra></extra>",
+                hovertemplate="<b>%{label}</b><br>%{percent}<br>$%{customdata:,.0f}<br>%{meta} holdings<extra></extra>",  # noqa: E501
                 customdata=df["Value USD"],
                 meta=df["Positions"],
             )
         )
         fig.update_layout(
-            title="Market cap distribution ($1B–$10B · $10B–$200B · >$200B)",
+            title="Market cap distribution ($1B-$10B · $10B-$200B · >$200B)",
             height=420,
-            margin=dict(t=50, b=20, l=20, r=20),
+            margin={"t": 50, "b": 20, "l": 20, "r": 20},
             showlegend=False,
         )
         return style_figure(fig)
 
-    def create_sector_bar(self, rows: List["PortfolioDetailRow"]):
+    def create_sector_bar(self, rows: list[PortfolioDetailRow]) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         df = self.sector_allocation(rows)
@@ -230,6 +230,6 @@ class PortfolioAllocationService:
             title="Sector weights",
             xaxis_title="Portfolio weight %",
             height=max(320, 28 * len(ordered)),
-            margin=dict(t=50, b=40, l=10, r=40),
+            margin={"t": 50, "b": 40, "l": 10, "r": 40},
         )
         return style_figure(fig)

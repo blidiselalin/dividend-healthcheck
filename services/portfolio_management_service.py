@@ -8,15 +8,15 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from config import DELISTED_SYMBOLS
 from data_ingestion.deposits_store import DepositsStore, MonthlyDeposit
 from data_ingestion.portfolio_store import PortfolioHolding, PortfolioStore
 from data_ingestion.purchase_journal_store import PurchaseJournalStore, PurchaseRecord
 from services.portfolio_context import create_portfolio_context
-from services.portfolio_vector_sync import sync_portfolio_to_vector_db
 from services.portfolio_dividend_sync_service import sync_received_dividends
+from services.portfolio_vector_sync import sync_portfolio_to_vector_db
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class SymbolValidation:
     symbol: str
     valid: bool
     message: str
-    company_name: Optional[str] = None
+    company_name: str | None = None
 
 
 class PortfolioManagementService:
@@ -46,9 +46,9 @@ class PortfolioManagementService:
 
     def __init__(
         self,
-        portfolio: Optional[PortfolioStore] = None,
-        journal: Optional[PurchaseJournalStore] = None,
-        deposits: Optional[DepositsStore] = None,
+        portfolio: PortfolioStore | None = None,
+        journal: PurchaseJournalStore | None = None,
+        deposits: DepositsStore | None = None,
     ) -> None:
         if portfolio is None and journal is None and deposits is None:
             ctx = create_portfolio_context()
@@ -78,7 +78,7 @@ class PortfolioManagementService:
             return SymbolValidation(
                 normalized,
                 False,
-                "Use 1–10 characters: letters, digits, dot, or hyphen (e.g. KO, BRK.B).",
+                "Use 1-10 characters: letters, digits, dot, or hyphen (e.g. KO, BRK.B).",
             )
 
         try:
@@ -125,10 +125,10 @@ class PortfolioManagementService:
         avg_cost_per_share: float,
         commission: float = 0.0,
         dividends_paid: float = 0.0,
-        company_name: Optional[str] = None,
+        company_name: str | None = None,
         enrich_vector: bool = True,
         skip_validation: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Add a new holding and register it in the vector database."""
         normalized = self.normalize_symbol(symbol)
         if self.portfolio.holding_exists(normalized):
@@ -149,13 +149,13 @@ class PortfolioManagementService:
             dividends_paid=dividends_paid,
             company_name=resolved_name,
         )
-        vector_stats: Dict[str, Any] = {}
+        vector_stats: dict[str, Any] = {}
         if enrich_vector:
             vector_stats = sync_portfolio_to_vector_db(
                 enrich_missing=True,
                 symbols=[normalized],
             )
-        stats = sync_received_dividends(db_path=self.portfolio.db_path, symbols=[normalized])
+        sync_received_dividends(db_path=self.portfolio.db_path, symbols=[normalized])
         return {
             "holding": holding,
             "vector_sync": vector_stats,
@@ -166,7 +166,7 @@ class PortfolioManagementService:
         self,
         symbol: str,
         **fields: Any,
-    ) -> Optional[PortfolioHolding]:
+    ) -> PortfolioHolding | None:
         old_symbol = self.normalize_symbol(symbol)
         new_symbol = fields.get("symbol")
         if new_symbol:
@@ -180,11 +180,11 @@ class PortfolioManagementService:
         if ticker_changed:
             if self.portfolio.holding_exists(new_symbol):
                 raise ValueError(f"{new_symbol} is already in the portfolio.")
-            
+
             check = self.validate_symbol(new_symbol)
             if not check.valid:
                 raise ValueError(check.message)
-            
+
             if "company_name" not in fields or not fields["company_name"]:
                 fields["company_name"] = check.company_name
 
@@ -247,7 +247,7 @@ class PortfolioManagementService:
             raise ValueError(f"Add {normalized} to holdings before logging purchases.")
         record = self.journal.add_purchase(normalized, purchase_date, price_usd)
         sync_portfolio_to_vector_db(enrich_missing=False, symbols=[normalized])
-        stats = sync_received_dividends(db_path=self.portfolio.db_path, symbols=[normalized])
+        sync_received_dividends(db_path=self.portfolio.db_path, symbols=[normalized])
         return record
 
     def add_deposit(
@@ -269,38 +269,34 @@ class PortfolioManagementService:
             portfolio_eur=portfolio_eur,
         )
 
-    def list_deposits(self) -> List[MonthlyDeposit]:
+    def list_deposits(self) -> list[MonthlyDeposit]:
         return self.deposits.list_deposits()
 
-    def get_deposit(self, year: int, month: int) -> Optional[MonthlyDeposit]:
+    def get_deposit(self, year: int, month: int) -> MonthlyDeposit | None:
         period_key = f"{year:04d}-{month:02d}"
         for item in self.list_deposits():
             if item.period_key == period_key:
                 return item
         return None
 
-    def deposits_missing_portfolio_value(self) -> List[MonthlyDeposit]:
+    def deposits_missing_portfolio_value(self) -> list[MonthlyDeposit]:
         return [item for item in self.list_deposits() if item.portfolio_eur <= 0]
 
     @staticmethod
     def estimate_portfolio_eur_from_usd(
         value_usd: float,
-        deposit: Optional[MonthlyDeposit] = None,
+        deposit: MonthlyDeposit | None = None,
         *,
         default_fx: float = 0.92,
     ) -> float:
         """Convert a USD portfolio total to EUR using the month's deposit FX when available."""
         if value_usd <= 0:
             return 0.0
-        if (
-            deposit is not None
-            and deposit.deposit_eur > 0
-            and deposit.deposit_usd > 0
-        ):
+        if deposit is not None and deposit.deposit_eur > 0 and deposit.deposit_usd > 0:
             fx = deposit.deposit_eur / deposit.deposit_usd
         else:
             fx = default_fx
         return round(value_usd * fx, 2)
 
-    def list_holdings(self) -> List[PortfolioHolding]:
+    def list_holdings(self) -> list[PortfolioHolding]:
         return self.portfolio.list_holdings()

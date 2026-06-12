@@ -1,8 +1,11 @@
 """Tests for portfolio cache invalidation helpers."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from services.portfolio_refresh import invalidate_section_caches, make_section_refresher
 
@@ -11,12 +14,15 @@ def test_invalidate_dividend_growth_cache() -> None:
     mock_growth = MagicMock()
     mock_benchmark = MagicMock()
 
-    with patch(
-        "ui.portfolio_details_view._load_dividend_growth",
-        mock_growth,
-    ), patch(
-        "ui.portfolio_details_view._load_benchmark_comparison",
-        mock_benchmark,
+    with (
+        patch(
+            "ui.portfolio_details_view._load_dividend_growth",
+            mock_growth,
+        ),
+        patch(
+            "ui.portfolio_details_view._load_benchmark_comparison",
+            mock_benchmark,
+        ),
     ):
         invalidate_section_caches(["journal"])
         mock_growth.clear.assert_not_called()
@@ -33,16 +39,19 @@ def test_invalidate_dividend_growth_cache() -> None:
 def test_invalidate_all_clears_both_caches() -> None:
     mock_growth = MagicMock()
     mock_benchmark = MagicMock()
-    with patch("ui.portfolio_details_view._load_dividend_growth", mock_growth), patch(
-        "ui.portfolio_details_view._load_benchmark_comparison",
-        mock_benchmark,
+    with (
+        patch("ui.portfolio_details_view._load_dividend_growth", mock_growth),
+        patch(
+            "ui.portfolio_details_view._load_benchmark_comparison",
+            mock_benchmark,
+        ),
     ):
         invalidate_section_caches(["all"])
         mock_growth.clear.assert_called_once()
         mock_benchmark.clear.assert_called_once()
 
 
-def test_section_refresher_full_reload(monkeypatch) -> None:
+def test_section_refresher_full_reload(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_reload = MagicMock()
     mock_rerun = MagicMock()
     mock_spinner = MagicMock()

@@ -6,10 +6,14 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from config import PORTFOLIO_RISK_REFRESH_SECONDS
-from services.portfolio_attention_service import AttentionItem, AttentionSummary, PortfolioAttentionService
+from services.portfolio_attention_service import (
+    AttentionItem,
+    AttentionSummary,
+    PortfolioAttentionService,
+)
 from services.portfolio_details_service import PortfolioDetailsService
 
 if TYPE_CHECKING:
@@ -22,18 +26,18 @@ class PortfolioRiskMonitorService:
 
     def __init__(
         self,
-        attention: Optional[PortfolioAttentionService] = None,
-        details: Optional[PortfolioDetailsService] = None,
+        attention: PortfolioAttentionService | None = None,
+        details: PortfolioDetailsService | None = None,
     ) -> None:
         self._attention = attention or PortfolioAttentionService()
         self._details = details or PortfolioDetailsService()
 
     @staticmethod
     def is_stale(
-        checked_at: Optional[datetime],
+        checked_at: datetime | None,
         *,
         interval_seconds: int = PORTFOLIO_RISK_REFRESH_SECONDS,
-        now: Optional[datetime] = None,
+        now: datetime | None = None,
     ) -> bool:
         if checked_at is None:
             return True
@@ -42,15 +46,15 @@ class PortfolioRiskMonitorService:
 
     def load_portfolio_payload(
         self,
-    ) -> tuple[List["PortfolioDetailRow"], "PortfolioAnalysisPreload"]:
+    ) -> tuple[list[PortfolioDetailRow], PortfolioAnalysisPreload]:
         return self._details.build_rows_with_cache()
 
     def build_summary(
         self,
-        rows: List["PortfolioDetailRow"],
-        preload: "PortfolioAnalysisPreload",
+        rows: list[PortfolioDetailRow],
+        preload: PortfolioAnalysisPreload,
         *,
-        reference_date: Optional[date] = None,
+        reference_date: date | None = None,
         include_news: bool = False,
     ) -> AttentionSummary:
         news_by_symbol = None
@@ -67,16 +71,14 @@ class PortfolioRiskMonitorService:
         )
 
     @staticmethod
-    def summary_to_store(summary: AttentionSummary) -> Dict[str, Any]:
+    def summary_to_store(summary: AttentionSummary) -> dict[str, Any]:
         return {
             "reference_date": summary.reference_date.isoformat(),
             "risk_items": [
-                PortfolioRiskMonitorService._item_to_store(item)
-                for item in summary.risk_items
+                PortfolioRiskMonitorService._item_to_store(item) for item in summary.risk_items
             ],
             "dividend_items": [
-                PortfolioRiskMonitorService._item_to_store(item)
-                for item in summary.dividend_items
+                PortfolioRiskMonitorService._item_to_store(item) for item in summary.dividend_items
             ],
             "opportunity_items": [
                 PortfolioRiskMonitorService._item_to_store(item)
@@ -85,7 +87,9 @@ class PortfolioRiskMonitorService:
         }
 
     @staticmethod
-    def summary_from_store(data: Optional[Dict[str, Any]]) -> Optional[AttentionSummary]:
+    def summary_from_store(
+        data: dict[str, Any] | None,
+    ) -> AttentionSummary | None:
         if not data:
             return None
         ref_raw = data.get("reference_date")
@@ -117,13 +121,12 @@ class PortfolioRiskMonitorService:
         from services.portfolio_attention_service import split_legacy_attention_items
 
         legacy_items = [
-            PortfolioRiskMonitorService._item_from_store(item)
-            for item in data.get("items", [])
+            PortfolioRiskMonitorService._item_from_store(item) for item in data.get("items", [])
         ]
         return split_legacy_attention_items(legacy_items, ref)
 
     @staticmethod
-    def _item_to_store(item: AttentionItem) -> Dict[str, Any]:
+    def _item_to_store(item: AttentionItem) -> dict[str, Any]:
         payload = asdict(item)
         payload["categories"] = list(item.categories)
         payload["reasons"] = list(item.reasons)
@@ -134,7 +137,7 @@ class PortfolioRiskMonitorService:
         return payload
 
     @staticmethod
-    def _item_from_store(data: Dict[str, Any]) -> AttentionItem:
+    def _item_from_store(data: dict[str, Any]) -> AttentionItem:
         ex_raw = data.get("ex_date")
         pay_raw = data.get("pay_date")
         return AttentionItem(

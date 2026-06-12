@@ -4,10 +4,8 @@ Charts and summaries for net dividend income (after tax).
 
 from __future__ import annotations
 
-from utils.chart_theme import style_figure
-
 from dataclasses import dataclass
-from typing import List, Optional, Any
+from typing import Any
 
 import pandas as pd
 
@@ -17,6 +15,7 @@ from data_ingestion.dividend_income_store import (
     MonthlyNetDividend,
     dividend_tax_rate,
 )
+from utils.chart_theme import style_figure
 
 try:
     import plotly.graph_objects as go
@@ -40,13 +39,13 @@ class DividendIncomeSummary:
 
 
 class PortfolioDividendIncomeService:
-    def __init__(self, store: Optional[DividendIncomeStore] = None) -> None:
+    def __init__(self, store: DividendIncomeStore | None = None) -> None:
         self.store = store or DividendIncomeStore()
 
-    def list_dividends(self) -> List[MonthlyNetDividend]:
+    def list_dividends(self) -> list[MonthlyNetDividend]:
         return self.store.list_dividends()
 
-    def detail_dataframe(self, records: Optional[List[MonthlyNetDividend]] = None) -> pd.DataFrame:
+    def detail_dataframe(self, records: list[MonthlyNetDividend] | None = None) -> pd.DataFrame:
         items = records if records is not None else self.list_dividends()
         return pd.DataFrame(
             [
@@ -62,32 +61,34 @@ class PortfolioDividendIncomeService:
             ]
         )
 
-    def pivot_net_dataframe(self, records: Optional[List[MonthlyNetDividend]] = None) -> pd.DataFrame:
-        """Rows = month (Ian–Dec), columns = years (like spreadsheet)."""
+    def pivot_net_dataframe(self, records: list[MonthlyNetDividend] | None = None) -> pd.DataFrame:
+        """Rows = month (Ian–Dec), columns = years (like spreadsheet)."""  # noqa: RUF002
         items = records if records is not None else self.list_dividends()
         if not items:
             return pd.DataFrame()
 
         years = sorted({item.year for item in items})
-        matrix = {label: {year: None for year in years} for label in MONTH_LABELS}
+        matrix: dict[str, dict[int, float | None]] = {
+            label: {year: None for year in years} for label in MONTH_LABELS
+        }
         for item in items:
             matrix[item.month_label][item.year] = item.net_usd
 
         rows = []
         for label in MONTH_LABELS:
-            row = {"Month": label}
+            row: dict[str, Any] = {"Month": label}
             for year in years:
                 value = matrix[label][year]
                 row[str(year)] = value
             rows.append(row)
         return pd.DataFrame(rows)
 
-    def yearly_summary(self, records: Optional[List[MonthlyNetDividend]] = None) -> pd.DataFrame:
+    def yearly_summary(self, records: list[MonthlyNetDividend] | None = None) -> pd.DataFrame:
         items = records if records is not None else self.list_dividends()
         if not items:
             return pd.DataFrame()
 
-        by_year: dict[int, dict] = {}
+        by_year: dict[int, dict[str, Any]] = {}
         for item in items:
             bucket = by_year.setdefault(
                 item.year,
@@ -115,10 +116,10 @@ class PortfolioDividendIncomeService:
 
     def summarize(
         self,
-        records: Optional[List[MonthlyNetDividend]] = None,
+        records: list[MonthlyNetDividend] | None = None,
         *,
-        ytd_year: Optional[int] = None,
-        rows: Optional[List[Any]] = None,
+        ytd_year: int | None = None,
+        rows: list[Any] | None = None,
     ) -> DividendIncomeSummary:
         items = records if records is not None else self.list_dividends()
         if not items:
@@ -135,6 +136,7 @@ class PortfolioDividendIncomeService:
 
         if rows:
             from data_ingestion.dividend_income_store import dividend_tax_rate
+
             total_annual_gross = sum(row.annual_income or 0.0 for row in rows)
             tax_rate = dividend_tax_rate(year)
             estimated_annual_net = total_annual_gross * (1.0 - tax_rate)
@@ -154,7 +156,7 @@ class PortfolioDividendIncomeService:
             month_count=len(items),
         )
 
-    def timeline_dataframe(self, records: Optional[List[MonthlyNetDividend]] = None) -> pd.DataFrame:
+    def timeline_dataframe(self, records: list[MonthlyNetDividend] | None = None) -> pd.DataFrame:
         items = records if records is not None else self.list_dividends()
         cumulative = 0.0
         rows = []
@@ -170,7 +172,7 @@ class PortfolioDividendIncomeService:
             )
         return pd.DataFrame(rows)
 
-    def create_yearly_bar_chart(self, records: Optional[List[MonthlyNetDividend]] = None):
+    def create_yearly_bar_chart(self, records: list[MonthlyNetDividend] | None = None) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         yearly = self.yearly_summary(records)
@@ -191,11 +193,11 @@ class PortfolioDividendIncomeService:
             title="Net dividends per year",
             yaxis_title="USD net",
             height=380,
-            margin=dict(t=50, b=40),
+            margin={"t": 50, "b": 40},
         )
         return style_figure(fig)
 
-    def create_monthly_by_year_chart(self, records: Optional[List[MonthlyNetDividend]] = None):
+    def create_monthly_by_year_chart(self, records: list[MonthlyNetDividend] | None = None) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         items = records if records is not None else self.list_dividends()
@@ -229,12 +231,12 @@ class PortfolioDividendIncomeService:
             barmode="group",
             yaxis_title="USD net",
             height=420,
-            margin=dict(t=50, b=40),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            margin={"t": 50, "b": 40},
+            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
         )
         return style_figure(fig)
 
-    def create_cumulative_chart(self, records: Optional[List[MonthlyNetDividend]] = None):
+    def create_cumulative_chart(self, records: list[MonthlyNetDividend] | None = None) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         timeline = self.timeline_dataframe(records)
@@ -246,7 +248,7 @@ class PortfolioDividendIncomeService:
                 y=timeline["cumulative_net_usd"],
                 mode="lines+markers",
                 fill="tozeroy",
-                line=dict(color="#1565c0", width=2),
+                line={"color": "#1565c0", "width": 2},
                 hovertemplate="%{x}<br>Cumulative $%{y:,.2f}<extra></extra>",
             )
         )
@@ -254,12 +256,12 @@ class PortfolioDividendIncomeService:
             title="Cumulative net dividends (since inception)",
             yaxis_title="USD net cumulative",
             height=400,
-            margin=dict(t=50, b=120),
-            xaxis=dict(tickangle=-45),
+            margin={"t": 50, "b": 120},
+            xaxis={"tickangle": -45},
         )
         return style_figure(fig)
 
-    def create_heatmap_chart(self, records: Optional[List[MonthlyNetDividend]] = None):
+    def create_heatmap_chart(self, records: list[MonthlyNetDividend] | None = None) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         pivot = self.pivot_net_dataframe(records)
@@ -281,8 +283,8 @@ class PortfolioDividendIncomeService:
             )
         )
         fig.update_layout(
-            title="Net dividend heatmap ($) — month × year",
+            title="Net dividend heatmap ($) — month × year",  # noqa: RUF001
             height=400,
-            margin=dict(t=50, b=40),
+            margin={"t": 50, "b": 40},
         )
         return style_figure(fig)

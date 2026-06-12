@@ -1,4 +1,5 @@
 """Tests for adaptive yield-channel history planning."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -40,29 +41,29 @@ def _doc_with_years(years: int) -> StockDocument:
     return doc
 
 
-def test_estimate_history_years_none_without_document():
+def test_estimate_history_years_none_without_document() -> None:
     assert estimate_history_years(None) is None
 
 
-def test_plan_attempts_defaults_when_no_library():
+def test_plan_attempts_defaults_when_no_library() -> None:
     attempts = plan_yield_channel_attempts(None, requested_years=10)
     assert (10, 120, 60) in attempts
 
 
-def test_years_covered_by_frame_empty():
+def test_years_covered_by_frame_empty() -> None:
     assert years_covered_by_frame(pd.DataFrame()) == 0
 
 
-def test_yield_channel_history_label_short_term():
+def test_yield_channel_history_label_short_term() -> None:
     assert yield_channel_history_label(1, requested=10) == "short-term"
 
 
-def test_estimate_history_years_from_library():
+def test_estimate_history_years_from_library() -> None:
     doc = _doc_with_years(5)
     assert estimate_history_years(doc) == 5
 
 
-def test_plan_attempts_shortens_window_for_newer_payers():
+def test_plan_attempts_shortens_window_for_newer_payers() -> None:
     doc = _doc_with_years(3)
     attempts = plan_yield_channel_attempts(doc, requested_years=10)
     years = [item[0] for item in attempts]
@@ -71,12 +72,12 @@ def test_plan_attempts_shortens_window_for_newer_payers():
     assert (3, 52, 26) in attempts
 
 
-def test_years_covered_by_frame():
+def test_years_covered_by_frame() -> None:
     index = pd.date_range("2020-01-01", periods=520, freq="W")
     frame = pd.DataFrame({"Close": [100.0] * 520}, index=index)
     assert years_covered_by_frame(frame) == 10
 
 
-def test_yield_channel_history_label():
+def test_yield_channel_history_label() -> None:
     assert "10-year" in yield_channel_history_label(10)
     assert "available history" in yield_channel_history_label(4, requested=10)

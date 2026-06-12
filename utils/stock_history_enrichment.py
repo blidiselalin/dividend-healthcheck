@@ -4,14 +4,14 @@ Derive dividend yield and annual income from stored price/dividend history.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from data_ingestion.models import StockDocument
     from models.stock import StockData
 
 
-def latest_close_from_document(doc: "StockDocument") -> Optional[float]:
+def latest_close_from_document(doc: StockDocument) -> float | None:
     history = getattr(doc, "price_history", None) or []
     if not history:
         return None
@@ -25,9 +25,9 @@ def latest_close_from_document(doc: "StockDocument") -> Optional[float]:
 
 
 def compute_yield_from_annual_and_price(
-    annual_dividend: Optional[float],
-    price: Optional[float],
-) -> Optional[float]:
+    annual_dividend: float | None,
+    price: float | None,
+) -> float | None:
     try:
         annual = float(annual_dividend) if annual_dividend is not None else 0.0
         px = float(price) if price is not None else 0.0
@@ -39,16 +39,18 @@ def compute_yield_from_annual_and_price(
 
 
 def enrich_stock_data_from_history(
-    stock: "StockData",
-    document: Optional["StockDocument"],
+    stock: StockData,
+    document: StockDocument | None,
     *,
     prefer_history: bool = True,
-) -> Tuple["StockData", str]:
+) -> tuple[StockData, str]:
     """
     Fill missing dividend rate/yield from library dividend_history.
 
     Returns (stock, yield_source) where yield_source is "metadata" or "history".
     """
+    if not document:
+        return stock, "metadata"
 
     from utils.converters import _build_dividend_history
     from utils.dividend_amounts import resolve_annual_dividend_per_share

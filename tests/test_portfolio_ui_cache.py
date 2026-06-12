@@ -1,11 +1,15 @@
 """Portfolio UI cache staleness and session hydration."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 import pickle
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
+
+import pytest
 
 from services.portfolio_details_service import PortfolioDetailRow
 from services.portfolio_ui_cache import (
@@ -15,43 +19,43 @@ from services.portfolio_ui_cache import (
 )
 
 
-def _detail_row(**overrides) -> PortfolioDetailRow:
-    base = dict(
-        company="Coca-Cola",
-        ticker="KO",
-        market_cap=5_000_000_000,
-        pe_ratio=15.0,
-        shares=1.0,
-        current_price=55.0,
-        current_value=55.0,
-        avg_cost_per_share=50.0,
-        acquisition_value=50.0,
-        profit=5.0,
-        profit_pct=10.0,
-        estimated_avg_price=50.0,
-        medium_price_365d=52.0,
-        price_180d=54.0,
-        price_365d=50.0,
-        change_180d_pct=2.0,
-        change_365d_pct=10.0,
-        weight_pct=5.0,
-        dividend_yield_pct=3.0,
-        dividend_per_share=1.5,
-        annual_income=1.5,
-        dividend_weight_pct=5.0,
-        income_weight_pct=5.0,
-        dividends_paid=0.0,
-        growth_years=10,
-        commission=0.0,
-        sector="Consumer",
-        acquisition_share_pct=5.0,
-        analyst_rating="HOLD",
-        price_to_fcf=10.0,
-        computed_dividend="1.50 (3.00%)",
-        ex_dividend_date=None,
-        dividend_pay_date=None,
-        data_source="test",
-    )
+def _detail_row(**overrides: Any) -> PortfolioDetailRow:
+    base = {
+        "company": "Coca-Cola",
+        "ticker": "KO",
+        "market_cap": 5_000_000_000,
+        "pe_ratio": 15.0,
+        "shares": 1.0,
+        "current_price": 55.0,
+        "current_value": 55.0,
+        "avg_cost_per_share": 50.0,
+        "acquisition_value": 50.0,
+        "profit": 5.0,
+        "profit_pct": 10.0,
+        "estimated_avg_price": 50.0,
+        "medium_price_365d": 52.0,
+        "price_180d": 54.0,
+        "price_365d": 50.0,
+        "change_180d_pct": 2.0,
+        "change_365d_pct": 10.0,
+        "weight_pct": 5.0,
+        "dividend_yield_pct": 3.0,
+        "dividend_per_share": 1.5,
+        "annual_income": 1.5,
+        "dividend_weight_pct": 5.0,
+        "income_weight_pct": 5.0,
+        "dividends_paid": 0.0,
+        "growth_years": 10,
+        "commission": 0.0,
+        "sector": "Consumer",
+        "acquisition_share_pct": 5.0,
+        "analyst_rating": "HOLD",
+        "price_to_fcf": 10.0,
+        "computed_dividend": "1.50 (3.00%)",
+        "ex_dividend_date": None,
+        "dividend_pay_date": None,
+        "data_source": "test",
+    }
     base.update(overrides)
     return PortfolioDetailRow(**base)
 
@@ -66,7 +70,7 @@ def _sample_bundle(*, saved_at: datetime | None = None) -> dict:
     }
 
 
-def test_cache_is_stale_when_older_than_max_age():
+def test_cache_is_stale_when_older_than_max_age() -> None:
     bundle = {
         "saved_at": (datetime.now() - timedelta(hours=48)).isoformat(),
         "rows": [{"symbol": "KO"}],
@@ -74,7 +78,7 @@ def test_cache_is_stale_when_older_than_max_age():
     assert cache_is_stale(bundle) is True
 
 
-def test_cache_is_stale_when_library_is_newer(monkeypatch):
+def test_cache_is_stale_when_library_is_newer(monkeypatch: pytest.MonkeyPatch) -> None:
     saved = datetime.now() - timedelta(days=6)
     bundle = {"saved_at": saved.isoformat(), "rows": [{"symbol": "KO"}]}
     monkeypatch.setattr(
@@ -84,7 +88,7 @@ def test_cache_is_stale_when_library_is_newer(monkeypatch):
     assert cache_is_stale(bundle) is True
 
 
-def test_cache_is_fresh_when_recent_and_library_unchanged(monkeypatch):
+def test_cache_is_fresh_when_recent_and_library_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
     saved = datetime.now() - timedelta(hours=1)
     bundle = {"saved_at": saved.isoformat(), "rows": [{"symbol": "KO"}]}
     monkeypatch.setattr(
@@ -94,13 +98,13 @@ def test_cache_is_fresh_when_recent_and_library_unchanged(monkeypatch):
     assert cache_is_stale(bundle) is False
 
 
-def test_hydrate_skips_stale_cache(tmp_path: Path, monkeypatch):
+def test_hydrate_skips_stale_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cache_path = tmp_path / "portfolio_ui_session.pkl"
     bundle = _sample_bundle(saved_at=datetime.now() - timedelta(days=10))
     cache_path.write_bytes(pickle.dumps(bundle))
 
     class FakeSession(dict):
-        def get(self, key, default=None):
+        def get(self, key: str, default: Any = None) -> Any:
             return super().get(key, default)
 
     session = FakeSession()
@@ -118,7 +122,7 @@ def test_hydrate_skips_stale_cache(tmp_path: Path, monkeypatch):
     assert "portfolio_details_rows" not in session
 
 
-def test_hydrate_loads_fresh_cache(tmp_path: Path, monkeypatch):
+def test_hydrate_loads_fresh_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cache_path = tmp_path / "portfolio_ui_session.pkl"
     bundle = _sample_bundle()
     cache_path.write_bytes(pickle.dumps(bundle))

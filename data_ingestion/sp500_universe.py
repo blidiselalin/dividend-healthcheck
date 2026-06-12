@@ -11,16 +11,16 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
 try:
     from config import DATA_DIR, DELISTED_SYMBOLS
+
     DEFAULT_CACHE_PATH = DATA_DIR / "sp500_symbols.json"
 except ImportError:
-    DATA_DIR = Path("data")
-    DELISTED_SYMBOLS = frozenset()
+    DATA_DIR = Path("data")  # type: ignore[misc]
+    DELISTED_SYMBOLS = frozenset()  # type: ignore[misc]
     DEFAULT_CACHE_PATH = DATA_DIR / "sp500_symbols.json"
 
 _CACHE_MAX_AGE_DAYS = 30
@@ -31,23 +31,63 @@ _USER_AGENT = "DividendScope/1.0 (local portfolio analytics; +https://github.com
 _BUNDLED_REPO_PATH = Path(__file__).resolve().parent.parent / "data" / "sp500_symbols.json"
 
 # Last-resort only — normal path uses data/sp500_symbols.json (503 names, committed).
-_FALLBACK_SYMBOLS: List[str] = [
-    "AAPL", "MSFT", "AMZN", "NVDA", "GOOGL", "GOOG", "META", "BRK-B", "UNH", "JNJ",
-    "XOM", "JPM", "V", "PG", "MA", "HD", "CVX", "MRK", "ABBV", "KO", "PEP", "COST",
-    "AVGO", "WMT", "MCD", "CSCO", "ACN", "TMO", "ABT", "DHR", "LIN", "NEE", "PM",
-    "TXN", "CMCSA", "RTX", "HON", "UPS", "LOW", "INTC", "AMD", "QCOM", "INTU", "SPGI",
+_FALLBACK_SYMBOLS: list[str] = [
+    "AAPL",
+    "MSFT",
+    "AMZN",
+    "NVDA",
+    "GOOGL",
+    "GOOG",
+    "META",
+    "BRK-B",
+    "UNH",
+    "JNJ",
+    "XOM",
+    "JPM",
+    "V",
+    "PG",
+    "MA",
+    "HD",
+    "CVX",
+    "MRK",
+    "ABBV",
+    "KO",
+    "PEP",
+    "COST",
+    "AVGO",
+    "WMT",
+    "MCD",
+    "CSCO",
+    "ACN",
+    "TMO",
+    "ABT",
+    "DHR",
+    "LIN",
+    "NEE",
+    "PM",
+    "TXN",
+    "CMCSA",
+    "RTX",
+    "HON",
+    "UPS",
+    "LOW",
+    "INTC",
+    "AMD",
+    "QCOM",
+    "INTU",
+    "SPGI",
 ]
 
 
 def yahoo_ticker(symbol: str) -> str:
     """Normalize tickers for yfinance (BRK.B → BRK-B)."""
-    return symbol.strip().upper().replace(".", "-")
+    return str(symbol.strip().upper().replace(".", "-"))
 
 
 def _normalize_sector_key(sector: str) -> str:
     key = sector.strip().lower()
     key = re.sub(r"[^a-z0-9]+", " ", key).strip()
-    aliases = {
+    aliases: dict[str, str] = {
         "health care": "healthcare",
         "consumer defensive": "consumer staples",
         "consumer cyclical": "consumer discretionary",
@@ -56,7 +96,7 @@ def _normalize_sector_key(sector: str) -> str:
         "telecommunication services": "communication services",
         "telecommunications": "communication services",
     }
-    return aliases.get(key, key)
+    return str(aliases.get(key, key))
 
 
 def sectors_match(sector_a: str, sector_b: str) -> bool:
@@ -71,12 +111,12 @@ def sectors_match(sector_a: str, sector_b: str) -> bool:
 
 
 def _fetch_wikipedia_html() -> str:
-    request = urllib.request.Request(_WIKI_URL, headers={"User-Agent": _USER_AGENT})
-    with urllib.request.urlopen(request, timeout=45) as response:
-        return response.read().decode("utf-8", errors="replace")
+    request = urllib.request.Request(_WIKI_URL, headers={"User-Agent": _USER_AGENT})  # noqa: S310
+    with urllib.request.urlopen(request, timeout=45) as response:  # noqa: S310
+        return str(response.read().decode("utf-8", errors="replace"))
 
 
-def _parse_symbols_from_html(html: str) -> List[str]:
+def _parse_symbols_from_html(html: str) -> list[str]:
     """Parse tickers from the constituents table (BeautifulSoup, no pandas)."""
     from bs4 import BeautifulSoup
 
@@ -91,7 +131,7 @@ def _parse_symbols_from_html(html: str) -> List[str]:
     if table is None:
         raise ValueError("Could not find S&P 500 constituents table on Wikipedia")
 
-    symbols: List[str] = []
+    symbols: list[str] = []
     for row in table.find_all("tr"):
         cells = row.find_all("td")
         if not cells:
@@ -105,7 +145,7 @@ def _parse_symbols_from_html(html: str) -> List[str]:
     return sorted(set(symbols))
 
 
-def _parse_symbols_with_pandas(html: str) -> List[str]:
+def _parse_symbols_with_pandas(html: str) -> list[str]:
     import pandas as pd
 
     tables = pd.read_html(html)
@@ -116,7 +156,7 @@ def _parse_symbols_with_pandas(html: str) -> List[str]:
     return sorted(set(symbols))
 
 
-def fetch_sp500_from_wikipedia() -> List[str]:
+def fetch_sp500_from_wikipedia() -> list[str]:
     """Download current S&P 500 tickers from Wikipedia."""
     html = _fetch_wikipedia_html()
     try:
@@ -133,7 +173,7 @@ def load_cached_symbols(
     cache_path: Path = DEFAULT_CACHE_PATH,
     *,
     enforce_ttl: bool = True,
-) -> Optional[List[str]]:
+) -> list[str] | None:
     if not cache_path.exists():
         return None
     try:
@@ -153,10 +193,10 @@ def load_cached_symbols(
         return None
 
 
-def _bundled_symbol_paths() -> List[Path]:
+def _bundled_symbol_paths() -> list[Path]:
     """User cache under DATA_DIR, then committed repo ``data/sp500_symbols.json``."""
     seen: set[str] = set()
-    paths: List[Path] = []
+    paths: list[Path] = []
     for path in (DEFAULT_CACHE_PATH, _BUNDLED_REPO_PATH):
         key = str(path.resolve()) if path.exists() else str(path)
         if key in seen:
@@ -166,7 +206,7 @@ def _bundled_symbol_paths() -> List[Path]:
     return paths
 
 
-def _load_bundled_sp500(*, require_full: bool = True) -> Optional[List[str]]:
+def _load_bundled_sp500(*, require_full: bool = True) -> list[str] | None:
     """Load bundled list from cache file or repo without Wikipedia."""
     for path in _bundled_symbol_paths():
         bundled = load_cached_symbols(path, enforce_ttl=False)
@@ -178,7 +218,7 @@ def _load_bundled_sp500(*, require_full: bool = True) -> Optional[List[str]]:
     return None
 
 
-def save_cached_symbols(symbols: List[str], cache_path: Path = DEFAULT_CACHE_PATH) -> None:
+def save_cached_symbols(symbols: list[str], cache_path: Path = DEFAULT_CACHE_PATH) -> None:
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "updated": datetime.now().isoformat(timespec="seconds"),
@@ -189,7 +229,7 @@ def save_cached_symbols(symbols: List[str], cache_path: Path = DEFAULT_CACHE_PAT
     cache_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def get_sp500_symbols(*, refresh: bool = False) -> List[str]:
+def get_sp500_symbols(*, refresh: bool = False) -> list[str]:
     """
     Return S&P 500 tickers.
 
@@ -225,9 +265,7 @@ def get_sp500_symbols(*, refresh: bool = False) -> List[str]:
         return bundled
 
     if bundled:
-        logger.warning(
-            "Bundled S&P 500 list has only %s symbols; expected ~503", len(bundled)
-        )
+        logger.warning("Bundled S&P 500 list has only %s symbols; expected ~503", len(bundled))
         return bundled
 
     logger.warning(
@@ -238,5 +276,5 @@ def get_sp500_symbols(*, refresh: bool = False) -> List[str]:
     return list(_FALLBACK_SYMBOLS)
 
 
-def sp500_symbol_set(*, refresh: bool = False) -> Set[str]:
+def sp500_symbol_set(*, refresh: bool = False) -> set[str]:
     return set(get_sp500_symbols(refresh=refresh))

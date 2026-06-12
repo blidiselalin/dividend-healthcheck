@@ -1,4 +1,5 @@
 """Tests for library document resolution."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -46,7 +47,7 @@ def _good_doc() -> StockDocument:
     return doc
 
 
-def test_resolve_prefers_fresh_trustworthy_document():
+def test_resolve_prefers_fresh_trustworthy_document() -> None:
     cached = _dup_doc()
     fresh = _good_doc()
     with patch("services.shared_market_db.get_document", return_value=fresh):
@@ -54,7 +55,7 @@ def test_resolve_prefers_fresh_trustworthy_document():
     assert resolved is fresh
 
 
-def test_resolve_keeps_cached_when_fresh_missing():
+def test_resolve_keeps_cached_when_fresh_missing() -> None:
     cached = _good_doc()
     with patch("services.shared_market_db.get_document", return_value=None):
         resolved = resolve_library_document("INTU", cached)

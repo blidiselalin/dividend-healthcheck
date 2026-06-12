@@ -1,15 +1,15 @@
 """Unit tests for shared_market_db."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-
 import pytest
 
 
 @pytest.mark.postgres_mock
-def test_shared_market_db_status_postgres(monkeypatch):
+def test_shared_market_db_status_postgres(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://local/test")
 
     mock_store = MagicMock()
@@ -26,7 +26,7 @@ def test_shared_market_db_status_postgres(monkeypatch):
     assert "stock_documents" in status["path"]
 
 
-def test_get_document_delegates_to_store():
+def test_get_document_delegates_to_store() -> None:
     mock_store = MagicMock()
     mock_doc = MagicMock()
     mock_store.get_by_symbol.return_value = mock_doc

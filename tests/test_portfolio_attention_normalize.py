@@ -1,4 +1,5 @@
 """Tests for attention summary normalization and legacy cache shapes."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 

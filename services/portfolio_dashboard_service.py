@@ -4,20 +4,22 @@ High-level portfolio dashboard: KPIs and monthly evolution since inception.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+import pandas as pd
+
+if TYPE_CHECKING:
+    from services.portfolio_details_service import PortfolioDetailRow
+
+from data_ingestion.deposits_store import MonthlyDeposit
+from services.portfolio_deposits_service import DepositsSummary, PortfolioDepositsService
 from utils.chart_theme import (
     bottom_legend,
     evolution_chart_margins,
     monthly_category_axis,
     style_figure,
 )
-
-from dataclasses import dataclass
-from typing import List, Optional
-
-import pandas as pd
-
-from data_ingestion.deposits_store import MonthlyDeposit
-from services.portfolio_deposits_service import DepositsSummary, PortfolioDepositsService
 
 try:
     import plotly.graph_objects as go
@@ -34,7 +36,7 @@ class HoldingsSnapshot:
     current_value_usd: float
     acquisition_value_usd: float
     profit_usd: float
-    profit_pct: Optional[float]
+    profit_pct: float | None
     annual_dividend_income_usd: float
     lifetime_dividends_usd: float
 
@@ -43,12 +45,12 @@ class HoldingsSnapshot:
 class PortfolioDashboardMetrics:
     deposits: DepositsSummary
     avg_monthly_deposit_eur: float
-    cagr_pct: Optional[float]
+    cagr_pct: float | None
     months_since_start: int
     best_month_label: str
-    best_month_gain_pct: Optional[float]
-    latest_mom_change_pct: Optional[float]
-    holdings: Optional[HoldingsSnapshot] = None
+    best_month_gain_pct: float | None
+    latest_mom_change_pct: float | None
+    holdings: HoldingsSnapshot | None = None
 
 
 _EVOLUTION_COLUMNS = (
@@ -66,35 +68,33 @@ _EVOLUTION_COLUMNS = (
 class PortfolioDashboardService:
     """Aggregate deposits history and optional live holdings into dashboard KPIs."""
 
-    def __init__(self, deposits_service: Optional[PortfolioDepositsService] = None) -> None:
+    def __init__(self, deposits_service: PortfolioDepositsService | None = None) -> None:
         self.deposits_service = deposits_service or PortfolioDepositsService()
 
     @staticmethod
     def _empty_evolution_frame() -> pd.DataFrame:
         return pd.DataFrame(columns=list(_EVOLUTION_COLUMNS))
 
-    def list_deposits(self) -> List[MonthlyDeposit]:
+    def list_deposits(self) -> list[MonthlyDeposit]:
         return self.deposits_service.list_deposits()
 
-    def evolution_dataframe(self, deposits: Optional[List[MonthlyDeposit]] = None) -> pd.DataFrame:
+    def evolution_dataframe(self, deposits: list[MonthlyDeposit] | None = None) -> pd.DataFrame:
         """Monthly series for charts: deposits, portfolio, cumulative capital, returns."""
         records = deposits if deposits is not None else self.list_deposits()
         if not records:
             return self._empty_evolution_frame()
 
-        cumulative_deposits: List[float] = []
+        cumulative_deposits: list[float] = []
         running = 0.0
         rows = []
-        prev_portfolio: Optional[float] = None
+        prev_portfolio: float | None = None
 
         for item in records:
             running += item.deposit_eur
             cumulative_deposits.append(running)
 
             portfolio = item.portfolio_eur if item.portfolio_eur > 0 else None
-            gain_vs_deposits = (
-                round(portfolio - running, 2) if portfolio is not None else None
-            )
+            gain_vs_deposits = round(portfolio - running, 2) if portfolio is not None else None
             mom_pct = None
             if portfolio is not None and prev_portfolio is not None and prev_portfolio > 0:
                 mom_pct = round((portfolio - prev_portfolio) / prev_portfolio * 100, 2)
@@ -118,8 +118,8 @@ class PortfolioDashboardService:
 
     def build_metrics(
         self,
-        deposits: Optional[List[MonthlyDeposit]] = None,
-        holdings: Optional[HoldingsSnapshot] = None,
+        deposits: list[MonthlyDeposit] | None = None,
+        holdings: HoldingsSnapshot | None = None,
     ) -> PortfolioDashboardMetrics:
         records = deposits if deposits is not None else self.list_deposits()
         summary = self.deposits_service.summarize(records)
@@ -141,33 +141,22 @@ class PortfolioDashboardService:
                 None,
             )
             end_portfolio = summary.latest_portfolio_eur
-            if (
-                start_portfolio
-                and end_portfolio
-                and start_portfolio > 0
-                and years >= 0.25
-            ):
-                cagr_pct = round(
-                    ((end_portfolio / start_portfolio) ** (1 / years) - 1) * 100, 2
-                )
+            if start_portfolio and end_portfolio and start_portfolio > 0 and years >= 0.25:
+                cagr_pct = round(((end_portfolio / start_portfolio) ** (1 / years) - 1) * 100, 2)
 
         df = self.evolution_dataframe(records)
         best_label = ""
         best_mom = None
         latest_mom = None
-        if (
-            not df.empty
-            and "mom_change_pct" in df.columns
-            and df["mom_change_pct"].notna().any()
-        ):
+        if not df.empty and "mom_change_pct" in df.columns and df["mom_change_pct"].notna().any():
             valid = df.dropna(subset=["mom_change_pct"])
             if not valid.empty:
                 best_idx = valid["mom_change_pct"].idxmax()
                 best_label = str(valid.loc[best_idx, "label"])
-                best_mom = float(valid.loc[best_idx, "mom_change_pct"])
+                best_mom = float(str(valid.loc[best_idx, "mom_change_pct"]))
             latest_valid = df.dropna(subset=["mom_change_pct"])
             if not latest_valid.empty:
-                latest_mom = float(latest_valid.iloc[-1]["mom_change_pct"])
+                latest_mom = float(str(latest_valid.iloc[-1]["mom_change_pct"]))
 
         return PortfolioDashboardMetrics(
             deposits=summary,
@@ -181,8 +170,8 @@ class PortfolioDashboardService:
         )
 
     @staticmethod
-    def holdings_from_rows(rows) -> HoldingsSnapshot:
-        total_value = sum(row.current_value or 0.0 for row in rows)
+    def holdings_from_rows(rows: list[PortfolioDetailRow]) -> HoldingsSnapshot:
+        total_value = sum(row.current_value for row in rows if row.current_value is not None)
         total_acquisition = sum(row.acquisition_value for row in rows)
         profit = total_value - total_acquisition
         profit_pct = (profit / total_acquisition * 100) if total_acquisition else None
@@ -196,7 +185,7 @@ class PortfolioDashboardService:
             lifetime_dividends_usd=sum(row.dividends_paid for row in rows),
         )
 
-    def create_evolution_chart(self, deposits: Optional[List[MonthlyDeposit]] = None):
+    def create_evolution_chart(self, deposits: list[MonthlyDeposit] | None = None) -> Any:
         """Portfolio € and cumulative deposits since inception."""
         if not PLOTLY_AVAILABLE:
             return None
@@ -217,7 +206,7 @@ class PortfolioDashboardService:
                 y=plot_df["cumulative_deposits_eur"],
                 name="Deposits (cumul.)",
                 mode="lines",
-                line=dict(color="#5c6bc0", width=2, dash="dot"),
+                line={"color": "#5c6bc0", "width": 2, "dash": "dot"},
                 hovertemplate="%{x}<br>€%{y:,.2f}<extra></extra>",
             )
         )
@@ -227,7 +216,7 @@ class PortfolioDashboardService:
                 y=plot_df["portfolio_eur"],
                 name="Portfolio",
                 mode="lines+markers",
-                line=dict(color="#2e7d32", width=3),
+                line={"color": "#2e7d32", "width": 3},
                 fill="tonexty",
                 fillcolor="rgba(46, 125, 50, 0.12)",
                 hovertemplate="%{x}<br>€%{y:,.2f}<extra></extra>",
@@ -243,7 +232,7 @@ class PortfolioDashboardService:
         fig.update_xaxes(**monthly_category_axis(n_labels))
         return style_figure(fig)
 
-    def create_monthly_flow_chart(self, deposits: Optional[List[MonthlyDeposit]] = None):
+    def create_monthly_flow_chart(self, deposits: list[MonthlyDeposit] | None = None) -> Any:
         """Monthly deposits and portfolio month-over-month change."""
         if not PLOTLY_AVAILABLE:
             return None
@@ -271,7 +260,7 @@ class PortfolioDashboardService:
                 y=df["mom_change_pct"],
                 name="MoM %",
                 mode="lines+markers",
-                line=dict(color="#ef6c00", width=2),
+                line={"color": "#ef6c00", "width": 2},
                 connectgaps=False,
                 hovertemplate="%{x}<br>%{y:+.2f}%<extra></extra>",
             ),
@@ -287,7 +276,7 @@ class PortfolioDashboardService:
         fig.update_yaxes(title_text="%", secondary_y=True)
         return style_figure(fig)
 
-    def create_gain_chart(self, deposits: Optional[List[MonthlyDeposit]] = None):
+    def create_gain_chart(self, deposits: list[MonthlyDeposit] | None = None) -> Any:
         """Unrealized gain vs cumulative deposits over time."""
         if not PLOTLY_AVAILABLE:
             return None
@@ -300,8 +289,7 @@ class PortfolioDashboardService:
 
         n_labels = len(plot_df)
         colors = [
-            "#2e7d32" if value >= 0 else "#c62828"
-            for value in plot_df["gain_vs_deposits_eur"]
+            "#2e7d32" if value >= 0 else "#c62828" for value in plot_df["gain_vs_deposits_eur"]
         ]
         fig = go.Figure(
             go.Bar(

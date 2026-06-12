@@ -7,57 +7,52 @@ This package provides common utilities used across the application:
 - converters: Data model conversion functions
 """
 
-from .formatting import (
-    format_currency,
-    format_percent,
-    format_number,
-    format_large_number,
-    format_years,
-    format_delta,
-    format_delta_pct,
-)
-
 from .calculations import (
     calculate_cagr,
-    calculate_dividend_yield,
-    calculate_payout_ratio,
     calculate_dividend_coverage,
-    calculate_price_to_target_pct,
+    calculate_dividend_yield,
     calculate_income_per_investment,
+    calculate_payout_ratio,
+    calculate_price_to_target_pct,
     calculate_years_to_double,
 )
-
 from .converters import (
-    document_to_stock_data,
-    detect_payment_frequency,
+    FREQUENCY_ANNUAL,
     FREQUENCY_MONTHLY,
     FREQUENCY_QUARTERLY,
     FREQUENCY_SEMI_ANNUAL,
-    FREQUENCY_ANNUAL,
+    detect_payment_frequency,
+    document_to_stock_data,
+)
+from .formatting import (
+    format_currency,
+    format_delta,
+    format_delta_pct,
+    format_large_number,
+    format_number,
+    format_percent,
+    format_years,
 )
 
 __all__ = [
-    # Formatting
-    "format_currency",
-    "format_percent",
-    "format_number",
-    "format_large_number",
-    "format_years",
-    "format_delta",
-    "format_delta_pct",
-    # Calculations
-    "calculate_cagr",
-    "calculate_dividend_yield",
-    "calculate_payout_ratio",
-    "calculate_dividend_coverage",
-    "calculate_price_to_target_pct",
-    "calculate_income_per_investment",
-    "calculate_years_to_double",
-    # Converters
-    "document_to_stock_data",
-    "detect_payment_frequency",
+    "FREQUENCY_ANNUAL",
     "FREQUENCY_MONTHLY",
     "FREQUENCY_QUARTERLY",
     "FREQUENCY_SEMI_ANNUAL",
-    "FREQUENCY_ANNUAL",
+    "calculate_cagr",
+    "calculate_dividend_coverage",
+    "calculate_dividend_yield",
+    "calculate_income_per_investment",
+    "calculate_payout_ratio",
+    "calculate_price_to_target_pct",
+    "calculate_years_to_double",
+    "detect_payment_frequency",
+    "document_to_stock_data",
+    "format_currency",
+    "format_delta",
+    "format_delta_pct",
+    "format_large_number",
+    "format_number",
+    "format_percent",
+    "format_years",
 ]

@@ -1,8 +1,10 @@
 """Portfolio session sync (per-user DB vs UI cache)."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -14,10 +16,10 @@ from services.portfolio_session import (
 
 
 class _FakeSession(dict):
-    def get(self, key, default=None):
+    def get(self, key: str, default: Any = None) -> Any:
         return super().get(key, default)
 
-    def pop(self, key, default=None):
+    def pop(self, key: str, default: Any = None) -> Any:
         return super().pop(key, default)
 
 
@@ -63,10 +65,10 @@ def test_sync_clears_stale_session_rows(
 
     cleared: list[str] = []
 
-    def _clear():
+    def _clear() -> None:
         cleared.append("session")
 
-    def _clear_disk():
+    def _clear_disk() -> None:
         cleared.append("disk")
 
     monkeypatch.setattr(

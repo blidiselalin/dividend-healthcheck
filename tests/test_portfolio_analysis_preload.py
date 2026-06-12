@@ -1,13 +1,15 @@
 """Tests for portfolio yield-chart preload."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from services.portfolio_analysis_preload import preload_portfolio_analysis
 
 
-def test_preload_empty_symbols():
+def test_preload_empty_symbols() -> None:
     result = preload_portfolio_analysis([], {}, {})
     assert result.yield_channels == {}
     assert result.stock_data == {}
@@ -15,7 +17,7 @@ def test_preload_empty_symbols():
 
 
 @patch("services.stock_analysis_service.load_yield_channel_data")
-def test_preload_collects_channels(mock_fetch):
+def test_preload_collects_channels(mock_fetch: Any) -> None:
     channel = MagicMock()
     mock_fetch.return_value = channel
     stock = MagicMock()
@@ -32,7 +34,7 @@ def test_preload_collects_channels(mock_fetch):
 
 
 @patch("services.stock_analysis_service.load_yield_channel_data")
-def test_preload_skips_failed_symbols(mock_fetch):
+def test_preload_skips_failed_symbols(mock_fetch: Any) -> None:
     mock_fetch.side_effect = [MagicMock(), RuntimeError("network")]
     progress = MagicMock()
 
@@ -48,7 +50,7 @@ def test_preload_skips_failed_symbols(mock_fetch):
 
 
 @patch("services.stock_analysis_service.load_yield_channel_data", return_value=MagicMock())
-def test_preload_reports_progress(mock_fetch):
+def test_preload_reports_progress(mock_fetch: Any) -> None:
     progress = MagicMock()
     preload_portfolio_analysis(["KO"], {}, {}, progress_callback=progress)
     assert progress.call_args_list[0][0][0] == 0.0

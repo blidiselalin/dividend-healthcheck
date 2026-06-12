@@ -9,13 +9,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
 from datetime import date, datetime
-from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Set
+from typing import Any
 
 from config import MIN_YIELD_DIVIDEND_PAYMENTS, MIN_YIELD_PRICE_POINTS
-from data_ingestion.models import DataSource, DividendRecord, PriceHistory, StockDocument
+from data_ingestion.models import (
+    DataSource,
+    DividendRecord,
+    PriceHistory,
+    StockDocument,
+)
 
 # Field groups used to decide which provider to call for gap-filling.
-FIELD_GROUPS: Dict[str, FrozenSet[str]] = {
+FIELD_GROUPS: dict[str, frozenset[str]] = {
     "identity": frozenset({"name", "sector", "industry", "exchange", "description"}),
     "dividend": frozenset(
         {
@@ -74,9 +79,7 @@ FIELD_GROUPS: Dict[str, FrozenSet[str]] = {
     "performance": frozenset(
         {"price_return_1y", "total_return_1y", "price_return_5y", "total_return_5y"}
     ),
-    "analyst": frozenset(
-        {"target_price", "target_upside", "analyst_rating", "num_analysts"}
-    ),
+    "analyst": frozenset({"target_price", "target_upside", "analyst_rating", "num_analysts"}),
     "history": frozenset({"price_history", "dividend_history"}),
 }
 
@@ -89,77 +92,83 @@ class StockSnapshot:
     source: DataSource = DataSource.MANUAL
     fetched_at: datetime = field(default_factory=datetime.now)
 
-    name: Optional[str] = None
-    sector: Optional[str] = None
-    industry: Optional[str] = None
-    exchange: Optional[str] = None
-    description: Optional[str] = None
+    name: str | None = None
+    sector: str | None = None
+    industry: str | None = None
+    exchange: str | None = None
+    description: str | None = None
 
-    dividend_yield: Optional[float] = None
-    annual_dividend: Optional[float] = None
-    payout_ratio: Optional[float] = None
-    fcf_payout_ratio: Optional[float] = None
-    dividend_coverage: Optional[float] = None
-    ex_dividend_date: Optional[date] = None
-    payment_frequency: Optional[int] = None
-    dividend_streak_years: Optional[int] = None
-    dividend_cagr_5y: Optional[float] = None
-    dividend_cagr_10y: Optional[float] = None
-    dividend_total_years: Optional[int] = None
+    dividend_yield: float | None = None
+    annual_dividend: float | None = None
+    payout_ratio: float | None = None
+    fcf_payout_ratio: float | None = None
+    dividend_coverage: float | None = None
+    ex_dividend_date: date | None = None
+    payment_frequency: int | None = None
+    dividend_streak_years: int | None = None
+    dividend_cagr_5y: float | None = None
+    dividend_cagr_10y: float | None = None
+    dividend_total_years: int | None = None
 
-    current_price: Optional[float] = None
-    market_cap: Optional[float] = None
-    fifty_two_week_high: Optional[float] = None
-    fifty_two_week_low: Optional[float] = None
-    beta: Optional[float] = None
+    current_price: float | None = None
+    market_cap: float | None = None
+    fifty_two_week_high: float | None = None
+    fifty_two_week_low: float | None = None
+    beta: float | None = None
 
-    pe_ratio: Optional[float] = None
-    forward_pe: Optional[float] = None
-    peg_ratio: Optional[float] = None
-    price_to_book: Optional[float] = None
-    price_to_sales: Optional[float] = None
-    ev_ebitda: Optional[float] = None
+    pe_ratio: float | None = None
+    forward_pe: float | None = None
+    peg_ratio: float | None = None
+    price_to_book: float | None = None
+    price_to_sales: float | None = None
+    ev_ebitda: float | None = None
 
-    debt_to_equity: Optional[float] = None
-    debt_to_ebitda: Optional[float] = None
-    interest_coverage: Optional[float] = None
-    current_ratio: Optional[float] = None
-    quick_ratio: Optional[float] = None
+    debt_to_equity: float | None = None
+    debt_to_ebitda: float | None = None
+    interest_coverage: float | None = None
+    current_ratio: float | None = None
+    quick_ratio: float | None = None
 
-    roe: Optional[float] = None
-    roa: Optional[float] = None
-    roic: Optional[float] = None
-    profit_margin: Optional[float] = None
-    operating_margin: Optional[float] = None
-    gross_margin: Optional[float] = None
+    roe: float | None = None
+    roa: float | None = None
+    roic: float | None = None
+    profit_margin: float | None = None
+    operating_margin: float | None = None
+    gross_margin: float | None = None
 
-    revenue_growth: Optional[float] = None
-    earnings_growth: Optional[float] = None
-    fcf_growth: Optional[float] = None
+    revenue_growth: float | None = None
+    earnings_growth: float | None = None
+    fcf_growth: float | None = None
 
-    price_return_1y: Optional[float] = None
-    total_return_1y: Optional[float] = None
-    price_return_5y: Optional[float] = None
-    total_return_5y: Optional[float] = None
+    price_return_1y: float | None = None
+    total_return_1y: float | None = None
+    price_return_5y: float | None = None
+    total_return_5y: float | None = None
 
-    target_price: Optional[float] = None
-    target_upside: Optional[float] = None
-    analyst_rating: Optional[str] = None
-    num_analysts: Optional[int] = None
+    target_price: float | None = None
+    target_upside: float | None = None
+    analyst_rating: str | None = None
+    num_analysts: int | None = None
 
-    price_history: List[PriceHistory] = field(default_factory=list)
-    dividend_history: List[DividendRecord] = field(default_factory=list)
+    price_history: list[PriceHistory] = field(default_factory=list)
+    dividend_history: list[DividendRecord] = field(default_factory=list)
 
-    def populated_scalar_fields(self) -> Set[str]:
-        names: Set[str] = set()
+    def populated_scalar_fields(self) -> set[str]:
+        names: set[str] = set()
         for item in fields(self):
-            if item.name in ("symbol", "source", "fetched_at", "price_history", "dividend_history"):
+            if item.name in (
+                "symbol",
+                "source",
+                "fetched_at",
+                "price_history",
+                "dividend_history",
+            ):
                 continue
             if getattr(self, item.name) is not None:
                 names.add(item.name)
         return names
 
-    def merge_from(self, other: "StockSnapshot", *, prefer: bool = False) -> None:
+    def merge_from(self, other: StockSnapshot, *, prefer: bool = False) -> None:
         """Fill null fields from ``other`` (later sources only fill gaps unless prefer=True)."""
         for item in fields(self):
             name = item.name
@@ -176,7 +185,7 @@ class StockSnapshot:
 
         self._merge_history(other)
 
-    def _merge_history(self, other: "StockSnapshot") -> None:
+    def _merge_history(self, other: StockSnapshot) -> None:
         from utils.datetime_compat import coerce_calendar_date
 
         if other.price_history:
@@ -202,9 +211,9 @@ class StockSnapshot:
             )
 
 
-def missing_field_groups(doc: StockDocument) -> List[str]:
+def missing_field_groups(doc: StockDocument) -> list[str]:
     """Return field groups that still have gaps on ``doc``."""
-    missing: List[str] = []
+    missing: list[str] = []
 
     def _empty(value: Any) -> bool:
         if value is None:
@@ -236,9 +245,10 @@ def missing_field_groups(doc: StockDocument) -> List[str]:
     return missing
 
 
-def apply_snapshot_to_document(doc: StockDocument, snapshot: StockSnapshot) -> StockDocument:
+def apply_snapshot_to_document(doc: StockDocument, snapshot: StockSnapshot) -> StockDocument:  # noqa: C901
     """Apply snapshot fields onto ``doc`` without overwriting existing values."""
     from utils.datetime_compat import max_datetime
+
     if doc.name == doc.symbol and snapshot.name:
         doc.name = snapshot.name
     if doc.sector == "Unknown" and snapshot.sector:
@@ -291,12 +301,14 @@ def apply_snapshot_to_document(doc: StockDocument, snapshot: StockSnapshot) -> S
 
 def snapshot_from_document(doc: StockDocument) -> StockSnapshot:
     """Build a snapshot from an existing document (for merge tests)."""
-    values: Dict[str, Any] = {"symbol": doc.symbol, "source": doc.source}
+    values: dict[str, Any] = {"symbol": doc.symbol, "source": doc.source}
     for item in fields(StockSnapshot):
         if item.name in ("symbol", "source", "fetched_at"):
             continue
         values[item.name] = getattr(doc, item.name, None)
-    snap = StockSnapshot(**{k: v for k, v in values.items() if k in {f.name for f in fields(StockSnapshot)}})
+    snap = StockSnapshot(
+        **{k: v for k, v in values.items() if k in {f.name for f in fields(StockSnapshot)}}
+    )
     snap.price_history = list(doc.price_history)
     snap.dividend_history = list(doc.dividend_history)
     return snap

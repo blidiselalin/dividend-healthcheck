@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
 from config import MIN_YIELD_DIVIDEND_PAYMENTS, MIN_YIELD_PRICE_POINTS
 from utils.stock_document_history import history_is_thin, yield_channel_ready
@@ -30,16 +30,16 @@ def portfolio_backfill_symbols() -> set[str]:
 
 
 def sort_backfill_candidates(
-    candidates: List["StockDocument"],
+    candidates: list[StockDocument],
     *,
-    portfolio_symbols: Optional[set[str]] = None,
-) -> List["StockDocument"]:
+    portfolio_symbols: set[str] | None = None,
+) -> list[StockDocument]:
     """Portfolio holdings first, then thinnest price/dividend history."""
     from utils.datetime_compat import to_naive_utc
 
     portfolio = portfolio_symbols if portfolio_symbols is not None else portfolio_backfill_symbols()
 
-    def _key(doc: "StockDocument") -> tuple:
+    def _key(doc: StockDocument) -> tuple[int, int, int, datetime]:
         sym = (doc.symbol or "").upper()
         return (
             0 if sym in portfolio else 1,
@@ -52,14 +52,14 @@ def sort_backfill_candidates(
 
 
 def documents_needing_history_backfill(
-    documents: List["StockDocument"],
+    documents: list[StockDocument],
     *,
-    portfolio_symbols: Optional[set[str]] = None,
-) -> List["StockDocument"]:
+    portfolio_symbols: set[str] | None = None,
+) -> list[StockDocument]:
     """Symbols missing enough price/dividend rows for yield channels."""
     from config import DELISTED_SYMBOLS
 
-    thin: List[StockDocument] = []
+    thin: list[StockDocument] = []
     for document in documents:
         symbol = (document.symbol or "").upper()
         if not symbol or symbol in DELISTED_SYMBOLS:
@@ -72,15 +72,15 @@ def documents_needing_history_backfill(
 def _resolve_backfill_candidates(
     store: Any,
     *,
-    symbols: Optional[List[str]] = None,
+    symbols: list[str] | None = None,
     prioritize_portfolio: bool = True,
-) -> List["StockDocument"]:
+) -> list[StockDocument]:
     """Documents to enrich, creating missing portfolio rows when needed."""
     portfolio = portfolio_backfill_symbols() if prioritize_portfolio else set()
 
     if symbols:
         wanted = {symbol.strip().upper() for symbol in symbols if symbol.strip()}
-        candidates: List[StockDocument] = []
+        candidates: list[StockDocument] = []
         for symbol in sorted(wanted):
             document = store.get_by_symbol(symbol)
             if document is None and symbol in portfolio:
@@ -97,16 +97,12 @@ def _resolve_backfill_candidates(
     ]
     from config import DELISTED_SYMBOLS
 
-    thin = [
-        doc
-        for doc in thin
-        if (doc.symbol or "").upper() not in DELISTED_SYMBOLS
-    ]
+    thin = [doc for doc in thin if (doc.symbol or "").upper() not in DELISTED_SYMBOLS]
     portfolio_filter = portfolio if prioritize_portfolio else None
     return sort_backfill_candidates(thin, portfolio_symbols=portfolio_filter)
 
 
-def _fetch_document_for_backfill(symbol: str) -> Optional["StockDocument"]:
+def _fetch_document_for_backfill(symbol: str) -> StockDocument | None:
     """Fetch a new library document when a portfolio holding is missing from the store."""
     try:
         from data_ingestion.stock_enricher import create_stock_enricher
@@ -120,11 +116,11 @@ def _fetch_document_for_backfill(symbol: str) -> Optional["StockDocument"]:
 def backfill_thin_history(
     *,
     limit: int = 40,
-    symbols: Optional[List[str]] = None,
+    symbols: list[str] | None = None,
     request_delay: float = 0.35,
-    progress_callback: Optional[ProgressCallback] = None,
+    progress_callback: ProgressCallback | None = None,
     prioritize_portfolio: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Enrich documents that lack sufficient ``price_history`` / ``dividend_history``.
 
@@ -141,7 +137,7 @@ def backfill_thin_history(
     )
 
     batch = candidates[: max(0, limit)]
-    stats: Dict[str, Any] = {
+    stats: dict[str, Any] = {
         "candidates": len(candidates),
         "processed": 0,
         "enriched": 0,
@@ -155,7 +151,7 @@ def backfill_thin_history(
         return stats
 
     enricher = create_stock_enricher(request_delay=request_delay)
-    enriched: List[StockDocument] = []
+    enriched: list[StockDocument] = []
     total = len(batch)
 
     for index, document in enumerate(batch, start=1):
@@ -200,11 +196,11 @@ def backfill_thin_history(
 
 
 def backfill_portfolio_holdings(
-    symbols: List[str],
+    symbols: list[str],
     *,
     request_delay: float = 0.35,
-    progress_callback: Optional[ProgressCallback] = None,
-) -> Dict[str, Any]:
+    progress_callback: ProgressCallback | None = None,
+) -> dict[str, Any]:
     """Backfill thin history for portfolio tickers before yield-chart preload."""
     unique = sorted({(symbol or "").strip().upper() for symbol in symbols if symbol})
     if not unique:
@@ -226,7 +222,7 @@ def backfill_portfolio_holdings(
     )
 
 
-def thin_history_summary(documents: Optional[List["StockDocument"]] = None) -> Dict[str, int]:
+def thin_history_summary(documents: list[StockDocument] | None = None) -> dict[str, int]:
     """Counts for admin dashboards."""
     if documents is None:
         try:
@@ -236,7 +232,7 @@ def thin_history_summary(documents: Optional[List["StockDocument"]] = None) -> D
                 from db.postgres_market_store import PostgresMarketStore
 
                 return PostgresMarketStore().history_coverage_summary()
-        except Exception:
+        except Exception:  # noqa: S110
             pass
         from services.shared_market_db import get_shared_vector_store
 

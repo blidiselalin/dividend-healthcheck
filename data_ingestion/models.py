@@ -5,16 +5,19 @@ These models represent stock market data in a format optimized for
 vector embeddings and semantic search.
 """
 
-from dataclasses import dataclass, field, asdict
-from datetime import date, datetime
-from typing import Optional, List, Dict, Any
-from enum import Enum
-import hashlib
+from __future__ import annotations
+
+import contextlib
 import json
+from dataclasses import dataclass, field
+from datetime import date, datetime
+from enum import Enum
+from typing import Any
 
 
 class DataSource(Enum):
     """Source of the stock data."""
+
     STOCKQUOTE_IO = "stockquote.io"
     NASDAQ = "nasdaq.com"
     YAHOO = "yahoo"
@@ -26,7 +29,7 @@ class DataSource(Enum):
     MANUAL = "manual"
 
 
-def parse_data_source(value: Optional[str]) -> DataSource:
+def parse_data_source(value: str | None) -> DataSource:
     """Parse stored source strings; unknown values fall back to MANUAL."""
     if not value:
         return DataSource.MANUAL
@@ -39,15 +42,16 @@ def parse_data_source(value: Optional[str]) -> DataSource:
 @dataclass
 class PriceHistory:
     """Historical price data for a single day."""
+
     date: date
     open: float
     high: float
     low: float
     close: float
     volume: int
-    adjusted_close: Optional[float] = None
-    
-    def to_dict(self) -> Dict[str, Any]:
+    adjusted_close: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for storage."""
         from utils.json_safe import finite_float
 
@@ -60,9 +64,9 @@ class PriceHistory:
             "volume": self.volume,
             "adjusted_close": finite_float(self.adjusted_close),
         }
-    
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PriceHistory":
+    def from_dict(cls, data: dict[str, Any]) -> PriceHistory:
         """Create from dictionary."""
         return cls(
             date=date.fromisoformat(data["date"]),
@@ -78,12 +82,13 @@ class PriceHistory:
 @dataclass
 class DividendRecord:
     """Record of a dividend payment."""
+
     ex_date: date
-    payment_date: Optional[date]
+    payment_date: date | None
     amount: float
     frequency: str = "quarterly"  # quarterly, monthly, annual, special
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for storage."""
         return {
             "ex_date": self.ex_date.isoformat(),
@@ -91,13 +96,15 @@ class DividendRecord:
             "amount": self.amount,
             "frequency": self.frequency,
         }
-    
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "DividendRecord":
+    def from_dict(cls, data: dict[str, Any]) -> DividendRecord:
         """Create from dictionary."""
         return cls(
             ex_date=date.fromisoformat(data["ex_date"]),
-            payment_date=date.fromisoformat(data["payment_date"]) if data.get("payment_date") else None,
+            payment_date=date.fromisoformat(data["payment_date"])
+            if data.get("payment_date")
+            else None,
             amount=data["amount"],
             frequency=data.get("frequency", "quarterly"),
         )
@@ -107,166 +114,160 @@ class DividendRecord:
 class StockDocument:
     """
     Document representing a stock for vector storage.
-    
+
     This is the primary unit stored in the vector database.
     Each document contains metadata and text content that can be embedded.
     Contains ALL fields needed by the UI for complete offline operation.
     """
-    
+
     # === IDENTITY ===
     symbol: str
     name: str
-    
+
     # === CLASSIFICATION ===
     sector: str = "Unknown"
     industry: str = "Unknown"
     exchange: str = "Unknown"
-    
+
     # === DIVIDEND INFO (core for Dividend Kings) ===
-    dividend_yield: Optional[float] = None  # Current yield %
-    annual_dividend: Optional[float] = None  # Annual dividend per share
-    dividend_streak_years: Optional[int] = None  # Consecutive years of increases
-    payout_ratio: Optional[float] = None  # Earnings payout %
-    fcf_payout_ratio: Optional[float] = None  # Free cash flow payout %
-    dividend_coverage: Optional[float] = None  # EPS / Dividend
-    ex_dividend_date: Optional[date] = None  # Last ex-dividend date
+    dividend_yield: float | None = None  # Current yield %
+    annual_dividend: float | None = None  # Annual dividend per share
+    dividend_streak_years: int | None = None  # Consecutive years of increases
+    payout_ratio: float | None = None  # Earnings payout %
+    fcf_payout_ratio: float | None = None  # Free cash flow payout %
+    dividend_coverage: float | None = None  # EPS / Dividend
+    ex_dividend_date: date | None = None  # Last ex-dividend date
     payment_frequency: int = 4  # Payments per year (4=quarterly, 12=monthly)
-    
+
     # === DIVIDEND GROWTH (calculated from history) ===
-    dividend_cagr_5y: Optional[float] = None  # 5-year compound annual growth rate
-    dividend_cagr_10y: Optional[float] = None  # 10-year compound annual growth rate
-    dividend_total_years: Optional[int] = None  # Total years with dividend history
-    
+    dividend_cagr_5y: float | None = None  # 5-year compound annual growth rate
+    dividend_cagr_10y: float | None = None  # 10-year compound annual growth rate
+    dividend_total_years: int | None = None  # Total years with dividend history
+
     # === PRICE DATA ===
-    current_price: Optional[float] = None
-    market_cap: Optional[float] = None
-    fifty_two_week_high: Optional[float] = None
-    fifty_two_week_low: Optional[float] = None
-    beta: Optional[float] = None
-    
+    current_price: float | None = None
+    market_cap: float | None = None
+    fifty_two_week_high: float | None = None
+    fifty_two_week_low: float | None = None
+    beta: float | None = None
+
     # === VALUATION METRICS ===
-    pe_ratio: Optional[float] = None  # Trailing P/E
-    forward_pe: Optional[float] = None  # Forward P/E
-    peg_ratio: Optional[float] = None  # P/E to Growth ratio
-    price_to_book: Optional[float] = None  # P/B ratio
-    price_to_sales: Optional[float] = None  # P/S ratio
-    ev_ebitda: Optional[float] = None  # Enterprise Value / EBITDA
-    
+    pe_ratio: float | None = None  # Trailing P/E
+    forward_pe: float | None = None  # Forward P/E
+    peg_ratio: float | None = None  # P/E to Growth ratio
+    price_to_book: float | None = None  # P/B ratio
+    price_to_sales: float | None = None  # P/S ratio
+    ev_ebitda: float | None = None  # Enterprise Value / EBITDA
+
     # === FINANCIAL HEALTH ===
-    debt_to_equity: Optional[float] = None  # D/E ratio
-    debt_to_ebitda: Optional[float] = None  # Debt / EBITDA
-    interest_coverage: Optional[float] = None  # EBIT / Interest Expense
-    current_ratio: Optional[float] = None  # Current Assets / Current Liabilities
-    quick_ratio: Optional[float] = None  # (Current Assets - Inventory) / Current Liabilities
-    
+    debt_to_equity: float | None = None  # D/E ratio
+    debt_to_ebitda: float | None = None  # Debt / EBITDA
+    interest_coverage: float | None = None  # EBIT / Interest Expense
+    current_ratio: float | None = None  # Current Assets / Current Liabilities
+    quick_ratio: float | None = None  # (Current Assets - Inventory) / Current Liabilities
+
     # === PROFITABILITY ===
-    roe: Optional[float] = None  # Return on Equity %
-    roa: Optional[float] = None  # Return on Assets %
-    roic: Optional[float] = None  # Return on Invested Capital %
-    profit_margin: Optional[float] = None  # Net Profit Margin %
-    operating_margin: Optional[float] = None  # Operating Margin %
-    gross_margin: Optional[float] = None  # Gross Margin %
-    
+    roe: float | None = None  # Return on Equity %
+    roa: float | None = None  # Return on Assets %
+    roic: float | None = None  # Return on Invested Capital %
+    profit_margin: float | None = None  # Net Profit Margin %
+    operating_margin: float | None = None  # Operating Margin %
+    gross_margin: float | None = None  # Gross Margin %
+
     # === GROWTH ===
-    revenue_growth: Optional[float] = None  # Year-over-year revenue growth %
-    earnings_growth: Optional[float] = None  # Year-over-year earnings growth %
-    fcf_growth: Optional[float] = None  # Free cash flow growth %
-    
+    revenue_growth: float | None = None  # Year-over-year revenue growth %
+    earnings_growth: float | None = None  # Year-over-year earnings growth %
+    fcf_growth: float | None = None  # Free cash flow growth %
+
     # === PERFORMANCE ===
-    price_return_1y: Optional[float] = None  # 1-year price return %
-    total_return_1y: Optional[float] = None  # 1-year total return (price + dividends) %
-    price_return_5y: Optional[float] = None  # 5-year price return %
-    total_return_5y: Optional[float] = None  # 5-year total return %
-    
+    price_return_1y: float | None = None  # 1-year price return %
+    total_return_1y: float | None = None  # 1-year total return (price + dividends) %
+    price_return_5y: float | None = None  # 5-year price return %
+    total_return_5y: float | None = None  # 5-year total return %
+
     # === ANALYST DATA ===
-    target_price: Optional[float] = None  # Mean analyst target price
-    target_upside: Optional[float] = None  # Upside to target %
-    analyst_rating: Optional[str] = None  # Buy/Hold/Sell recommendation
-    num_analysts: Optional[int] = None  # Number of analysts covering
-    
+    target_price: float | None = None  # Mean analyst target price
+    target_upside: float | None = None  # Upside to target %
+    analyst_rating: str | None = None  # Buy/Hold/Sell recommendation
+    num_analysts: int | None = None  # Number of analysts covering
+
     # === HISTORICAL DATA ===
-    price_history: List[PriceHistory] = field(default_factory=list)
-    dividend_history: List[DividendRecord] = field(default_factory=list)
-    
+    price_history: list[PriceHistory] = field(default_factory=list)
+    dividend_history: list[DividendRecord] = field(default_factory=list)
+
     # === METADATA ===
     source: DataSource = DataSource.MANUAL
     last_updated: datetime = field(default_factory=datetime.now)
     data_quality: float = 0.0  # 0-100 completeness score
-    
+
     # === TEXT CONTENT ===
     description: str = ""
     notes: str = ""
 
     # === PORTFOLIO LINK (synced from portfolio.db) ===
     in_portfolio: bool = False
-    portfolio_shares: Optional[float] = None
-    portfolio_avg_cost_per_share: Optional[float] = None
-    portfolio_acquisition_value: Optional[float] = None
-    portfolio_dividends_paid: Optional[float] = None
-    portfolio_purchase_count: Optional[int] = None
-    
+    portfolio_shares: float | None = None
+    portfolio_avg_cost_per_share: float | None = None
+    portfolio_acquisition_value: float | None = None
+    portfolio_dividends_paid: float | None = None
+    portfolio_purchase_count: int | None = None
+
     MAX_HISTORY_YEARS = 10  # Maximum years of historical data to store
-    
+
     @property
     def document_id(self) -> str:
         """Generate unique document ID based on symbol only (ensures no duplicates per symbol)."""
         return f"stock_{self.symbol.upper()}"
-    
+
     def trim_history(self, max_years: int = 10) -> None:
         """
         Trim historical data to max_years.
-        
+
         Keeps only the most recent data within the specified timeframe.
         """
         from datetime import timedelta
-        
+
         cutoff_date = date.today() - timedelta(days=max_years * 365)
-        
+
         if self.price_history:
-            self.price_history = [
-                p for p in self.price_history
-                if p.date >= cutoff_date
-            ]
+            self.price_history = [p for p in self.price_history if p.date >= cutoff_date]
             self.price_history.sort(key=lambda p: p.date, reverse=True)
-        
+
         if self.dividend_history:
-            self.dividend_history = [
-                d for d in self.dividend_history
-                if d.ex_date >= cutoff_date
-            ]
+            self.dividend_history = [d for d in self.dividend_history if d.ex_date >= cutoff_date]
             self.dividend_history.sort(key=lambda d: d.ex_date, reverse=True)
-    
+
     @property
-    def embedding_text(self) -> str:
+    def embedding_text(self) -> str:  # noqa: C901
         """Generate text content for vector embedding."""
         parts = [
             f"Stock: {self.symbol} - {self.name}",
             f"Sector: {self.sector}",
             f"Industry: {self.industry}",
         ]
-        
+
         if self.dividend_yield:
             parts.append(f"Dividend yield: {self.dividend_yield:.2f}%")
-        
+
         if self.dividend_streak_years:
             parts.append(f"Consecutive dividend increases: {self.dividend_streak_years} years")
             if self.dividend_streak_years >= 50:
                 parts.append("Status: Dividend King (50+ years)")
             elif self.dividend_streak_years >= 25:
                 parts.append("Status: Dividend Aristocrat (25+ years)")
-        
+
         if self.annual_dividend:
             parts.append(f"Annual dividend: ${self.annual_dividend:.2f}")
-        
+
         if self.payout_ratio:
             parts.append(f"Payout ratio: {self.payout_ratio:.1f}%")
-        
+
         if self.pe_ratio:
             parts.append(f"P/E ratio: {self.pe_ratio:.1f}")
-        
+
         if self.description:
             parts.append(f"Description: {self.description}")
-        
+
         if self.notes:
             parts.append(f"Notes: {self.notes}")
 
@@ -275,26 +276,22 @@ class StockDocument:
             if self.portfolio_shares is not None:
                 position_parts.append(f"{self.portfolio_shares:g} shares")
             if self.portfolio_avg_cost_per_share is not None:
-                position_parts.append(
-                    f"avg cost ${self.portfolio_avg_cost_per_share:.2f}"
-                )
+                position_parts.append(f"avg cost ${self.portfolio_avg_cost_per_share:.2f}")
             if self.portfolio_acquisition_value is not None:
-                position_parts.append(
-                    f"acquisition ${self.portfolio_acquisition_value:,.0f}"
-                )
+                position_parts.append(f"acquisition ${self.portfolio_acquisition_value:,.0f}")
             parts.append(", ".join(position_parts))
-        
+
         return "\n".join(parts)
-    
-    def to_metadata(self) -> Dict[str, Any]:
+
+    def to_metadata(self) -> dict[str, Any]:  # noqa: C901
         """
         Convert to metadata dict for vector storage.
-        
+
         ChromaDB only accepts str, int, float, bool as metadata values.
         None values must be excluded or converted.
         Lists (like price_history, dividend_history) are JSON-serialized.
         """
-        metadata: Dict[str, Any] = {
+        metadata: dict[str, Any] = {
             "symbol": self.symbol,
             "name": self.name,
             "sector": self.sector,
@@ -305,16 +302,16 @@ class StockDocument:
             "data_quality": float(self.data_quality) if self.data_quality is not None else 0.0,
             "payment_frequency": self.payment_frequency,
         }
-        
+
         # Helper to add float fields
-        def add_float(key: str, val: Optional[float]) -> None:
+        def add_float(key: str, val: float | None) -> None:
             if val is not None:
                 metadata[key] = float(val)
-        
-        def add_int(key: str, val: Optional[int]) -> None:
+
+        def add_int(key: str, val: int | None) -> None:
             if val is not None:
                 metadata[key] = int(val)
-        
+
         # Dividend fields
         add_float("dividend_yield", self.dividend_yield)
         add_float("annual_dividend", self.annual_dividend)
@@ -325,17 +322,17 @@ class StockDocument:
         add_float("dividend_cagr_5y", self.dividend_cagr_5y)
         add_float("dividend_cagr_10y", self.dividend_cagr_10y)
         add_int("dividend_total_years", self.dividend_total_years)
-        
+
         if self.ex_dividend_date:
             metadata["ex_dividend_date"] = self.ex_dividend_date.isoformat()
-        
+
         # Price data
         add_float("current_price", self.current_price)
         add_float("market_cap", self.market_cap)
         add_float("fifty_two_week_high", self.fifty_two_week_high)
         add_float("fifty_two_week_low", self.fifty_two_week_low)
         add_float("beta", self.beta)
-        
+
         # Valuation metrics
         add_float("pe_ratio", self.pe_ratio)
         add_float("forward_pe", self.forward_pe)
@@ -343,14 +340,14 @@ class StockDocument:
         add_float("price_to_book", self.price_to_book)
         add_float("price_to_sales", self.price_to_sales)
         add_float("ev_ebitda", self.ev_ebitda)
-        
+
         # Financial health
         add_float("debt_to_equity", self.debt_to_equity)
         add_float("debt_to_ebitda", self.debt_to_ebitda)
         add_float("interest_coverage", self.interest_coverage)
         add_float("current_ratio", self.current_ratio)
         add_float("quick_ratio", self.quick_ratio)
-        
+
         # Profitability
         add_float("roe", self.roe)
         add_float("roa", self.roa)
@@ -358,40 +355,41 @@ class StockDocument:
         add_float("profit_margin", self.profit_margin)
         add_float("operating_margin", self.operating_margin)
         add_float("gross_margin", self.gross_margin)
-        
+
         # Growth
         add_float("revenue_growth", self.revenue_growth)
         add_float("earnings_growth", self.earnings_growth)
         add_float("fcf_growth", self.fcf_growth)
-        
+
         # Performance
         add_float("price_return_1y", self.price_return_1y)
         add_float("total_return_1y", self.total_return_1y)
         add_float("price_return_5y", self.price_return_5y)
         add_float("total_return_5y", self.total_return_5y)
-        
+
         # Analyst data
         add_float("target_price", self.target_price)
         add_float("target_upside", self.target_upside)
         add_int("num_analysts", self.num_analysts)
         if self.analyst_rating:
             metadata["analyst_rating"] = self.analyst_rating
-        
+
         # Serialize historical data as JSON strings (ChromaDB only accepts scalars)
         # Limit to MAX_HISTORY_YEARS (10 years) to prevent bloated storage
         from datetime import timedelta
+
         cutoff_date = date.today() - timedelta(days=self.MAX_HISTORY_YEARS * 365)
-        
+
         if self.price_history:
             trimmed_prices = [p for p in self.price_history if p.date >= cutoff_date]
             trimmed_prices.sort(key=lambda p: p.date, reverse=True)
             metadata["price_history_json"] = json.dumps([p.to_dict() for p in trimmed_prices])
-        
+
         if self.dividend_history:
             trimmed_divs = [d for d in self.dividend_history if d.ex_date >= cutoff_date]
             trimmed_divs.sort(key=lambda d: d.ex_date, reverse=True)
             metadata["dividend_history_json"] = json.dumps([d.to_dict() for d in trimmed_divs])
-        
+
         # Text fields
         if self.description:
             metadata["description"] = self.description
@@ -405,10 +403,10 @@ class StockDocument:
         add_float("portfolio_acquisition_value", self.portfolio_acquisition_value)
         add_float("portfolio_dividends_paid", self.portfolio_dividends_paid)
         add_int("portfolio_purchase_count", self.portfolio_purchase_count)
-        
+
         return metadata
-    
-    def to_full_dict(self) -> Dict[str, Any]:
+
+    def to_full_dict(self) -> dict[str, Any]:
         """Convert entire document to dictionary."""
         data = self.to_metadata()
         data["price_history"] = [p.to_dict() for p in self.price_history]
@@ -416,30 +414,22 @@ class StockDocument:
         data["description"] = self.description
         data["notes"] = self.notes
         return data
-    
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "StockDocument":
+    def from_dict(cls, data: dict[str, Any]) -> StockDocument:
         """Create document from dictionary."""
         from utils.stock_document_history import parse_history_payload
 
         price_raw, div_raw = parse_history_payload(data)
-        price_history = [
-            PriceHistory.from_dict(p)
-            for p in price_raw
-        ]
-        dividend_history = [
-            DividendRecord.from_dict(d)
-            for d in div_raw
-        ]
-        
+        price_history = [PriceHistory.from_dict(p) for p in price_raw]
+        dividend_history = [DividendRecord.from_dict(d) for d in div_raw]
+
         # Parse ex_dividend_date if present
         ex_div_date = None
         if data.get("ex_dividend_date"):
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 ex_div_date = date.fromisoformat(data["ex_dividend_date"])
-            except (ValueError, TypeError):
-                pass
-        
+
         return cls(
             symbol=data["symbol"],
             name=data["name"],
@@ -503,7 +493,9 @@ class StockDocument:
             dividend_history=dividend_history,
             # Metadata
             source=parse_data_source(data.get("source")),
-            last_updated=datetime.fromisoformat(data["last_updated"]) if data.get("last_updated") else datetime.now(),
+            last_updated=datetime.fromisoformat(data["last_updated"])
+            if data.get("last_updated")
+            else datetime.now(),
             data_quality=data.get("data_quality", 0.0),
             description=data.get("description", ""),
             notes=data.get("notes", ""),
@@ -519,8 +511,9 @@ class StockDocument:
 @dataclass
 class SearchResult:
     """Result from vector similarity search."""
+
     document: StockDocument
     score: float  # Similarity score (0-1, higher = more similar)
-    
+
     def __repr__(self) -> str:
         return f"SearchResult({self.document.symbol}, score={self.score:.3f})"

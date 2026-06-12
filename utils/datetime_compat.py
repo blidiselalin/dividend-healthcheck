@@ -9,12 +9,12 @@ naive UTC before comparing or taking ``max``.
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from typing import Optional, Union
+from typing import Union
 
 DateLike = Union[date, datetime]
 
 
-def to_naive_utc(value: Optional[datetime]) -> Optional[datetime]:
+def to_naive_utc(value: datetime | None) -> datetime | None:
     """Return a timezone-naive UTC datetime, or None."""
     if value is None:
         return None
@@ -25,12 +25,13 @@ def to_naive_utc(value: Optional[datetime]) -> Optional[datetime]:
     return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
-def max_datetime(*values: Optional[datetime]) -> datetime:
+def max_datetime(*values: datetime | None) -> datetime:
     """Latest timestamp after normalizing mixed naive/aware inputs."""
     normalized = [to_naive_utc(value) for value in values if value is not None]
-    if not normalized:
+    valid_dates = [d for d in normalized if d is not None]
+    if not valid_dates:
         return datetime.min
-    return max(normalized)
+    return max(valid_dates)
 
 
 def coerce_calendar_date(value: DateLike) -> date:

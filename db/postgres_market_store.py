@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +26,10 @@ _STOCK_DOCUMENT_COLUMNS = """
 class PostgresMarketStore:
     """Persist StockDocument payloads as JSONB in PostgreSQL."""
 
-    def add_document(self, document) -> str:
+    def add_document(self, document: Any) -> str:
         return self.add_documents([document])[0]
 
-    def add_documents(self, documents: List[Any]) -> List[str]:
+    def add_documents(self, documents: list[Any]) -> list[str]:
         from data_ingestion.models import StockDocument
         from db.connection import ensure_schema, get_connection
         from utils.json_safe import sanitize_for_json
@@ -38,7 +38,7 @@ class PostgresMarketStore:
             return []
 
         ensure_schema()
-        ids: List[str] = []
+        ids: list[str] = []
         from db.postgres_market_history_store import PostgresMarketHistoryStore
 
         history_store = PostgresMarketHistoryStore()
@@ -78,68 +78,65 @@ class PostgresMarketStore:
                 ids.append(doc.document_id)
         return ids
 
-    def get_by_symbol(self, symbol: str):
+    def get_by_symbol(self, symbol: str) -> Any | None:
         from db.connection import ensure_schema, get_connection
 
         ensure_schema()
         sym = symbol.upper()
         with get_connection() as conn:
-            row = conn.execute(
-                f"""
-                SELECT {_STOCK_DOCUMENT_COLUMNS}
-                FROM stock_documents
-                WHERE symbol = %s
-                """,
-                (sym,),
-            ).fetchone()
+            query = (
+                "SELECT " + _STOCK_DOCUMENT_COLUMNS + "\n"
+                "FROM stock_documents\n"
+                "WHERE symbol = %s"
+            )
+            row = conn.execute(query, (sym,)).fetchone()
+
             if not row:
                 return None
             return _document_from_row(row, conn=conn)
 
-    def get_all_documents(self) -> List[Any]:
+    def get_all_documents(self) -> list[Any]:
         from db.connection import ensure_schema, get_connection
 
         ensure_schema()
         with get_connection() as conn:
-            rows = conn.execute(
-                f"""
-                SELECT {_STOCK_DOCUMENT_COLUMNS}
-                FROM stock_documents
-                ORDER BY symbol
-                """
-            ).fetchall()
+            query = (
+                "SELECT " + _STOCK_DOCUMENT_COLUMNS + "\n"
+                "FROM stock_documents\n"
+                "ORDER BY symbol"
+            )
+            rows = conn.execute(query).fetchall()
+
         return [_document_from_row(row) for row in rows if row]
 
-    def get_dividend_kings(self, min_streak: int = 50) -> List[Any]:
+    def get_dividend_kings(self, min_streak: int = 50) -> list[Any]:
         from db.connection import ensure_schema, get_connection
 
         ensure_schema()
         with get_connection() as conn:
-            rows = conn.execute(
-                f"""
-                SELECT {_STOCK_DOCUMENT_COLUMNS}
-                FROM stock_documents
-                WHERE dividend_streak_years >= %s
-                ORDER BY dividend_streak_years DESC
-                """,
-                (min_streak,),
-            ).fetchall()
+            query = (
+                "SELECT " + _STOCK_DOCUMENT_COLUMNS + "\n"
+                "FROM stock_documents\n"
+                "WHERE dividend_streak_years >= %s\n"
+                "ORDER BY dividend_streak_years DESC"
+            )
+            rows = conn.execute(query, (min_streak,)).fetchall()
+
         return [_document_from_row(row) for row in rows if row]
 
-    def get_by_sector(self, sector: str) -> List[Any]:
+    def get_by_sector(self, sector: str) -> list[Any]:
         from db.connection import ensure_schema, get_connection
 
         ensure_schema()
         with get_connection() as conn:
-            rows = conn.execute(
-                f"""
-                SELECT {_STOCK_DOCUMENT_COLUMNS}
-                FROM stock_documents
-                WHERE lower(sector) = lower(%s)
-                ORDER BY symbol
-                """,
-                (sector,),
-            ).fetchall()
+            query = (
+                "SELECT " + _STOCK_DOCUMENT_COLUMNS + "\n"
+                "FROM stock_documents\n"
+                "WHERE lower(sector) = lower(%s)\n"
+                "ORDER BY symbol"
+            )
+            rows = conn.execute(query, (sector,)).fetchall()
+
         return [_document_from_row(row) for row in rows if row]
 
     def count(self) -> int:
@@ -148,9 +145,9 @@ class PostgresMarketStore:
         ensure_schema()
         with get_connection() as conn:
             row = conn.execute("SELECT COUNT(*) AS count FROM stock_documents").fetchone()
-        return int(row["count"]) if row else 0
+        return int(str(row["count"])) if row else 0
 
-    def count_symbols_in(self, symbols: List[str]) -> int:
+    def count_symbols_in(self, symbols: list[str]) -> int:
         """Count how many of the given tickers exist in the library (no full-table scan)."""
         from db.connection import ensure_schema, get_connection
 
@@ -163,15 +160,15 @@ class PostgresMarketStore:
                 "SELECT COUNT(*) AS count FROM stock_documents WHERE symbol = ANY(%s)",
                 (targets,),
             ).fetchone()
-        return int(row["count"]) if row else 0
+        return int(str(row["count"])) if row else 0
 
-    def history_coverage_summary(self) -> Dict[str, int]:
+    def history_coverage_summary(self) -> dict[str, int]:
         """Aggregate yield-ready / thin-history counts without loading full documents."""
         from db.postgres_market_history_store import PostgresMarketHistoryStore
 
         return PostgresMarketHistoryStore().history_coverage_summary()
 
-    def delete_symbols(self, symbols: List[str]) -> int:
+    def delete_symbols(self, symbols: list[str]) -> int:
         from db.connection import ensure_schema, get_connection
 
         if not symbols:
@@ -183,7 +180,7 @@ class PostgresMarketStore:
                 "DELETE FROM stock_documents WHERE symbol = ANY(%s)",
                 (targets,),
             )
-        return cur.rowcount
+        return int(cur.rowcount)
 
     def clear(self) -> None:
         from db.connection import ensure_schema, get_connection
@@ -192,9 +189,9 @@ class PostgresMarketStore:
         with get_connection() as conn:
             conn.execute("DELETE FROM stock_documents")
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         docs = self.get_all_documents()
-        stats: Dict[str, Any] = {
+        stats: dict[str, Any] = {
             "total_documents": len(docs),
             "dividend_kings": 0,
             "dividend_aristocrats": 0,
@@ -202,8 +199,8 @@ class PostgresMarketStore:
             "sectors": {},
             "sources": {},
         }
-        sectors: Dict[str, int] = {}
-        sources: Dict[str, int] = {}
+        sectors: dict[str, int] = {}
+        sources: dict[str, int] = {}
         for doc in docs:
             sector = doc.sector or "Unknown"
             sectors[sector] = sectors.get(sector, 0) + 1
@@ -218,12 +215,14 @@ class PostgresMarketStore:
         stats["sources"] = dict(sorted(sources.items(), key=lambda item: item[1], reverse=True))
         return stats
 
-    def search(self, query: str, n_results: int = 10, where: Optional[Dict[str, Any]] = None):
-        from data_ingestion.vector_store import SearchResult
+    def search(
+        self, query: str, n_results: int = 10, where: dict[str, Any] | None = None
+    ) -> list[Any]:
+        from data_ingestion.models import SearchResult
 
         query_lower = (query or "").lower()
         terms = [term for term in query_lower.split() if term]
-        results: List[SearchResult] = []
+        results: list[SearchResult] = []
         for doc in self.get_all_documents():
             if where and not _matches_filter(doc, where):
                 continue
@@ -235,7 +234,7 @@ class PostgresMarketStore:
         return results[:n_results]
 
 
-def _document_from_row(row: Any, *, conn: Any = None):
+def _document_from_row(row: Any, *, conn: Any = None) -> Any:  # noqa: C901
     """Merge JSONB document with indexed stock_documents table columns."""
     from data_ingestion.models import StockDocument, parse_data_source
     from utils.stock_document_history import hydrate_document_history
@@ -267,12 +266,14 @@ def _document_from_row(row: Any, *, conn: Any = None):
 
         raw_updated = row["last_updated"]
         if isinstance(raw_updated, datetime):
-            doc.last_updated = to_naive_utc(raw_updated)
+            parsed = to_naive_utc(raw_updated)
+            if parsed:
+                doc.last_updated = parsed
         elif isinstance(raw_updated, str):
             try:
-                doc.last_updated = to_naive_utc(
-                    datetime.fromisoformat(raw_updated.replace("Z", "+00:00"))
-                )
+                parsed = to_naive_utc(datetime.fromisoformat(raw_updated.replace("Z", "+00:00")))
+                if parsed:
+                    doc.last_updated = parsed
             except ValueError:
                 pass
 
@@ -284,7 +285,7 @@ def _document_from_row(row: Any, *, conn: Any = None):
             from db.postgres_market_history_store import PostgresMarketHistoryStore
 
             doc = PostgresMarketHistoryStore().attach_history_to_document(doc, conn=conn)
-        except Exception:
+        except Exception:  # noqa: S110
             pass
 
     return doc
@@ -296,7 +297,7 @@ def _json_default(value: Any) -> Any:
     raise TypeError(f"Object of type {type(value)} is not JSON serializable")
 
 
-def _matches_filter(doc: Any, where: Dict[str, Any]) -> bool:
+def _matches_filter(doc: Any, where: dict[str, Any]) -> bool:
     for key, expected in where.items():
         actual = getattr(doc, key, None)
         if isinstance(expected, dict):

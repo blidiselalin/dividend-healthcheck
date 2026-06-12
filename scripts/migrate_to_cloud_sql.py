@@ -13,7 +13,6 @@ From host with DATABASE_URL:
 from __future__ import annotations
 
 import argparse
-import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -34,7 +33,7 @@ def _sqlite_rows(conn: sqlite3.Connection, table: str) -> list[sqlite3.Row]:
     if not _sqlite_has_table(conn, table):
         return []
     conn.row_factory = sqlite3.Row
-    return conn.execute(f"SELECT * FROM {table}").fetchall()
+    return conn.execute(f"SELECT * FROM {table}").fetchall()  # noqa: S608
 
 
 def _import_users(data_dir: Path) -> int:
@@ -111,7 +110,9 @@ def _import_users(data_dir: Path) -> int:
     return count
 
 
-def _import_portfolio_db(db_path: Path, user_id: str, *, data_dir: Path | None = None) -> dict:
+def _import_portfolio_db(
+    db_path: Path, user_id: str, *, data_dir: Path | None = None
+) -> dict[str, int]:
     from db.connection import ensure_schema, get_connection
 
     ensure_schema()
@@ -201,14 +202,23 @@ def _import_portfolio_db(db_path: Path, user_id: str, *, data_dir: Path | None =
                     VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (user_id, period_key) DO NOTHING
                     """,
-                    (user_id, row["period_key"], row["year"], row["month"], row["net_usd"]),
+                    (
+                        user_id,
+                        row["period_key"],
+                        row["year"],
+                        row["month"],
+                        row["net_usd"],
+                    ),
                 )
                 stats["dividends"] += 1
     return stats
 
 
 def _import_market_library(data_dir: Path, *, force: bool = False) -> int:
-    from services.market_library_migration import diagnose_legacy_import, import_legacy_market_library
+    from services.market_library_migration import (
+        diagnose_legacy_import,
+        import_legacy_market_library,
+    )
 
     diag = diagnose_legacy_import(data_dir)
     if diag.legacy_document_count == 0:
@@ -261,7 +271,7 @@ def main() -> int:
                 total[key] += stats[key]
             print(f"  user {user_dir.name}: {stats}")
 
-    market = _import_market_library(data_dir, force=args.force_market)
+    _import_market_library(data_dir, force=args.force_market)
     print("Done.")
     return 0
 

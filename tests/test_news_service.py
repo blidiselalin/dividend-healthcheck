@@ -1,4 +1,5 @@
 """Tests for news sentiment grouping and source categorization."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ def _article(title: str, *, source: str = "Reuters", sentiment: str = "neutral")
     )
 
 
-def test_news_summary_groups_articles_by_sentiment():
+def test_news_summary_groups_articles_by_sentiment() -> None:
     summary = NewsSummary(
         symbol="ABBV",
         company_name="AbbVie",
@@ -35,7 +36,7 @@ def test_news_summary_groups_articles_by_sentiment():
     assert summary.neutral_count == 1
 
 
-def test_classify_source_and_theme():
+def test_classify_source_and_theme() -> None:
     service = NewsService()
     assert service.classify_source("Reuters") == "Wire / Agency"
     assert service.classify_source("Yahoo Finance") == "Financial Media"
@@ -46,7 +47,7 @@ def test_classify_source_and_theme():
     assert service.classify_article_theme(article) in {"dividend", "earnings", "growth"}
 
 
-def test_format_summary_for_display_includes_sentiment_buckets():
+def test_format_summary_for_display_includes_sentiment_buckets() -> None:
     service = NewsService()
     summary = NewsSummary(
         symbol="KO",
@@ -71,7 +72,7 @@ def test_format_summary_for_display_includes_sentiment_buckets():
     }
 
 
-def test_sources_breakdown_sorts_by_count_then_name():
+def test_sources_breakdown_sorts_by_count_then_name() -> None:
     service = NewsService()
     articles = [
         _article("One", source="Reuters", sentiment="positive"),
@@ -87,7 +88,7 @@ def test_sources_breakdown_sorts_by_count_then_name():
     assert breakdown[1]["count"] == 1
 
 
-def test_format_article_for_display_includes_category_theme_and_date():
+def test_format_article_for_display_includes_category_theme_and_date() -> None:
     service = NewsService()
     article = _article(
         "Company raises dividend after earnings beat",
@@ -102,7 +103,7 @@ def test_format_article_for_display_includes_category_theme_and_date():
     assert payload["source_category_color"].startswith("#")
 
 
-def test_deduplicate_articles_removes_duplicate_titles():
+def test_deduplicate_articles_removes_duplicate_titles() -> None:
     service = NewsService()
     articles = [
         _article("AbbVie raises dividend outlook"),
@@ -114,7 +115,7 @@ def test_deduplicate_articles_removes_duplicate_titles():
     assert len(unique) == 2
 
 
-def test_calculate_overall_sentiment_labels():
+def test_calculate_overall_sentiment_labels() -> None:
     service = NewsService()
     mixed_articles = [
         _article("Good news", sentiment="positive"),
@@ -135,7 +136,7 @@ def test_calculate_overall_sentiment_labels():
     assert score < 0
 
 
-def test_analyze_article_sentiment_from_keywords():
+def test_analyze_article_sentiment_from_keywords() -> None:
     service = NewsService()
     positive = _article("Company beat expectations and raised dividend")
     negative = _article("Profit decline and dividend cut announced")

@@ -5,12 +5,12 @@ Read authentication settings from Streamlit secrets and environment variables.
 from __future__ import annotations
 
 import os
-from typing import FrozenSet, List, Optional
+from typing import Any
 
 _AUTH_SECTION = "auth"
 
 
-def _auth_section() -> dict:
+def _auth_section() -> dict[str, Any]:
     try:
         import streamlit as st
 
@@ -66,7 +66,7 @@ def auth_required() -> bool:
     return auth_configured()
 
 
-def dev_bypass_email() -> Optional[str]:
+def dev_bypass_email() -> str | None:
     """Local-only sign-in without Google (secrets auth.dev_email)."""
     if auth_configured() and not auth_disabled():
         return None
@@ -93,23 +93,20 @@ def redirect_uri() -> str:
     )
 
 
-def _split_emails(value: object) -> List[str]:
+def _split_emails(value: object) -> list[str]:
     if value is None:
         return []
-    if isinstance(value, (list, tuple)):
-        items = value
-    else:
-        items = str(value).replace(";", ",").split(",")
+    items = value if isinstance(value, (list, tuple)) else str(value).replace(";", ",").split(",")
     return [item.strip().lower() for item in items if str(item).strip()]
 
 
-def allowed_emails() -> FrozenSet[str]:
+def allowed_emails() -> frozenset[str]:
     section = _auth_section()
     raw = section.get("allowed_emails") or os.environ.get("DIVIDENDSCOPE_ALLOWED_EMAILS")
     return frozenset(_split_emails(raw))
 
 
-def admin_emails() -> FrozenSet[str]:
+def admin_emails() -> frozenset[str]:
     section = _auth_section()
     raw = section.get("admin_emails") or os.environ.get("DIVIDENDSCOPE_ADMIN_EMAILS")
     return frozenset(_split_emails(raw))
@@ -126,7 +123,7 @@ def is_email_allowed(email: str) -> bool:
 
         if AccessRequestStore().is_approved(normalized):
             return True
-    except Exception:
+    except Exception:  # noqa: S110
         pass
 
     allow = allowed_emails()

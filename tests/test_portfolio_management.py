@@ -1,4 +1,5 @@
 """Tests for portfolio CRUD and management service."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -6,7 +7,7 @@ from datetime import date
 
 import pytest
 
-from data_ingestion.deposits_store import MonthlyDeposit
+from data_ingestion.deposits_store import DepositsStore, MonthlyDeposit
 from data_ingestion.portfolio_store import PortfolioStore
 from data_ingestion.purchase_journal_store import PurchaseJournalStore
 from services.portfolio_management_service import PortfolioManagementService
@@ -100,7 +101,7 @@ def test_add_purchase_requires_holding(
 
 def test_add_deposit(
     portfolio_store: PortfolioStore,
-    deposits_store,
+    deposits_store: DepositsStore,
 ) -> None:
     service = PortfolioManagementService(
         portfolio=portfolio_store,
@@ -120,7 +121,7 @@ def test_add_deposit(
 
 def test_get_deposit_and_missing_portfolio(
     portfolio_store: PortfolioStore,
-    deposits_store,
+    deposits_store: DepositsStore,
 ) -> None:
     service = PortfolioManagementService(
         portfolio=portfolio_store,

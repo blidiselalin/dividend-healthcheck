@@ -1,8 +1,10 @@
 """Tests for yield channel validation and chart data prep."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from typing import Any
 from unittest.mock import patch
 
 import pandas as pd
@@ -11,8 +13,8 @@ from data_ingestion.models import DividendRecord
 from services.yield_channel_chart import (
     YieldChannelData,
     YieldChannelService,
-    validate_yield_channel_data,
     _ordered_percentiles,
+    validate_yield_channel_data,
 )
 from utils.yfinance_history import align_dividends_to_price_index
 
@@ -54,7 +56,7 @@ def _sample_channel(n: int = 120) -> YieldChannelData:
     )
 
 
-def test_ordered_percentiles_monotonic():
+def test_ordered_percentiles_monotonic() -> None:
     stats = _ordered_percentiles(
         {
             "p10": 3.5,
@@ -71,17 +73,17 @@ def test_ordered_percentiles_monotonic():
     assert stats["p10"] <= stats["p25"] <= stats["median"] <= stats["p75"] <= stats["p90"]
 
 
-def test_validate_accepts_minimum_series():
+def test_validate_accepts_minimum_series() -> None:
     data = _sample_channel(n=13)
     assert validate_yield_channel_data(data) is not None
 
 
-def test_validate_rejects_short_series():
+def test_validate_rejects_short_series() -> None:
     data = _sample_channel(n=10)
     assert validate_yield_channel_data(data) is None
 
 
-def test_validate_accepts_clean_series():
+def test_validate_accepts_clean_series() -> None:
     data = _sample_channel()
     clean = validate_yield_channel_data(data)
     assert clean is not None
@@ -89,7 +91,7 @@ def test_validate_accepts_clean_series():
     assert clean.deep_value_price <= clean.value_price <= clean.expensive_price
 
 
-def test_align_dividends_maps_ex_date_to_next_trading_day():
+def test_align_dividends_maps_ex_date_to_next_trading_day() -> None:
     index = pd.date_range("2020-01-02", periods=5, freq="B")
     hist = pd.DataFrame({"Close": [100.0] * 5, "Dividends": [0.0] * 5}, index=index)
     # Ex-date on Saturday should land on Monday 2020-01-06
@@ -100,7 +102,7 @@ def test_align_dividends_maps_ex_date_to_next_trading_day():
 
 
 @patch("utils.yfinance_history.fetch_dividend_series", return_value=pd.Series(dtype=float))
-def test_ensure_dividends_prefers_library_without_yfinance(mock_yf_divs):
+def test_ensure_dividends_prefers_library_without_yfinance(mock_yf_divs: Any) -> None:
     # ~2 years of business days so 2019 and 2020 ex-dates all map to trading rows
     index = pd.date_range("2019-01-02", periods=520, freq="B")
     hist = pd.DataFrame({"Close": [150.0] * 520, "Dividends": [0.0] * 520}, index=index)
@@ -121,7 +123,7 @@ def test_ensure_dividends_prefers_library_without_yfinance(mock_yf_divs):
     mock_yf_divs.assert_not_called()
 
 
-def test_align_dividends_handles_timezone_aware_ex_dates():
+def test_align_dividends_handles_timezone_aware_ex_dates() -> None:
     index = pd.date_range("2020-01-02", periods=5, freq="B", tz="UTC")
     hist = pd.DataFrame({"Close": [100.0] * 5, "Dividends": [0.0] * 5}, index=index)
     divs = pd.Series(

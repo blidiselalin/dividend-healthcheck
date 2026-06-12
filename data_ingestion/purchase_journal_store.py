@@ -9,13 +9,13 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import List, Optional, Set
-
-logger = logging.getLogger(__name__)
+from typing import Any
 
 from config import DATA_DIR
 from db.connection import open_portfolio_db, use_cloud_sql
 from db.parsing import parse_date
+
+logger = logging.getLogger(__name__)
 
 
 def _default_db_path() -> Path:
@@ -31,7 +31,7 @@ def _default_seed() -> bool:
     return False
 
 
-def portfolio_symbols(db_path: Optional[Path] = None) -> Set[str]:
+def portfolio_symbols(db_path: Path | None = None) -> set[str]:
     """Tickers currently in the portfolio holdings table."""
     from data_ingestion.portfolio_store import PortfolioStore
 
@@ -44,7 +44,7 @@ class PurchaseRecord:
     symbol: str
     purchase_date: date
     price_usd: float
-    id: Optional[int] = None
+    id: int | None = None
 
     @property
     def label(self) -> str:
@@ -54,9 +54,9 @@ class PurchaseRecord:
 class PurchaseJournalStore:
     def __init__(
         self,
-        db_path: Optional[Path] = None,
+        db_path: Path | None = None,
         *,
-        seed: Optional[bool] = None,
+        seed: bool | None = None,
     ) -> None:
         self.db_path = Path(db_path or _default_db_path())
         if not use_cloud_sql():
@@ -67,7 +67,7 @@ class PurchaseJournalStore:
             self._seed_if_empty()
             self.sync_seed()
 
-    def _connect(self):
+    def _connect(self) -> Any:
         return open_portfolio_db(self.db_path)
 
     def _ensure_schema(self) -> None:
@@ -127,7 +127,7 @@ class PurchaseJournalStore:
                     (symbol, purchase_date, price_usd),
                 )
 
-    def list_purchases(self, *, portfolio_only: bool = True) -> List[PurchaseRecord]:
+    def list_purchases(self, *, portfolio_only: bool = True) -> list[PurchaseRecord]:
         allowed = portfolio_symbols(self.db_path) if portfolio_only else None
         with self._connect() as connection:
             if connection.is_postgres:
@@ -153,7 +153,7 @@ class PurchaseJournalStore:
                     """
                 ).fetchall()
 
-        records: List[PurchaseRecord] = []
+        records: list[PurchaseRecord] = []
         for row in rows:
             symbol = row["symbol"]
             if allowed is not None and symbol not in allowed:
@@ -163,7 +163,8 @@ class PurchaseJournalStore:
                 price_usd = float(row["price_usd"])
             except (ValueError, TypeError) as exc:
                 logger.warning(
-                    "Skipping purchase_journal id=%s symbol=%s: %s (purchase_date=%r, price_usd=%r)",
+                    "Skipping purchase_journal id=%s symbol=%s: %s "
+                    "(purchase_date=%r, price_usd=%r)",
                     row.get("id"),
                     symbol,
                     exc,
@@ -267,4 +268,4 @@ class PurchaseJournalStore:
                     "DELETE FROM purchase_journal WHERE id = ?",
                     (purchase_id,),
                 )
-            return cursor.rowcount > 0
+            return bool(cursor.rowcount > 0)

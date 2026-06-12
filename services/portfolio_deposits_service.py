@@ -4,14 +4,13 @@ Summaries and charts for monthly account deposits.
 
 from __future__ import annotations
 
-from utils.chart_theme import style_figure
-
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any
 
 import pandas as pd
 
 from data_ingestion.deposits_store import DepositsStore, MonthlyDeposit
+from utils.chart_theme import style_figure
 
 try:
     import plotly.graph_objects as go
@@ -30,19 +29,19 @@ class DepositsSummary:
     latest_label: str
     month_count: int
     gain_eur: float
-    gain_pct: Optional[float]
+    gain_pct: float | None
 
 
 class PortfolioDepositsService:
     """Build deposit tables, totals, and charts."""
 
-    def __init__(self, store: Optional[DepositsStore] = None) -> None:
+    def __init__(self, store: DepositsStore | None = None) -> None:
         self.store = store or DepositsStore()
 
-    def list_deposits(self) -> List[MonthlyDeposit]:
+    def list_deposits(self) -> list[MonthlyDeposit]:
         return self.store.list_deposits()
 
-    def to_dataframe(self, deposits: Optional[List[MonthlyDeposit]] = None) -> pd.DataFrame:
+    def to_dataframe(self, deposits: list[MonthlyDeposit] | None = None) -> pd.DataFrame:
         records = deposits if deposits is not None else self.list_deposits()
         return pd.DataFrame(
             [
@@ -56,7 +55,7 @@ class PortfolioDepositsService:
             ]
         )
 
-    def summarize(self, deposits: Optional[List[MonthlyDeposit]] = None) -> DepositsSummary:
+    def summarize(self, deposits: list[MonthlyDeposit] | None = None) -> DepositsSummary:
         records = deposits if deposits is not None else self.list_deposits()
         total_eur = round(sum(item.deposit_eur for item in records), 2)
         total_usd = round(sum(item.deposit_usd for item in records), 2)
@@ -85,7 +84,7 @@ class PortfolioDepositsService:
             gain_pct=gain_pct,
         )
 
-    def create_deposits_chart(self, deposits: Optional[List[MonthlyDeposit]] = None):
+    def create_deposits_chart(self, deposits: list[MonthlyDeposit] | None = None) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         records = deposits if deposits is not None else self.list_deposits()
@@ -110,7 +109,7 @@ class PortfolioDepositsService:
                 y=[item.portfolio_eur for item in records],
                 name="Portfolio €",
                 mode="lines+markers",
-                line=dict(color="#43a047", width=2),
+                line={"color": "#43a047", "width": 2},
                 hovertemplate="%{x}<br>€%{y:,.2f}<extra></extra>",
             ),
             secondary_y=True,
@@ -118,22 +117,22 @@ class PortfolioDepositsService:
         fig.update_layout(
             title="Monthly deposits and portfolio value (€)",
             height=420,
-            margin=dict(t=50, b=120),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02),
-            xaxis=dict(tickangle=-45),
+            margin={"t": 50, "b": 120},
+            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
+            xaxis={"tickangle": -45},
         )
         fig.update_yaxes(title_text="Deposit €", secondary_y=False)
         fig.update_yaxes(title_text="Portfolio €", secondary_y=True)
         return style_figure(fig)
 
-    def create_cumulative_chart(self, deposits: Optional[List[MonthlyDeposit]] = None):
+    def create_cumulative_chart(self, deposits: list[MonthlyDeposit] | None = None) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         records = deposits if deposits is not None else self.list_deposits()
         if not records:
             return None
 
-        cumulative_eur: List[float] = []
+        cumulative_eur: list[float] = []
         running = 0.0
         for item in records:
             running += item.deposit_eur
@@ -148,7 +147,7 @@ class PortfolioDepositsService:
                 name="Total deposits (cumulative)",
                 mode="lines+markers",
                 fill="tozeroy",
-                line=dict(color="#5c6bc0", width=2),
+                line={"color": "#5c6bc0", "width": 2},
                 hovertemplate="%{x}<br>€%{y:,.2f}<extra></extra>",
             )
         )
@@ -156,7 +155,7 @@ class PortfolioDepositsService:
             title="Cumulative deposits (€)",
             yaxis_title="€ cumulative",
             height=360,
-            margin=dict(t=50, b=120),
-            xaxis=dict(tickangle=-45),
+            margin={"t": 50, "b": 120},
+            xaxis={"tickangle": -45},
         )
         return style_figure(fig)

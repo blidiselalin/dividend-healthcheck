@@ -1,8 +1,10 @@
 """Monthly portfolio dividend calendar — amounts, months, and share counts."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 from datetime import date
+
 import pytest
 
 from data_ingestion.models import DividendRecord, StockDocument

@@ -10,10 +10,9 @@ Enable in `.streamlit/secrets.toml`:
 from __future__ import annotations
 
 import os
-from typing import Optional
 
-from auth.settings import _auth_section
 from auth.models import CurrentUser
+from auth.settings import _auth_section
 
 TEST_USER_ID = "test_demo"
 DEFAULT_TEST_EMAIL = "test@dividendscope.local"
@@ -35,9 +34,13 @@ def test_user_enabled() -> bool:
 def test_user_email() -> str:
     section = _auth_section()
     return (
-        str(section.get("test_user_email") or os.environ.get("DIVIDENDSCOPE_TEST_USER_EMAIL"))
-        or DEFAULT_TEST_EMAIL
-    ).strip().lower()
+        (
+            str(section.get("test_user_email") or os.environ.get("DIVIDENDSCOPE_TEST_USER_EMAIL"))
+            or DEFAULT_TEST_EMAIL
+        )
+        .strip()
+        .lower()
+    )
 
 
 def is_test_user_email(email: str) -> bool:
@@ -48,7 +51,7 @@ def is_test_user_id(user_id: str) -> bool:
     return user_id == TEST_USER_ID
 
 
-def is_test_user(user: Optional[CurrentUser]) -> bool:
+def is_test_user(user: CurrentUser | None) -> bool:
     if user is None:
         return False
     return is_test_user_id(user.id) or is_test_user_email(user.email)

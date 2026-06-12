@@ -4,16 +4,15 @@ Portfolio-wide dividend history and growth since 2021 (from the shared market li
 
 from __future__ import annotations
 
-from utils.chart_theme import style_figure
-
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any
 
 import pandas as pd
 
 from data_ingestion.portfolio_store import PortfolioStore
+from utils.chart_theme import style_figure
 
 try:
     import plotly.graph_objects as go
@@ -29,10 +28,10 @@ SINCE_YEAR = 2021
 class SymbolDividendGrowth:
     symbol: str
     company: str
-    annual_by_year: Dict[int, float]
+    annual_by_year: dict[int, float]
     growth_years: int
-    cagr_since_start: Optional[float]
-    latest_annual: Optional[float]
+    cagr_since_start: float | None
+    latest_annual: float | None
     shares: float
 
 
@@ -41,14 +40,14 @@ class PortfolioDividendGrowthService:
 
     def __init__(
         self,
-        vector_store: Optional[Any] = None,
-        portfolio_store: Optional[PortfolioStore] = None,
+        vector_store: Any | None = None,
+        portfolio_store: PortfolioStore | None = None,
     ) -> None:
         self._vector_store = vector_store
         self.portfolio = portfolio_store or PortfolioStore(seed=False)
 
     @property
-    def vector_store(self):
+    def vector_store(self) -> Any:
         if self._vector_store is None:
             from services.shared_market_db import get_shared_vector_store
 
@@ -57,13 +56,13 @@ class PortfolioDividendGrowthService:
 
     def _annual_dividends_from_history(
         self,
-        records,
+        records: Any,
         *,
         since_year: int = SINCE_YEAR,
         document: Any = None,
-    ) -> Dict[int, float]:
-        totals: Dict[int, float] = defaultdict(float)
-        counts: Dict[int, int] = defaultdict(int)
+    ) -> dict[int, float]:
+        totals: dict[int, float] = defaultdict(float)
+        counts: dict[int, int] = defaultdict(int)
         for record in records:
             year = record.ex_date.year
             if year >= since_year:
@@ -86,7 +85,7 @@ class PortfolioDividendGrowthService:
         return dict(sorted(totals.items()))
 
     @staticmethod
-    def _consecutive_growth_years(annual: Dict[int, float]) -> int:
+    def _consecutive_growth_years(annual: dict[int, float]) -> int:
         years = sorted(annual)
         if len(years) < 2:
             return 0
@@ -101,7 +100,7 @@ class PortfolioDividendGrowthService:
         return streak
 
     @staticmethod
-    def _cagr(annual: Dict[int, float]) -> Optional[float]:
+    def _cagr(annual: dict[int, float]) -> float | None:
         years = sorted(annual)
         if len(years) < 2:
             return None
@@ -112,11 +111,11 @@ class PortfolioDividendGrowthService:
         span = end_year - start_year
         if span <= 0:
             return None
-        return round(((end_val / start_val) ** (1 / span) - 1) * 100, 2)
+        return float(round(((end_val / start_val) ** (1 / span) - 1) * 100, 2))
 
-    def build_symbol_growth(self, since_year: int = SINCE_YEAR) -> List[SymbolDividendGrowth]:
+    def build_symbol_growth(self, since_year: int = SINCE_YEAR) -> list[SymbolDividendGrowth]:
         holdings = {h.symbol: h for h in self.portfolio.list_holdings()}
-        results: List[SymbolDividendGrowth] = []
+        results: list[SymbolDividendGrowth] = []
 
         for symbol, holding in sorted(holdings.items()):
             doc = self.vector_store.get_by_symbol(symbol)
@@ -143,7 +142,7 @@ class PortfolioDividendGrowthService:
         return results
 
     def annual_matrix_dataframe(
-        self, symbols: Optional[List[SymbolDividendGrowth]] = None
+        self, symbols: list[SymbolDividendGrowth] | None = None
     ) -> pd.DataFrame:
         items = symbols if symbols is not None else self.build_symbol_growth()
         if not items:
@@ -151,12 +150,10 @@ class PortfolioDividendGrowthService:
 
         from utils.yield_history_tables import year_column_label
 
-        years = sorted(
-            {year for item in items for year in item.annual_by_year}
-        )
+        years = sorted({year for item in items for year in item.annual_by_year})
         rows = []
         for item in items:
-            row = {"Ticker": item.symbol, "Company": item.company}
+            row: dict[str, Any] = {"Ticker": item.symbol, "Company": item.company}
             for year in years:
                 row[year_column_label(year)] = item.annual_by_year.get(year)
             row["Growth years"] = item.growth_years
@@ -165,11 +162,11 @@ class PortfolioDividendGrowthService:
         return pd.DataFrame(rows)
 
     def portfolio_cash_by_year(
-        self, symbols: Optional[List[SymbolDividendGrowth]] = None
+        self, symbols: list[SymbolDividendGrowth] | None = None
     ) -> pd.DataFrame:
-        """Estimated annual dividend cash = annual DPS × shares."""
+        """Estimated annual dividend cash = annual DPS x shares."""
         items = symbols if symbols is not None else self.build_symbol_growth()
-        totals: Dict[int, float] = defaultdict(float)
+        totals: dict[int, float] = defaultdict(float)
         for item in items:
             for year, dps in item.annual_by_year.items():
                 totals[year] += dps * item.shares
@@ -185,19 +182,16 @@ class PortfolioDividendGrowthService:
             ]
         )
 
-    def yoy_growth_matrix(
-        self, symbols: Optional[List[SymbolDividendGrowth]] = None
-    ) -> pd.DataFrame:
+    def yoy_growth_matrix(self, symbols: list[SymbolDividendGrowth] | None = None) -> pd.DataFrame:
         items = symbols if symbols is not None else self.build_symbol_growth()
         if not items:
             return pd.DataFrame()
 
         from utils.yield_history_tables import year_column_label
 
-        years = sorted({year for item in items for year in item.annual_by_year})
         rows = []
         for item in items:
-            row = {"Ticker": item.symbol}
+            row: dict[str, Any] = {"Ticker": item.symbol}
             sorted_years = sorted(item.annual_by_year)
             for index, year in enumerate(sorted_years):
                 label = year_column_label(year)
@@ -214,7 +208,7 @@ class PortfolioDividendGrowthService:
             rows.append(row)
         return pd.DataFrame(rows)
 
-    def create_annual_heatmap(self, symbols: Optional[List[SymbolDividendGrowth]] = None):
+    def create_annual_heatmap(self, symbols: list[SymbolDividendGrowth] | None = None) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         items = symbols if symbols is not None else self.build_symbol_growth()
@@ -227,10 +221,7 @@ class PortfolioDividendGrowthService:
         years = sorted({year for item in items for year in item.annual_by_year})
         year_labels = [year_column_label(year) for year in years]
         y_labels = [f"{item.symbol}" for item in items_sorted]
-        z = [
-            [item.annual_by_year.get(year) for year in years]
-            for item in items_sorted
-        ]
+        z = [[item.annual_by_year.get(year) for year in years] for item in items_sorted]
 
         fig = go.Figure(
             go.Heatmap(
@@ -244,16 +235,16 @@ class PortfolioDividendGrowthService:
         fig.update_layout(
             title=f"Annual dividend / share (since {SINCE_YEAR})",
             height=max(480, 18 * len(items_sorted)),
-            margin=dict(t=50, b=40, l=60),
+            margin={"t": 50, "b": 40, "l": 60},
         )
         return style_figure(fig)
 
     def create_growth_lines_chart(
         self,
-        symbols: Optional[List[SymbolDividendGrowth]] = None,
+        symbols: list[SymbolDividendGrowth] | None = None,
         *,
         max_lines: int = 20,
-    ):
+    ) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         items = symbols if symbols is not None else self.build_symbol_growth()
@@ -278,8 +269,7 @@ class PortfolioDividendGrowthService:
                     mode="lines+markers",
                     name=item.symbol,
                     hovertemplate=(
-                        f"<b>{item.symbol}</b><br>"
-                        "%{x}<br>$%{y:.4f}/share<extra></extra>"
+                        f"<b>{item.symbol}</b><br>%{{x}}<br>$%{{y:.4f}}/share<extra></extra>"
                     ),
                 )
             )
@@ -287,14 +277,12 @@ class PortfolioDividendGrowthService:
             title=f"Dividend / share growth (top {len(ranked)} CAGR, since {SINCE_YEAR})",
             yaxis_title="USD / share / year",
             height=480,
-            margin=dict(t=50, b=40),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            margin={"t": 50, "b": 40},
+            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
         )
         return style_figure(fig)
 
-    def create_portfolio_cash_chart(
-        self, symbols: Optional[List[SymbolDividendGrowth]] = None
-    ):
+    def create_portfolio_cash_chart(self, symbols: list[SymbolDividendGrowth] | None = None) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         cash_df = self.portfolio_cash_by_year(symbols)
@@ -312,14 +300,14 @@ class PortfolioDividendGrowthService:
             )
         )
         fig.update_layout(
-            title=f"Estimated portfolio dividends (DPS × shares, since {SINCE_YEAR})",
+            title=f"Estimated portfolio dividends (DPS x shares, since {SINCE_YEAR})",
             yaxis_title="USD / year",
             height=380,
-            margin=dict(t=50, b=40),
+            margin={"t": 50, "b": 40},
         )
         return style_figure(fig)
 
-    def create_yoy_heatmap(self, symbols: Optional[List[SymbolDividendGrowth]] = None):
+    def create_yoy_heatmap(self, symbols: list[SymbolDividendGrowth] | None = None) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         items = symbols if symbols is not None else self.build_symbol_growth()
@@ -348,6 +336,6 @@ class PortfolioDividendGrowthService:
         fig.update_layout(
             title="YoY dividend / share growth (%)",
             height=max(480, 18 * len(yoy)),
-            margin=dict(t=50, b=40, l=60),
+            margin={"t": 50, "b": 40, "l": 60},
         )
         return style_figure(fig)

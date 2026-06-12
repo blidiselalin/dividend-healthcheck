@@ -8,13 +8,14 @@ Separate from ``stock_documents`` aggregated JSONB — mirrors legacy Chroma
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-def _parse_date(value: Any) -> Optional[date]:
+def _parse_date(value: Any) -> date | None:
     if value is None:
         return None
     if isinstance(value, date) and not isinstance(value, datetime):
@@ -122,14 +123,14 @@ class PostgresMarketHistoryStore:
                     ),
                 )
 
-    def load_price_history(self, symbol: str, *, conn: Any = None) -> List[Any]:
+    def load_price_history(self, symbol: str, *, conn: Any = None) -> list[Any]:
         from data_ingestion.models import PriceHistory
         from db.connection import ensure_schema, get_connection
 
         symbol = symbol.upper()
         ensure_schema()
 
-        def _fetch(connection: Any) -> List[Any]:
+        def _fetch(connection: Any) -> list[Any]:
             rows = connection.execute(
                 """
                 SELECT price_date, open, high, low, close, adjusted_close, volume
@@ -139,7 +140,7 @@ class PostgresMarketHistoryStore:
                 """,
                 (symbol,),
             ).fetchall()
-            out: List[PriceHistory] = []
+            out: list[PriceHistory] = []
             for row in rows:
                 data = dict(row)
                 out.append(
@@ -160,14 +161,14 @@ class PostgresMarketHistoryStore:
         with get_connection() as connection:
             return _fetch(connection)
 
-    def load_dividend_history(self, symbol: str, *, conn: Any = None) -> List[Any]:
+    def load_dividend_history(self, symbol: str, *, conn: Any = None) -> list[Any]:
         from data_ingestion.models import DividendRecord
         from db.connection import ensure_schema, get_connection
 
         symbol = symbol.upper()
         ensure_schema()
 
-        def _fetch(connection: Any) -> List[Any]:
+        def _fetch(connection: Any) -> list[Any]:
             rows = connection.execute(
                 """
                 SELECT ex_date, amount, payment_date, frequency
@@ -177,7 +178,7 @@ class PostgresMarketHistoryStore:
                 """,
                 (symbol,),
             ).fetchall()
-            out: List[DividendRecord] = []
+            out: list[DividendRecord] = []
             for row in rows:
                 data = dict(row)
                 out.append(
@@ -218,17 +219,20 @@ class PostgresMarketHistoryStore:
         return document
 
     @staticmethod
-    def _prefer_table_prices(table_prices: list, json_prices: list) -> bool:
+    def _prefer_table_prices(table_prices: list[Any], json_prices: list[Any]) -> bool:
         """Prefer normalized table OHLCV when JSONB rows are duplicate or thinner."""
         if not table_prices:
             return False
         if not json_prices:
             return True
 
-        from utils.yfinance_history import library_prices_trustworthy, unique_price_dates
+        from utils.yfinance_history import (
+            library_prices_trustworthy,
+            unique_price_dates,
+        )
 
         class _PriceDoc:
-            def __init__(self, prices: list) -> None:
+            def __init__(self, prices: list[Any]) -> None:
                 self.price_history = prices
 
         table_ok = library_prices_trustworthy(_PriceDoc(table_prices), min_unique=52)
@@ -241,7 +245,7 @@ class PostgresMarketHistoryStore:
             )
         return len(table_prices) >= len(json_prices)
 
-    def history_coverage_summary(self) -> Dict[str, int]:
+    def history_coverage_summary(self) -> dict[str, int]:
         """Counts using normalized tables, falling back to JSONB when tables are empty."""
         from config import MIN_YIELD_DIVIDEND_PAYMENTS, MIN_YIELD_PRICE_POINTS
         from db.connection import ensure_schema, get_connection
@@ -298,7 +302,7 @@ class PostgresMarketHistoryStore:
             "min_dividend_payments": MIN_YIELD_DIVIDEND_PAYMENTS,
         }
 
-    def symbol_history_counts(self, symbol: str) -> Dict[str, int]:
+    def symbol_history_counts(self, symbol: str) -> dict[str, int]:
         from db.connection import ensure_schema, get_connection
 
         symbol = symbol.upper()
@@ -307,8 +311,10 @@ class PostgresMarketHistoryStore:
             row = conn.execute(
                 """
                 SELECT
-                  (SELECT COUNT(*) FROM stock_price_history WHERE symbol = %s) AS price_points,
-                  (SELECT COUNT(*) FROM stock_dividend_history WHERE symbol = %s) AS dividend_payments
+                  (SELECT COUNT(*) FROM stock_price_history
+                   WHERE symbol = %s) AS price_points,
+                  (SELECT COUNT(*) FROM stock_dividend_history
+                   WHERE symbol = %s) AS dividend_payments
                 """,
                 (symbol, symbol),
             ).fetchone()
@@ -321,10 +327,10 @@ class PostgresMarketHistoryStore:
     def backfill_from_document_jsonb(
         self,
         *,
-        symbols: Optional[Sequence[str]] = None,
+        symbols: Sequence[str] | None = None,
         limit: int = 200,
         pending_only: bool = True,
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         """
         Copy ``price_history`` / ``dividend_history`` from JSONB into history tables.
 
@@ -337,7 +343,7 @@ class PostgresMarketHistoryStore:
             return self.sync_pending_from_jsonb(limit=limit)
         return self._sync_batch(limit=limit)
 
-    def sync_pending_from_jsonb(self, *, limit: int = 500) -> Dict[str, int]:
+    def sync_pending_from_jsonb(self, *, limit: int = 500) -> dict[str, int]:
         """Sync symbols where JSONB has more history rows than normalized tables."""
         from db.connection import ensure_schema, get_connection
 
@@ -356,15 +362,23 @@ class PostgresMarketHistoryStore:
                 SELECT
                   s.symbol,
                   s.document,
-                  jsonb_array_length(COALESCE(s.document->'price_history', '[]'::jsonb)) AS json_prices,
-                  jsonb_array_length(COALESCE(s.document->'dividend_history', '[]'::jsonb)) AS json_divs,
+                  jsonb_array_length(
+                    COALESCE(s.document->'price_history', '[]'::jsonb)
+                  ) AS json_prices,
+                  jsonb_array_length(
+                    COALESCE(s.document->'dividend_history', '[]'::jsonb)
+                  ) AS json_divs,
                   COALESCE(p.n, 0) AS table_prices,
                   COALESCE(d.n, 0) AS table_divs
                 FROM stock_documents s
                 LEFT JOIN price_counts p ON p.symbol = s.symbol
                 LEFT JOIN div_counts d ON d.symbol = s.symbol
-                WHERE jsonb_array_length(COALESCE(s.document->'price_history', '[]'::jsonb)) > COALESCE(p.n, 0)
-                   OR jsonb_array_length(COALESCE(s.document->'dividend_history', '[]'::jsonb)) > COALESCE(d.n, 0)
+                WHERE jsonb_array_length(
+                  COALESCE(s.document->'price_history', '[]'::jsonb)
+                ) > COALESCE(p.n, 0)
+                   OR jsonb_array_length(
+                     COALESCE(s.document->'dividend_history', '[]'::jsonb)
+                   ) > COALESCE(d.n, 0)
                    OR (
                      COALESCE(p.n, 0) = 0
                      AND (
@@ -380,8 +394,13 @@ class PostgresMarketHistoryStore:
                      )
                    )
                 ORDER BY
-                  (jsonb_array_length(COALESCE(s.document->'price_history', '[]'::jsonb)) - COALESCE(p.n, 0))
-                  + (jsonb_array_length(COALESCE(s.document->'dividend_history', '[]'::jsonb)) - COALESCE(d.n, 0)) DESC,
+                  (
+                    jsonb_array_length(COALESCE(s.document->'price_history', '[]'::jsonb))
+                    - COALESCE(p.n, 0)
+                  ) + (
+                    jsonb_array_length(COALESCE(s.document->'dividend_history', '[]'::jsonb))
+                    - COALESCE(d.n, 0)
+                  ) DESC,
                   s.symbol
                 LIMIT %s
                 """,
@@ -400,7 +419,7 @@ class PostgresMarketHistoryStore:
         )
         return stats
 
-    def _sync_batch(self, *, limit: int) -> Dict[str, int]:
+    def _sync_batch(self, *, limit: int) -> dict[str, int]:
         from db.connection import ensure_schema, get_connection
 
         ensure_schema()
@@ -418,7 +437,7 @@ class PostgresMarketHistoryStore:
             stats.update(self._sync_rows(rows, conn))
         return stats
 
-    def _sync_symbols(self, symbols: Sequence[str]) -> Dict[str, int]:
+    def _sync_symbols(self, symbols: Sequence[str]) -> dict[str, int]:
         from db.connection import ensure_schema, get_connection
 
         ensure_schema()
@@ -440,7 +459,7 @@ class PostgresMarketHistoryStore:
             stats.update(self._sync_rows(rows, conn))
         return stats
 
-    def _sync_rows(self, rows: Sequence[Any], conn: Any) -> Dict[str, int]:
+    def _sync_rows(self, rows: Sequence[Any], conn: Any) -> dict[str, int]:
         from data_ingestion.models import StockDocument
         from utils.stock_document_history import hydrate_document_history
 

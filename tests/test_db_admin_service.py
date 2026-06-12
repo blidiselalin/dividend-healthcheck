@@ -1,7 +1,10 @@
 """Tests for admin database inspection service."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -20,16 +23,16 @@ from services.db_admin_service import (
 )
 
 
-def _scalar_row(value):
+def _scalar_row(value: Any) -> dict[str, Any]:
     return {"value": value}
 
 
-def test_is_safe_select_sql_allows_select():
+def test_is_safe_select_sql_allows_select() -> None:
     ok, _ = is_safe_select_sql("SELECT * FROM users")
     assert ok is True
 
 
-def test_is_safe_select_sql_allows_with_cte():
+def test_is_safe_select_sql_allows_with_cte() -> None:
     ok, _ = is_safe_select_sql("WITH x AS (SELECT 1 AS n) SELECT n FROM x")
     assert ok is True
 
@@ -43,19 +46,19 @@ def test_is_safe_select_sql_allows_with_cte():
         "INSERT INTO users VALUES ('a')",
     ],
 )
-def test_is_safe_select_sql_blocks_unsafe(sql: str):
+def test_is_safe_select_sql_blocks_unsafe(sql: str) -> None:
     ok, reason = is_safe_select_sql(sql)
     assert ok is False
     assert reason
 
 
-def test_preset_queries_are_select_only():
+def test_preset_queries_are_select_only() -> None:
     for name, sql in preset_queries().items():
         ok, reason = is_safe_select_sql(sql)
         assert ok, f"{name}: {reason}"
 
 
-def test_managed_tables_include_core_schema():
+def test_managed_tables_include_core_schema() -> None:
     for table in (
         "users",
         "holdings",
@@ -66,24 +69,26 @@ def test_managed_tables_include_core_schema():
         assert table in MANAGED_TABLES
 
 
-def test_storage_label_sqlite(monkeypatch):
+def test_storage_label_sqlite(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DATABASE_URL", raising=False)
     assert storage_label() == "SQLite (local dev)"
 
 
 @pytest.mark.postgres_mock
-def test_storage_label_postgres(monkeypatch):
+def test_storage_label_postgres(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://local/test")
     assert storage_label() == "PostgreSQL"
 
 
-def test_list_managed_tables_sqlite(tmp_path, monkeypatch):
+def test_list_managed_tables_sqlite(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DIVIDENDSCOPE_DATA_DIR", str(tmp_path))
     tables = list_managed_tables()
     assert isinstance(tables, list)
 
 
-def test_validate_all_tables_sqlite_includes_chroma_check(tmp_path, monkeypatch):
+def test_validate_all_tables_sqlite_includes_chroma_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("DIVIDENDSCOPE_DATA_DIR", str(tmp_path))
     with patch("services.shared_market_db.document_count", return_value=12):
         checks = validate_all_tables()
@@ -93,12 +98,12 @@ def test_validate_all_tables_sqlite_includes_chroma_check(tmp_path, monkeypatch)
 
 
 @pytest.mark.postgres_mock
-def test_validate_all_tables_postgres(monkeypatch):
+def test_validate_all_tables_postgres(monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: C901
     monkeypatch.setenv("DATABASE_URL", "postgresql://local/test")
 
     mock_conn = MagicMock()
 
-    def fake_scalar(sql, params=()):
+    def fake_scalar(sql: str, params: Any = ()) -> Any:  # noqa: C901
         s = sql.lower()
         if "from users" in s and "is_active" in s:
             return _scalar_row(2)
@@ -149,8 +154,9 @@ def test_validate_all_tables_postgres(monkeypatch):
     mock_cm.__enter__ = MagicMock(return_value=mock_conn)
     mock_cm.__exit__ = MagicMock(return_value=False)
 
-    with patch("services.db_admin_service.ensure_schema"), patch(
-        "services.db_admin_service.get_connection", return_value=mock_cm
+    with (
+        patch("services.db_admin_service.ensure_schema"),
+        patch("services.db_admin_service.get_connection", return_value=mock_cm),
     ):
         checks = validate_all_tables()
 
@@ -163,7 +169,7 @@ def test_validate_all_tables_postgres(monkeypatch):
 
 
 @pytest.mark.postgres_mock
-def test_run_readonly_query_postgres(monkeypatch):
+def test_run_readonly_query_postgres(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://local/test")
 
     mock_conn = MagicMock()
@@ -175,8 +181,9 @@ def test_run_readonly_query_postgres(monkeypatch):
     mock_cm.__enter__ = MagicMock(return_value=mock_conn)
     mock_cm.__exit__ = MagicMock(return_value=False)
 
-    with patch("services.db_admin_service.ensure_schema"), patch(
-        "services.db_admin_service.get_connection", return_value=mock_cm
+    with (
+        patch("services.db_admin_service.ensure_schema"),
+        patch("services.db_admin_service.get_connection", return_value=mock_cm),
     ):
         result = run_readonly_query(
             "SELECT symbol, 3000 AS price_points FROM stock_documents WHERE symbol = 'INTU'"
@@ -187,7 +194,7 @@ def test_run_readonly_query_postgres(monkeypatch):
 
 
 @pytest.mark.postgres_mock
-def test_run_readonly_query_applies_limit(monkeypatch):
+def test_run_readonly_query_applies_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://local/test")
 
     mock_conn = MagicMock()
@@ -197,8 +204,9 @@ def test_run_readonly_query_applies_limit(monkeypatch):
     mock_cm.__enter__ = MagicMock(return_value=mock_conn)
     mock_cm.__exit__ = MagicMock(return_value=False)
 
-    with patch("services.db_admin_service.ensure_schema"), patch(
-        "services.db_admin_service.get_connection", return_value=mock_cm
+    with (
+        patch("services.db_admin_service.ensure_schema"),
+        patch("services.db_admin_service.get_connection", return_value=mock_cm),
     ):
         run_readonly_query("SELECT * FROM users", row_limit=25)
 
@@ -206,17 +214,17 @@ def test_run_readonly_query_applies_limit(monkeypatch):
     assert "limit 25" in executed_sql
 
 
-def test_run_readonly_query_rejects_delete():
+def test_run_readonly_query_rejects_delete() -> None:
     result = run_readonly_query("DELETE FROM users")
     assert result.ok is False
 
 
-def test_sample_table_rows_rejects_unknown_table():
+def test_sample_table_rows_rejects_unknown_table() -> None:
     result = sample_table_rows("users;drop", allowed_tables=["users"])
     assert result.ok is False
 
 
-def test_sample_table_rows_allows_listed_table(monkeypatch):
+def test_sample_table_rows_allows_listed_table(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DATABASE_URL", raising=False)
     with patch(
         "services.db_admin_service.run_readonly_query",
@@ -227,7 +235,7 @@ def test_sample_table_rows_allows_listed_table(monkeypatch):
 
 
 @pytest.mark.postgres_mock
-def test_inspect_stock_symbol_missing(monkeypatch):
+def test_inspect_stock_symbol_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://local/test")
 
     mock_conn = MagicMock()
@@ -237,8 +245,9 @@ def test_inspect_stock_symbol_missing(monkeypatch):
     mock_cm.__enter__ = MagicMock(return_value=mock_conn)
     mock_cm.__exit__ = MagicMock(return_value=False)
 
-    with patch("services.db_admin_service.ensure_schema"), patch(
-        "services.db_admin_service.get_connection", return_value=mock_cm
+    with (
+        patch("services.db_admin_service.ensure_schema"),
+        patch("services.db_admin_service.get_connection", return_value=mock_cm),
     ):
         result = inspect_stock_symbol("ZZZZ")
 
@@ -247,7 +256,7 @@ def test_inspect_stock_symbol_missing(monkeypatch):
 
 
 @pytest.mark.postgres_mock
-def test_inspect_stock_symbol_with_history(monkeypatch):
+def test_inspect_stock_symbol_with_history(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://local/test")
 
     mock_conn = MagicMock()
@@ -271,8 +280,9 @@ def test_inspect_stock_symbol_with_history(monkeypatch):
     mock_cm.__enter__ = MagicMock(return_value=mock_conn)
     mock_cm.__exit__ = MagicMock(return_value=False)
 
-    with patch("services.db_admin_service.ensure_schema"), patch(
-        "services.db_admin_service.get_connection", return_value=mock_cm
+    with (
+        patch("services.db_admin_service.ensure_schema"),
+        patch("services.db_admin_service.get_connection", return_value=mock_cm),
     ):
         result = inspect_stock_symbol("intu")
 
@@ -282,7 +292,7 @@ def test_inspect_stock_symbol_with_history(monkeypatch):
 
 
 @pytest.mark.postgres_mock
-def test_table_row_counts_postgres(monkeypatch):
+def test_table_row_counts_postgres(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://local/test")
 
     mock_conn = MagicMock()
@@ -296,7 +306,7 @@ def test_table_row_counts_postgres(monkeypatch):
         {"table_name": "stock_documents"},
     ]
 
-    def execute_side_effect(sql, params=()):
+    def execute_side_effect(sql: str, params: Any = ()) -> Any:
         if "information_schema" in sql.lower():
             return MagicMock(fetchall=lambda: table_rows)
         return MagicMock(fetchone=lambda: {"count": 3})
@@ -307,8 +317,9 @@ def test_table_row_counts_postgres(monkeypatch):
     mock_cm.__enter__ = MagicMock(return_value=mock_conn)
     mock_cm.__exit__ = MagicMock(return_value=False)
 
-    with patch("services.db_admin_service.ensure_schema"), patch(
-        "services.db_admin_service.get_connection", return_value=mock_cm
+    with (
+        patch("services.db_admin_service.ensure_schema"),
+        patch("services.db_admin_service.get_connection", return_value=mock_cm),
     ):
         counts = table_row_counts()
 

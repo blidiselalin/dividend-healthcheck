@@ -1,8 +1,10 @@
 """Integration tests for high-risk watchlist pipeline and session wiring."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -19,43 +21,43 @@ from ui.portfolio_risk_panel import (
 )
 
 
-def _row(**overrides) -> PortfolioDetailRow:
-    base = dict(
-        company="Test Co",
-        ticker="ARE",
-        market_cap=1e9,
-        pe_ratio=15.0,
-        shares=10.0,
-        current_price=100.0,
-        current_value=1000.0,
-        avg_cost_per_share=120.0,
-        acquisition_value=1200.0,
-        profit=-200.0,
-        profit_pct=-22.0,
-        estimated_avg_price=120.0,
-        medium_price_365d=95.0,
-        price_180d=98.0,
-        price_365d=90.0,
-        change_180d_pct=2.0,
-        change_365d_pct=11.0,
-        weight_pct=9.5,
-        dividend_yield_pct=3.0,
-        dividend_per_share=3.0,
-        annual_income=30.0,
-        dividend_weight_pct=5.0,
-        income_weight_pct=5.0,
-        dividends_paid=0.0,
-        growth_years=10,
-        commission=0.0,
-        sector="Tech",
-        acquisition_share_pct=9.5,
-        analyst_rating="AVOID",
-        price_to_fcf=10.0,
-        computed_dividend="3.00 (3.00%)",
-        ex_dividend_date=None,
-        dividend_pay_date=None,
-        data_source="test",
-    )
+def _row(**overrides: Any) -> PortfolioDetailRow:
+    base = {
+        "company": "Test Co",
+        "ticker": "ARE",
+        "market_cap": 1e9,
+        "pe_ratio": 15.0,
+        "shares": 10.0,
+        "current_price": 100.0,
+        "current_value": 1000.0,
+        "avg_cost_per_share": 120.0,
+        "acquisition_value": 1200.0,
+        "profit": -200.0,
+        "profit_pct": -22.0,
+        "estimated_avg_price": 120.0,
+        "medium_price_365d": 95.0,
+        "price_180d": 98.0,
+        "price_365d": 90.0,
+        "change_180d_pct": 2.0,
+        "change_365d_pct": 11.0,
+        "weight_pct": 9.5,
+        "dividend_yield_pct": 3.0,
+        "dividend_per_share": 3.0,
+        "annual_income": 30.0,
+        "dividend_weight_pct": 5.0,
+        "income_weight_pct": 5.0,
+        "dividends_paid": 0.0,
+        "growth_years": 10,
+        "commission": 0.0,
+        "sector": "Tech",
+        "acquisition_share_pct": 9.5,
+        "analyst_rating": "AVOID",
+        "price_to_fcf": 10.0,
+        "computed_dividend": "3.00 (3.00%)",
+        "ex_dividend_date": None,
+        "dividend_pay_date": None,
+        "data_source": "test",
+    }
     base.update(overrides)
     return PortfolioDetailRow(**base)
 
@@ -93,7 +95,7 @@ def _yield_channel(zone: str = "Expensive") -> YieldChannelData:
     )
 
 
-def test_risk_monitor_build_summary_flags_high_risk_holding():
+def test_risk_monitor_build_summary_flags_high_risk_holding() -> None:
     monitor = PortfolioRiskMonitorService()
     row = _row()
     preload = PortfolioAnalysisPreload(
@@ -109,7 +111,7 @@ def test_risk_monitor_build_summary_flags_high_risk_holding():
     assert "Exposure" in summary.risk_items[0].categories
 
 
-def test_refresh_portfolio_risks_persists_session_summary(monkeypatch):
+def test_refresh_portfolio_risks_persists_session_summary(monkeypatch: pytest.MonkeyPatch) -> None:
     session: dict = {}
     monkeypatch.setattr("streamlit.session_state", session, raising=False)
 
@@ -130,7 +132,7 @@ def test_refresh_portfolio_risks_persists_session_summary(monkeypatch):
     assert cached.total >= 1
 
 
-def test_apply_yield_preload_rebuilds_risk_watchlist(monkeypatch):
+def test_apply_yield_preload_rebuilds_risk_watchlist(monkeypatch: pytest.MonkeyPatch) -> None:
     session: dict = {
         "portfolio_details_rows": [_row()],
         "portfolio_stock_cache": {},
@@ -157,13 +159,13 @@ def test_apply_yield_preload_rebuilds_risk_watchlist(monkeypatch):
     assert cached.total >= 1
 
 
-def test_portfolio_details_view_imports_refresh_portfolio_risks():
+def test_portfolio_details_view_imports_refresh_portfolio_risks() -> None:
     import ui.portfolio_details_view as view
 
     assert callable(view.refresh_portfolio_risks)
 
 
-def test_monitor_include_news_only_for_risk_flagged(monkeypatch):
+def test_monitor_include_news_only_for_risk_flagged(monkeypatch: pytest.MonkeyPatch) -> None:
     attention = PortfolioAttentionService()
     monitor = PortfolioRiskMonitorService(attention=attention)
     row = _row(ticker="ARE")

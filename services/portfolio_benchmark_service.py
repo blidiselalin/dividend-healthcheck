@@ -4,17 +4,19 @@ Hypothetical benchmark portfolios from monthly index/ETF share purchases.
 
 from __future__ import annotations
 
-from utils.chart_theme import style_figure
-
 import calendar
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Dict, List, Optional
+from typing import Any
 
 import pandas as pd
 
-from data_ingestion.benchmark_purchases_seed import BENCHMARK_META, BENCHMARK_SHARES_BY_PERIOD
+from data_ingestion.benchmark_purchases_seed import (
+    BENCHMARK_META,
+    BENCHMARK_SHARES_BY_PERIOD,
+)
 from data_ingestion.deposits_store import DepositsStore, MonthlyDeposit
+from utils.chart_theme import style_figure
 
 try:
     import plotly.graph_objects as go
@@ -35,7 +37,7 @@ class BenchmarkDefinition:
     label: str
 
 
-BENCHMARKS: List[BenchmarkDefinition] = [
+BENCHMARKS: list[BenchmarkDefinition] = [
     BenchmarkDefinition(key, display, yf_sym, label)
     for key, display, yf_sym, label in BENCHMARK_META
 ]
@@ -47,7 +49,7 @@ FOCUS_LABELS = {
 }
 
 # ETF proxies when index tickers fail on Yahoo Finance
-YFINANCE_FALLBACKS: Dict[str, str] = {
+YFINANCE_FALLBACKS: dict[str, str] = {
     "^GSPC": "SPY",
     "^DJI": "DIA",
     "^IXIC": "QQQ",
@@ -68,10 +70,10 @@ def _eur_usd_rate(deposit: MonthlyDeposit) -> float:
 class PortfolioBenchmarkService:
     """Value benchmark buy-and-hold paths vs actual portfolio (EUR)."""
 
-    def __init__(self, deposits_store: Optional[DepositsStore] = None) -> None:
+    def __init__(self, deposits_store: DepositsStore | None = None) -> None:
         self.store = deposits_store or DepositsStore()
 
-    def get_benchmark_shares(self, deposit: MonthlyDeposit) -> Dict[str, float]:
+    def get_benchmark_shares(self, deposit: MonthlyDeposit) -> dict[str, float]:
         key = deposit.period_key
         values = BENCHMARK_SHARES_BY_PERIOD.get(key, (0.0, 0.0, 0.0, 0.0))
         return {
@@ -81,7 +83,7 @@ class PortfolioBenchmarkService:
             "nasdaq": values[3],
         }
 
-    def _download_close_series(self, symbol: str, start: date, end: date) -> pd.Series:
+    def _download_close_series(self, symbol: str, start: date, end: date) -> pd.Series[Any]:
         if not YFINANCE_AVAILABLE:
             return pd.Series(dtype=float)
         candidates = [symbol]
@@ -97,7 +99,7 @@ class PortfolioBenchmarkService:
                     progress=False,
                     auto_adjust=True,
                 )
-            except Exception:
+            except Exception:  # noqa: S112
                 continue
             if frame is None or frame.empty:
                 continue
@@ -111,42 +113,44 @@ class PortfolioBenchmarkService:
 
     def _fetch_month_end_prices(
         self,
-        deposits: List[MonthlyDeposit],
-    ) -> Dict[str, Dict[str, float]]:
+        deposits: list[MonthlyDeposit],
+    ) -> dict[str, dict[str, float]]:
         """period_key -> {benchmark_key: month-end close USD}."""
         if not YFINANCE_AVAILABLE or not deposits:
             return {}
 
         start = deposits[0].period
         end = _month_end(deposits[-1].period) + timedelta(days=5)
-        closes: Dict[str, pd.Series] = {}
+        closes: dict[str, pd.Series[Any]] = {}
         for benchmark in BENCHMARKS:
             series = self._download_close_series(benchmark.yfinance_symbol, start, end)
             if not series.empty:
                 closes[benchmark.key] = series
 
-        result: Dict[str, Dict[str, float]] = {}
+        result: dict[str, dict[str, float]] = {}
         for deposit in deposits:
             month_end = _month_end(deposit.period)
-            period_prices: Dict[str, float] = {}
+            period_prices: dict[str, float] = {}
             for key, series in closes.items():
                 eligible = series[series.index <= pd.Timestamp(month_end)]
                 if eligible.empty:
                     continue
-                period_prices[key] = float(eligible.iloc[-1])
+                val = eligible.iloc[-1]
+                if val is not None and isinstance(val, (int, float)):
+                    period_prices[key] = float(val)
             result[deposit.period_key] = period_prices
         return result
 
     def build_comparison_dataframe(
         self,
-        deposits: Optional[List[MonthlyDeposit]] = None,
+        deposits: list[MonthlyDeposit] | None = None,
     ) -> pd.DataFrame:
         records = deposits if deposits is not None else self.store.list_deposits()
         if not records:
             return pd.DataFrame()
 
         prices = self._fetch_month_end_prices(records)
-        cumulative: Dict[str, float] = {benchmark.key: 0.0 for benchmark in BENCHMARKS}
+        cumulative: dict[str, float] = {benchmark.key: 0.0 for benchmark in BENCHMARKS}
         rows = []
 
         for deposit in records:
@@ -181,8 +185,8 @@ class PortfolioBenchmarkService:
     def latest_comparison(
         self,
         comparison_df: pd.DataFrame,
-        deposits: List[MonthlyDeposit],
-    ) -> Dict[str, float]:
+        deposits: list[MonthlyDeposit],
+    ) -> dict[str, float]:
         """Latest portfolio EUR vs benchmark EUR (last row with portfolio value)."""
         if comparison_df.empty:
             return {}
@@ -198,13 +202,15 @@ class PortfolioBenchmarkService:
         for benchmark in BENCHMARKS:
             col = f"{benchmark.label} €"
             value = last_row.get(col)
-            out[benchmark.label] = float(value) if pd.notna(value) else 0.0
+            out[benchmark.label] = (
+                float(str(value)) if value is not None and pd.notna(value) else 0.0
+            )
         return out
 
     def create_comparison_chart(
         self,
-        deposits: Optional[List[MonthlyDeposit]] = None,
-    ):
+        deposits: list[MonthlyDeposit] | None = None,
+    ) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         df = self.build_comparison_dataframe(deposits)
@@ -222,14 +228,14 @@ class PortfolioBenchmarkService:
                     y=portfolio,
                     name="Portfolio (actual)",
                     mode="lines+markers",
-                    line=dict(color="#2e7d32", width=3),
+                    line={"color": "#2e7d32", "width": 3},
                     connectgaps=True,
                     hovertemplate="%{x}<br>€%{y:,.0f}<extra></extra>",
                 )
             )
 
         colors = ["#1565c0", "#6a1b9a", "#ef6c00", "#00838f"]
-        for benchmark, color in zip(BENCHMARKS, colors):
+        for benchmark, color in zip(BENCHMARKS, colors, strict=False):
             col = f"{benchmark.label} €"
             if col not in df.columns:
                 continue
@@ -241,7 +247,7 @@ class PortfolioBenchmarkService:
                         y=series,
                         name=f"{benchmark.label} (DCA shares)",
                         mode="lines",
-                        line=dict(color=color, width=1.8, dash="dot"),
+                        line={"color": color, "width": 1.8, "dash": "dot"},
                         connectgaps=True,
                         hovertemplate="%{x}<br>€%{y:,.0f}<extra></extra>",
                     )
@@ -251,9 +257,9 @@ class PortfolioBenchmarkService:
             title="Portfolio vs benchmarks (same monthly share purchases)",
             yaxis_title="Value € (USD converted at deposit FX rate)",
             height=480,
-            margin=dict(t=50, b=120),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02),
-            xaxis=dict(tickangle=-45),
+            margin={"t": 50, "b": 120},
+            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
+            xaxis={"tickangle": -45},
             hovermode="x unified",
         )
         return style_figure(fig)
@@ -263,29 +269,28 @@ class PortfolioBenchmarkService:
         if comparison_df.empty or "Year" not in comparison_df.columns:
             return pd.DataFrame()
 
-        value_cols = list(FOCUS_LABELS.values())
         years = sorted(comparison_df["Year"].unique())
-        rows = []
-        prior_ends: Dict[str, Optional[float]] = {name: None for name in FOCUS_LABELS}
+        rows: list[dict[str, Any]] = []
+        prior_ends: dict[str, float | None] = {name: None for name in FOCUS_LABELS}
 
         for year in years:
             year_df = comparison_df[comparison_df["Year"] == year]
             deposits = float(year_df["Deposit €"].sum())
-            ends: Dict[str, Optional[float]] = {}
+            ends: dict[str, float | None] = {}
+            row: dict[str, Any] = {"Year": int(year), "Deposits €": round(deposits, 2)}
             for name, col in FOCUS_LABELS.items():
                 if col not in year_df.columns:
                     ends[name] = None
                     continue
                 valid = year_df[col].dropna()
-                ends[name] = float(valid.iloc[-1]) if not valid.empty else None
+                val = valid.iloc[-1] if not valid.empty else None
+                ends[name] = float(str(val)) if val is not None else None
 
-            row: dict = {"Year": int(year), "Deposits €": round(deposits, 2)}
             for name, end_val in ends.items():
                 row[f"{name} (EOY) €"] = round(end_val, 2) if end_val is not None else None
-                if end_val is not None and prior_ends[name] and prior_ends[name] > 0:
-                    row[f"{name} YoY %"] = round(
-                        (end_val - prior_ends[name]) / prior_ends[name] * 100, 2
-                    )
+                prior_val = prior_ends[name]
+                if end_val is not None and prior_val is not None and prior_val > 0:
+                    row[f"{name} YoY %"] = round((end_val - prior_val) / prior_val * 100, 2)
                 else:
                     row[f"{name} YoY %"] = None
                 prior_ends[name] = end_val
@@ -294,7 +299,7 @@ class PortfolioBenchmarkService:
 
         return pd.DataFrame(rows)
 
-    def create_focused_comparison_chart(self, comparison_df: pd.DataFrame):
+    def create_focused_comparison_chart(self, comparison_df: pd.DataFrame) -> Any:
         """Portfolio vs S&P 500 vs SCHD over time."""
         if not PLOTLY_AVAILABLE or comparison_df.empty:
             return None
@@ -318,7 +323,7 @@ class PortfolioBenchmarkService:
                     y=series,
                     name=name,
                     mode=mode,
-                    line=dict(color=color, width=width, dash=dash),
+                    line={"color": color, "width": width, "dash": dash},
                     connectgaps=True,
                     hovertemplate="%{x}<br>€%{y:,.0f}<extra></extra>",
                 )
@@ -328,14 +333,14 @@ class PortfolioBenchmarkService:
             title="Portfolio vs S&P 500 vs SCHD",
             yaxis_title="Value €",
             height=440,
-            margin=dict(t=50, b=120),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02),
-            xaxis=dict(tickangle=-45),
+            margin={"t": 50, "b": 120},
+            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
+            xaxis={"tickangle": -45},
             hovermode="x unified",
         )
         return style_figure(fig)
 
-    def create_yearly_end_values_chart(self, yearly_df: pd.DataFrame):
+    def create_yearly_end_values_chart(self, yearly_df: pd.DataFrame) -> Any:
         """Grouped bars: year-end portfolio vs benchmarks each year."""
         if not PLOTLY_AVAILABLE or yearly_df.empty:
             return None
@@ -365,12 +370,12 @@ class PortfolioBenchmarkService:
             barmode="group",
             yaxis_title="€",
             height=400,
-            margin=dict(t=50, b=40),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            margin={"t": 50, "b": 40},
+            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
         )
         return style_figure(fig)
 
-    def create_yearly_returns_chart(self, yearly_df: pd.DataFrame):
+    def create_yearly_returns_chart(self, yearly_df: pd.DataFrame) -> Any:
         """Grouped bars: YoY % return per year for each series."""
         if not PLOTLY_AVAILABLE or yearly_df.empty:
             return None
@@ -400,12 +405,12 @@ class PortfolioBenchmarkService:
             barmode="group",
             yaxis_title="YoY %",
             height=400,
-            margin=dict(t=50, b=40),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            margin={"t": 50, "b": 40},
+            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
         )
         return style_figure(fig)
 
-    def create_yearly_distribution_chart(self, yearly_df: pd.DataFrame):
+    def create_yearly_distribution_chart(self, yearly_df: pd.DataFrame) -> Any:
         """
         Stacked 100% bars per year: share of combined EOY value
         (Portfolio vs S&P 500 vs SCHD).
@@ -420,7 +425,7 @@ class PortfolioBenchmarkService:
             ("SCHD (EOY) €", "SCHD", "#6a1b9a"),
         ]
 
-        totals = []
+        totals: list[float | None] = []
         for _, row in yearly_df.iterrows():
             total = sum(
                 float(row[col])
@@ -433,14 +438,14 @@ class PortfolioBenchmarkService:
         for col, name, color in value_cols:
             if col not in yearly_df.columns:
                 continue
-            shares = []
+            shares: list[float | None] = []
             for index, (_, row) in enumerate(yearly_df.iterrows()):
                 val = row[col]
-                total = totals[index]
-                if pd.isna(val) or not total:
+                yearly_total = totals[index]
+                if pd.isna(val) or yearly_total is None or yearly_total == 0:
                     shares.append(None)
                 else:
-                    shares.append(float(val) / total * 100)
+                    shares.append(float(val) / yearly_total * 100)
             fig.add_trace(
                 go.Bar(
                     x=years,
@@ -456,12 +461,12 @@ class PortfolioBenchmarkService:
             barmode="stack",
             yaxis_title="% of total",
             height=400,
-            margin=dict(t=50, b=40),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            margin={"t": 50, "b": 40},
+            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
         )
         return style_figure(fig)
 
-    def create_yearly_deposits_chart(self, yearly_df: pd.DataFrame):
+    def create_yearly_deposits_chart(self, yearly_df: pd.DataFrame) -> Any:
         """Deposits per calendar year."""
         if not PLOTLY_AVAILABLE or yearly_df.empty or "Deposits €" not in yearly_df.columns:
             return None
@@ -481,6 +486,6 @@ class PortfolioBenchmarkService:
             title="Deposits per calendar year",
             yaxis_title="€ deposited",
             height=340,
-            margin=dict(t=50, b=40),
+            margin={"t": 50, "b": 40},
         )
         return style_figure(fig)

@@ -1,4 +1,5 @@
 """Tests for portfolio ↔ vector DB linkage."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -10,7 +11,6 @@ from data_ingestion.models import StockDocument
 from data_ingestion.portfolio_store import PortfolioHolding, PortfolioStore
 from data_ingestion.purchase_journal_store import PurchaseJournalStore
 from services import portfolio_vector_sync as sync
-from services.portfolio_context import PortfolioContext
 from tests.support.market_fixtures import portfolio_context_from_stores
 
 

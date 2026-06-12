@@ -1,4 +1,5 @@
 """Tests for yfinance history helpers (no live API)."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -6,7 +7,12 @@ from datetime import date
 
 import pandas as pd
 
-from data_ingestion.models import DataSource, DividendRecord, PriceHistory, StockDocument
+from data_ingestion.models import (
+    DataSource,
+    DividendRecord,
+    PriceHistory,
+    StockDocument,
+)
 from utils.yfinance_history import (
     compute_ttm_from_payment_series,
     dividend_series_from_records,
@@ -32,10 +38,12 @@ def _sample_doc(symbol: str = "KO", n: int = 260) -> StockDocument:
                 adjusted_close=60.0 + (i % 10) * 0.1,
             )
         )
-    return StockDocument(symbol=symbol, name="Coca-Cola", source=DataSource.YAHOO, price_history=prices)
+    return StockDocument(
+        symbol=symbol, name="Coca-Cola", source=DataSource.YAHOO, price_history=prices
+    )
 
 
-def test_history_dataframe_from_document():
+def test_history_dataframe_from_document() -> None:
     doc = _sample_doc()
     frame = history_dataframe_from_document(doc, years=10, min_rows=100)
     assert not frame.empty
@@ -43,7 +51,7 @@ def test_history_dataframe_from_document():
     assert "Close" in frame.columns
 
 
-def test_history_dataframe_deduplicates_duplicate_dates():
+def test_history_dataframe_deduplicates_duplicate_dates() -> None:
     doc = StockDocument(symbol="INTU", name="Intuit", source=DataSource.YAHOO)
     doc.price_history = [
         PriceHistory(
@@ -61,7 +69,7 @@ def test_history_dataframe_deduplicates_duplicate_dates():
     assert frame.empty
 
 
-def test_library_prices_trustworthy_rejects_duplicate_dates():
+def test_library_prices_trustworthy_rejects_duplicate_dates() -> None:
     from utils.yfinance_history import library_prices_trustworthy
 
     doc = StockDocument(symbol="INTU", name="Intuit", source=DataSource.YAHOO)
@@ -78,7 +86,7 @@ def test_library_prices_trustworthy_rejects_duplicate_dates():
     assert not library_prices_trustworthy(doc)
 
 
-def test_fetch_library_only_skips_yfinance():
+def test_fetch_library_only_skips_yfinance() -> None:
     from unittest.mock import patch
 
     doc = _sample_doc(n=260)
@@ -95,7 +103,7 @@ def test_fetch_library_only_skips_yfinance():
     assert len(frame) >= 120
 
 
-def test_fetch_price_history_prefers_yfinance_when_library_dates_duplicate():
+def test_fetch_price_history_prefers_yfinance_when_library_dates_duplicate() -> None:
     from unittest.mock import patch
 
     doc = StockDocument(symbol="INTU", name="Intuit", source=DataSource.YAHOO)
@@ -125,7 +133,7 @@ def test_fetch_price_history_prefers_yfinance_when_library_dates_duplicate():
     assert len(frame) >= 120
 
 
-def test_compute_ttm_from_payment_series_newer_payer():
+def test_compute_ttm_from_payment_series_newer_payer() -> None:
     """Simulate INTU-like history: long prices, quarterly dividends for several years."""
     index = pd.date_range("2014-01-06", periods=1200, freq="B")
     hist = pd.DataFrame(

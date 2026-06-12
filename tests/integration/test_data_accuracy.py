@@ -1,11 +1,14 @@
 """Optional integration tests for market library data quality (requires ingest)."""
+# ruff: noqa: S101
+
+from typing import Any
 
 import pytest
 
 pytestmark = pytest.mark.integration
 
 
-def _require_dividend_king_enrichment(store) -> None:
+def _require_dividend_king_enrichment(store: Any) -> None:
     """Skip when the vector DB is S&P-only without full dividend-king enrichment."""
     ko = store.get_by_symbol("KO")
     if ko is None:
@@ -17,7 +20,7 @@ def _require_dividend_king_enrichment(store) -> None:
         )
 
 
-def test_database_availability():
+def test_database_availability() -> None:
     """Test that the vector database is available and has data."""
     from data_ingestion.vector_store import VectorStore
 
@@ -29,7 +32,7 @@ def test_database_availability():
     assert count > 0
 
 
-def test_dividend_kings_count(store):
+def test_dividend_kings_count(store: Any) -> None:
     """Test that we have a reasonable number of Dividend Kings."""
     all_docs = store.get_all_documents()
     kings = [d for d in all_docs if d.dividend_streak_years and d.dividend_streak_years >= 50]
@@ -42,17 +45,17 @@ def test_dividend_kings_count(store):
     assert len(kings) >= 30
 
 
-def test_stock_data_accuracy(store):
+def test_stock_data_accuracy(store: Any) -> None:  # noqa: C901
     """
     Test data accuracy for 10+ well-known Dividend Kings.
-    
+
     Validates that key metrics fall within expected real-world ranges.
     """
     _require_dividend_king_enrichment(store)
 
     # Expected ranges for well-known Dividend Kings (as of early 2026)
     # Format: symbol -> (min_yield, max_yield, min_streak, min_pe, max_pe)
-    expected_stocks = {
+    expected_stocks: dict[str, Any] = {
         "KO": {
             "name_contains": "Coca-Cola",
             "yield_range": (1.5, 4.5),
@@ -124,27 +127,27 @@ def test_stock_data_accuracy(store):
             "payout_range": (20, 50),
         },
     }
-    
+
     passed = 0
     failed = 0
     not_found = 0
-    
+
     print("\n--- Stock Data Accuracy Tests ---\n")
-    
+
     for symbol, expected in expected_stocks.items():
         doc = store.get_by_symbol(symbol)
-        
+
         if doc is None:
             print(f"⚠ {symbol}: Not found in database")
             not_found += 1
             continue
-        
+
         errors = []
-        
+
         # Check name
         if expected["name_contains"].lower() not in (doc.name or "").lower():
             errors.append(f"Name '{doc.name}' doesn't contain '{expected['name_contains']}'")
-        
+
         # Check dividend yield
         if doc.dividend_yield is not None:
             ymin, ymax = expected["yield_range"]
@@ -152,26 +155,28 @@ def test_stock_data_accuracy(store):
                 errors.append(f"Yield {doc.dividend_yield:.2f}% outside range [{ymin}, {ymax}]")
         else:
             errors.append("Dividend yield is None")
-        
+
         # Check streak
         if doc.dividend_streak_years is not None:
             if doc.dividend_streak_years < expected["streak_min"]:
-                errors.append(f"Streak {doc.dividend_streak_years} < expected min {expected['streak_min']}")
+                errors.append(
+                    f"Streak {doc.dividend_streak_years} < expected min {expected['streak_min']}"
+                )
         else:
             errors.append("Dividend streak is None")
-        
+
         # Check P/E ratio (if available)
         if doc.pe_ratio is not None:
             pmin, pmax = expected["pe_range"]
             if not (pmin <= doc.pe_ratio <= pmax):
                 errors.append(f"P/E {doc.pe_ratio:.1f} outside range [{pmin}, {pmax}]")
-        
+
         # Check payout ratio (if available)
         if doc.payout_ratio is not None:
             prmin, prmax = expected["payout_range"]
             if not (prmin <= doc.payout_ratio <= prmax):
                 errors.append(f"Payout {doc.payout_ratio:.1f}% outside range [{prmin}, {prmax}]")
-        
+
         if errors:
             print(f"✗ {symbol} ({doc.name}): FAILED")
             for err in errors:
@@ -182,43 +187,47 @@ def test_stock_data_accuracy(store):
             yld = f"{doc.dividend_yield:.2f}%" if doc.dividend_yield else "N/A"
             pe = f"{doc.pe_ratio:.1f}" if doc.pe_ratio else "N/A"
             payout = f"{doc.payout_ratio:.1f}%" if doc.payout_ratio else "N/A"
-            print(f"✓ {symbol} ({doc.name}): streak={streak}yrs, yield={yld}, P/E={pe}, payout={payout}")
+            print(
+                f"✓ {symbol} ({doc.name}): streak={streak}yrs, yield={yld}, P/E={pe}, payout={payout}"  # noqa: E501
+            )
             passed += 1
-    
+
     print(f"\n--- Results: {passed} passed, {failed} failed, {not_found} not found ---")
 
     assert failed == 0, f"{failed} stock(s) failed accuracy checks"
     assert not_found == 0, f"{not_found} expected symbol(s) missing from database"
 
 
-def test_data_sanity(store):
+def test_data_sanity(store: Any) -> None:
     """Test that all data values are within sane ranges."""
     _require_dividend_king_enrichment(store)
     all_docs = store.get_all_documents()
-    
+
     issues = []
-    
+
     for doc in all_docs:
         # Dividend yield should be 0-30%
         if doc.dividend_yield is not None and (doc.dividend_yield < 0 or doc.dividend_yield > 30):
             issues.append(f"{doc.symbol}: Invalid yield {doc.dividend_yield}%")
-        
+
         # Payout ratio should be 0-150% (higher values are capped in fix_invalid_values)
         if doc.payout_ratio is not None and (doc.payout_ratio < 0 or doc.payout_ratio > 150):
             issues.append(f"{doc.symbol}: Invalid payout ratio {doc.payout_ratio}%")
-        
+
         # Streak should be 0-100 years
-        if doc.dividend_streak_years is not None and (doc.dividend_streak_years < 0 or doc.dividend_streak_years > 100):
+        if doc.dividend_streak_years is not None and (
+            doc.dividend_streak_years < 0 or doc.dividend_streak_years > 100
+        ):
             issues.append(f"{doc.symbol}: Invalid streak {doc.dividend_streak_years} years")
-        
+
         # P/E should be positive and < 500
         if doc.pe_ratio is not None and (doc.pe_ratio < 0 or doc.pe_ratio > 500):
             issues.append(f"{doc.symbol}: Invalid P/E {doc.pe_ratio}")
-        
+
         # Price should be positive
         if doc.current_price is not None and doc.current_price <= 0:
             issues.append(f"{doc.symbol}: Invalid price {doc.current_price}")
-    
+
     if issues:
         print("\n⚠ Data sanity issues found:")
         for issue in issues[:10]:  # Show first 10
@@ -231,7 +240,7 @@ def test_data_sanity(store):
     assert not issues, f"Data sanity issues: {issues[:5]}"
 
 
-def test_service_layer():
+def test_service_layer() -> None:
     """Test that the VectorDBService works correctly."""
     try:
         from services.vectordb_service import get_vectordb_service

@@ -6,12 +6,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import pandas as pd
 
 
-def year_column_label(year: int, *, today: Optional[date] = None) -> str:
+def year_column_label(year: int, *, today: date | None = None) -> str:
     """Format a calendar year for tables/charts; current year is marked estimated."""
     today = today or date.today()
     if year == today.year:
@@ -19,8 +19,8 @@ def year_column_label(year: int, *, today: Optional[date] = None) -> str:
     return str(year)
 
 
-def _payment_counts_by_year(records: List[Any]) -> Dict[int, int]:
-    counts: Dict[int, int] = defaultdict(int)
+def _payment_counts_by_year(records: list[Any]) -> dict[int, int]:
+    counts: dict[int, int] = defaultdict(int)
     for record in records:
         ex = getattr(record, "ex_date", None)
         if ex is not None:
@@ -34,9 +34,9 @@ def estimate_annual_dividend_for_year(
     payment_count: int,
     *,
     document: Any = None,
-    all_records: Optional[List[Any]] = None,
-    today: Optional[date] = None,
-) -> Tuple[float, str, Optional[float]]:
+    all_records: list[Any] | None = None,
+    today: date | None = None,
+) -> tuple[float, str, float | None]:
     """
     Return (display_dps, status, ytd_paid) for a calendar year.
 
@@ -98,14 +98,16 @@ def estimate_annual_dividend_for_year(
     return round(float(ytd_total), 4), "Estimated", ytd_paid
 
 
-def yearly_dividend_per_share_table(document: Any, *, since_year: Optional[int] = None) -> pd.DataFrame:
+def yearly_dividend_per_share_table(
+    document: Any, *, since_year: int | None = None
+) -> pd.DataFrame:
     """Annual dividend per share from library ``dividend_history``."""
     records = getattr(document, "dividend_history", None) or []
     if not records:
         return pd.DataFrame()
 
-    totals: Dict[int, float] = defaultdict(float)
-    counts: Dict[int, int] = defaultdict(int)
+    totals: dict[int, float] = defaultdict(float)
+    counts: dict[int, int] = defaultdict(int)
     for record in records:
         ex = getattr(record, "ex_date", None)
         amount = getattr(record, "amount", None)
@@ -131,7 +133,7 @@ def yearly_dividend_per_share_table(document: Any, *, since_year: Optional[int] 
             all_records=records,
             today=today,
         )
-        row: Dict[str, Any] = {
+        row: dict[str, Any] = {
             "Year": year_column_label(year, today=today),
             "Dividend / share $": display_dps,
         }
@@ -140,7 +142,7 @@ def yearly_dividend_per_share_table(document: Any, *, since_year: Optional[int] 
     return pd.DataFrame(rows)
 
 
-def yearly_yield_exposure_table(channel_data: Any, *, today: Optional[date] = None) -> pd.DataFrame:
+def yearly_yield_exposure_table(channel_data: Any, *, today: date | None = None) -> pd.DataFrame:
     """
     Year-by-year trailing yield, price, and dividend from yield-channel series.
 
@@ -154,14 +156,11 @@ def yearly_yield_exposure_table(channel_data: Any, *, today: Optional[date] = No
     if not dates or not yields:
         return pd.DataFrame()
 
-    buckets: Dict[int, Dict[str, List[float]]] = defaultdict(
+    buckets: dict[int, dict[str, list[float]]] = defaultdict(
         lambda: {"yields": [], "prices": [], "divs": []}
     )
     for index, raw_date in enumerate(dates):
-        if isinstance(raw_date, date):
-            year = raw_date.year
-        else:
-            year = pd.Timestamp(raw_date).year
+        year = raw_date.year if isinstance(raw_date, date) else pd.Timestamp(raw_date).year
         if index < len(yields):
             buckets[year]["yields"].append(float(yields[index]))
         if index < len(prices):
@@ -169,7 +168,7 @@ def yearly_yield_exposure_table(channel_data: Any, *, today: Optional[date] = No
         if index < len(dividends):
             buckets[year]["divs"].append(float(dividends[index]))
 
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for year in sorted(buckets):
         info = buckets[year]
         avg_yield = sum(info["yields"]) / len(info["yields"]) if info["yields"] else None

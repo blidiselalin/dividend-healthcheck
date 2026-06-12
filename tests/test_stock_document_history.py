@@ -1,4 +1,5 @@
 """Tests for stock document history hydration and thin detection."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from utils.stock_document_history import (
 )
 
 
-def test_from_dict_loads_legacy_price_history_json():
+def test_from_dict_loads_legacy_price_history_json() -> None:
     payload = {
         "symbol": "INTU",
         "name": "Intuit",
@@ -47,12 +48,13 @@ def test_from_dict_loads_legacy_price_history_json():
     assert doc.price_history[0].close == 10.5
 
 
-def test_history_is_thin_uses_yield_thresholds():
+def test_history_is_thin_uses_yield_thresholds() -> None:
     doc = StockDocument(symbol="KO", name="Coca-Cola", source=DataSource.YAHOO)
     assert history_is_thin(doc) is True
 
-    from data_ingestion.models import DividendRecord, PriceHistory
     from datetime import date
+
+    from data_ingestion.models import DividendRecord, PriceHistory
 
     doc.price_history = [
         PriceHistory(
@@ -75,10 +77,19 @@ def test_history_is_thin_uses_yield_thresholds():
     assert yield_channel_ready(doc) is True
 
 
-def test_parse_history_payload_prefers_arrays():
+def test_parse_history_payload_prefers_arrays() -> None:
     prices, dividends = parse_history_payload(
         {
-            "price_history": [{"date": "2024-01-01", "open": 1, "high": 1, "low": 1, "close": 1, "volume": 0}],
+            "price_history": [
+                {
+                    "date": "2024-01-01",
+                    "open": 1,
+                    "high": 1,
+                    "low": 1,
+                    "close": 1,
+                    "volume": 0,
+                }
+            ],
             "dividend_history": [],
         }
     )

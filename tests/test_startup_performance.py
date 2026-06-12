@@ -1,10 +1,13 @@
 """Startup performance helpers (dividend sync throttle, fast portfolio load)."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from services.portfolio_dividend_sync_service import (
     DividendSyncStats,
@@ -18,7 +21,9 @@ from services.portfolio_ui_cache import (
 from services.sp500_peers_service import coverage_stats
 
 
-def test_should_sync_dividends_when_no_timestamp(tmp_path, monkeypatch):
+def test_should_sync_dividends_when_no_timestamp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(
         "services.portfolio_ui_cache._dividend_sync_meta_path",
         lambda: tmp_path / "dividend_sync_at.txt",
@@ -26,7 +31,9 @@ def test_should_sync_dividends_when_no_timestamp(tmp_path, monkeypatch):
     assert should_sync_dividends_on_startup() is True
 
 
-def test_should_skip_dividend_sync_when_recent(tmp_path, monkeypatch):
+def test_should_skip_dividend_sync_when_recent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     meta = tmp_path / "dividend_sync_at.txt"
     monkeypatch.setattr(
         "services.portfolio_ui_cache._dividend_sync_meta_path",
@@ -36,7 +43,9 @@ def test_should_skip_dividend_sync_when_recent(tmp_path, monkeypatch):
     assert should_sync_dividends_on_startup() is False
 
 
-def test_should_sync_dividends_when_timestamp_expired(tmp_path, monkeypatch):
+def test_should_sync_dividends_when_timestamp_expired(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     meta = tmp_path / "dividend_sync_at.txt"
     meta.parent.mkdir(parents=True, exist_ok=True)
     old = datetime.now() - DIVIDEND_SYNC_INTERVAL - timedelta(hours=1)
@@ -48,33 +57,33 @@ def test_should_sync_dividends_when_timestamp_expired(tmp_path, monkeypatch):
     assert should_sync_dividends_on_startup() is True
 
 
-def test_maybe_sync_skips_when_recent(tmp_path, monkeypatch):
+def test_maybe_sync_skips_when_recent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     meta = tmp_path / "dividend_sync_at.txt"
     monkeypatch.setattr(
         "services.portfolio_ui_cache._dividend_sync_meta_path",
         lambda: meta,
     )
     mark_dividend_sync_completed()
-    with patch(
-        "services.portfolio_dividend_sync_service.sync_received_dividends"
-    ) as sync:
+    with patch("services.portfolio_dividend_sync_service.sync_received_dividends") as sync:
         assert maybe_sync_received_dividends() is None
         sync.assert_not_called()
 
 
-def test_maybe_sync_runs_when_forced():
+def test_maybe_sync_runs_when_forced() -> None:
     stats = DividendSyncStats(1, 0, 0, 0)
-    with patch(
-        "services.portfolio_dividend_sync_service.sync_received_dividends",
-        return_value=stats,
-    ) as sync:
-        with patch("services.portfolio_ui_cache.mark_dividend_sync_completed"):
-            result = maybe_sync_received_dividends(force=True)
+    with (
+        patch(
+            "services.portfolio_dividend_sync_service.sync_received_dividends",
+            return_value=stats,
+        ) as sync,
+        patch("services.portfolio_ui_cache.mark_dividend_sync_completed"),
+    ):
+        result = maybe_sync_received_dividends(force=True)
     assert result == stats
     sync.assert_called_once()
 
 
-def test_coverage_stats_uses_count_symbols_in(monkeypatch):
+def test_coverage_stats_uses_count_symbols_in(monkeypatch: pytest.MonkeyPatch) -> None:
     from services import sp500_peers_service
 
     sp500_peers_service._coverage_cache = None

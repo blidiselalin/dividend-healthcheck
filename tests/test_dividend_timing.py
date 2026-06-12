@@ -1,10 +1,15 @@
 """Dividend timing labels (upcoming vs paid)."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 from datetime import date
 
-from services.dividend_timing import TIMING_LABELS, UPCOMING_EX, classify_dividend_timing
+from services.dividend_timing import (
+    TIMING_LABELS,
+    UPCOMING_EX,
+    classify_dividend_timing,
+)
 
 
 def test_upcoming_ex_date() -> None:

@@ -1,13 +1,16 @@
 """Unit tests for PostgresMarketStore."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from data_ingestion.models import StockDocument
 
 
-def test_add_documents_executes_upsert():
+def test_add_documents_executes_upsert() -> None:
     mock_conn = MagicMock()
     mock_cm = MagicMock()
     mock_cm.__enter__ = MagicMock(return_value=mock_conn)
@@ -15,8 +18,9 @@ def test_add_documents_executes_upsert():
 
     doc = StockDocument(symbol="TST", name="Test Co")
 
-    with patch("db.connection.ensure_schema"), patch(
-        "db.connection.get_connection", return_value=mock_cm
+    with (
+        patch("db.connection.ensure_schema"),
+        patch("db.connection.get_connection", return_value=mock_cm),
     ):
         from db.postgres_market_store import PostgresMarketStore
 
@@ -28,22 +32,23 @@ def test_add_documents_executes_upsert():
     assert "ON CONFLICT (symbol)" in sql
 
 
-def test_get_by_symbol_returns_none_when_missing():
+def test_get_by_symbol_returns_none_when_missing() -> None:
     mock_conn = MagicMock()
     mock_conn.execute.return_value.fetchone.return_value = None
     mock_cm = MagicMock()
     mock_cm.__enter__ = MagicMock(return_value=mock_conn)
     mock_cm.__exit__ = MagicMock(return_value=False)
 
-    with patch("db.connection.ensure_schema"), patch(
-        "db.connection.get_connection", return_value=mock_cm
+    with (
+        patch("db.connection.ensure_schema"),
+        patch("db.connection.get_connection", return_value=mock_cm),
     ):
         from db.postgres_market_store import PostgresMarketStore
 
         assert PostgresMarketStore().get_by_symbol("MISSING") is None
 
 
-def test_history_coverage_summary_uses_sql():
+def test_history_coverage_summary_uses_sql() -> None:
     mock_conn = MagicMock()
     mock_conn.execute.return_value.fetchone.return_value = {
         "total": 500,
@@ -54,8 +59,9 @@ def test_history_coverage_summary_uses_sql():
     mock_cm.__enter__ = MagicMock(return_value=mock_conn)
     mock_cm.__exit__ = MagicMock(return_value=False)
 
-    with patch("db.connection.ensure_schema"), patch(
-        "db.connection.get_connection", return_value=mock_cm
+    with (
+        patch("db.connection.ensure_schema"),
+        patch("db.connection.get_connection", return_value=mock_cm),
     ):
         from db.postgres_market_store import PostgresMarketStore
 
@@ -69,7 +75,7 @@ def test_history_coverage_summary_uses_sql():
     assert "get_all_documents" not in sql
 
 
-def test_thin_history_summary_uses_postgres_sql(monkeypatch):
+def test_thin_history_summary_uses_postgres_sql(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_store = MagicMock()
     mock_store.history_coverage_summary.return_value = {
         "total": 10,
@@ -91,7 +97,7 @@ def test_thin_history_summary_uses_postgres_sql(monkeypatch):
     mock_store.get_all_documents.assert_not_called()
 
 
-def test_get_by_symbol_merges_table_columns():
+def test_get_by_symbol_merges_table_columns() -> None:
     mock_conn = MagicMock()
     mock_conn.execute.return_value.fetchone.return_value = {
         "symbol": "KO",
@@ -113,8 +119,9 @@ def test_get_by_symbol_merges_table_columns():
     mock_cm.__enter__ = MagicMock(return_value=mock_conn)
     mock_cm.__exit__ = MagicMock(return_value=False)
 
-    with patch("db.connection.ensure_schema"), patch(
-        "db.connection.get_connection", return_value=mock_cm
+    with (
+        patch("db.connection.ensure_schema"),
+        patch("db.connection.get_connection", return_value=mock_cm),
     ):
         from db.postgres_market_store import PostgresMarketStore
 

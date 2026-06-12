@@ -13,8 +13,8 @@ from __future__ import annotations
 import logging
 import os
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ HF_INFERENCE_URL_TEMPLATE = "https://api-inference.huggingface.co/models/{model}
 _TICKER_RE = re.compile(r"\b[A-Z]{1,5}\b")
 
 # (keyword substrings, answer markdown)
-_APP_FAQ: Sequence[Tuple[Tuple[str, ...], str]] = (
+_APP_FAQ: Sequence[tuple[tuple[str, ...], str]] = (
     (
         ("reload", "live data", "refresh price", "fresh price"),
         "Use **Reload live data** in the sidebar to refresh holdings prices and analysis. "
@@ -43,12 +43,14 @@ _APP_FAQ: Sequence[Tuple[Tuple[str, ...], str]] = (
     ),
     (
         ("yield channel", "yield zone", "weiss", "geraldine"),
-        "Open a holding or the **Holdings** tab for **Dividend Yield Channels** (Geraldine Weiss zones: "
-        "green = high yield vs history, red = expensive). If a chart is missing, click **Reload live data**.",
+        "Open a holding or the **Holdings** tab for **Dividend Yield Channels** (Geraldine "
+        "Weiss zones: green = high yield vs history, red = expensive). If a chart is "
+        "missing, click **Reload live data**.",
     ),
     (
         ("add holding", "add stock", "manage portfolio", "new ticker"),
-        "Go to **Manage portfolio** in the sidebar to add or edit positions, shares, and cost basis.",
+        "Go to **Manage portfolio** in the sidebar to add or edit positions, shares, "
+        "and cost basis.",
     ),
     (
         ("dividend sync", "dividend receipt", "paid dividend", "cash received"),
@@ -62,27 +64,32 @@ _APP_FAQ: Sequence[Tuple[Tuple[str, ...], str]] = (
     ),
     (
         ("s&p", "sp500", "library", "analysed stock"),
-        "The shared **S&P library** powers sector stats and enrichment (Yahoo, SEC, Stooq). "
-        "On the server, run ingest via `./scripts/update_cloud_docker.sh --ingest` if the library is empty.",
+        "The shared **S&P library** powers sector stats and enrichment (Yahoo, SEC, "
+        "Stooq). On the server, run ingest via `./scripts/update_cloud_docker.sh "
+        "--ingest` if the library is empty.",
     ),
     (
         ("login", "sign in", "google", "account"),
-        "Sign in with your Google account when auth is enabled. Portfolio data is stored per user in PostgreSQL.",
+        "Sign in with your Google account when auth is enabled. Portfolio data is "
+        "stored per user in PostgreSQL.",
     ),
     (
         ("help", "how to use", "getting started"),
-        "Start under **Manage portfolio**, then **Reload live data**. Explore **Holdings**, **Dividends**, "
-        "and the dashboard tabs. Use the examples on the home page for a guided tour.",
+        "Start under **Manage portfolio**, then **Reload live data**. Explore **Holdings**, "
+        "**Dividends**, and the dashboard tabs. Use the examples on the home page "
+        "for a guided tour.",
     ),
     (
         ("risk", "watchlist", "attention", "buy zone"),
-        "After **Reload live data**, use **Refresh watchlists** for buy/risk lists from cached analysis. "
-        "Yield zones on **Holdings** show green (historically high yield) vs red (expensive).",
+        "After **Reload live data**, use **Refresh watchlists** for buy/risk lists from "
+        "cached analysis. Yield zones on **Holdings** show green (historically high yield) "
+        "vs red (expensive).",
     ),
     (
         ("dividend yield", "what is yield", "yield mean"),
-        "**Dividend yield** = annual dividend per share ÷ price. In this app, yield **channels** compare "
-        "today's yield to the stock's own history to spot relatively cheap or rich prices — not a buy signal alone.",
+        "**Dividend yield** = annual dividend per share ÷ price. In this app, yield "
+        "**channels** compare today's yield to the stock's own history to spot "
+        "relatively cheap or rich prices — not a buy signal alone.",
     ),
     (
         ("dashboard", "overview", "performance"),
@@ -101,7 +108,7 @@ class ChatMessage:
 @dataclass(frozen=True)
 class SessionPortfolioSnapshot:
     holding_count: int
-    tickers: Tuple[str, ...]
+    tickers: tuple[str, ...]
     library_count: int
 
 
@@ -116,27 +123,21 @@ def huggingface_configured() -> bool:
 
 
 def _huggingface_token() -> str:
-    return (
-        os.environ.get("HUGGINGFACE_API_KEY")
-        or os.environ.get("HF_TOKEN")
-        or ""
-    ).strip()
+    return (os.environ.get("HUGGINGFACE_API_KEY") or os.environ.get("HF_TOKEN") or "").strip()
 
 
 def _huggingface_model() -> str:
     return (os.environ.get("DIVIDENDSCOPE_CHATBOT_MODEL") or HF_MODEL_DEFAULT).strip()
 
 
-def _session_portfolio_snapshot() -> Optional[SessionPortfolioSnapshot]:
+def _session_portfolio_snapshot() -> SessionPortfolioSnapshot | None:
     try:
         import streamlit as st
     except Exception:
         return None
 
     rows = st.session_state.get("portfolio_details_rows") or []
-    tickers = tuple(
-        t for t in (getattr(r, "ticker", "") or "" for r in rows) if t
-    )
+    tickers = tuple(t for t in (getattr(r, "ticker", "") or "" for r in rows) if t)
     market = st.session_state.get("market_db_status") or {}
     library_count = int(market.get("document_count") or 0)
     if not tickers and not st.session_state.get("portfolio_fast_loaded"):
@@ -153,7 +154,7 @@ def build_session_context() -> str:
     snap = _session_portfolio_snapshot()
     if snap is None:
         return ""
-    parts: List[str] = []
+    parts: list[str] = []
     if snap.holding_count:
         sample = ", ".join(snap.tickers[:10])
         suffix = "…" if len(snap.tickers) > 10 else ""
@@ -168,13 +169,14 @@ def format_assistant_reply(body: str, *, show_hf_tip: bool = False) -> str:
     parts = [body.strip()]
     if show_hf_tip and not huggingface_configured():
         parts.append(
-            "_Optional: set `HUGGINGFACE_API_KEY` on the server for broader chit-chat beyond app help._"
+            "_Optional: set `HUGGINGFACE_API_KEY` on the server for broader chit-chat "
+            "beyond app help._"
         )
     parts.append(DISCLAIMER)
     return "\n\n".join(parts)
 
 
-def match_local_faq(message: str) -> Optional[str]:
+def match_local_faq(message: str) -> str | None:
     """Return a curated answer when the user asks about app features."""
     text = (message or "").strip().lower()
     if not text:
@@ -185,7 +187,7 @@ def match_local_faq(message: str) -> Optional[str]:
     return None
 
 
-def match_session_reply(message: str) -> Optional[str]:
+def match_session_reply(message: str) -> str | None:
     """Answers that use the current portfolio session (no LLM)."""
     text = (message or "").strip()
     lower = text.lower()
@@ -243,8 +245,8 @@ def match_session_reply(message: str) -> Optional[str]:
         if tokens and not snap.tickers:
             symbol = next((t for t in tokens if len(t) > 1), tokens[0])
             return (
-                f"To analyse **{symbol}**, use S&P research from the app home/examples, or add it under "
-                "**Manage portfolio** then **Reload live data**. The library has "
+                f"To analyse **{symbol}**, use S&P research from the app home/examples, "
+                "or add it under **Manage portfolio** then **Reload live data**. The library has "
                 f"**{snap.library_count}** enriched tickers."
             )
 
@@ -277,10 +279,10 @@ def coerce_chat_prompt(raw: object) -> str:
 
 def _pair_conversation_history(
     messages: Sequence[ChatMessage],
-) -> Tuple[List[str], List[str]]:
+) -> tuple[list[str], list[str]]:
     """Build BlenderBot past_user_inputs / generated_responses from chat history."""
-    past_user: List[str] = []
-    past_bot: List[str] = []
+    past_user: list[str] = []
+    past_bot: list[str] = []
     seen_user = False
     for msg in messages:
         if msg.role == "user":
@@ -303,14 +305,14 @@ def _pair_conversation_history(
     return past_user, past_bot
 
 
-def reply_via_huggingface(
+def reply_via_huggingface(  # noqa: C901
     user_message: str,
     messages: Sequence[ChatMessage],
     *,
-    token: Optional[str] = None,
-    model: Optional[str] = None,
+    token: str | None = None,
+    model: str | None = None,
     timeout: int = 25,
-) -> Optional[str]:
+) -> str | None:
     """Call Hugging Face Inference API from the server."""
     api_token = token or _huggingface_token()
     if not api_token:
@@ -376,13 +378,14 @@ def reply_via_huggingface(
     return None
 
 
-def fallback_reply(user_message: str) -> str:
+def fallback_reply(_user_message: str) -> str:
     """Short default when no FAQ/session/LLM match."""
     snap = _session_portfolio_snapshot()
     if snap and snap.holding_count:
         lead = (
-            f"I didn't match that to a specific feature. With **{snap.holding_count}** holdings loaded, "
-            f"try **{snap.tickers[0]}** (ticker name), **yield channels**, **Reload live data**, or **Dividends**."
+            f"I didn't match that to a specific feature. With **{snap.holding_count}** "
+            f"holdings loaded, try **{snap.tickers[0]}** (ticker name), **yield channels**, "
+            "**Reload live data**, or **Dividends**."
         )
     else:
         lead = (
@@ -422,6 +425,6 @@ def generate_reply(
     )
 
 
-def initial_messages() -> List[Dict[str, str]]:
+def initial_messages() -> list[dict[str, str]]:
     """Default chat history for st.session_state."""
     return [{"role": "assistant", "content": WELCOME_MESSAGE}]

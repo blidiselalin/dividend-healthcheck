@@ -4,13 +4,13 @@ Monthly dividend cash-flow projection for portfolio holdings.
 
 from __future__ import annotations
 
-from utils.chart_theme import style_figure
-
 import calendar
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import Dict, List, Optional, Sequence, Set, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from utils.chart_theme import style_figure
 from utils.dividend_amounts import (
     expected_payment_months,
     normalize_payment_amount,
@@ -32,8 +32,8 @@ class HoldingMonthDividend:
     shares: float
     expected_cash: float
     per_share: float
-    payment_date: Optional[date]
-    ex_date: Optional[date]
+    payment_date: date | None
+    ex_date: date | None
     status: str  # received | scheduled | projected
 
 
@@ -47,7 +47,7 @@ class MonthDividendExposure:
     month_start: date
     label: str
     total_cash: float
-    holdings: List[HoldingMonthDividend] = field(default_factory=list)
+    holdings: list[HoldingMonthDividend] = field(default_factory=list)
 
     @property
     def payer_count(self) -> int:
@@ -86,9 +86,7 @@ class MonthDividendExposure:
 
     @property
     def confirmed_payer_count(self) -> int:
-        return sum(
-            1 for item in self.holdings if item.status in {"received", "scheduled"}
-        )
+        return sum(1 for item in self.holdings if item.status in {"received", "scheduled"})
 
 
 @dataclass
@@ -117,7 +115,7 @@ def add_months(value: date, months: int) -> date:
     return date(year, month, 1)
 
 
-def _cash_date(record: "DividendRecord") -> date:
+def _cash_date(record: DividendRecord) -> date:
     if record.payment_date:
         return record.payment_date
     return record.ex_date + timedelta(days=14)
@@ -128,18 +126,18 @@ def _in_month(day: date, month: date) -> bool:
 
 
 def _per_share_payment(
-    records: Sequence["DividendRecord"],
-    document: Optional["StockDocument"],
-    stock: Optional["StockData"],
-) -> Optional[float]:
+    records: Sequence[DividendRecord],
+    document: StockDocument | None,
+    stock: StockData | None,
+) -> float | None:
     return per_payment_amount(records, document, stock)
 
 
 def _shares_for_payment(
-    holding: "PortfolioHolding",
+    holding: PortfolioHolding,
     *,
     as_of: date,
-    detail_service,
+    detail_service: Any,
 ) -> float:
     """Shares held on the payment date (journal lots when available)."""
     from services.portfolio_holding_detail_service import shares_as_of
@@ -150,18 +148,16 @@ def _shares_for_payment(
 
 
 def _collapse_symbol_payments(
-    payments: List[HoldingMonthDividend],
-) -> List[HoldingMonthDividend]:
+    payments: list[HoldingMonthDividend],
+) -> list[HoldingMonthDividend]:
     """Keep one payment row per symbol — prefer received, then largest plausible cash."""
-    merged: Dict[str, HoldingMonthDividend] = {}
+    merged: dict[str, HoldingMonthDividend] = {}
     for item in payments:
         existing = merged.get(item.symbol)
         if existing is None:
             merged[item.symbol] = item
             continue
-        if _STATUS_RANK[item.status] < _STATUS_RANK[existing.status]:
-            merged[item.symbol] = item
-        elif (
+        if _STATUS_RANK[item.status] < _STATUS_RANK[existing.status] or (
             _STATUS_RANK[item.status] == _STATUS_RANK[existing.status]
             and item.per_share <= existing.per_share
         ):
@@ -169,17 +165,17 @@ def _collapse_symbol_payments(
     return list(merged.values())
 
 
-def _holding_payments_for_month(
-    holding: "PortfolioHolding",
+def _holding_payments_for_month(  # noqa: C901
+    holding: PortfolioHolding,
     target_month: date,
     *,
-    document: Optional["StockDocument"],
-    stock: Optional["StockData"],
-    row_ex_date: Optional[date] = None,
-    row_pay_date: Optional[date] = None,
+    document: StockDocument | None,
+    stock: StockData | None,
+    row_ex_date: date | None = None,
+    row_pay_date: date | None = None,
     reference_date: date,
-    detail_service,
-) -> List[HoldingMonthDividend]:
+    detail_service: Any,
+) -> list[HoldingMonthDividend]:
     records = list(document.dividend_history) if document and document.dividend_history else []
     company = (
         (document.name if document and document.name else None)
@@ -191,13 +187,13 @@ def _holding_payments_for_month(
     is_past_month = target_month < current_month
     is_future_month = target_month > current_month
 
-    results: List[HoldingMonthDividend] = []
-    seen_keys: Set[str] = set()
+    results: list[HoldingMonthDividend] = []
+    seen_keys: set[str] = set()
 
     def _add(
         *,
-        ex_date: Optional[date],
-        pay_date: Optional[date],
+        ex_date: date | None,
+        pay_date: date | None,
         per_share_amount: float,
         status: str,
         shares: float,
@@ -248,21 +244,24 @@ def _holding_payments_for_month(
         announced_ex = row_ex_date or (document.ex_dividend_date if document else None)
         announced_pay = row_pay_date
         if announced_ex or announced_pay:
-            pay = announced_pay or (announced_ex + timedelta(days=14))
-            if _in_month(pay, target_month):
-                shares = _shares_for_payment(
-                    holding,
-                    as_of=announced_ex or pay,
-                    detail_service=detail_service,
-                )
-                status = "received" if pay <= reference_date else "scheduled"
-                _add(
-                    ex_date=announced_ex or (pay - timedelta(days=14)),
-                    pay_date=pay,
-                    per_share_amount=per_share,
-                    status=status,
-                    shares=shares,
-                )
+            pay = announced_pay or (announced_ex + timedelta(days=14) if announced_ex else None)
+            if pay and _in_month(pay, target_month):
+                as_of_date = announced_ex if announced_ex else pay
+                if as_of_date:
+                    shares = _shares_for_payment(
+                        holding,
+                        as_of=as_of_date,
+                        detail_service=detail_service,
+                    )
+                    status = "received" if pay <= reference_date else "scheduled"
+                    ex_date_val = announced_ex if announced_ex else (pay - timedelta(days=14))
+                    _add(
+                        ex_date=ex_date_val,
+                        pay_date=pay,
+                        per_share_amount=per_share,
+                        status=status,
+                        shares=shares,
+                    )
 
     if results:
         return _collapse_symbol_payments(results)
@@ -275,9 +274,7 @@ def _holding_payments_for_month(
         return results
 
     same_calendar_month = [
-        record
-        for record in records
-        if _cash_date(record).month == target_month.month
+        record for record in records if _cash_date(record).month == target_month.month
     ]
     if same_calendar_month:
         recent_same_month = sorted(same_calendar_month, key=lambda r: _cash_date(r))[-3:]
@@ -308,17 +305,17 @@ def _holding_payments_for_month(
 
 
 def _summarize_month(
-    holdings: Sequence["PortfolioHolding"],
+    holdings: Sequence[PortfolioHolding],
     target_month: date,
     *,
-    vector_docs: Dict[str, "StockDocument"],
-    stock_data: Dict[str, "StockData"],
-    row_dates: Optional[Dict[str, tuple[Optional[date], Optional[date]]]] = None,
+    vector_docs: dict[str, StockDocument],
+    stock_data: dict[str, StockData],
+    row_dates: dict[str, tuple[date | None, date | None]] | None = None,
     reference_date: date,
-    detail_service,
+    detail_service: Any,
 ) -> MonthDividendExposure:
     row_dates = row_dates or {}
-    payments: List[HoldingMonthDividend] = []
+    payments: list[HoldingMonthDividend] = []
 
     for holding in holdings:
         doc = vector_docs.get(holding.symbol)
@@ -348,12 +345,12 @@ def _summarize_month(
 
 
 def build_portfolio_dividend_calendar(
-    holdings: Sequence["PortfolioHolding"],
+    holdings: Sequence[PortfolioHolding],
     *,
-    vector_docs: Dict[str, "StockDocument"],
-    stock_data: Dict[str, "StockData"],
-    row_dates: Optional[Dict[str, tuple[Optional[date], Optional[date]]]] = None,
-    reference_date: Optional[date] = None,
+    vector_docs: dict[str, StockDocument],
+    stock_data: dict[str, StockData],
+    row_dates: dict[str, tuple[date | None, date | None]] | None = None,
+    reference_date: date | None = None,
 ) -> PortfolioDividendCalendar:
     """Build last / current / next month dividend exposure for the portfolio."""
     from services.portfolio_holding_detail_service import PortfolioHoldingDetailService
@@ -396,7 +393,7 @@ def build_portfolio_dividend_calendar(
     )
 
 
-def month_comparison_change_pct(current: float, other: float) -> Optional[float]:
+def month_comparison_change_pct(current: float, other: float) -> float | None:
     if other <= 0:
         return None
     return ((current - other) / other) * 100
@@ -410,7 +407,7 @@ except ImportError:
     PLOTLY_AVAILABLE = False
 
 
-def create_month_comparison_chart(calendar: PortfolioDividendCalendar):
+def create_month_comparison_chart(calendar: PortfolioDividendCalendar) -> Any:
     """Grouped bar chart: last vs current vs next month total dividend cash."""
     if not PLOTLY_AVAILABLE:
         return None
@@ -436,12 +433,12 @@ def create_month_comparison_chart(calendar: PortfolioDividendCalendar):
         title="Monthly dividend cash expectation",
         yaxis_title="Expected cash (USD)",
         height=360,
-        margin=dict(t=50, b=40),
+        margin={"t": 50, "b": 40},
     )
     return style_figure(fig)
 
 
-def create_month_payers_chart(exposure: MonthDividendExposure):
+def create_month_payers_chart(exposure: MonthDividendExposure) -> Any:
     """Horizontal bar chart of holdings paying in a given month."""
     if not PLOTLY_AVAILABLE or not exposure.holdings:
         return None
@@ -461,8 +458,7 @@ def create_month_payers_chart(exposure: MonthDividendExposure):
             orientation="h",
             marker_color=colors,
             customdata=[
-                [item.symbol, item.status, item.per_share, item.payment_date]
-                for item in ordered
+                [item.symbol, item.status, item.per_share, item.payment_date] for item in ordered
             ],
             hovertemplate=(
                 "<b>%{customdata[0]}</b><br>"
@@ -476,6 +472,6 @@ def create_month_payers_chart(exposure: MonthDividendExposure):
         title=f"Dividend payers — {exposure.label}",
         xaxis_title="Expected cash (USD)",
         height=max(320, 26 * len(ordered)),
-        margin=dict(l=10, r=10, t=50, b=40),
+        margin={"l": 10, "r": 10, "t": 50, "b": 40},
     )
     return style_figure(fig)

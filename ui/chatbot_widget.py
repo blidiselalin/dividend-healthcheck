@@ -11,12 +11,12 @@ import logging
 import streamlit as st
 
 from services.chatbot_service import (
-    ChatMessage,
     WELCOME_MESSAGE,
+    ChatMessage,
     generate_reply,
+    huggingface_configured,
     initial_messages,
     is_chatbot_enabled,
-    huggingface_configured,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,8 @@ CHAT_TEXT_KEY = "ds_assistant_text"
 
 ERROR_REPLY = (
     "Sorry, something went wrong while generating a reply. "
-    "Please try again or ask about **Reload live data**, **yield channels**, or **Manage portfolio**."
+    "Please try again or ask about **Reload live data**, **yield channels**, "
+    "or **Manage portfolio**."
 )
 
 
@@ -37,9 +38,7 @@ def _init_chat_state() -> None:
 
 
 def _append_message(role: str, content: str) -> None:
-    st.session_state[SESSION_MESSAGES_KEY].append(
-        {"role": role, "content": content}
-    )
+    st.session_state[SESSION_MESSAGES_KEY].append({"role": role, "content": content})
 
 
 def _render_chat_messages() -> None:
@@ -48,11 +47,7 @@ def _render_chat_messages() -> None:
     for msg in messages:
         role = msg.get("role", "assistant")
         content = msg.get("content", "")
-        if (
-            skip_welcome_duplicate
-            and role == "assistant"
-            and content == WELCOME_MESSAGE
-        ):
+        if skip_welcome_duplicate and role == "assistant" and content == WELCOME_MESSAGE:
             continue
         with st.chat_message(role):
             st.markdown(content)

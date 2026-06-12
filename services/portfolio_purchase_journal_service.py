@@ -4,17 +4,16 @@ Purchase journal views: timeline, tables, and charts.
 
 from __future__ import annotations
 
-from utils.chart_theme import style_figure
-
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
-from typing import Dict, List, Optional
+from typing import Any
 
 import pandas as pd
 
 from data_ingestion.portfolio_store import PortfolioStore
 from data_ingestion.purchase_journal_store import PurchaseJournalStore, PurchaseRecord
+from utils.chart_theme import style_figure
 
 try:
     import plotly.graph_objects as go
@@ -59,8 +58,8 @@ class SymbolAcquisitionSplit:
 class PortfolioPurchaseJournalService:
     def __init__(
         self,
-        journal_store: Optional[PurchaseJournalStore] = None,
-        portfolio_store: Optional[PortfolioStore] = None,
+        journal_store: PurchaseJournalStore | None = None,
+        portfolio_store: PortfolioStore | None = None,
     ) -> None:
         if journal_store is None and portfolio_store is None:
             from services.portfolio_context import create_portfolio_context
@@ -74,10 +73,10 @@ class PortfolioPurchaseJournalService:
             self.journal = journal_store or PurchaseJournalStore(db_path=path, seed=False)
             self.portfolio = portfolio_store or PortfolioStore(db_path=path, seed=False)
 
-    def list_purchases(self) -> List[PurchaseRecord]:
+    def list_purchases(self) -> list[PurchaseRecord]:
         return self.journal.list_purchases(portfolio_only=True)
 
-    def summarize(self, records: Optional[List[PurchaseRecord]] = None) -> PurchaseJournalSummary:
+    def summarize(self, records: list[PurchaseRecord] | None = None) -> PurchaseJournalSummary:
         items = records if records is not None else self.list_purchases()
         holdings = self.portfolio.list_holdings()
         if not items:
@@ -92,9 +91,7 @@ class PortfolioPurchaseJournalService:
             symbols_in_portfolio=len(holdings),
         )
 
-    def chronological_dataframe(
-        self, records: Optional[List[PurchaseRecord]] = None
-    ) -> pd.DataFrame:
+    def chronological_dataframe(self, records: list[PurchaseRecord] | None = None) -> pd.DataFrame:
         items = records if records is not None else self.list_purchases()
         return pd.DataFrame(
             [
@@ -107,12 +104,10 @@ class PortfolioPurchaseJournalService:
             ]
         )
 
-    def by_symbol_dataframe(
-        self, records: Optional[List[PurchaseRecord]] = None
-    ) -> pd.DataFrame:
+    def by_symbol_dataframe(self, records: list[PurchaseRecord] | None = None) -> pd.DataFrame:
         items = records if records is not None else self.list_purchases()
         holdings = {h.symbol: h for h in self.portfolio.list_holdings()}
-        grouped: Dict[str, List[PurchaseRecord]] = defaultdict(list)
+        grouped: dict[str, list[PurchaseRecord]] = defaultdict(list)
         for item in items:
             grouped[item.symbol].append(item)
 
@@ -131,24 +126,22 @@ class PortfolioPurchaseJournalService:
                     "# Purchases": len(lots),
                     "Purchase dates": dates,
                     "Prices $": prices,
-                    "Avg price $": round(
-                        sum(lot.price_usd for lot in lots) / len(lots), 2
-                    ),
+                    "Avg price $": round(sum(lot.price_usd for lot in lots) / len(lots), 2),
                     "DB avg cost $": holding.avg_cost_per_share,
                 }
             )
         return pd.DataFrame(rows)
 
-    def yearly_counts(self, records: Optional[List[PurchaseRecord]] = None) -> pd.DataFrame:
+    def yearly_counts(self, records: list[PurchaseRecord] | None = None) -> pd.DataFrame:
         items = records if records is not None else self.list_purchases()
-        counts: Dict[int, int] = defaultdict(int)
+        counts: dict[int, int] = defaultdict(int)
         for item in items:
             counts[item.purchase_date.year] += 1
         return pd.DataFrame(
             [{"Year": year, "Purchases": count} for year, count in sorted(counts.items())]
         )
 
-    def symbols_without_journal(self) -> List[str]:
+    def symbols_without_journal(self) -> list[str]:
         purchases = {item.symbol for item in self.list_purchases()}
         return sorted(
             holding.symbol
@@ -157,19 +150,19 @@ class PortfolioPurchaseJournalService:
         )
 
     def build_estimated_lots(
-        self, records: Optional[List[PurchaseRecord]] = None
-    ) -> List[EstimatedPurchaseLot]:
+        self, records: list[PurchaseRecord] | None = None
+    ) -> list[EstimatedPurchaseLot]:
         """
         Split each holding's shares evenly across journal purchases, then scale
         lot values so they sum to the portfolio DB acquisition value.
         """
         items = records if records is not None else self.list_purchases()
         holdings = {h.symbol: h for h in self.portfolio.list_holdings()}
-        grouped: Dict[str, List[PurchaseRecord]] = defaultdict(list)
+        grouped: dict[str, list[PurchaseRecord]] = defaultdict(list)
         for item in items:
             grouped[item.symbol].append(item)
 
-        estimates: List[EstimatedPurchaseLot] = []
+        estimates: list[EstimatedPurchaseLot] = []
         for symbol, lots in grouped.items():
             holding = holdings.get(symbol)
             if not holding or not lots:
@@ -181,7 +174,7 @@ class PortfolioPurchaseJournalService:
             target = holding.acquisition_value
             scale = (target / raw_total) if raw_total > 0 else 1.0
 
-            for lot, raw_value in zip(lots_sorted, raw_values):
+            for lot, raw_value in zip(lots_sorted, raw_values, strict=False):
                 value = raw_value * scale
                 shares = shares_per_lot
                 if lot.price_usd > 0:
@@ -199,14 +192,14 @@ class PortfolioPurchaseJournalService:
         return estimates
 
     def acquisition_split(
-        self, records: Optional[List[PurchaseRecord]] = None
-    ) -> List[SymbolAcquisitionSplit]:
+        self, records: list[PurchaseRecord] | None = None
+    ) -> list[SymbolAcquisitionSplit]:
         items = records if records is not None else self.list_purchases()
         holdings = {h.symbol: h for h in self.portfolio.list_holdings()}
         estimates = self.build_estimated_lots(items)
 
-        value_by_symbol: Dict[str, float] = defaultdict(float)
-        lots_by_symbol: Dict[str, int] = defaultdict(int)
+        value_by_symbol: dict[str, float] = defaultdict(float)
+        lots_by_symbol: dict[str, int] = defaultdict(int)
         for lot in estimates:
             value_by_symbol[lot.symbol] += lot.estimated_value_usd
             lots_by_symbol[lot.symbol] += 1
@@ -214,8 +207,8 @@ class PortfolioPurchaseJournalService:
         total_value = sum(value_by_symbol.values())
         total_lots = sum(lots_by_symbol.values())
 
-        splits: List[SymbolAcquisitionSplit] = []
-        for symbol in sorted(value_by_symbol, key=value_by_symbol.get, reverse=True):
+        splits: list[SymbolAcquisitionSplit] = []
+        for symbol in sorted(value_by_symbol, key=lambda x: value_by_symbol[x], reverse=True):
             holding = holdings[symbol]
             journal_val = value_by_symbol[symbol]
             splits.append(
@@ -237,7 +230,7 @@ class PortfolioPurchaseJournalService:
         return splits
 
     def acquisition_split_dataframe(
-        self, records: Optional[List[PurchaseRecord]] = None
+        self, records: list[PurchaseRecord] | None = None
     ) -> pd.DataFrame:
         splits = self.acquisition_split(records)
         return pd.DataFrame(
@@ -255,9 +248,7 @@ class PortfolioPurchaseJournalService:
             ]
         )
 
-    def lot_estimates_dataframe(
-        self, records: Optional[List[PurchaseRecord]] = None
-    ) -> pd.DataFrame:
+    def lot_estimates_dataframe(self, records: list[PurchaseRecord] | None = None) -> pd.DataFrame:
         estimates = self.build_estimated_lots(records)
         return pd.DataFrame(
             [
@@ -272,9 +263,7 @@ class PortfolioPurchaseJournalService:
             ]
         )
 
-    def create_acquisition_value_treemap(
-        self, records: Optional[List[PurchaseRecord]] = None
-    ):
+    def create_acquisition_value_treemap(self, records: list[PurchaseRecord] | None = None) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         splits = self.acquisition_split(records)
@@ -296,13 +285,13 @@ class PortfolioPurchaseJournalService:
             )
         )
         fig.update_layout(
-            title="Acquisition value split (estimated from journal × shares)",
+            title="Acquisition value split (estimated from journal x shares)",
             height=480,
-            margin=dict(t=50, b=20),
+            margin={"t": 50, "b": 20},
         )
         return style_figure(fig)
 
-    def create_lots_count_pie(self, records: Optional[List[PurchaseRecord]] = None):
+    def create_lots_count_pie(self, records: list[PurchaseRecord] | None = None) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         splits = self.acquisition_split(records)
@@ -329,11 +318,11 @@ class PortfolioPurchaseJournalService:
         fig.update_layout(
             title="Purchase count split (journal transactions)",
             height=420,
-            margin=dict(t=50, b=20),
+            margin={"t": 50, "b": 20},
         )
         return style_figure(fig)
 
-    def create_value_vs_lots_chart(self, records: Optional[List[PurchaseRecord]] = None):
+    def create_value_vs_lots_chart(self, records: list[PurchaseRecord] | None = None) -> Any:
         """Bubble: x = # lots, y = acquisition value, size = shares."""
         if not PLOTLY_AVAILABLE:
             return None
@@ -348,16 +337,15 @@ class PortfolioPurchaseJournalService:
                 mode="markers+text",
                 text=[s.symbol for s in splits],
                 textposition="top center",
-                marker=dict(
-                    size=[max(12, min(50, s.total_shares / 2)) for s in splits],
-                    color=[s.portfolio_weight_pct for s in splits],
-                    colorscale="Blues",
-                    showscale=True,
-                    colorbar=dict(title="% value"),
-                ),
+                marker={
+                    "size": [max(12, min(50, s.total_shares / 2)) for s in splits],
+                    "color": [s.portfolio_weight_pct for s in splits],
+                    "colorscale": "Blues",
+                    "showscale": True,
+                    "colorbar": {"title": "% value"},
+                },
                 customdata=[
-                    [s.symbol, s.lot_count, s.total_shares, s.db_acquisition_usd]
-                    for s in splits
+                    [s.symbol, s.lot_count, s.total_shares, s.db_acquisition_usd] for s in splits
                 ],
                 hovertemplate=(
                     "<b>%{customdata[0]}</b><br>"
@@ -373,11 +361,11 @@ class PortfolioPurchaseJournalService:
             xaxis_title="# purchases (journal)",
             yaxis_title="Estimated acquisition value $",
             height=480,
-            margin=dict(t=50, b=40),
+            margin={"t": 50, "b": 40},
         )
         return style_figure(fig)
 
-    def create_dual_split_bar(self, records: Optional[List[PurchaseRecord]] = None):
+    def create_dual_split_bar(self, records: list[PurchaseRecord] | None = None) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         splits = self.acquisition_split(records)
@@ -412,16 +400,16 @@ class PortfolioPurchaseJournalService:
         fig.update_layout(
             title="Top 20: acquisition value vs number of buys",
             barmode="group",
-            yaxis=dict(title="Value $"),
-            yaxis2=dict(title="# purchases", overlaying="y", side="right"),
+            yaxis={"title": "Value $"},
+            yaxis2={"title": "# purchases", "overlaying": "y", "side": "right"},
             height=440,
-            margin=dict(t=50, b=120),
-            xaxis=dict(tickangle=-45),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            margin={"t": 50, "b": 120},
+            xaxis={"tickangle": -45},
+            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
         )
         return style_figure(fig)
 
-    def create_timeline_chart(self, records: Optional[List[PurchaseRecord]] = None):
+    def create_timeline_chart(self, records: list[PurchaseRecord] | None = None) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         items = records if records is not None else self.list_purchases()
@@ -436,10 +424,8 @@ class PortfolioPurchaseJournalService:
                 x=[item.purchase_date for item in items],
                 y=[symbol_y[item.symbol] for item in items],
                 mode="markers",
-                marker=dict(size=9, color="#1976d2"),
-                customdata=[
-                    [item.symbol, item.label, item.price_usd] for item in items
-                ],
+                marker={"size": 9, "color": "#1976d2"},
+                customdata=[[item.symbol, item.label, item.price_usd] for item in items],
                 hovertemplate=(
                     "<b>%{customdata[0]}</b><br>"
                     "%{customdata[1]}<br>"
@@ -451,17 +437,17 @@ class PortfolioPurchaseJournalService:
         fig.update_layout(
             title="Purchase journal — timeline",
             xaxis_title="Date",
-            yaxis=dict(
-                tickmode="array",
-                tickvals=list(symbol_y.values()),
-                ticktext=symbols,
-            ),
+            yaxis={
+                "tickmode": "array",
+                "tickvals": list(symbol_y.values()),
+                "ticktext": symbols,
+            },
             height=max(420, 22 * len(symbols)),
-            margin=dict(t=50, b=40, l=80),
+            margin={"t": 50, "b": 40, "l": 80},
         )
         return style_figure(fig)
 
-    def create_yearly_activity_chart(self, records: Optional[List[PurchaseRecord]] = None):
+    def create_yearly_activity_chart(self, records: list[PurchaseRecord] | None = None) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         yearly = self.yearly_counts(records)
@@ -479,11 +465,11 @@ class PortfolioPurchaseJournalService:
             title="Purchases per year",
             yaxis_title="Transactions",
             height=340,
-            margin=dict(t=50, b=40),
+            margin={"t": 50, "b": 40},
         )
         return style_figure(fig)
 
-    def create_price_scatter_by_symbol(self, records: Optional[List[PurchaseRecord]] = None):
+    def create_price_scatter_by_symbol(self, records: list[PurchaseRecord] | None = None) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
         items = records if records is not None else self.list_purchases()
@@ -507,7 +493,7 @@ class PortfolioPurchaseJournalService:
             xaxis_title="Date",
             yaxis_title="Price $",
             height=440,
-            margin=dict(t=50, b=40),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            margin={"t": 50, "b": 40},
+            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
         )
         return style_figure(fig)

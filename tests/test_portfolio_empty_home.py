@@ -1,4 +1,5 @@
 """Empty portfolio home for real users vs test user."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -17,15 +18,15 @@ from ui.theme import (
 
 def test_portfolio_nav_lists_all_sections_with_hints() -> None:
     assert len(PORTFOLIO_NAV) == 6
-    assert PORTFOLIO_SECTION_LABELS == [
+    assert [
         "Home",
         "Holdings",
         "Dividend income",
         "Dividend growth",
         "Purchase journal",
         "Deposits & benchmarks",
-    ]
-    for label, _key, hint in PORTFOLIO_NAV:
+    ] == PORTFOLIO_SECTION_LABELS
+    for _label, _key, hint in PORTFOLIO_NAV:
         assert hint.strip()
 
 
@@ -50,7 +51,9 @@ def test_home_examples_include_ko_for_test_docs() -> None:
     assert "KO" in symbols
 
 
-def test_user_has_holdings_false_on_empty_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_user_has_holdings_false_on_empty_db(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     db = tmp_path / "portfolio.db"
     monkeypatch.setattr(
         "services.portfolio_session.resolve_current_portfolio_db",
@@ -59,7 +62,9 @@ def test_user_has_holdings_false_on_empty_db(tmp_path: Path, monkeypatch: pytest
     assert user_has_holdings_in_db() is False
 
 
-def test_is_demo_session_false_without_test_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_is_demo_session_false_without_test_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr("auth.test_user.test_user_session_active", lambda: False)
     monkeypatch.setattr("auth.user_context.current_user", lambda: None)
     assert is_demo_session() is False

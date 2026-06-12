@@ -4,26 +4,27 @@ Invalidate Streamlit caches and reload portfolio session state after data change
 
 from __future__ import annotations
 
-from typing import Callable, Iterable, Optional, Set
+from collections.abc import Iterable
+from typing import Callable
 
 import streamlit as st
 
-from utils.logging_config import get_logger
 from services.portfolio_analysis_preload import PortfolioAnalysisPreload
-
-logger = get_logger("dividendscope.portfolio")
 from services.portfolio_details_service import PortfolioDetailsService
 from services.portfolio_dividend_sync_service import maybe_sync_received_dividends
 from services.portfolio_management_service import SECTION_KEYS
 from services.portfolio_ui_cache import clear_session_cache
 from ui.portfolio_risk_panel import refresh_portfolio_risks, store_portfolio_payload
+from utils.logging_config import get_logger
+
+logger = get_logger("dividendscope.portfolio")
 
 SectionKey = str
 
 
 def invalidate_section_caches(sections: Iterable[SectionKey]) -> None:
     """Clear cached data for the given portfolio tabs (or 'all')."""
-    wanted: Set[str] = set(sections)
+    wanted: set[str] = set(sections)
     if "all" in wanted:
         wanted = set(SECTION_KEYS)
 
@@ -41,7 +42,7 @@ def invalidate_section_caches(sections: Iterable[SectionKey]) -> None:
 def reload_portfolio_session(
     *,
     refresh_risks: bool = True,
-    sections: Optional[Iterable[SectionKey]] = None,
+    sections: Iterable[SectionKey] | None = None,
 ) -> PortfolioAnalysisPreload:
     """Rebuild holdings rows and analysis preload after portfolio DB changes."""
     if sections:

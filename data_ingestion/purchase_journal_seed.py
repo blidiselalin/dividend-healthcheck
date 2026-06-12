@@ -7,10 +7,8 @@ AMCR, CCI, INTC, LEG, OHI, VFC, WBA
 
 from __future__ import annotations
 
-from typing import List, Tuple
-
 # (symbol, ISO date, price_usd at purchase)
-PURCHASE_JOURNAL_SEED: List[Tuple[str, str, float]] = [
+PURCHASE_JOURNAL_SEED: list[tuple[str, str, float]] = [
     # ABBV
     ("ABBV", "2023-06-13", 137.90),
     ("ABBV", "2023-06-23", 137.90),
