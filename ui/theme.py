@@ -10,7 +10,7 @@ import streamlit as st
 NAV_PORTFOLIO = "Portfolio"
 NAV_SINGLE_STOCK = "Single stock"
 NAV_DIVIDEND_KINGS = "Dividend Kings"
-NAV_OPTIONS = [NAV_PORTFOLIO, NAV_SINGLE_STOCK, NAV_DIVIDEND_KINGS]
+NAV_OPTIONS = [NAV_PORTFOLIO]
 
 _LEGACY_NAV_MAP = {
     "Portfolio Details": NAV_PORTFOLIO,
@@ -38,6 +38,11 @@ PORTFOLIO_NAV: list[tuple[str, str, str]] = [
         "deposits",
         "Monthly deposits, portfolio value, and index comparison",
     ),
+    (
+        "Dividend Kings",
+        "dividend_kings",
+        "Analyze and rank the entire universe of elite dividend stocks",
+    ),
 ]
 
 _LEGACY_PORTFOLIO_SECTION_LABELS = {
@@ -46,6 +51,8 @@ _LEGACY_PORTFOLIO_SECTION_LABELS = {
     "Growth": "Dividend growth",
     "Journal": "Purchase journal",
     "Deposits": "Deposits & benchmarks",
+    "Dividend Kings": "Dividend Kings",
+    "All Dividend Kings": "Dividend Kings",
 }
 
 PORTFOLIO_SECTION_LABELS = [item[0] for item in PORTFOLIO_NAV]
@@ -62,6 +69,8 @@ def normalize_nav_choice(value: str | None) -> str:
     if not value:
         return NAV_PORTFOLIO
     mapped = _LEGACY_NAV_MAP.get(value, value)
+    if mapped in (NAV_SINGLE_STOCK, NAV_DIVIDEND_KINGS):
+        return NAV_PORTFOLIO
     if mapped not in NAV_OPTIONS:
         return NAV_PORTFOLIO
     return mapped

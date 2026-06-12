@@ -18,11 +18,6 @@ from ui.app_about import render_app_about_compact
 from ui.theme import inject_app_theme
 
 
-def _login_with_google() -> None:
-    """Streamlit OIDC — creates an account on first Google login, signs in after."""
-    st.login()
-
-
 def render_login_page(*, access_denied: bool = False) -> None:
     inject_app_theme()
 
@@ -83,21 +78,21 @@ def _render_google_auth_block() -> None:
                 "Sign up with your Google account — one click, no separate password. "
                 "Returning users: use the same button to sign in."
             )
-        st.button(
+        if st.button(
             "Sign up with Google",
             type="primary",
             use_container_width=True,
-            on_click=_login_with_google,
             key="auth_signup_google",
-        )
+        ):
+            st.login()
         st.caption("Already have an account? Use the same button — we'll sign you in.")
     else:
         st.markdown("### Sign in")
         st.caption("Use your Google account to open your portfolio workspace.")
-        st.button(
+        if st.button(
             "Sign in with Google",
             type="primary",
             use_container_width=True,
-            on_click=_login_with_google,
             key="auth_signin_google_only",
-        )
+        ):
+            st.login()

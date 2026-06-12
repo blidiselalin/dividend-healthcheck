@@ -2309,6 +2309,10 @@ class PortfolioDetailsView:
         elif section == "deposits":
             cls._render_tab_header("deposits", show_refresh=True)
             cls._render_deposits_page()
+        elif section == "dividend_kings":
+            from ui.views import FullAnalysisView
+
+            FullAnalysisView.render()
 
     @classmethod
     def render(cls) -> None:

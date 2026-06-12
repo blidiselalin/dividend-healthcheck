@@ -64,6 +64,9 @@ def render_access_denied_panel() -> None:
     if st.button(
         "Use a different Google account", use_container_width=True, key="access_try_other_google"
     ):
+        from auth.user_context import clear_portfolio_session_state
+
+        clear_portfolio_session_state()
         st.logout()
 
 
