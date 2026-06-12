@@ -689,3 +689,34 @@ class FullAnalysisView:
                 "text/csv",
                 key="export_full_analysis_csv",
             )
+
+
+class BenchmarkView:
+    """View to compare portfolio performance against S&P 500 and SCHD ETFs."""
+
+    @classmethod
+    def render(cls) -> None:
+        st.subheader("Portfolio Benchmark Comparison")
+        st.markdown(
+            "Compare your actual portfolio performance against hypothetical "
+            "buy-and-hold strategies using S&P 500 and SCHD ETFs, assuming "
+            "identical monthly deposit schedules."
+        )
+
+        try:
+            from services.portfolio_deposits_service import PortfolioDepositsService
+            from ui.portfolio_details_view import PortfolioDetailsView
+
+            service = PortfolioDepositsService()
+            deposits = service.list_deposits()
+
+            if not deposits:
+                st.info(
+                    "No deposit history found. Add deposits in the Portfolio section "
+                    "to use the benchmark comparison."
+                )
+                return
+
+            PortfolioDetailsView._render_benchmark_comparison(deposits)
+        except Exception as e:
+            st.error(f"Could not load benchmark comparison: {e}")
