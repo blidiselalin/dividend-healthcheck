@@ -215,6 +215,62 @@ Examples:
     )
 
     parser.add_argument(
+        "--sync-history-tables",
+        action="store_true",
+        help="Sync JSONB history into stock_price_history and stock_dividend_history tables",
+    )
+
+    parser.add_argument(
+        "--sync-history-limit",
+        type=int,
+        default=500,
+        help="Max symbols to sync for --sync-history-tables (default: 500)",
+    )
+
+    parser.add_argument(
+        "--ensure-sp500",
+        action="store_true",
+        help="Fetch and populate missing S&P 500 constituents",
+    )
+
+    parser.add_argument(
+        "--backfill-history",
+        action="store_true",
+        help="Backfill thin price/dividend history from yfinance",
+    )
+
+    parser.add_argument(
+        "--backfill-limit",
+        type=int,
+        default=40,
+        help="Max symbols to backfill for --backfill-history (default: 40)",
+    )
+
+    parser.add_argument(
+        "--refresh-prices",
+        action="store_true",
+        help="Refresh latest prices for existing market library documents",
+    )
+
+    parser.add_argument(
+        "--ensure-top-dividend",
+        action="store_true",
+        help="Fetch and populate missing top 100 dividend payers",
+    )
+
+    parser.add_argument(
+        "--limit",
+        type=int,
+        help="Max symbols for --ensure-sp500 or --ensure-top-dividend",
+    )
+
+    parser.add_argument(
+        "--sync-portfolio",
+        action="store_true",
+        help="Sync portfolio holdings into stock_documents",
+    )
+
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -229,6 +285,95 @@ Examples:
     # Handle actions
     if args.create_samples:
         create_sample_data(args.data_dir)
+        return 0
+
+    if args.sync_history_tables:
+        from db.postgres_market_history_store import PostgresMarketHistoryStore
+
+        stats = PostgresMarketHistoryStore().sync_pending_from_jsonb(limit=args.sync_history_limit)
+        print("History table sync complete!")
+        print(f"  Pending: {stats.get('pending', 0)}")
+        print(f"  Processed: {stats.get('processed', 0)}")
+        print(f"  Synced: {stats.get('synced', 0)}")
+        print(f"  Skipped: {stats.get('skipped', 0)}")
+        return 0
+
+    if args.ensure_sp500:
+        from services.sp500_peers_service import ensure_sp500_in_vectordb
+
+        def progress_cb_sp500(msg: str, current: int, total: int) -> None:
+            pct = (current / total) * 100 if total > 0 else 0
+            print(f"\r[{pct:5.1f}%] {msg}...", end="", flush=True)
+
+        stats = ensure_sp500_in_vectordb(limit=args.limit, progress_callback=progress_cb_sp500)
+        if stats.get("created", 0) or stats.get("errors", 0):
+            print()
+        print("S&P 500 ingest complete!")
+        print(f"  Created: {stats.get('created', 0)}")
+        print(f"  Already present: {stats.get('already_present', 0)}")
+        print(f"  Errors: {stats.get('errors', 0)}")
+        return 0
+
+    if args.backfill_history:
+        from services.stock_history_backfill import backfill_thin_history
+
+        def progress_cb_backfill(pct: float, msg: str) -> None:
+            print(f"\r[{pct * 100:5.1f}%] {msg}...", end="", flush=True)
+
+        stats = backfill_thin_history(
+            limit=args.backfill_limit,
+            progress_callback=progress_cb_backfill,
+        )
+        if stats.get("processed", 0):
+            print()
+        print("History backfill complete!")
+        print(f"  Candidates: {stats.get('candidates', 0)}")
+        print(f"  Processed: {stats.get('processed', 0)}")
+        print(f"  Enriched: {stats.get('enriched', 0)}")
+        print(f"  Ready after: {stats.get('ready_after', 0)}")
+        print(f"  Errors: {stats.get('errors', 0)}")
+        return 0
+
+    if args.refresh_prices:
+        from services.db_price_refresh import refresh_market_library_prices
+
+        stats = refresh_market_library_prices()
+        print("Price refresh complete!")
+        print(f"  Total: {stats.get('total', 0)}")
+        print(f"  Updated: {stats.get('updated', 0)}")
+        print(f"  Skipped: {stats.get('skipped', 0)}")
+        print(f"  Errors: {stats.get('errors', 0)}")
+        return 0
+
+    if args.ensure_top_dividend:
+        from services.sp500_peers_service import ensure_top_dividend_in_vectordb
+
+        def progress_cb_top_dividend(msg: str, current: int, total: int) -> None:
+            pct = (current / total) * 100 if total > 0 else 0
+            print(f"\r[{pct:5.1f}%] {msg}...", end="", flush=True)
+
+        stats = ensure_top_dividend_in_vectordb(
+            limit=args.limit,
+            progress_callback=progress_cb_top_dividend,
+        )
+        if stats.get("created", 0) or stats.get("errors", 0):
+            print()
+        print("Top dividend ingest complete!")
+        print(f"  Created: {stats.get('created', 0)}")
+        print(f"  Already present: {stats.get('already_present', 0)}")
+        print(f"  Errors: {stats.get('errors', 0)}")
+        return 0
+
+    if args.sync_portfolio:
+        from services.portfolio_vector_sync import sync_portfolio_to_vector_db
+
+        stats = sync_portfolio_to_vector_db()
+        print("Portfolio sync complete!")
+        print(f"  Linked: {stats.get('linked', 0)}")
+        print(f"  Created: {stats.get('created', 0)}")
+        print(f"  Stored: {stats.get('stored', 0)}")
+        print(f"  Missing: {len(stats.get('still_missing', []))}")
+        print(f"  Errors: {stats.get('errors', 0)}")
         return 0
 
     # Initialize pipeline
