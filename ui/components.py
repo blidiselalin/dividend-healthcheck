@@ -1331,7 +1331,7 @@ class UIComponents:
             if doc is None:
                 st.info(
                     f"📭 No data found for **{symbol}** in the PostgreSQL database. "
-                    f"Run `python ingest_data.py --enrich` to populate."
+                    f"Run `python ingest_data.py --enrich-existing` to populate."
                 )
                 return False
 
