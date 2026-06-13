@@ -38,11 +38,6 @@ PORTFOLIO_NAV: list[tuple[str, str, str]] = [
         "deposits",
         "Monthly deposits, portfolio value, and index comparison",
     ),
-    (
-        "Dividend Kings",
-        "dividend_kings",
-        "Analyze and rank the entire universe of elite dividend stocks",
-    ),
 ]
 
 _LEGACY_PORTFOLIO_SECTION_LABELS = {
@@ -51,8 +46,6 @@ _LEGACY_PORTFOLIO_SECTION_LABELS = {
     "Growth": "Dividend growth",
     "Journal": "Purchase journal",
     "Deposits": "Deposits & benchmarks",
-    "Dividend Kings": "Dividend Kings",
-    "All Dividend Kings": "Dividend Kings",
 }
 
 PORTFOLIO_SECTION_LABELS = [item[0] for item in PORTFOLIO_NAV]

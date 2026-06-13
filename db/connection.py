@@ -35,10 +35,6 @@ def get_database_url() -> str | None:
         except Exception:
             pass
 
-    if not url and os.environ.get("PYTEST_USE_SQLITE") != "1":
-        # Force PostgreSQL connection by default
-        url = "postgresql://dividendscope:pass@127.0.0.1:5432/dividendscope"
-
     return url or None
 
 
@@ -46,7 +42,7 @@ def use_cloud_sql() -> bool:
     """True when DATABASE_URL is set (Docker Postgres or any remote Postgres)."""
     if os.environ.get("PYTEST_USE_SQLITE") == "1":
         return False
-    return True
+    return get_database_url() is not None
 
 
 def use_postgres_db() -> bool:
