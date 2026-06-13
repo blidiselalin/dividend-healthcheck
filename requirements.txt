@@ -6,7 +6,7 @@ streamlit[auth]>=1.42.0
 
 # Data & Analysis
 pandas>=2.0.0
-jinja2>=3.1.0
+jinja2>=3.1.5
 yfinance>=0.2.36
 
 # Vector Database (local fallback when DATABASE_URL is unset — e.g. pytest)
