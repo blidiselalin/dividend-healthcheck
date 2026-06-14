@@ -137,6 +137,7 @@ def backfill_thin_history(
     )
 
     batch = candidates[: max(0, limit)]
+    not_reached = [doc.symbol.upper() for doc in candidates[max(0, limit):]]
     stats: dict[str, Any] = {
         "candidates": len(candidates),
         "processed": 0,
@@ -145,6 +146,8 @@ def backfill_thin_history(
         "errors": 0,
         "portfolio_first": prioritize_portfolio,
         "symbols": [],
+        "failed_symbols": [],
+        "not_reached_symbols": not_reached,
         "timestamp": datetime.now().isoformat(),
     }
     if not batch:
@@ -160,7 +163,7 @@ def backfill_thin_history(
         if progress_callback:
             progress_callback(
                 index / total,
-                f"Backfilling {symbol} ({index}/{total})",
+                f"symbol {index}/{total}: {symbol}",
             )
         try:
             updated = enricher.enrich_document(document)
@@ -172,6 +175,7 @@ def backfill_thin_history(
         except Exception as exc:
             logger.warning("History backfill failed for %s: %s", symbol, exc)
             stats["errors"] += 1
+            stats["failed_symbols"].append(symbol)
 
     if enriched:
         store.add_documents(enriched)

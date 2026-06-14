@@ -923,6 +923,11 @@ class YieldChannelService:
             )
 
 
+def _default_yield_channel_service() -> YieldChannelService:
+    """Return a default YieldChannelService instance."""
+    return YieldChannelService()
+
+
 def fetch_yield_channel_data(symbol: str, years: int = 10) -> YieldChannelData | None:
     """Convenience function for backward compatibility."""
     service = YieldChannelService()

@@ -103,6 +103,7 @@ def schedule_startup_tasks(*, is_demo: bool, has_holdings: bool) -> None:
         schedule_portfolio_warm_if_needed()
     schedule_yield_preload_if_needed()
     schedule_coverage_badge_refresh()
+    schedule_auto_backfill_if_needed()
 
 
 def schedule_dividend_sync_if_needed() -> None:
@@ -207,6 +208,55 @@ def schedule_coverage_badge_refresh() -> None:
         return coverage_stats()
 
     start_job(JOB_COVERAGE_STATS, "Updating library stats", _worker)
+
+
+def schedule_auto_backfill_if_needed() -> str | None:
+    """
+    Auto-trigger a small backfill job when portfolio holdings have thin history.
+
+    Unlike the admin-triggered ``schedule_history_backfill()``, this runs for any
+    authenticated user and uses a small batch limit (5 symbols) so it does not
+    compete with other startup tasks.  Controlled by ``AUTO_BACKFILL_ON_LOAD``
+    (``DIVIDENDSCOPE_AUTO_BACKFILL_ON_LOAD=0`` to disable).
+    """
+    import streamlit as st
+
+    from config import AUTO_BACKFILL_ON_LOAD
+
+    if not AUTO_BACKFILL_ON_LOAD:
+        return None
+    if _job_running(JOB_HISTORY_BACKFILL):
+        return None
+    # Only run after the portfolio rows are available so we can inspect them.
+    rows = st.session_state.get("portfolio_details_rows") or []
+    thin_symbols = [row.ticker for row in rows if getattr(row, "history_thin", False)]
+    if not thin_symbols:
+        return None
+
+    limit = min(5, len(thin_symbols))
+    symbols_to_backfill = thin_symbols[:limit]
+
+    def _worker(progress: ProgressCallback) -> dict[str, Any]:
+        from services.stock_history_backfill import backfill_thin_history
+
+        return backfill_thin_history(
+            limit=limit,
+            symbols=symbols_to_backfill,
+            progress_callback=progress,
+            prioritize_portfolio=True,
+        )
+
+    logger.info(
+        "Auto-backfill scheduled for %d thin-history holding(s): %s",
+        len(symbols_to_backfill),
+        ", ".join(symbols_to_backfill),
+    )
+    return start_job(
+        JOB_HISTORY_BACKFILL,
+        "Updating history for portfolio holdings",
+        _worker,
+        admin_only=False,
+    )
 
 
 def schedule_history_backfill(*, limit: int = 40) -> str | None:

@@ -1,6 +1,7 @@
 """
 Dividend Kings Analyzer — Streamlit Application.
 """
+# ruff: noqa: E402
 
 import os
 import sys
@@ -57,8 +58,8 @@ def _log_process_boot() -> None:
     if _PROCESS_BOOT_LOGGED:
         return
     _PROCESS_BOOT_LOGGED = True
-    from config import DATA_DIR, is_cloud_runtime
     from auth.settings import auth_required
+    from config import DATA_DIR, is_cloud_runtime
 
     logger.info(
         "DividendScope process started data_dir=%s cloud=%s auth_required=%s",
@@ -72,23 +73,19 @@ from auth.login_view import render_login_page
 from auth.settings import auth_required
 from auth.test_user import test_user_session_active
 from auth.user_context import ensure_user_session
-from ui.auth_account_panel import render_account_sidebar
-from ui.views import USE_ENHANCED_SERVICE, get_service_status
-from ui.portfolio_details_view import PortfolioDetailsView
-from ui.portfolio_sidebar import render_portfolio_sidebar
-from ui.app_about import render_about_body
-from ui.theme import (
-    NAV_PORTFOLIO,
-    inject_app_theme,
-    main_content_start,
-)
-from ui.chatbot_widget import render_chatbot_widget
 from config import DATA_SOURCES
+from services.deferred_startup import apply_background_results, schedule_startup_tasks
 from services.portfolio_session import sync_portfolio_session_with_db
 from services.portfolio_ui_cache import hydrate_session_from_disk
-from services.deferred_startup import apply_background_results, schedule_startup_tasks
 from ui.admin_page import render_admin_page_if_active, render_admin_sidebar_entry
+from ui.app_about import render_about_body
+from ui.auth_account_panel import render_account_sidebar
+from ui.chatbot_widget import render_chatbot_widget
+from ui.portfolio_details_view import PortfolioDetailsView
+from ui.portfolio_sidebar import render_portfolio_sidebar
 from ui.sidebar_progress_panel import render_sidebar_progress
+from ui.theme import NAV_PORTFOLIO, inject_app_theme, main_content_start
+from ui.views import USE_ENHANCED_SERVICE, get_service_status
 
 
 @st.cache_resource(show_spinner=False)
