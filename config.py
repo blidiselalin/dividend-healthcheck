@@ -282,6 +282,18 @@ DATA_SOURCES: Final[dict[str, str]] = {
 # HISTORY LIMITS
 # =============================================================================
 MAX_HISTORY_YEARS: Final[int] = 10
+
+
+# =============================================================================
+# RUNTIME ENVIRONMENT
+# =============================================================================
+
+
+def is_cloud_runtime() -> bool:
+    """Return True when the app is running against a cloud Postgres database."""
+    from db.connection import use_cloud_sql
+
+    return use_cloud_sql()
 DEFAULT_STALENESS_DAYS: Final[int] = 7
 PORTFOLIO_RISK_REFRESH_SECONDS: Final[int] = 3600
 MIN_YIELD_PRICE_POINTS: Final[int] = 252
