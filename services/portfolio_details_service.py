@@ -184,7 +184,11 @@ class PortfolioDetailsService:
                 document = documents.get(symbol)
                 if document is not None:
                     last_updated = getattr(document, "last_updated", None)
-                    if last_updated is None or (now - _to_naive(last_updated)) > stale_threshold:
+                    if (
+                        last_updated is None
+                        or not isinstance(last_updated, datetime)
+                        or (now - _to_naive(last_updated)) > stale_threshold
+                    ):
                         price_stale_set.add(symbol)
                     if history_is_thin(document):
                         history_thin_set.add(symbol)

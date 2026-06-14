@@ -102,8 +102,11 @@ def _resolve_backfill_interval_seconds() -> int:
 
 def _backfill_loop(interval_seconds: int) -> None:
     logger.info("History backfill scheduler started (every %ss)", interval_seconds)
-    # Stagger initial run to avoid competing with price refresh on startup.
-    time.sleep(min(600, interval_seconds // 2))
+    # Stagger the first run to avoid competing with the price-refresh scheduler
+    # that also starts on process startup.  Cap at 10 minutes so even very long
+    # intervals don't delay the first run unreasonably.
+    initial_delay = min(600, interval_seconds // 2)
+    time.sleep(initial_delay)
     while True:
         import contextlib
 

@@ -573,6 +573,8 @@ def get_history_symbol_status(
     if use_cloud_sql():
         ensure_schema()
         with get_connection() as conn:
+            # lim is always a constrained integer (1..2000), safe for f-string interpolation.
+            # PostgreSQL does not support bind parameters in LIMIT clauses for this driver.
             rows = conn.execute(
                 f"""
                 WITH price_counts AS (

@@ -546,10 +546,16 @@ def _render_backfill_queue_section() -> None:
         df_rows = []
         for r in rows:
             last_upd = r.get("last_updated")
-            if hasattr(last_upd, "strftime"):
-                last_upd_str = last_upd.strftime("%Y-%m-%d")
+            from datetime import date as _date, datetime as _datetime
+
+            if isinstance(last_upd, (_date, _datetime)):
+                last_upd_str = (
+                    last_upd.strftime("%Y-%m-%d")
+                    if hasattr(last_upd, "strftime")
+                    else str(last_upd)[:10]
+                )
             else:
-                last_upd_str = str(last_upd)[:10] if last_upd else "—"
+                last_upd_str = "—"
             df_rows.append(
                 {
                     "Symbol": ("★ " if r["portfolio"] else "") + r["symbol"],
@@ -599,6 +605,6 @@ def _render_backfill_last_run_report(payload: Dict[str, Any]) -> None:
             st.write(", ".join(failed))
         if not_reached:
             st.markdown(
-                f"**⏭ Not reached** ({len(not_reached)} — increase limit to process these)"
+                f"**⏭ Not reached** ({len(not_reached)} — increase the symbol limit to process these)"
             )
             st.write(", ".join(not_reached[:40]) + ("…" if len(not_reached) > 40 else ""))
