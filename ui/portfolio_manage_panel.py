@@ -232,24 +232,31 @@ def render_portfolio_manage_sidebar() -> None:
             else:
                 pick = st.selectbox("Position", symbols, key="pm_edit_symbol")
                 current = next(h for h in holdings if h.symbol == pick)
+                previous_pick = st.session_state.get("pm_edit_symbol_prev")
+                if previous_pick != pick:
+                    st.session_state["pm_edit_shares"] = float(current.shares)
+                    st.session_state["pm_edit_avg"] = float(current.avg_cost_per_share)
+                    st.session_state["pm_edit_comm"] = float(current.commission)
+                    st.session_state["pm_edit_company"] = current.company_name or ""
+                    st.session_state["pm_edit_symbol_prev"] = pick
                 new_shares = st.number_input(
                     "Shares",
                     min_value=0.0,
-                    value=float(current.shares),
+                    value=float(st.session_state.get("pm_edit_shares", current.shares)),
                     step=1.0,
                     key="pm_edit_shares",
                 )
                 new_avg = st.number_input(
                     "Avg cost / share",
                     min_value=0.0,
-                    value=float(current.avg_cost_per_share),
+                    value=float(st.session_state.get("pm_edit_avg", current.avg_cost_per_share)),
                     step=0.01,
                     key="pm_edit_avg",
                 )
                 new_comm = st.number_input(
                     "Commission",
                     min_value=0.0,
-                    value=float(current.commission),
+                    value=float(st.session_state.get("pm_edit_comm", current.commission)),
                     step=0.01,
                     key="pm_edit_comm",
                 )
@@ -259,7 +266,7 @@ def render_portfolio_manage_sidebar() -> None:
                 )
                 new_company = st.text_input(
                     "Company name",
-                    value=current.company_name or "",
+                    value=st.session_state.get("pm_edit_company", current.company_name or ""),
                     key="pm_edit_company",
                 )
                 col_save, col_del = st.columns(2)
