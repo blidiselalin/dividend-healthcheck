@@ -92,7 +92,7 @@ def _render_tables_tab() -> None:
     if st.button(f"Sample rows from {pick}", key="admin_db_table_sample"):
         result = sample_table_rows(pick, allowed_tables=tables, limit=50)
         st.session_state["admin_db_last_result"] = result
-        st.session_state["admin_db_last_sql"] = f"SELECT * FROM {pick}"  # noqa: S608
+        st.session_state["admin_db_last_sql"] = f"SELECT * FROM {pick}"
 
     last = st.session_state.get("admin_db_last_result")
     if last and last.ok and last.rows:
@@ -136,7 +136,7 @@ def _render_sql_tab() -> None:
         }
     preset_name = st.selectbox(
         "Preset query",
-        options=["(custom)", *list(presets.keys())],
+        options=["(custom)"] + list(presets.keys()),
         key="admin_db_preset",
     )
     if preset_name != "(custom)":
@@ -151,9 +151,7 @@ def _render_sql_tab() -> None:
         key="admin_db_sql_input",
         placeholder="SELECT symbol, last_updated FROM stock_documents LIMIT 10",
     )
-    row_limit = st.slider(
-        "Max rows", min_value=10, max_value=500, value=200, key="admin_db_row_limit"
-    )
+    row_limit = st.slider("Max rows", min_value=10, max_value=500, value=200, key="admin_db_row_limit")
 
     if st.button("Run query", key="admin_db_sql_run", type="primary"):
         st.session_state["admin_db_sql_draft"] = sql
@@ -161,9 +159,7 @@ def _render_sql_tab() -> None:
 
     result = st.session_state.get("admin_db_sql_result")
     if result is None:
-        render_notice(
-            "Only read-only SELECT queries are allowed. Destructive SQL is blocked.", kind="info"
-        )
+        render_notice("Only read-only SELECT queries are allowed. Destructive SQL is blocked.", kind="info")
         return
 
     if not result.ok:

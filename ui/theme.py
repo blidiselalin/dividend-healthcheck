@@ -4,6 +4,8 @@ Shared Streamlit theme — layout, navigation labels, and portfolio section map.
 
 from __future__ import annotations
 
+from typing import List, Optional, Tuple
+
 import streamlit as st
 
 # Top-level app views (portfolio is home).
@@ -19,25 +21,13 @@ _LEGACY_NAV_MAP = {
 }
 
 # Portfolio workspace sections: (sidebar label, internal key, one-line description).
-PORTFOLIO_NAV: list[tuple[str, str, str]] = [
+PORTFOLIO_NAV: List[Tuple[str, str, str]] = [
     ("Home", "dashboard", "Snapshot, watchlists, and dividends paid this month"),
     ("Holdings", "holdings", "All positions — filter, explore, and compare"),
-    (
-        "Dividend income",
-        "dividends",
-        "Monthly calendar and net cash received after tax",
-    ),
-    (
-        "Dividend growth",
-        "dividend_growth",
-        "Dividend per share and year-over-year growth",
-    ),
+    ("Dividend income", "dividends", "Monthly calendar and net cash received after tax"),
+    ("Dividend growth", "dividend_growth", "Dividend per share and year-over-year growth"),
     ("Purchase journal", "journal", "Buy dates, lots, and share counts"),
-    (
-        "Deposits & benchmarks",
-        "deposits",
-        "Monthly deposits, portfolio value, and index comparison",
-    ),
+    ("Deposits & benchmarks", "deposits", "Monthly deposits, portfolio value, and index comparison"),
 ]
 
 _LEGACY_PORTFOLIO_SECTION_LABELS = {
@@ -55,7 +45,9 @@ PORTFOLIO_LABEL_BY_KEY = {item[1]: item[0] for item in PORTFOLIO_NAV}
 
 # Backward compatibility for older imports.
 PORTFOLIO_SECTIONS = PORTFOLIO_SECTION_LABELS
-PORTFOLIO_TAB_SCOPES = {key: (label, hint) for label, key, hint in PORTFOLIO_NAV}
+PORTFOLIO_TAB_SCOPES = {
+    key: (label, hint) for label, key, hint in PORTFOLIO_NAV
+}
 
 
 def normalize_nav_choice(value: str | None) -> str:
@@ -79,10 +71,7 @@ def sidebar_heading(title: str) -> None:
 
 def main_content_start() -> None:
     """Top spacer so the first main-panel message is not under the app toolbar."""
-    st.markdown(
-        '<div class="ds-main-top-spacer" aria-hidden="true"></div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="ds-main-top-spacer" aria-hidden="true"></div>', unsafe_allow_html=True)
 
 
 def render_notice(message: str, *, kind: str = "info") -> None:
@@ -208,23 +197,14 @@ def inject_app_theme() -> None:
             border: 1px solid #e2e8f0;
             border-radius: 10px;
             padding: 0.55rem 0.75rem 0.45rem;
-            min-height: 6.5rem;
-            display: flex !important;
-            flex-direction: column !important;
-            justify-content: space-between !important;
+            min-height: 5.75rem;
             overflow: visible !important;
-            transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
-        }
-        div[data-testid="stMetric"]:hover {
-            border-color: #0f766e !important;
-            box-shadow: 0 4px 12px rgba(15, 118, 110, 0.12) !important;
-            cursor: pointer;
         }
         div[data-testid="stMetric"] label {
             font-size: 0.72rem;
             color: #64748b;
             line-height: 1.35 !important;
-            margin-bottom: 0.25rem;
+            min-height: 2.4em;
             word-break: break-word;
             overflow-wrap: anywhere;
         }
@@ -342,7 +322,9 @@ def current_portfolio_section_key() -> str:
 
 def render_portfolio_section_nav() -> str:
     """Visible section picker — full list with descriptions. Returns internal section key."""
-    active_label = resolve_portfolio_section_label(st.session_state.get("portfolio_section_label"))
+    active_label = resolve_portfolio_section_label(
+        st.session_state.get("portfolio_section_label")
+    )
     st.session_state["portfolio_section_label"] = active_label
 
     st.markdown(
@@ -402,6 +384,5 @@ def render_portfolio_status_line() -> None:
     if loaded_at:
         st.caption(
             f"Portfolio snapshot {loaded_at.strftime('%d %b %H:%M')} — "
-            "use **Reload live data** after ingest; "
-            "prices auto-refresh every 5 minutes in the backend"
+            "use **Reload live data** after ingest; prices auto-refresh every 5 minutes in the backend"
         )

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import List, Optional
 
 from config import DATA_DIR
 from db.connection import open_app_db, use_cloud_sql
@@ -28,20 +28,20 @@ class AccessRequestStatus(str, Enum):
 class AccessRequest:
     email: str
     user_id: str
-    name: str | None
-    picture_url: str | None
+    name: Optional[str]
+    picture_url: Optional[str]
     status: AccessRequestStatus
     requested_at: datetime
-    reviewed_at: datetime | None
-    reviewed_by: str | None
-    message: str | None
+    reviewed_at: Optional[datetime]
+    reviewed_by: Optional[str]
+    message: Optional[str]
 
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _parse_dt(value: Any) -> datetime | None:
+def _parse_dt(value) -> Optional[datetime]:
     if not value:
         return None
     if isinstance(value, datetime):
@@ -54,13 +54,13 @@ def _parse_dt(value: Any) -> datetime | None:
 class AccessRequestStore:
     """SQLite store for access requests (same DB file as users)."""
 
-    def __init__(self, db_path: Path | None = None) -> None:
+    def __init__(self, db_path: Optional[Path] = None) -> None:
         self.db_path = Path(db_path or REQUESTS_DB_PATH)
         if not use_cloud_sql():
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
 
-    def _connect(self) -> Any:
+    def _connect(self):
         return open_app_db(self.db_path)
 
     def _ensure_schema(self) -> None:
@@ -103,7 +103,7 @@ class AccessRequestStore:
             message=row["message"],
         )
 
-    def get_by_email(self, email: str) -> AccessRequest | None:
+    def get_by_email(self, email: str) -> Optional[AccessRequest]:
         normalized = email.strip().lower()
         if not normalized:
             return None
@@ -123,9 +123,9 @@ class AccessRequestStore:
         *,
         email: str,
         user_id: str,
-        name: str | None = None,
-        picture_url: str | None = None,
-        message: str | None = None,
+        name: Optional[str] = None,
+        picture_url: Optional[str] = None,
+        message: Optional[str] = None,
     ) -> AccessRequest:
         normalized = email.strip().lower()
         now = _utc_now().isoformat()
@@ -162,7 +162,7 @@ class AccessRequestStore:
             raise RuntimeError("Failed to save access request")
         return result
 
-    def list_pending(self) -> list[AccessRequest]:
+    def list_pending(self) -> List[AccessRequest]:
         with self._connect() as connection:
             rows = connection.execute(
                 """
@@ -192,7 +192,7 @@ class AccessRequestStore:
                 """,
                 (now, reviewer_email.strip().lower(), normalized),
             )
-            return bool(cursor.rowcount > 0)
+            return cursor.rowcount > 0
 
     def reject(self, email: str, *, reviewer_email: str) -> bool:
         normalized = email.strip().lower()
@@ -206,4 +206,4 @@ class AccessRequestStore:
                 """,
                 (now, reviewer_email.strip().lower(), normalized),
             )
-            return bool(cursor.rowcount > 0)
+            return cursor.rowcount > 0

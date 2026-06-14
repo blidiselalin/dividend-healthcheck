@@ -18,6 +18,11 @@ from ui.app_about import render_app_about_compact
 from ui.theme import inject_app_theme
 
 
+def _login_with_google() -> None:
+    """Streamlit OIDC — creates an account on first Google login, signs in after."""
+    st.login()
+
+
 def render_login_page(*, access_denied: bool = False) -> None:
     inject_app_theme()
 
@@ -53,7 +58,9 @@ def _render_login_content(*, access_denied: bool) -> None:
     if test_user_enabled():
         st.divider()
         st.markdown("#### Test user (UI check)")
-        st.caption(f"Demo data KO, JNJ, O · no Google needed · {test_user_email()}")
+        st.caption(
+            f"Demo data KO, JNJ, O · no Google needed · {test_user_email()}"
+        )
         if st.button("Continue as test user", use_container_width=True):
             sign_in_as_test_user()
             st.rerun()
@@ -66,8 +73,7 @@ def _render_google_auth_block() -> None:
         st.markdown("### Create your account")
         if invite_only_signup():
             st.caption(
-                "Sign up or sign in with an **invited** Google account, "
-                "or request access after signing in with Google. "
+                "Sign up or sign in with an **invited** Google account, or request access after signing in with Google. "
                 "Your portfolio is private to you."
             )
             allowed = sorted(allowed_emails())
@@ -78,21 +84,21 @@ def _render_google_auth_block() -> None:
                 "Sign up with your Google account — one click, no separate password. "
                 "Returning users: use the same button to sign in."
             )
-        if st.button(
+        st.button(
             "Sign up with Google",
             type="primary",
             use_container_width=True,
+            on_click=_login_with_google,
             key="auth_signup_google",
-        ):
-            st.login()
+        )
         st.caption("Already have an account? Use the same button — we'll sign you in.")
     else:
         st.markdown("### Sign in")
         st.caption("Use your Google account to open your portfolio workspace.")
-        if st.button(
+        st.button(
             "Sign in with Google",
             type="primary",
             use_container_width=True,
+            on_click=_login_with_google,
             key="auth_signin_google_only",
-        ):
-            st.login()
+        )

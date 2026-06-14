@@ -86,38 +86,39 @@ def _render_what_you_manage() -> None:
 
 def _render_how_it_helps() -> None:
     st.markdown("#### How it helps you decide")
-    table_content = (
-        "| Goal | What the app does |\n"
-        "|------|-------------------|\n"
-        "| **Identify** candidates | Yield **channels** (fair / expensive zones), "
-        "dividend **safety** and growth scores, and **buy opportunity** flags when "
-        "price and fundamentals align |\n"
-        "| **Compare** stocks | Side-by-side scores for **other holdings in the same "
-        "sector**; holding vs analysed history on one screen |\n"
-        f"| **Clear statistics** | Up to **{MAX_HISTORY_YEARS} years** of dividend and "
-        "price context from the analysed library; portfolio KPIs, CAGR, allocation, "
-        "and monthly income charts |\n\n"
-        "Each holding can be opened for a full report: yield zone chart, key ratios,\n"
-        "analyst context where available, and how that name fits your portfolio weight.\n"
-        "Use **Data & history behind this analysis** on any holding to see exact\n"
-        "date ranges, reload times, and sources used for scores and charts."
+    st.markdown(
+        f"""
+        | Goal | What the app does |
+        |------|-------------------|
+        | **Identify** candidates | Yield **channels** (fair / expensive zones), dividend **safety** and growth scores, and **buy opportunity** flags when price and fundamentals align |
+        | **Compare** stocks | Side-by-side scores for **other holdings in the same sector**; holding vs analysed history on one screen |
+        | **Clear statistics** | Up to **{MAX_HISTORY_YEARS} years** of dividend and price context from the analysed library; portfolio KPIs, CAGR, allocation, and monthly income charts |
+
+        Each holding can be opened for a full report: yield zone chart, key ratios,
+        analyst context where available, and how that name fits your portfolio weight.
+        Use **Data & history behind this analysis** on any holding to see exact
+        date ranges, reload times, and sources used for scores and charts.
+        """
     )
-    st.markdown(table_content)
 
 
 def _render_data_sources() -> None:
     st.markdown("#### Where the history comes from")
-    sources_content = (
-        "Statistics are built from **public, competitive market sources**, combined in a\n"
-        "local **analysed stocks** database for fast repeat lookups:\n\n"
-        f"- **{DATA_SOURCES['primary']}** — live prices and market fields when you reload\n"
-        f"- **{DATA_SOURCES['fundamentals']}** — payout, earnings, and balance-sheet style inputs\n"
-        f"- **{DATA_SOURCES['analyst']}** — consensus views where published\n"
-        f"- **{DATA_SOURCES['historical']}** — dividend and price history for trends and growth\n\n"
-        "Your portfolio amounts (shares, deposits, purchases) stay **in your account only**.\n"
-        "The **S&P historical library** lives in **PostgreSQL** "
-        "(`stock_documents`) and is **shared by every user**;\n"
-        "reload updates live prices for your positions when you choose."
+    st.markdown(
+        f"""
+        Statistics are built from **public, competitive market sources**, combined in a
+        local **analysed stocks** database for fast repeat lookups:
+
+        - **{DATA_SOURCES['primary']}** — live prices and market fields when you reload
+        - **{DATA_SOURCES['fundamentals']}** — payout, earnings, and balance-sheet style inputs
+        - **{DATA_SOURCES['analyst']}** — consensus views where published
+        - **{DATA_SOURCES['historical']}** — dividend and price history for trends and growth
+
+        Your portfolio amounts (shares, deposits, purchases) stay **in your account only**.
+        The **S&P historical library** lives in **PostgreSQL** (`stock_documents`) and is **shared by every user**;
+        reload updates live prices for your positions when you choose.
+        """
     )
-    st.markdown(sources_content)
-    st.caption("Educational tool only — not investment advice. Always verify data before acting.")
+    st.caption(
+        "Educational tool only — not investment advice. Always verify data before acting."
+    )

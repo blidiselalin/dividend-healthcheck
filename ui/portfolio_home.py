@@ -4,8 +4,7 @@ Simplified portfolio home — welcome, quick actions, and try-it examples.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any
+from typing import List, Optional, Sequence
 
 import streamlit as st
 
@@ -26,12 +25,11 @@ PORTFOLIO_VIEW_HOLDING = "holding"
 PORTFOLIO_VIEW_OVERVIEW = "overview"
 
 # Public for tests and docs — demo / test user only.
-HOME_EXAMPLES: Sequence[dict[str, Any]] = (
+HOME_EXAMPLES: Sequence[dict] = (
     {
         "title": "Analyze a holding",
         "example": "e.g. Coca-Cola (KO)",
-        "detail": "Yield channel, safety, and fundamentals — compared "
-        "only with other names in your portfolio.",
+        "detail": "Yield channel, safety, and fundamentals — compared only with other names in your portfolio.",
         "action": "Open KO",
         "kind": "holding",
         "symbol": "KO",
@@ -39,8 +37,7 @@ HOME_EXAMPLES: Sequence[dict[str, Any]] = (
     {
         "title": "Compare positions",
         "example": "Holdings table",
-        "detail": "Filter positions, open holding detail, and compare "
-        "same-sector names you already own.",
+        "detail": "Filter positions, open holding detail, and compare same-sector names you already own.",
         "action": "View holdings",
         "kind": "section",
         "section": "holdings",
@@ -67,7 +64,7 @@ def navigate_to_portfolio_home() -> None:
     st.rerun()
 
 
-def set_holding_selection(symbol: str, nav_tickers: list[str] | None = None) -> None:
+def set_holding_selection(symbol: str, nav_tickers: Optional[List[str]] = None) -> None:
     st.session_state["portfolio_selected_symbol"] = symbol.strip().upper()
     st.session_state["portfolio_view_mode"] = PORTFOLIO_VIEW_HOLDING
     st.session_state["portfolio_analysis_ready"] = True
@@ -80,7 +77,7 @@ def set_holding_selection(symbol: str, nav_tickers: list[str] | None = None) -> 
 def set_sp500_research_selection(
     symbol: str,
     *,
-    nav_symbols: list[str] | None = None,
+    nav_symbols: Optional[List[str]] = None,
 ) -> None:
     """Open full analysis for an S&P name (may not be in the user's portfolio)."""
     symbol = symbol.strip().upper()
@@ -95,7 +92,7 @@ def set_sp500_research_selection(
     st.rerun()
 
 
-def apply_example_action(example: dict[str, Any]) -> None:
+def apply_example_action(example: dict) -> None:
     """Navigate per example card (used by UI and tests)."""
     kind = example.get("kind")
     if kind == "holding":
@@ -176,14 +173,10 @@ def render_real_user_getting_started() -> None:
     st.markdown("#### Get started in four steps")
     st.markdown(
         """
-        1. In the **sidebar**, open **Manage portfolio** (expanded below "
-        "if this is your first visit).
-        2. Open the **Add ticker** tab — enter a symbol (e.g. `VZ`, `KO`, `JNJ`), "
-        "share count, and average cost per share.
-        3. Click **Add to portfolio** (Yahoo Finance validates the ticker "
-        "unless you skip validation).
-        4. Click **Reload live data** in the sidebar to load prices, scores, "
-        "and charts for your holdings.
+        1. In the **sidebar**, open **Manage portfolio** (expanded below if this is your first visit).
+        2. Open the **Add ticker** tab — enter a symbol (e.g. `VZ`, `KO`, `JNJ`), share count, and average cost per share.
+        3. Click **Add to portfolio** (Yahoo Finance validates the ticker unless you skip validation).
+        4. Click **Reload live data** in the sidebar to load prices, scores, and charts for your holdings.
         """
     )
 
@@ -197,9 +190,8 @@ def render_real_user_getting_started() -> None:
     )
 
     render_notice(
-        "<strong>Tip:</strong> You can analyze any S&P stock above before "
-        "adding it to your portfolio. Demo holdings (KO, JNJ, O) appear only "
-        "in <strong>test user</strong> mode.",
+        "<strong>Tip:</strong> You can analyze any S&P stock above before adding it to your portfolio. "
+        "Demo holdings (KO, JNJ, O) appear only in <strong>test user</strong> mode.",
         kind="info",
     )
 
@@ -245,7 +237,7 @@ def render_empty_home() -> None:
     render_real_user_getting_started()
 
 
-def render_compact_summary(rows: list[PortfolioDetailRow]) -> None:
+def render_compact_summary(rows: List[PortfolioDetailRow]) -> None:
     from services.portfolio_analysis_preload import PortfolioAnalysisPreload
     from services.portfolio_month_dividends import current_month_paid_dividends
     from ui.portfolio_summary import render_holdings_summary
@@ -286,7 +278,7 @@ def render_compact_summary(rows: list[PortfolioDetailRow]) -> None:
 
 
 def render_portfolio_home_header(
-    rows: list[PortfolioDetailRow] | None,
+    rows: Optional[List[PortfolioDetailRow]],
 ) -> bool:
     sync_portfolio_session_with_db()
     render_app_about(expanded=False)
