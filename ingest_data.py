@@ -64,6 +64,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Hourly refresh settings
+_HOURLY_SP500_CATCH_UP_LIMIT = 5  # new S&P tickers to add per run
+_HOURLY_ENRICH_MIN_QUALITY = 0.55  # re-enrich documents below this quality threshold
+
 
 def _downloads_have_ingestible_files(data_dir: str) -> bool:
     """Check if the downloads directory has files to process."""
@@ -275,7 +279,7 @@ Examples:
         action="store_true",
         help=(
             "Hourly market refresh: refresh all prices, add up to 5 missing S&P tickers, "
-            "enrich up to 40 stale documents (quality < 55%% or older than 7 days)"
+            "enrich stale documents (quality score below 0.55 or older than 7 days)"
         ),
     )
 
@@ -369,7 +373,7 @@ Examples:
 
         from services.sp500_peers_service import ensure_sp500_in_vectordb
 
-        sp500_stats = ensure_sp500_in_vectordb(limit=5)
+        sp500_stats = ensure_sp500_in_vectordb(limit=_HOURLY_SP500_CATCH_UP_LIMIT)
         print(
             f"  S&P catch-up: created {sp500_stats.get('created', 0)}"
             f" (errors: {sp500_stats.get('errors', 0)})"
@@ -379,7 +383,7 @@ Examples:
             data_dir=args.data_dir,
             vectordb_dir=args.db_dir,
         )
-        enrich_stats = pipeline.enrich_existing(min_quality=0.55)
+        enrich_stats = pipeline.enrich_existing(min_quality=_HOURLY_ENRICH_MIN_QUALITY)
         print(
             f"  Enriched: {enrich_stats.get('enriched', 0)}"
             f" (errors: {enrich_stats.get('errors', 0)})"
