@@ -31,4 +31,3 @@ pytest>=8.0.0
 pre_commit>=4.6.0
 mypy>=1.8.0
 pandas-stubs>=2.0.0
-# mypy>=1.8.0

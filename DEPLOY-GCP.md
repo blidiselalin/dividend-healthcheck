@@ -127,9 +127,11 @@ docker compose build
 docker run -d --name dividendscope --restart unless-stopped \
   -p 127.0.0.1:8501:8501 \
   -e DIVIDENDSCOPE_DATA_DIR=/data \
+  -e DATABASE_URL=postgresql://dividendscope:${POSTGRES_PASSWORD:-dividendscope}@localhost:5432/dividendscope \
   -v dividendscope-persistent-data:/data \
   dividend-healthcheck-dividendscope \
   streamlit run app.py --server.port=8501 --server.address=0.0.0.0 \
+  --server.headless=true \
   --server.enableCORS=false --server.enableXsrfProtection=false
 ```
 
@@ -284,13 +286,14 @@ If the shared S&P library is empty after migrate, populate Postgres directly:
 Run inside the container (writes to volume `dividendscope-persistent-data` → `/data`):
 
 ```bash
-docker exec -it dividendscope python ingest_data.py --enrich
-docker exec -it dividendscope python ingest_data.py --sync-portfolio
+docker compose exec -T dividendscope python ingest_data.py --ensure-sp500
+docker compose exec -T dividendscope python ingest_data.py --enrich-existing
+docker compose exec -T dividendscope python ingest_data.py --sync-portfolio
 ```
 
-Or from the project directory: `docker compose exec dividendscope python ingest_data.py --enrich`
+Or use the update script shorthand: `./scripts/update_cloud_docker.sh --ingest --sync-portfolio`
 
-Restart is optional; refresh the browser. Sidebar should show **Vector DB (N stocks)**.
+Restart is optional; refresh the browser. Sidebar should show **Shared S&P library: N tickers · S&P X/500**.
 
 Check data on disk:
 
@@ -583,7 +586,8 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 export DIVIDENDSCOPE_DATA_DIR=$HOME/dividendscope-data
 mkdir -p "$DIVIDENDSCOPE_DATA_DIR"
-python ingest_data.py --enrich
+python ingest_data.py --ensure-sp500
+python ingest_data.py --enrich-existing
 python ingest_data.py --sync-portfolio
 streamlit run app.py --server.port 8501 --server.address 0.0.0.0
 ```

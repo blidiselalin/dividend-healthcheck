@@ -4,7 +4,6 @@ Move legacy single-user portfolio files into the first Google account's folder.
 
 from __future__ import annotations
 
-import contextlib
 import shutil
 from pathlib import Path
 
@@ -68,8 +67,10 @@ def restore_owner_portfolio(user_id: str, user_dir: Path) -> bool:
 
     if target_db.exists() and user_count == 0:
         backup = user_dir / "portfolio.empty.bak"
-        with contextlib.suppress(OSError):
+        try:
             shutil.copy2(target_db, backup)
+        except OSError:
+            pass
 
     copied = _copy_legacy_files(user_dir)
     if copied:

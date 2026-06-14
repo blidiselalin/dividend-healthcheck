@@ -33,7 +33,9 @@ def _display_article(**overrides: Any) -> dict[str, Any]:
 def mock_streamlit(monkeypatch: pytest.MonkeyPatch) -> Any:
     mock_st = MagicMock()
     mock_st.spinner = _null_context
-    mock_st.columns.return_value = [MagicMock() for _ in range(4)]
+    mock_st.columns.side_effect = lambda spec: [
+        MagicMock() for _ in range(spec if isinstance(spec, int) else len(spec))
+    ]
     mock_st.tabs.return_value = [MagicMock(), MagicMock(), MagicMock()]
     monkeypatch.setattr("ui.components.st", mock_st)
     return mock_st
@@ -48,13 +50,7 @@ def test_render_news_article_card_emits_sentiment_html(mock_streamlit: Any) -> N
     captured: list[str] = []
     mock_streamlit.markdown.side_effect = lambda html, **kwargs: captured.append(html)
 
-    from services.news_service import NewsArticle
-
-    article = NewsArticle(
-        title="Dividend increase announced", source="Reuters", sentiment="positive"
-    )
-
-    UIComponents._render_recent_articles_expander([article])
+    UIComponents._render_news_article_card(_display_article())
     assert captured
     html = captured[0]
     assert "Dividend increase announced" in html

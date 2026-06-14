@@ -8,7 +8,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import List, Optional
 
 from config import DATA_DIR
 from db.connection import migrate_portfolio_user_id, open_app_db, use_cloud_sql
@@ -20,8 +20,8 @@ USERS_DB_PATH = DATA_DIR / "users.db"
 class AppUser:
     id: str
     email: str
-    name: str | None
-    picture_url: str | None
+    name: Optional[str]
+    picture_url: Optional[str]
     created_at: datetime
     last_login_at: datetime
     is_active: bool
@@ -32,7 +32,7 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _parse_dt(value: Any) -> datetime:
+def _parse_dt(value) -> datetime:
     if isinstance(value, datetime):
         if value.tzinfo is None:
             return value.replace(tzinfo=timezone.utc)
@@ -48,18 +48,18 @@ def _admin_update_expr(*, is_postgres: bool) -> str:
     return "MAX(is_admin, ?)"
 
 
-def _bool_param(value: bool, *, is_postgres: bool) -> Any:
+def _bool_param(value: bool, *, is_postgres: bool):
     return bool(value) if is_postgres else int(value)
 
 
 class UserStore:
-    def __init__(self, db_path: Path | None = None) -> None:
+    def __init__(self, db_path: Optional[Path] = None) -> None:
         self.db_path = Path(db_path or USERS_DB_PATH)
         if not use_cloud_sql():
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
 
-    def _connect(self) -> Any:
+    def _connect(self):
         return open_app_db(self.db_path)
 
     def _ensure_schema(self) -> None:
@@ -94,7 +94,7 @@ class UserStore:
             is_admin=bool(row["is_admin"]),
         )
 
-    def get_by_email(self, email: str) -> AppUser | None:
+    def get_by_email(self, email: str) -> Optional[AppUser]:
         normalized = email.strip().lower()
         if not normalized:
             return None
@@ -109,10 +109,12 @@ class UserStore:
         *,
         user_id: str,
         email: str,
-        name: str | None,
-        picture_url: str | None,
+        name: Optional[str],
+        picture_url: Optional[str],
         is_admin: bool = False,
     ) -> AppUser:
+        from db.connection import migrate_portfolio_user_id
+
         now = _utc_now().isoformat()
         normalized_email = email.strip().lower()
 
@@ -129,14 +131,13 @@ class UserStore:
 
             if by_id:
                 admin_expr = _admin_update_expr(is_postgres=connection.is_postgres)
-                query = f"""
+                connection.execute(
+                    f"""
                     UPDATE users
                     SET email = ?, name = ?, picture_url = ?, last_login_at = ?,
                         is_admin = {admin_expr}
                     WHERE id = ?
-                    """  # noqa: S608
-                connection.execute(
-                    query,
+                    """,
                     (
                         email,
                         name,
@@ -151,14 +152,13 @@ class UserStore:
                 if old_id != user_id:
                     migrate_portfolio_user_id(old_id, user_id)
                     admin_expr = _admin_update_expr(is_postgres=connection.is_postgres)
-                    query = f"""
+                    connection.execute(
+                        f"""
                         UPDATE users
                         SET id = ?, name = ?, picture_url = ?, last_login_at = ?,
                             is_admin = {admin_expr}
                         WHERE lower(email) = ?
-                        """  # noqa: S608
-                    connection.execute(
-                        query,
+                        """,
                         (
                             user_id,
                             name,
@@ -170,14 +170,13 @@ class UserStore:
                     )
                 else:
                     admin_expr = _admin_update_expr(is_postgres=connection.is_postgres)
-                    query = f"""
+                    connection.execute(
+                        f"""
                         UPDATE users
                         SET name = ?, picture_url = ?, last_login_at = ?,
                             is_admin = {admin_expr}
                         WHERE id = ?
-                        """  # noqa: S608
-                    connection.execute(
-                        query,
+                        """,
                         (
                             name,
                             picture_url,
@@ -221,14 +220,18 @@ class UserStore:
             raise RuntimeError("Failed to persist user after login")
         return user
 
-    def get_by_id(self, user_id: str) -> AppUser | None:
+    def get_by_id(self, user_id: str) -> Optional[AppUser]:
         with self._connect() as connection:
-            row = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+            row = connection.execute(
+                "SELECT * FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
         return self._row_to_user(row) if row else None
 
-    def list_users(self) -> list[AppUser]:
+    def list_users(self) -> List[AppUser]:
         with self._connect() as connection:
-            rows = connection.execute("SELECT * FROM users ORDER BY last_login_at DESC").fetchall()
+            rows = connection.execute(
+                "SELECT * FROM users ORDER BY last_login_at DESC"
+            ).fetchall()
         return [self._row_to_user(row) for row in rows]
 
     def set_active(self, user_id: str, *, active: bool) -> bool:
@@ -240,7 +243,7 @@ class UserStore:
                     user_id,
                 ),
             )
-            return bool(cursor.rowcount > 0)
+        return cursor.rowcount > 0
 
     def set_admin(self, user_id: str, *, admin: bool) -> bool:
         with self._connect() as connection:
@@ -251,7 +254,7 @@ class UserStore:
                     user_id,
                 ),
             )
-            return bool(cursor.rowcount > 0)
+        return cursor.rowcount > 0
 
     def count_users(self) -> int:
         with self._connect() as connection:

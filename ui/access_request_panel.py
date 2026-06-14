@@ -4,17 +4,12 @@ User-facing access request UI and admin approval controls.
 
 from __future__ import annotations
 
-import logging
-from typing import Any
-
 import streamlit as st
 
 from auth.access_requests import AccessRequestStatus, AccessRequestStore
 from auth.settings import invite_only_signup
 from auth.user_context import google_identity
 from ui.theme import render_notice, sidebar_heading
-
-logger = logging.getLogger(__name__)
 
 
 def render_access_denied_panel() -> None:
@@ -61,16 +56,11 @@ def render_access_denied_panel() -> None:
         _render_request_form(identity, store, allow_resubmit=False)
 
     st.divider()
-    if st.button(
-        "Use a different Google account", use_container_width=True, key="access_try_other_google"
-    ):
-        from auth.user_context import clear_portfolio_session_state
-
-        clear_portfolio_session_state()
+    if st.button("Use a different Google account", use_container_width=True, key="access_try_other_google"):
         st.logout()
 
 
-def _render_request_form(identity: Any, store: AccessRequestStore, *, allow_resubmit: bool) -> None:
+def _render_request_form(identity, store: AccessRequestStore, *, allow_resubmit: bool) -> None:
     default_msg = ""
     if allow_resubmit:
         default_msg = "I would like access to track my dividend portfolio."
@@ -95,8 +85,7 @@ def _render_request_form(identity: Any, store: AccessRequestStore, *, allow_resu
 
     if st.session_state.get("access_request_just_sent") == identity.email:
         render_notice(
-            "Request sent. The admin will see it in the **Access requests** panel "
-            "and can approve your Google email.",
+            "Request sent. The admin will see it in the **Access requests** panel and can approve your Google email.",
             kind="success",
         )
 
@@ -131,20 +120,18 @@ def render_admin_access_requests() -> None:
 
             user = current_user()
             admin_email = user.email if user else ""
-        except Exception as exc:
-            logger.debug("Failed to get current user: %s", exc)
+        except Exception:
+            pass
 
         with col_a:
-            if st.button(
-                "Approve", key=approve_key, use_container_width=True, type="primary"
-            ) and store.approve(item.email, reviewer_email=admin_email):
-                st.session_state.pop("access_request_just_sent", None)
-                st.success(f"Approved {item.email}")
-                st.rerun()
+            if st.button("Approve", key=approve_key, use_container_width=True, type="primary"):
+                if store.approve(item.email, reviewer_email=admin_email):
+                    st.session_state.pop("access_request_just_sent", None)
+                    st.success(f"Approved {item.email}")
+                    st.rerun()
         with col_b:
-            if st.button("Reject", key=reject_key, use_container_width=True) and store.reject(
-                item.email, reviewer_email=admin_email
-            ):
-                st.warning(f"Rejected {item.email}")
-                st.rerun()
+            if st.button("Reject", key=reject_key, use_container_width=True):
+                if store.reject(item.email, reviewer_email=admin_email):
+                    st.warning(f"Rejected {item.email}")
+                    st.rerun()
         st.sidebar.divider()

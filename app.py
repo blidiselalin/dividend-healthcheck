@@ -1,38 +1,126 @@
 """
 Dividend Kings Analyzer — Streamlit Application.
-
-Analyze elite dividend stocks with 50+ consecutive years of dividend increases.
-Built for income investors seeking reliable, growing dividend income.
 """
 
-import logging
 import os
 import sys
 from pathlib import Path
 
-# Some transitive dependencies still ship protos incompatible with newer
-# protobuf C++ runtime builds; force Python implementation for compatibility.
-os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
+_ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(_ROOT))
 
-import streamlit as st  # noqa: E402
+from utils.yfinance_config import configure_yfinance
 
-# Add project root to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
+configure_yfinance()
 
-from config import DATA_SOURCES  # noqa: E402
-from services.snapshot_sync_service import sync_snapshot_from_env  # noqa: E402
-from ui.views import (  # noqa: E402
-    USE_ENHANCED_SERVICE,
-    BenchmarkView,
-    FullAnalysisView,
-    PortfolioView,
-    SingleStockView,
-    get_service_status,
+from utils.logging_config import configure_app_logging, get_logger
+
+configure_app_logging()
+logger = get_logger("dividendscope.app")
+
+import streamlit as st
+
+
+def _bootstrap_secrets_env() -> None:
+    try:
+        for key in (
+            "DIVIDENDSCOPE_CLOUD",
+            "DIVIDENDSCOPE_DATA_DIR",
+            "DATABASE_URL",
+            "DIVIDENDSCOPE_DATABASE_URL",
+            "HUGGINGFACE_API_KEY",
+            "HF_TOKEN",
+            "DIVIDENDSCOPE_CHATBOT_ENABLED",
+            "DIVIDENDSCOPE_CHATBOT_MODEL",
+        ):
+            if key in st.secrets:
+                os.environ.setdefault(key, str(st.secrets[key]))
+    except Exception:
+        pass
+
+
+_bootstrap_secrets_env()
+
+try:
+    from db.connection import ensure_schema, use_cloud_sql
+
+    if use_cloud_sql():
+        ensure_schema()
+except Exception:
+    pass
+
+_PROCESS_BOOT_LOGGED = False
+
+
+def _log_process_boot() -> None:
+    global _PROCESS_BOOT_LOGGED
+    if _PROCESS_BOOT_LOGGED:
+        return
+    _PROCESS_BOOT_LOGGED = True
+    from config import DATA_DIR, is_cloud_runtime
+    from auth.settings import auth_required
+
+    logger.info(
+        "DividendScope process started data_dir=%s cloud=%s auth_required=%s",
+        DATA_DIR,
+        is_cloud_runtime(),
+        auth_required(),
+    )
+
+
+from auth.login_view import render_login_page
+from auth.settings import auth_required
+from auth.test_user import test_user_session_active
+from auth.user_context import ensure_user_session
+from ui.auth_account_panel import render_account_sidebar
+from ui.views import USE_ENHANCED_SERVICE, get_service_status
+from ui.portfolio_details_view import PortfolioDetailsView
+from ui.portfolio_sidebar import render_portfolio_sidebar
+from ui.app_about import render_about_body
+from ui.theme import (
+    NAV_PORTFOLIO,
+    inject_app_theme,
+    main_content_start,
 )
+from ui.chatbot_widget import render_chatbot_widget
+from config import DATA_SOURCES
+from services.portfolio_session import sync_portfolio_session_with_db
+from services.portfolio_ui_cache import hydrate_session_from_disk
+from services.deferred_startup import apply_background_results, schedule_startup_tasks
+from ui.admin_page import render_admin_page_if_active, render_admin_sidebar_entry
+from ui.sidebar_progress_panel import render_sidebar_progress
 
-logger = logging.getLogger(__name__)
 
-# Page configuration
+@st.cache_resource(show_spinner=False)
+def _startup_db_light() -> dict:
+    from config import is_cloud_runtime
+    from services.shared_market_db import shared_market_db_status
+
+    market = shared_market_db_status(include_coverage=False)
+    cov = market.get("sp500_coverage") or {}
+    try:
+        from data_ingestion.stock_enricher import log_provider_status
+
+        log_provider_status(logger)
+    except Exception:
+        pass
+    try:
+        from services.price_refresh_scheduler import start_price_refresh_scheduler
+
+        if start_price_refresh_scheduler():
+            logger.info("Background price refresh scheduler started (5-minute interval)")
+    except Exception as exc:
+        logger.warning("Price refresh scheduler not started: %s", exc)
+    logger.info(
+        "Shared market library storage=%s documents=%d sp500=%s/%s",
+        market.get("storage"),
+        market.get("document_count", 0),
+        cov.get("analysed_sp500", "?"),
+        cov.get("universe_total", "?"),
+    )
+    return {"cloud_mode": is_cloud_runtime(), "market_db": market}
+
+
 st.set_page_config(
     page_title="DividendScope",
     page_icon="👑",
@@ -41,200 +129,128 @@ st.set_page_config(
 )
 
 
-def _render_data_source_status() -> None:
-    """Render data source status in sidebar."""
-    st.sidebar.markdown("### 📊 Data Source")
+def _require_authentication() -> bool:
+    if test_user_session_active():
+        ensure_user_session()
+        return True
 
-    if USE_ENHANCED_SERVICE:
-        status = get_service_status()
-        doc_count = status.get("document_count", 0)
-        kings_count = status.get("dividend_kings", 0)
-        is_db_primary = status.get("is_db_primary", False)
+    if not auth_required():
+        ensure_user_session()
+        return True
 
-        if is_db_primary:
-            st.sidebar.success(f"🗄️ **PostgreSQL** ({doc_count} stocks)")
-            st.sidebar.caption(f"👑 {kings_count} Dividend Kings • Fast local data")
-        else:
-            st.sidebar.warning("🌐 **Public API** (PostgreSQL empty)")
-            st.sidebar.caption(
-                "Run `python ingest_data.py --enrich-existing` to populate, or use "
-                "Admin Console for history backfill and table sync"
-            )
-    else:
-        st.sidebar.info("🌐 **Public API** only")
-        st.sidebar.caption("Configure PostgreSQL for local data caching")
+    if not st.user.is_logged_in:
+        logger.debug("Auth: not signed in")
+        render_login_page()
+        return False
 
+    registered = ensure_user_session()
+    if registered is None:
+        email = getattr(st.user, "email", "") or "unknown"
+        logger.warning("Auth: access denied for %s", email)
+        render_login_page(access_denied=True)
+        return False
 
-def _render_chatbot() -> None:
-    try:
-        from services.chatbot_service import (
-            ChatMessage,
-            coerce_chat_prompt,
-            generate_reply,
-            initial_messages,
-        )
-
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### 💬 Assistant")
-
-        if "chat_messages" not in st.session_state:
-            st.session_state["chat_messages"] = initial_messages()
-
-        for msg in st.session_state["chat_messages"]:
-            with st.sidebar.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-
-        if prompt := st.sidebar.chat_input("Ask DividendScope..."):
-            text = coerce_chat_prompt(prompt)
-            st.session_state["chat_messages"].append({"role": "user", "content": text})
-            with st.sidebar.chat_message("user"):
-                st.markdown(text)
-
-            with st.sidebar.chat_message("assistant"), st.spinner("Thinking..."):
-                state_msgs = st.session_state["chat_messages"]
-                messages = [ChatMessage(m["role"], m["content"]) for m in state_msgs]
-                response = generate_reply(text, messages)
-                st.markdown(response)
-                new_msg = {"role": "assistant", "content": response}
-                st.session_state["chat_messages"].append(new_msg)
-    except Exception as e:
-        logger.debug(f"Chatbot failed to load: {e}")
+    return True
 
 
-def main() -> None:  # noqa: C901
-    """Main application entry point."""
+def _render_data_badge() -> None:
+    """Compact analysed-stocks line (caption avoids large alert boxes clipping on scroll)."""
+    from db.connection import use_cloud_sql
 
-    # Handle Authentication
-    try:
-        from auth.login_view import render_login_page
-        from auth.settings import auth_required
-        from auth.user_context import ensure_user_session
-
-        if auth_required():
-            user = ensure_user_session()
-            if not user:
-                render_login_page()
-                return
-    except ImportError:
-        pass
-    except Exception as e:
-        logger.debug(f"Auth system not fully configured: {e}")
-
-    # Handle Admin Console
-    try:
-        from auth.user_context import is_app_admin
-        from ui.admin_page import (
-            is_admin_console_active,
-            render_admin_page_if_active,
-            set_admin_console_active,
-        )
-
-        if is_admin_console_active() and is_app_admin():
-            if st.sidebar.button("← Back to App", use_container_width=True):
-                set_admin_console_active(False)
-                st.rerun()
-            render_admin_page_if_active()
-            return
-    except ImportError:
-        pass
-    except Exception as e:
-        logger.debug(f"Admin console not available: {e}")
-
-    # Optional one-time snapshot import from remote URL (for Drive backup workflows).
-    if "_snapshot_sync_done" not in st.session_state:
+    status = st.session_state.get("market_db_status")
+    if not status:
         try:
-            sync_info = sync_snapshot_from_env()
-            st.session_state["_snapshot_sync_done"] = True
-            st.session_state["_snapshot_sync_info"] = sync_info
+            from services.shared_market_db import shared_market_db_status
+
+            status = shared_market_db_status()
+            st.session_state["market_db_status"] = status
         except Exception:
-            st.session_state["_snapshot_sync_done"] = True
-            st.session_state["_snapshot_sync_info"] = {"enabled": True, "error": True}
+            status = get_service_status()
 
-    # Header
-    st.title("👑 DividendScope")
-    st.markdown(
-        "**Intelligent dividend analytics** — Analyze Dividend Kings, "
-        "assess payout sustainability, and discover quality income investments"
-    )
+    doc_count = int(status.get("document_count") or 0)
+    if doc_count > 0:
+        cov = status.get("sp500_coverage") or {}
+        if not cov and not status.get("_coverage_scheduled"):
+            try:
+                from services.deferred_startup import schedule_coverage_badge_refresh
 
-    # Sidebar navigation
-    st.sidebar.header("Analysis Mode")
-    mode_options = [
-        "Single Stock",
-        "All Dividend Kings",
-        "Interactive Brokers Portfolio",
-        "Benchmark Comparison",
-    ]
-    analysis_type = st.sidebar.radio(
-        "Choose analysis type",
-        mode_options,
-        help=(
-            "Single Stock: Deep dive into one company\n"
-            "All Kings: Compare all qualified stocks\n"
-            "Interactive Brokers Portfolio: Analyze sheet-based portfolio positions\n"
-            "Benchmark Comparison: Compare portfolio performance vs ETFs"
-        ),
-    )
+                schedule_coverage_badge_refresh()
+                status = dict(status)
+                status["_coverage_scheduled"] = True
+                st.session_state["market_db_status"] = status
+            except Exception:
+                pass
+        cov = status.get("sp500_coverage") or {}
+        sp = (
+            f" · S&P {cov.get('analysed_sp500', 0)}/{cov.get('universe_total', 0)}"
+            if cov.get("universe_total")
+            else ""
+        )
+        storage = "PostgreSQL" if use_cloud_sql() else "local library"
+        st.sidebar.caption(f"Shared S&P library ({storage}): {doc_count} tickers{sp}")
+        return
 
-    # Data source status
-    _render_data_source_status()
+    if use_cloud_sql():
+        st.sidebar.caption(
+            "Shared S&P library empty — run: "
+            "./scripts/update_cloud_docker.sh --ingest"
+        )
+        return
 
-    sync_info = st.session_state.get("_snapshot_sync_info", {})
-    if sync_info.get("enabled") and sync_info.get("imported"):
-        st.sidebar.caption(f"☁️ Snapshot imported: {sync_info.get('imported')} docs")
+    if not USE_ENHANCED_SERVICE:
+        st.sidebar.caption("Install chromadb for analysed stocks.")
+        return
 
-    # Admin button in sidebar
-    try:
-        from auth.user_context import is_app_admin
-        from ui.admin_page import set_admin_console_active
-
-        if is_app_admin():
-            st.sidebar.markdown("---")
-            if st.sidebar.button("⚙️ Admin Console", use_container_width=True):
-                set_admin_console_active(True)
-                st.rerun()
-    except ImportError:
-        pass
-    except Exception:
-        pass
-
-    # Render Chatbot
-    try:
-        from services.chatbot_service import is_chatbot_enabled
-
-        if is_chatbot_enabled():
-            _render_chatbot()
-    except Exception:
-        pass
-
-    # Render appropriate view
-    if analysis_type == "Single Stock":
-        SingleStockView.render()
-    elif analysis_type == "Interactive Brokers Portfolio":
-        PortfolioView.render()
-    elif analysis_type == "Benchmark Comparison":
-        BenchmarkView.render()
-    else:
-        FullAnalysisView.render()
-
-    # Footer with data source attribution
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### About")
-    st.sidebar.markdown(
-        """
-        **Dividend Kings** are companies that have raised
-        their dividends for **50+ consecutive years**.
-
-        This achievement requires:
-        - Durable competitive advantages
-        - Conservative financial management
-        - Shareholder-focused leadership
-        """
-    )
     st.sidebar.caption(
-        f"Data aggregated from {DATA_SOURCES['primary']}. "
-        "For educational purposes only. Not financial advice."
+        "Shared S&P library empty — run: python ingest_data.py --ensure-sp500 --enrich-existing"
     )
+
+
+def _render_sidebar_footer() -> None:
+    st.sidebar.divider()
+    with st.sidebar.expander("About DividendScope", expanded=False):
+        render_about_body()
+    _render_data_badge()
+    st.sidebar.caption(
+        f"Data: {DATA_SOURCES['primary']}. Educational use only — not financial advice."
+    )
+
+
+def main() -> None:
+    _log_process_boot()
+    inject_app_theme()
+
+    if not _require_authentication():
+        st.stop()
+
+    sync_portfolio_session_with_db()
+    from services.portfolio_session import is_demo_session, user_has_holdings_in_db
+
+    apply_background_results()
+    if hydrate_session_from_disk():
+        rows = st.session_state.get("portfolio_details_rows") or []
+        logger.info("Portfolio session hydrated from disk (%d holdings)", len(rows))
+
+    schedule_startup_tasks(
+        is_demo=is_demo_session(),
+        has_holdings=user_has_holdings_in_db(),
+    )
+    boot = _startup_db_light()
+    st.session_state["db_price_refresh_stats"] = boot
+    st.session_state["market_db_status"] = boot.get("market_db") or {}
+
+    st.session_state["analysis_type"] = NAV_PORTFOLIO
+    render_sidebar_progress()
+    render_portfolio_sidebar()
+    render_account_sidebar()
+    render_admin_sidebar_entry()
+    render_chatbot_widget()
+    main_content_start()
+    if render_admin_page_if_active():
+        _render_sidebar_footer()
+        return
+    PortfolioDetailsView.render()
+    _render_sidebar_footer()
 
 
 if __name__ == "__main__":

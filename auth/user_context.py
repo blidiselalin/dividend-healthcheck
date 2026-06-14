@@ -5,30 +5,27 @@ Resolve the signed-in user and per-user data paths for portfolio storage.
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Optional
+
+from config import DATA_DIR
+from utils.logging_config import get_logger
+from utils.portfolio_db import holding_count
+
+logger = get_logger("dividendscope.auth")
+from auth.models import CurrentUser, sanitize_user_id
 
 from auth.demo_portfolio import ensure_demo_database, load_demo_ui_snapshot
 from auth.migration import restore_owner_portfolio
-from auth.models import CurrentUser, sanitize_user_id
-from auth.settings import (
-    auth_required,
-    dev_bypass_email,
-    is_admin_email,
-    is_email_allowed,
-)
+from auth.settings import auth_required, dev_bypass_email, is_admin_email, is_email_allowed
 from auth.test_user import (
     is_test_user,
     test_user_current,
     test_user_session_active,
 )
 from auth.user_store import AppUser, UserStore
-from config import DATA_DIR
-from utils.logging_config import get_logger
-from utils.portfolio_db import holding_count
 
-logger = get_logger("dividendscope.auth")
 _LOCAL_USER_ID = "local"
 _SESSION_USER_KEY = "app_user_id"
 _SESSION_EMAIL_KEY = "app_user_email"
@@ -36,7 +33,7 @@ _BACKGROUND_USER = threading.local()
 
 
 @contextmanager
-def bind_background_user_id(user_id: str | None) -> Iterator[None]:
+def bind_background_user_id(user_id: Optional[str]):
     """
     Bind a user id for portfolio DB access inside background worker threads.
 
@@ -57,7 +54,7 @@ def bind_background_user_id(user_id: str | None) -> Iterator[None]:
                 _BACKGROUND_USER.user_id = previous
 
 
-def background_user_id() -> str | None:
+def background_user_id() -> Optional[str]:
     return getattr(_BACKGROUND_USER, "user_id", None)
 
 
@@ -70,7 +67,7 @@ def _streamlit_logged_in() -> bool:
         return False
 
 
-def _identity_from_streamlit() -> CurrentUser | None:
+def _identity_from_streamlit() -> Optional[CurrentUser]:
     try:
         import streamlit as st
     except Exception:
@@ -99,7 +96,7 @@ def _identity_from_streamlit() -> CurrentUser | None:
     )
 
 
-def _dev_user() -> CurrentUser | None:
+def _dev_user() -> Optional[CurrentUser]:
     email = dev_bypass_email()
     if not email:
         try:
@@ -123,7 +120,7 @@ def uses_per_user_storage() -> bool:
     return auth_required() or test_user_session_active()
 
 
-def google_identity() -> CurrentUser | None:
+def google_identity() -> Optional[CurrentUser]:
     """Signed-in Google user from Streamlit OIDC (even if not yet allowed in the app)."""
     if test_user_session_active():
         return None
@@ -132,7 +129,7 @@ def google_identity() -> CurrentUser | None:
     return _identity_from_streamlit()
 
 
-def current_user() -> CurrentUser | None:
+def current_user() -> Optional[CurrentUser]:
     if test_user_session_active():
         return test_user_current()
 
@@ -154,7 +151,7 @@ def current_user() -> CurrentUser | None:
     )
 
 
-def current_user_id() -> str | None:
+def current_user_id() -> Optional[str]:
     bound = background_user_id()
     if bound:
         return bound
@@ -163,8 +160,8 @@ def current_user_id() -> str | None:
 
 
 def is_app_admin(
-    user: CurrentUser | None = None,
-    registered: AppUser | None = None,
+    user: Optional[CurrentUser] = None,
+    registered: Optional[AppUser] = None,
 ) -> bool:
     """True when the user may use admin tools (DB admin flag or configured admin email)."""
     user = user or current_user()
@@ -218,14 +215,6 @@ def clear_portfolio_session_state() -> None:
         "portfolio_view_mode",
         "portfolio_selected_symbol",
         "portfolio_research_mode",
-        "portfolio_section_label",
-        "portfolio_nav_tickers",
-        "portfolio_zone_filter",
-        "portfolio_holdings_drill_ticker",
-        "portfolio_show_examples",
-        "admin_console_active",
-        "dev_login_email",
-        "access_request_just_sent",
         _SESSION_USER_KEY,
         _SESSION_EMAIL_KEY,
     ]
@@ -244,7 +233,7 @@ def _register_user(user: CurrentUser) -> AppUser:
     )
 
 
-def ensure_user_session() -> AppUser | None:  # noqa: C901
+def ensure_user_session() -> Optional[AppUser]:
     """
     After login, register the user, enforce allowlist, and attach per-user storage.
 
@@ -287,15 +276,14 @@ def ensure_user_session() -> AppUser | None:  # noqa: C901
             from services.portfolio_ui_cache import clear_session_cache
 
             clear_session_cache()
-        if (user.is_admin or is_admin_email(user.email)) and restore_owner_portfolio(
-            user.id, user_dir
-        ):
-            logger.info(
-                "Admin portfolio restored from legacy for %s (holdings=%d)",
-                user.email,
-                holding_count(db_path),
-            )
-            clear_portfolio_session_state()
+        if user.is_admin or is_admin_email(user.email):
+            if restore_owner_portfolio(user.id, user_dir):
+                logger.info(
+                    "Admin portfolio restored from legacy for %s (holdings=%d)",
+                    user.email,
+                    holding_count(db_path),
+                )
+                clear_portfolio_session_state()
         # Legacy portfolio is not auto-copied on first login — use
         # Per-user portfolio data is stored in PostgreSQL when DATABASE_URL is set.
 

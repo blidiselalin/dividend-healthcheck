@@ -64,6 +64,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Hourly refresh settings
+_HOURLY_SP500_CATCH_UP_LIMIT = 5  # new S&P tickers to add per run
+_HOURLY_ENRICH_MIN_QUALITY = 0.55  # re-enrich documents below this quality threshold
+
 
 def _downloads_have_ingestible_files(data_dir: str) -> bool:
     """Check if the downloads directory has files to process."""
@@ -271,6 +275,15 @@ Examples:
     )
 
     parser.add_argument(
+        "--hourly-update",
+        action="store_true",
+        help=(
+            "Hourly market refresh: refresh all prices, add up to 5 missing S&P tickers, "
+            "enrich stale documents (quality score below 0.55 or older than 7 days)"
+        ),
+    )
+
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -343,6 +356,40 @@ Examples:
         print(f"  Updated: {stats.get('updated', 0)}")
         print(f"  Skipped: {stats.get('skipped', 0)}")
         print(f"  Errors: {stats.get('errors', 0)}")
+        return 0
+
+    if args.hourly_update:
+        # Composite hourly refresh: prices → S&P catch-up (5) → stale enrich (40, quality < 55%)
+        print("=== Hourly market refresh ===")
+
+        from services.db_price_refresh import refresh_market_library_prices
+
+        price_stats = refresh_market_library_prices()
+        print(
+            f"  Prices refreshed: {price_stats.get('updated', 0)}"
+            f" / {price_stats.get('total', 0)}"
+            f" (errors: {price_stats.get('errors', 0)})"
+        )
+
+        from services.sp500_peers_service import ensure_sp500_in_vectordb
+
+        sp500_stats = ensure_sp500_in_vectordb(limit=_HOURLY_SP500_CATCH_UP_LIMIT)
+        print(
+            f"  S&P catch-up: created {sp500_stats.get('created', 0)}"
+            f" (errors: {sp500_stats.get('errors', 0)})"
+        )
+
+        pipeline = DataIngestionPipeline(
+            data_dir=args.data_dir,
+            vectordb_dir=args.db_dir,
+        )
+        enrich_stats = pipeline.enrich_existing(min_quality=_HOURLY_ENRICH_MIN_QUALITY)
+        print(
+            f"  Enriched: {enrich_stats.get('enriched', 0)}"
+            f" (errors: {enrich_stats.get('errors', 0)})"
+        )
+
+        print("=== Hourly refresh done ===")
         return 0
 
     if args.ensure_top_dividend:

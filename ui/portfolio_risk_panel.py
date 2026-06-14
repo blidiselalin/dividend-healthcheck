@@ -5,6 +5,7 @@ Sidebar portfolio risk monitor — uses cached session data; refresh on demand o
 from __future__ import annotations
 
 from datetime import datetime
+from typing import List, Optional
 
 import streamlit as st
 
@@ -24,7 +25,7 @@ SESSION_REFRESHING_KEY = "portfolio_risk_refresh_in_progress"
 
 
 def store_portfolio_payload(
-    rows: list[PortfolioDetailRow],
+    rows: List[PortfolioDetailRow],
     preload: PortfolioAnalysisPreload,
     *,
     analysis_ready: bool = True,
@@ -40,9 +41,11 @@ def store_portfolio_payload(
     save_session_cache()
 
 
-def get_cached_attention_summary() -> AttentionSummary | None:
+def get_cached_attention_summary() -> Optional[AttentionSummary]:
     return normalize_attention_summary(
-        PortfolioRiskMonitorService.summary_from_store(st.session_state.get(SESSION_SUMMARY_KEY))
+        PortfolioRiskMonitorService.summary_from_store(
+            st.session_state.get(SESSION_SUMMARY_KEY)
+        )
     )
 
 
@@ -50,13 +53,14 @@ def refresh_portfolio_risks(
     *,
     force: bool = False,
     include_news: bool = False,
-    rows: list[PortfolioDetailRow] | None = None,
-    preload: PortfolioAnalysisPreload | None = None,
-) -> AttentionSummary | None:
+    rows: Optional[List[PortfolioDetailRow]] = None,
+    preload: Optional[PortfolioAnalysisPreload] = None,
+) -> Optional[AttentionSummary]:
     """
     Reload portfolio data if needed, evaluate all holdings, store full risk list.
     """
     monitor = PortfolioRiskMonitorService()
+    checked_at = st.session_state.get(SESSION_CHECKED_AT_KEY)
     if not force:
         if get_cached_attention_summary() and st.session_state.get("portfolio_details_rows"):
             return get_cached_attention_summary()
@@ -88,7 +92,7 @@ def refresh_portfolio_risks(
         st.session_state[SESSION_REFRESHING_KEY] = False
 
 
-def _rebuild_attention_from_session() -> AttentionSummary | None:
+def _rebuild_attention_from_session() -> Optional[AttentionSummary]:
     """Recompute risk/opportunity lists from cached rows (no network)."""
     rows = st.session_state.get("portfolio_details_rows")
     if not rows:
@@ -106,7 +110,7 @@ def _rebuild_attention_from_session() -> AttentionSummary | None:
     return summary
 
 
-@st.fragment  # type: ignore[misc]
+@st.fragment
 def _portfolio_risk_sidebar_fragment() -> None:
     """Show cached risk data; full scan only when the user requests it."""
     hydrate_session_from_disk()
@@ -124,7 +128,7 @@ def render_portfolio_risk_monitor() -> None:
         _portfolio_risk_sidebar_fragment()
 
 
-def _render_risk_sidebar_content(summary: AttentionSummary | None = None) -> None:
+def _render_risk_sidebar_content(summary: Optional[AttentionSummary] = None) -> None:
     """Render inside `with st.sidebar` (use st.*, not st.sidebar.*)."""
     st.markdown("### Portfolio risks")
     if st.session_state.get(SESSION_REFRESHING_KEY):
@@ -132,7 +136,7 @@ def _render_risk_sidebar_content(summary: AttentionSummary | None = None) -> Non
         return
 
     summary = normalize_attention_summary(summary or get_cached_attention_summary())
-    checked_at: datetime | None = st.session_state.get(SESSION_CHECKED_AT_KEY)
+    checked_at: Optional[datetime] = st.session_state.get(SESSION_CHECKED_AT_KEY)
 
     if checked_at:
         st.caption(f"Last full reload: {checked_at.strftime('%Y-%m-%d %H:%M')}")
@@ -140,7 +144,7 @@ def _render_risk_sidebar_content(summary: AttentionSummary | None = None) -> Non
     if summary is None:
         st.info(
             "No portfolio snapshot yet. Use **Reload live data** in the sidebar "
-            "to load holdings and run the first scan (~1-2 min)."
+            "to load holdings and run the first scan (~1–2 min)."
         )
         return
 
@@ -221,7 +225,7 @@ def _render_risk_sidebar_content(summary: AttentionSummary | None = None) -> Non
     if st.button(
         "Reload portfolio & scan",
         key="portfolio_risk_full_reload",
-        help="Fetch live prices, rebuild charts, and refresh all watchlists (~1-2 min)",
+        help="Fetch live prices, rebuild charts, and refresh all watchlists (~1–2 min)",
     ):
         with st.spinner("Reloading portfolio…"):
             refresh_portfolio_risks(force=True)

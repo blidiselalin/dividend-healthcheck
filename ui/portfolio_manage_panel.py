@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from calendar import month_name
 from datetime import date
-from typing import Callable
+from typing import Callable, Optional
 
 import streamlit as st
 
@@ -19,7 +19,7 @@ def _after_change(
     message: str,
     *,
     full_reload: bool = True,
-    sections: list[str] | None = None,
+    sections: Optional[list[str]] = None,
 ) -> None:
     from services.portfolio_refresh import invalidate_section_caches
 
@@ -39,9 +39,8 @@ def _month_label(year: int, month: int) -> str:
 def _render_monthly_evolution_tab(service: PortfolioManagementService) -> None:
     """Add or edit monthly deposit + portfolio snapshots for the dashboard."""
     st.caption(
-        "Record monthly **deposits** and **Portfolio €** for the dashboard "
-        "evolution table and charts. Portfolio € must be set for gain and "
-        "month-over-month columns to appear."
+        "Record monthly **deposits** and **Portfolio €** for the dashboard evolution table and charts. "
+        "Portfolio € must be set for gain and month-over-month columns to appear."
     )
 
     deposits = service.list_deposits()
@@ -49,8 +48,7 @@ def _render_monthly_evolution_tab(service: PortfolioManagementService) -> None:
     if missing_portfolio:
         labels = ", ".join(item.label for item in missing_portfolio[-6:])
         st.warning(
-            f"Missing Portfolio €: **{labels}**. Select a month below "
-            f"and enter the end-of-month value."
+            f"Missing Portfolio €: **{labels}**. Select a month below and enter the end-of-month value."
         )
 
     period_labels = {"__new__": "Add new month…"}
@@ -165,14 +163,9 @@ def _render_monthly_evolution_tab(service: PortfolioManagementService) -> None:
             st.error(str(exc))
 
 
-def render_portfolio_manage_sidebar() -> None:  # noqa: C901
+def render_portfolio_manage_sidebar() -> None:
     """Portfolio management expander in the sidebar."""
     service = PortfolioManagementService()
-
-    def _on_edit_symbol_change() -> None:
-        """Clear stale input states so the edit form loads the new ticker's values."""
-        for k in ["pm_edit_shares", "pm_edit_avg", "pm_edit_comm", "pm_edit_company"]:
-            st.session_state.pop(k, None)
 
     expand_manage = is_demo_session() or not user_has_holdings_in_db()
     with st.sidebar.expander("Manage portfolio", expanded=expand_manage):
@@ -181,13 +174,9 @@ def render_portfolio_manage_sidebar() -> None:  # noqa: C901
         )
 
         with tab_add:
-            st.caption(
-                "Adds a holding to your portfolio and fetches market data into the shared library."
-            )
+            st.caption("Adds a holding to your portfolio and fetches market data into the shared library.")
             symbol = st.text_input("Ticker", key="pm_add_symbol", placeholder="e.g. VZ")
-            shares = st.number_input(
-                "Shares", min_value=0.0, value=10.0, step=1.0, key="pm_add_shares"
-            )
+            shares = st.number_input("Shares", min_value=0.0, value=10.0, step=1.0, key="pm_add_shares")
             avg_cost = st.number_input(
                 "Avg cost / share (USD)",
                 min_value=0.0,
@@ -241,12 +230,7 @@ def render_portfolio_manage_sidebar() -> None:  # noqa: C901
             if not symbols:
                 st.info("No holdings yet. Add a ticker first.")
             else:
-                pick = st.selectbox(
-                    "Position",
-                    symbols,
-                    key="pm_edit_symbol",
-                    on_change=_on_edit_symbol_change,
-                )
+                pick = st.selectbox("Position", symbols, key="pm_edit_symbol")
                 current = next(h for h in holdings if h.symbol == pick)
                 new_shares = st.number_input(
                     "Shares",
@@ -332,15 +316,11 @@ def render_portfolio_manage_sidebar() -> None:  # noqa: C901
 def render_tab_refresh_button(
     section: str,
     *,
-    on_refresh: Callable[[], None] | None = None,
+    on_refresh: Optional[Callable[[], None]] = None,
 ) -> None:
     """Small Update control aligned with tab headers."""
     from services.portfolio_refresh import make_section_refresher
 
     callback = on_refresh or make_section_refresher(section)
-    if st.button(
-        "Update",
-        key=f"portfolio_refresh_{section}",
-        help="Reload this tab with latest data",
-    ):
+    if st.button("Update", key=f"portfolio_refresh_{section}", help="Reload this tab with latest data"):
         callback()
