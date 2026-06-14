@@ -299,3 +299,21 @@ PORTFOLIO_RISK_REFRESH_SECONDS: Final[int] = 3600
 MIN_YIELD_PRICE_POINTS: Final[int] = 252
 MIN_YIELD_DIVIDEND_PAYMENTS: Final[int] = 4
 PRICE_REFRESH_INTERVAL_SECONDS: Final[int] = 300
+
+# Auto-trigger a thin-history backfill on portfolio load when holdings lack
+# enough price/dividend data for yield charts (set DIVIDENDSCOPE_AUTO_BACKFILL_ON_LOAD=0 to disable).
+AUTO_BACKFILL_ON_LOAD: Final[bool] = (
+    os.environ.get("DIVIDENDSCOPE_AUTO_BACKFILL_ON_LOAD", "1").strip().lower()
+    not in ("0", "false", "no")
+)
+
+# How many hours between automatic thin-history backfill runs in the scheduler
+# daemon (DIVIDENDSCOPE_HISTORY_REFRESH_HOURS env var, default 6).
+HISTORY_REFRESH_HOURS: Final[int] = max(
+    1,
+    int(os.environ.get("DIVIDENDSCOPE_HISTORY_REFRESH_HOURS", "6") or "6"),
+)
+
+# Age threshold (minutes) above which a cached price is shown as stale in the
+# portfolio table until the background live-reload job updates it.
+PRICE_STALE_MINUTES: Final[int] = 5

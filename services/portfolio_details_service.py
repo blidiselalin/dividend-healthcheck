@@ -24,6 +24,13 @@ from utils.logging_config import get_logger
 logger = get_logger("dividendscope.portfolio")
 
 
+def _to_naive(dt: datetime) -> datetime:
+    """Strip timezone info so we can compare with naive datetime.now()."""
+    if dt.tzinfo is not None:
+        return dt.replace(tzinfo=None)
+    return dt
+
+
 @dataclass(frozen=True)
 class PriceSnapshot:
     """Historical price metrics for a symbol."""
@@ -74,6 +81,11 @@ class PortfolioDetailRow:
     dividend_pay_date: date | None
     data_source: str
     previous_close: float | None = None
+    # True when the cached price is older than PRICE_STALE_MINUTES; a background
+    # live-reload job will update it without blocking the first render.
+    price_stale: bool = False
+    # True when the symbol lacks enough price/dividend history for yield charts.
+    history_thin: bool = False
 
 
 class PortfolioDetailsService:
@@ -159,6 +171,26 @@ class PortfolioDetailsService:
                 live_prices[symbol] = price
                 previous_closes[symbol] = None
 
+        # Determine which cached prices are stale and which symbols lack history.
+        from config import PRICE_STALE_MINUTES
+        from utils.stock_document_history import history_is_thin
+
+        stale_threshold = timedelta(minutes=PRICE_STALE_MINUTES)
+        now = datetime.now()
+        price_stale_set: set[str] = set()
+        history_thin_set: set[str] = set()
+        if not use_live_prices:
+            for symbol in symbols:
+                document = documents.get(symbol)
+                if document is not None:
+                    last_updated = getattr(document, "last_updated", None)
+                    if last_updated is None or (now - _to_naive(last_updated)) > stale_threshold:
+                        price_stale_set.add(symbol)
+                    if history_is_thin(document):
+                        history_thin_set.add(symbol)
+                else:
+                    price_stale_set.add(symbol)
+
         self._fill_previous_closes_from_history(symbols, documents, previous_closes)
 
         for symbol in symbols:
@@ -226,6 +258,8 @@ class PortfolioDetailsService:
                     has_db_stats=holding.symbol in documents,
                     use_live_prices=use_live_prices,
                     previous_close=previous_closes.get(holding.symbol),
+                    price_stale=holding.symbol in price_stale_set,
+                    history_thin=holding.symbol in history_thin_set,
                 )
             )
 
@@ -241,12 +275,47 @@ class PortfolioDetailsService:
                 yield_channels={},
                 vector_docs=dict(documents),
             )
+
+        # Pass 2 (deferred): if any prices are stale, kick off a background
+        # live-reload job so the UI updates without blocking the first render.
+        if not use_live_prices and price_stale_set:
+            self._schedule_deferred_live_reload(list(price_stale_set))
+
         return rows, preload
 
     def _load_documents(self, symbols: list[str]) -> dict[str, StockDocument]:
         from services.shared_market_db import load_documents
 
         return load_documents(symbols)
+
+    @staticmethod
+    def _schedule_deferred_live_reload(stale_symbols: list[str]) -> None:
+        """Launch a background live-price refresh for stale symbols (non-blocking)."""
+        try:
+            from services.deferred_startup import JOB_LIVE_RELOAD, _job_running
+            from services.background_jobs import start_job
+            from services.portfolio_analysis_preload import PortfolioAnalysisPreload
+            from typing import Any, Callable
+
+            if _job_running(JOB_LIVE_RELOAD):
+                return
+
+            symbols = list(stale_symbols)
+
+            def _worker(progress: Callable[[float, str], None]) -> dict[str, Any]:
+                from services.portfolio_ui_cache import compute_live_portfolio_payload
+
+                progress(0.05, "Refreshing portfolio prices…")
+                payload = compute_live_portfolio_payload(progress_callback=progress)
+                progress(1.0, "Live reload complete")
+                return payload
+
+            start_job(JOB_LIVE_RELOAD, "Refreshing portfolio prices", _worker)
+            logger.debug(
+                "Scheduled deferred live-price reload for %d stale symbols", len(symbols)
+            )
+        except Exception as exc:
+            logger.debug("Could not schedule deferred live reload: %s", exc)
 
     @staticmethod
     def _previous_close_from_history(
@@ -326,6 +395,8 @@ class PortfolioDetailsService:
         *,
         use_live_prices: bool = False,
         previous_close: float | None = None,
+        price_stale: bool = False,
+        history_thin: bool = False,
     ) -> PortfolioDetailRow:
         current_price = live_price
         current_value = current_price * holding.shares if current_price is not None else None
@@ -405,6 +476,8 @@ class PortfolioDetailsService:
             dividend_pay_date=dividend_pay_date,
             data_source=data_source,
             previous_close=previous_close,
+            price_stale=price_stale,
+            history_thin=history_thin,
         )
 
     @staticmethod

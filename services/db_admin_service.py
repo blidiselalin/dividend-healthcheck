@@ -544,6 +544,118 @@ def sample_stock_documents_issues(*, limit: int = 25) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def get_history_symbol_status(
+    *,
+    limit: int = 200,
+    portfolio_symbols: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Return per-symbol history status for the backfill queue panel.
+
+    Each item contains: symbol, price_count, dividend_count, last_updated,
+    status ('ready' | 'thin' | 'missing'), portfolio (bool).
+
+    Works with both PostgreSQL (rich JOIN query) and local Chroma fallback.
+    """
+    from config import MIN_YIELD_DIVIDEND_PAYMENTS, MIN_YIELD_PRICE_POINTS
+
+    lim = max(1, min(limit, 2000))
+
+    # Resolve current user's portfolio symbols for ★ flagging.
+    if portfolio_symbols is None:
+        try:
+            from services.stock_history_backfill import portfolio_backfill_symbols
+
+            portfolio_symbols = portfolio_backfill_symbols()
+        except Exception:
+            portfolio_symbols = set()
+
+    if use_cloud_sql():
+        ensure_schema()
+        with get_connection() as conn:
+            rows = conn.execute(
+                f"""
+                WITH price_counts AS (
+                  SELECT symbol, COUNT(*) AS n FROM stock_price_history GROUP BY symbol
+                ),
+                div_counts AS (
+                  SELECT symbol, COUNT(*) AS n FROM stock_dividend_history GROUP BY symbol
+                )
+                SELECT
+                  s.symbol,
+                  GREATEST(
+                    COALESCE(p.n, 0),
+                    jsonb_array_length(COALESCE(s.document->'price_history', '[]'::jsonb))
+                  ) AS price_count,
+                  GREATEST(
+                    COALESCE(d.n, 0),
+                    jsonb_array_length(COALESCE(s.document->'dividend_history', '[]'::jsonb))
+                  ) AS dividend_count,
+                  s.last_updated
+                FROM stock_documents s
+                LEFT JOIN price_counts p ON p.symbol = s.symbol
+                LEFT JOIN div_counts d ON d.symbol = s.symbol
+                ORDER BY price_count ASC, dividend_count ASC
+                LIMIT {lim}
+                """
+            ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            r = dict(row)
+            price_n = int(r.get("price_count") or 0)
+            div_n = int(r.get("dividend_count") or 0)
+            sym = str(r.get("symbol") or "")
+            if price_n == 0 and div_n == 0:
+                status = "missing"
+            elif price_n < MIN_YIELD_PRICE_POINTS or div_n < MIN_YIELD_DIVIDEND_PAYMENTS:
+                status = "thin"
+            else:
+                status = "ready"
+            result.append(
+                {
+                    "symbol": sym,
+                    "price_count": price_n,
+                    "dividend_count": div_n,
+                    "last_updated": r.get("last_updated"),
+                    "status": status,
+                    "portfolio": sym.upper() in (portfolio_symbols or set()),
+                }
+            )
+        return result
+
+    # Local Chroma fallback
+    try:
+        from services.shared_market_db import get_shared_vector_store
+        from utils.stock_document_history import history_is_thin
+
+        docs = get_shared_vector_store().get_all_documents()[:lim]
+        result = []
+        for doc in docs:
+            sym = (doc.symbol or "").upper()
+            price_n = len(doc.price_history or [])
+            div_n = len(doc.dividend_history or [])
+            if price_n == 0 and div_n == 0:
+                status = "missing"
+            elif history_is_thin(doc):
+                status = "thin"
+            else:
+                status = "ready"
+            result.append(
+                {
+                    "symbol": sym,
+                    "price_count": price_n,
+                    "dividend_count": div_n,
+                    "last_updated": getattr(doc, "last_updated", None),
+                    "status": status,
+                    "portfolio": sym in (portfolio_symbols or set()),
+                }
+            )
+        result.sort(key=lambda item: (item["price_count"], item["dividend_count"]))
+        return result
+    except Exception:
+        return []
+
+
 def sample_table_rows(
     table: str,
     *,

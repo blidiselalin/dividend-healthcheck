@@ -68,6 +68,20 @@ PORTFOLIO_VIEW_OVERVIEW = "overview"
 PORTFOLIO_VIEW_HOLDING = "holding"
 
 
+def _row_status_badge(row: "PortfolioDetailRow") -> str:
+    """Build a compact status badge string for display in the holdings table.
+
+    ⏳ = price is stale (background refresh in progress)
+    📉 = insufficient price/dividend history for yield charts
+    """
+    parts: list[str] = []
+    if getattr(row, "price_stale", False):
+        parts.append("⏳")
+    if getattr(row, "history_thin", False):
+        parts.append("📉")
+    return " ".join(parts) if parts else "✓"
+
+
 def _set_holding_selection(symbol: str, nav_tickers: Optional[List[str]] = None) -> None:
     """Switch to full-page holding analysis for the chosen symbol."""
     from ui.portfolio_home import set_holding_selection
@@ -220,6 +234,8 @@ class PortfolioDetailsView:
                     "Ex Dividend Date": row.ex_dividend_date,
                     "Dividend Pay Date": row.dividend_pay_date,
                     "Data Source": row.data_source,
+                    # Status badges: ⏳ = price being refreshed, 📉 = thin history
+                    "Status": _row_status_badge(row),
                 }
                 for row in rows
             ]
@@ -2123,6 +2139,25 @@ class PortfolioDetailsView:
 
         df = cls._rows_to_dataframe(rows, preload)
 
+        # Show a stale-price notice if any holdings are pending a live-price refresh.
+        stale_tickers = [row.ticker for row in rows if getattr(row, "price_stale", False)]
+        thin_tickers = [row.ticker for row in rows if getattr(row, "history_thin", False)]
+        if stale_tickers:
+            st.info(
+                f"⏳ Prices for **{', '.join(stale_tickers[:6])}"
+                + ("…" if len(stale_tickers) > 6 else "")
+                + "** are being refreshed in the background.",
+                icon="⏳",
+            )
+        if thin_tickers:
+            st.warning(
+                f"📉 **{', '.join(thin_tickers[:6])}"
+                + ("…" if len(thin_tickers) > 6 else "")
+                + "** lack sufficient price/dividend history for yield charts. "
+                "A backfill job has been scheduled.",
+                icon="📉",
+            )
+
         filtered = cls._render_filters(df)
         filtered_tickers = filtered["Ticker"].tolist()
         st.session_state["portfolio_nav_tickers"] = filtered_tickers
@@ -2169,6 +2204,9 @@ class PortfolioDetailsView:
                 "P/FCF": st.column_config.NumberColumn(format="%.2f"),
                 "Ex Dividend Date": st.column_config.DateColumn(format="YYYY-MM-DD"),
                 "Dividend Pay Date": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                "Status": st.column_config.TextColumn(
+                    help="⏳ = price refresh pending · 📉 = thin history · ✓ = all good",
+                ),
             },
         )
 

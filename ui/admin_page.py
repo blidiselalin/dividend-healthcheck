@@ -21,6 +21,7 @@ from services.deferred_startup import (
     schedule_price_refresh,
     visible_jobs,
 )
+from services.db_admin_service import get_history_symbol_status
 from ui.market_library_cache import cached_thin_history_summary, clear_thin_history_summary_cache
 from services.price_refresh_scheduler import scheduler_status
 from services.shared_market_db import shared_market_db_status
@@ -495,6 +496,109 @@ def _render_history_tab() -> None:
     if last_backfill or last_sync:
         st.markdown("#### Last results")
         if last_backfill:
-            st.json({"backfill": last_backfill})
+            _render_backfill_last_run_report(last_backfill)
         if last_sync:
-            st.json({"table_sync": last_sync})
+            with st.expander("Table sync result", expanded=False):
+                st.json({"table_sync": last_sync})
+
+    _render_backfill_queue_section()
+
+
+@st.fragment(run_every=timedelta(seconds=5))
+def _render_backfill_queue_section() -> None:
+    """Auto-refreshing backfill queue panel with per-symbol status."""
+    import pandas as pd
+
+    with st.expander("Backfill queue status", expanded=False):
+        col_trigger, col_force = st.columns([3, 1])
+        with col_trigger:
+            if st.button(
+                "Trigger priority backfill for portfolio holdings",
+                key="admin_backfill_portfolio_priority",
+                help="Start a backfill job that processes your portfolio holdings first.",
+            ):
+                job_id = schedule_history_backfill(limit=10)
+                st.toast("Priority backfill started" if job_id else "Backfill already running")
+                st.rerun()
+
+        try:
+            rows = get_history_symbol_status(limit=200)
+        except Exception as exc:
+            st.warning(f"Could not load symbol status: {exc}")
+            return
+
+        if not rows:
+            st.caption("No symbols in the library yet — run ingest first.")
+            return
+
+        ready = sum(1 for r in rows if r["status"] == "ready")
+        thin = sum(1 for r in rows if r["status"] == "thin")
+        missing = sum(1 for r in rows if r["status"] == "missing")
+        portfolio_thin = sum(1 for r in rows if r["status"] != "ready" and r["portfolio"])
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("🟢 Ready", ready)
+        m2.metric("🟡 Thin", thin)
+        m3.metric("🔴 Missing", missing)
+        m4.metric("★ Portfolio thin", portfolio_thin)
+
+        STATUS_EMOJI = {"ready": "🟢", "thin": "🟡", "missing": "🔴"}
+        df_rows = []
+        for r in rows:
+            last_upd = r.get("last_updated")
+            if hasattr(last_upd, "strftime"):
+                last_upd_str = last_upd.strftime("%Y-%m-%d")
+            else:
+                last_upd_str = str(last_upd)[:10] if last_upd else "—"
+            df_rows.append(
+                {
+                    "Symbol": ("★ " if r["portfolio"] else "") + r["symbol"],
+                    "Price pts": r["price_count"],
+                    "Div pts": r["dividend_count"],
+                    "Last updated": last_upd_str,
+                    "Status": STATUS_EMOJI.get(r["status"], r["status"]),
+                }
+            )
+        df = pd.DataFrame(df_rows)
+        st.dataframe(df, hide_index=True, use_container_width=True)
+
+        st.caption(
+            "★ = portfolio holding · 🟢 ready · 🟡 thin (below threshold) · 🔴 missing. "
+            "Refreshes every 5 s while this panel is open."
+        )
+
+
+def _render_backfill_last_run_report(payload: Dict[str, Any]) -> None:
+    """Collapsible structured report for the last backfill job."""
+    processed = payload.get("symbols") or []
+    failed = payload.get("failed_symbols") or []
+    not_reached = payload.get("not_reached_symbols") or []
+
+    has_detail = processed or failed or not_reached
+    label = (
+        f"Last backfill — {payload.get('enriched', 0)} enriched, "
+        f"{payload.get('errors', 0)} errors, "
+        f"{len(not_reached)} not reached"
+    )
+    with st.expander(label, expanded=False):
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Candidates", payload.get("candidates", 0))
+        c2.metric("Enriched", payload.get("enriched", 0))
+        c3.metric("Errors", payload.get("errors", 0))
+        c4.metric("Yield-ready after", payload.get("ready_after", 0))
+
+        if not has_detail:
+            st.json(payload)
+            return
+
+        if processed:
+            st.markdown("**✅ Processed**")
+            st.write(", ".join(processed))
+        if failed:
+            st.markdown("**❌ Failed**")
+            st.write(", ".join(failed))
+        if not_reached:
+            st.markdown(
+                f"**⏭ Not reached** ({len(not_reached)} — increase limit to process these)"
+            )
+            st.write(", ".join(not_reached[:40]) + ("…" if len(not_reached) > 40 else ""))
