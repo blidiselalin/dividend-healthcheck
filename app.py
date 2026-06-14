@@ -56,7 +56,10 @@ def _render_data_source_status() -> None:
             st.sidebar.caption(f"👑 {kings_count} Dividend Kings • Fast local data")
         else:
             st.sidebar.warning("🌐 **Public API** (PostgreSQL empty)")
-            st.sidebar.caption("Run `python ingest_data.py --enrich` to populate")
+            st.sidebar.caption(
+                "Run `python ingest_data.py --enrich-existing` to populate, or use "
+                "Admin Console for history backfill and table sync"
+            )
     else:
         st.sidebar.info("🌐 **Public API** only")
         st.sidebar.caption("Configure PostgreSQL for local data caching")

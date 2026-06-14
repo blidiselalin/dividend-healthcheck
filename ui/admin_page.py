@@ -431,7 +431,9 @@ def _render_market_library_tab() -> None:
         "python ingest_data.py --refresh-prices\n"
         "python ingest_data.py --ensure-sp500\n"
         "python ingest_data.py --ensure-top-dividend\n"
-        "python ingest_data.py --enrich-existing",
+        "python ingest_data.py --enrich-existing\n"
+        "python ingest_data.py --backfill-history\n"
+        "python ingest_data.py --sync-history-tables",
         language="bash",
     )
 
