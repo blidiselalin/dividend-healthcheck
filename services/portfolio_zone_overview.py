@@ -9,7 +9,7 @@ from typing import Any
 import pandas as pd
 
 from services.yield_channel_chart import YieldChannelData, YieldChannelService
-from utils.chart_theme import style_figure
+from utils.chart_theme import PALETTE, outside_bar_text, style_figure
 
 try:
     import plotly.graph_objects as go
@@ -174,9 +174,9 @@ def create_category_count_chart(zone_df: pd.DataFrame) -> go.Figure | None:
         ]
     )
     fig.update_layout(
-        title="Holdings by yield zone",
+        title="Holdings by Yield Zone (Weiss Methodology)",
         height=320,
-        margin={"t": 50, "b": 20, "l": 20, "r": 20},
+        margin={"t": 60, "b": 20, "l": 20, "r": 20},
         showlegend=False,
     )
     return style_figure(fig)
@@ -208,11 +208,11 @@ def create_position_zone_chart(zone_df: pd.DataFrame) -> go.Figure | None:
     )
 
     fig.update_layout(
-        title="Yield percentile by holding (higher = more attractive)",
-        xaxis_title="Historical yield percentile",
+        title="Yield Percentile by Holding — Higher Is More Attractive",
+        xaxis_title="Historical Yield Percentile",
         yaxis_title="",
         height=max(400, 28 * len(ordered)),
-        margin={"l": 10, "r": 10, "t": 50, "b": 40},
+        margin={"l": 10, "r": 60, "t": 60, "b": 40},
         xaxis={"range": [0, 100]},
     )
     return style_figure(fig)

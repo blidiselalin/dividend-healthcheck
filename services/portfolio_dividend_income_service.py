@@ -15,7 +15,14 @@ from data_ingestion.dividend_income_store import (
     MonthlyNetDividend,
     dividend_tax_rate,
 )
-from utils.chart_theme import style_figure
+from utils.chart_theme import (
+    PALETTE,
+    bottom_legend,
+    evolution_chart_margins,
+    monthly_category_axis,
+    outside_bar_text,
+    style_figure,
+)
 
 try:
     import plotly.graph_objects as go
@@ -183,17 +190,17 @@ class PortfolioDividendIncomeService:
                 x=yearly["Year"].astype(str),
                 y=yearly["Net $"],
                 name="Net",
-                marker_color="#2e7d32",
+                marker_color=PALETTE["income"],
                 text=[f"${value:,.0f}" for value in yearly["Net $"]],
-                textposition="outside",
                 hovertemplate="%{x}<br>Net $%{y:,.2f}<extra></extra>",
+                **outside_bar_text(),
             )
         )
         fig.update_layout(
-            title="Net dividends per year",
-            yaxis_title="USD net",
+            title="Net Dividends per Year",
+            yaxis_title="Net Income (USD)",
             height=380,
-            margin={"t": 50, "b": 40},
+            margin={"t": 60, "b": 40},
         )
         return style_figure(fig)
 
@@ -227,12 +234,12 @@ class PortfolioDividendIncomeService:
                 )
             )
         fig.update_layout(
-            title="Monthly net dividends — year comparison",
+            title="Monthly Net Dividends — Year Comparison",
             barmode="group",
-            yaxis_title="USD net",
+            yaxis_title="Net Income (USD)",
             height=420,
-            margin={"t": 50, "b": 40},
-            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
+            margin={"t": 60, "b": 60},
+            legend=bottom_legend(),
         )
         return style_figure(fig)
 
@@ -242,23 +249,26 @@ class PortfolioDividendIncomeService:
         timeline = self.timeline_dataframe(records)
         if timeline.empty:
             return None
+        n = len(timeline)
         fig = go.Figure(
             go.Scatter(
                 x=timeline["label"],
                 y=timeline["cumulative_net_usd"],
                 mode="lines+markers",
                 fill="tozeroy",
-                line={"color": "#1565c0", "width": 2},
+                fillcolor=f"rgba(21, 101, 192, 0.12)",
+                line={"color": PALETTE["deposit"], "width": 2.5},
+                marker={"size": 5},
                 hovertemplate="%{x}<br>Cumulative $%{y:,.2f}<extra></extra>",
             )
         )
         fig.update_layout(
-            title="Cumulative net dividends (since inception)",
-            yaxis_title="USD net cumulative",
+            title="Cumulative Net Dividends Since Inception",
+            yaxis_title="Cumulative Net Income (USD)",
             height=400,
-            margin={"t": 50, "b": 120},
-            xaxis={"tickangle": -45},
+            margin=evolution_chart_margins(n),
         )
+        fig.update_xaxes(**monthly_category_axis(n))
         return style_figure(fig)
 
     def create_heatmap_chart(self, records: list[MonthlyNetDividend] | None = None) -> Any:
@@ -279,12 +289,14 @@ class PortfolioDividendIncomeService:
                 x=years,
                 y=pivot["Month"].tolist(),
                 colorscale="Greens",
+                zmin=0,
+                colorbar={"title": "USD", "thickness": 14, "len": 0.8},
                 hovertemplate="%{y} %{x}<br>$%{z:,.2f}<extra></extra>",
             )
         )
         fig.update_layout(
-            title="Net dividend heatmap ($) — month × year",  # noqa: RUF001
+            title="Net Dividend Heatmap — Month × Year",
             height=400,
-            margin={"t": 50, "b": 40},
+            margin={"t": 60, "b": 40},
         )
         return style_figure(fig)
