@@ -10,8 +10,6 @@ from typing import Any
 
 import pandas as pd
 
-from utils.dividend_amounts import payments_per_year
-
 
 def year_column_label(
     year: int,
@@ -42,7 +40,6 @@ def _is_incomplete_year(
     payment_count: int,
     *,
     document: Any = None,
-    all_records: list[Any] | None = None,
     today: date | None = None,
 ) -> bool:
     """Return whether the calendar year still needs projected values."""
@@ -50,11 +47,11 @@ def _is_incomplete_year(
     if year != today.year:
         return False
 
-    records = all_records or []
-    expected_payments = payments_per_year(
-        records,
-        stored_frequency=getattr(document, "payment_frequency", None) if document else None,
-    )
+    stored_frequency = getattr(document, "payment_frequency", None) if document else None
+    if stored_frequency not in (1, 2, 4, 12):
+        return True
+
+    expected_payments = int(stored_frequency)
     return payment_count < expected_payments
 
 
@@ -80,7 +77,6 @@ def estimate_annual_dividend_for_year(
         year,
         payment_count,
         document=document,
-        all_records=all_records,
         today=today,
     ):
         return round(float(ytd_total), 4), "Complete", None

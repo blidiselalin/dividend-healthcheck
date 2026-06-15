@@ -350,7 +350,10 @@ class PortfolioDividendGrowthService:
             )
         )
         fig.update_layout(
-            title=f"Estimated portfolio dividends received (DPS x shares owned, since {SINCE_YEAR})",
+            title=(
+                "Estimated portfolio dividends received "
+                f"(DPS x shares owned, since {SINCE_YEAR})"
+            ),
             yaxis_title="USD / year",
             height=380,
             margin={"t": 50, "b": 40},

@@ -16,7 +16,6 @@ from services.portfolio_dividend_growth_service import (
     SymbolDividendGrowth,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers / stubs
 # ---------------------------------------------------------------------------
