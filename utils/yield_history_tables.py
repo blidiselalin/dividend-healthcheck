@@ -52,7 +52,11 @@ def _is_incomplete_year(
     if year != today.year:
         return False
 
-    stored_frequency = getattr(document, "payment_frequency", None) if document else None
+    stored_frequency = (
+        document.payment_frequency
+        if document is not None and hasattr(document, "payment_frequency")
+        else None
+    )
     valid_frequencies = (
         ANNUAL_PAYMENT_FREQUENCY,
         SEMI_ANNUAL_PAYMENT_FREQUENCY,
