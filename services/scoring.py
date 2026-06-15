@@ -7,7 +7,16 @@ emphasizing the key metrics that matter most to income investors.
 
 from dataclasses import dataclass
 
-from config import RECOMMENDATION_THRESHOLDS
+from config import (
+    GROWTH_MODERATE_MIN,
+    GROWTH_STRONG_MIN,
+    PAYOUT_SAFE,
+    PAYOUT_WATCH,
+    RECOMMENDATION_THRESHOLDS,
+    YIELD_CAUTION_MIN,
+    YIELD_OPTIMAL_MAX,
+    YIELD_OPTIMAL_MIN,
+)
 from models.stock import StockData
 
 
@@ -100,11 +109,11 @@ class ScoringService:
                 safety_points += 10
             elif pr <= 50:
                 safety_points += 9
-            elif pr <= 60:
+            elif pr <= PAYOUT_SAFE:
                 safety_points += 8
             elif pr <= 70:
                 safety_points += 6
-            elif pr <= 80:
+            elif pr <= PAYOUT_WATCH:
                 safety_points += 4
             elif pr <= 100:
                 safety_points += 2
@@ -131,15 +140,15 @@ class ScoringService:
         yield_points = 0
         if data.dividend_yield_pct is not None:
             dy = data.dividend_yield_pct
-            if 2.5 <= dy <= 4.5:
+            if YIELD_OPTIMAL_MIN <= dy <= YIELD_OPTIMAL_MAX:
                 yield_points = 15
-            elif 2.0 <= dy < 2.5 or 4.5 < dy <= 5.5:
+            elif 2.0 <= dy < YIELD_OPTIMAL_MIN or YIELD_OPTIMAL_MAX < dy <= 5.5:
                 yield_points = 13
             elif 1.5 <= dy < 2.0 or 5.5 < dy <= 6.5:
                 yield_points = 10
-            elif 1.0 <= dy < 1.5 or 6.5 < dy <= 8.0:
+            elif 1.0 <= dy < 1.5 or 6.5 < dy <= YIELD_CAUTION_MIN:
                 yield_points = 7
-            elif 0.5 <= dy < 1.0 or 8.0 < dy <= 10:
+            elif 0.5 <= dy < 1.0 or YIELD_CAUTION_MIN < dy <= 10:
                 yield_points = 4
         components.append(
             ScoreComponent(
@@ -157,13 +166,13 @@ class ScoringService:
                 growth_points = 15
             elif cagr >= 8:
                 growth_points = 13
-            elif cagr >= 6:
+            elif cagr >= GROWTH_STRONG_MIN:
                 growth_points = 11
             elif cagr >= 5:
                 growth_points = 9
             elif cagr >= 4:
                 growth_points = 7
-            elif cagr >= 3:
+            elif cagr >= GROWTH_MODERATE_MIN:
                 growth_points = 5
             elif cagr >= 2:
                 growth_points = 3

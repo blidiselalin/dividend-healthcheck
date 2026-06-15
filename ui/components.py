@@ -11,6 +11,15 @@ import streamlit as st
 
 from models.stock import StockData
 from services.scoring import Recommendation, ScoringService
+from config import (
+    YIELD_OPTIMAL_MIN,
+    YIELD_OPTIMAL_MAX,
+    YIELD_CAUTION_MIN,
+    GROWTH_STRONG_MIN,
+    GROWTH_MODERATE_MIN,
+    PAYOUT_SAFE,
+    PAYOUT_WATCH,
+)
 from utils.formatting import (
     format_currency,
     format_large_number,
@@ -86,9 +95,9 @@ class UIComponents:
     def _yield_context(yield_pct: float | None) -> str:
         if yield_pct is None:
             return "Neutral"
-        if 2.5 <= yield_pct <= 4.5:
+        if YIELD_OPTIMAL_MIN <= yield_pct <= YIELD_OPTIMAL_MAX:
             return "Optimal"
-        if yield_pct > 8:
+        if yield_pct > YIELD_CAUTION_MIN:
             return "Caution"
         return "Neutral"
 
@@ -96,9 +105,9 @@ class UIComponents:
     def _payout_context(payout_ratio_pct: float | None) -> str:
         if payout_ratio_pct is None:
             return "Risky"
-        if payout_ratio_pct <= 60:
+        if payout_ratio_pct <= PAYOUT_SAFE:
             return "Safe"
-        if payout_ratio_pct <= 80:
+        if payout_ratio_pct <= PAYOUT_WATCH:
             return "Watch"
         return "Risky"
 
@@ -106,9 +115,9 @@ class UIComponents:
     def _growth_context(cagr_5y: float | None) -> str:
         if cagr_5y is None:
             return "Weak"
-        if cagr_5y >= 6:
+        if cagr_5y >= GROWTH_STRONG_MIN:
             return "Strong"
-        if cagr_5y >= 3:
+        if cagr_5y >= GROWTH_MODERATE_MIN:
             return "Moderate"
         return "Weak"
 
