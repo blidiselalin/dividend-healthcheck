@@ -83,6 +83,36 @@ class UIComponents:
     # === KEY HIGHLIGHTS (Front Page) ===
 
     @staticmethod
+    def _yield_context(yield_pct: float | None) -> str:
+        if yield_pct is None:
+            return "Neutral"
+        if 2.5 <= yield_pct <= 4.5:
+            return "Optimal"
+        if yield_pct > 8:
+            return "Caution"
+        return "Neutral"
+
+    @staticmethod
+    def _payout_context(payout_ratio_pct: float | None) -> str:
+        if payout_ratio_pct is None:
+            return "Risky"
+        if payout_ratio_pct <= 60:
+            return "Safe"
+        if payout_ratio_pct <= 80:
+            return "Watch"
+        return "Risky"
+
+    @staticmethod
+    def _growth_context(cagr_5y: float | None) -> str:
+        if cagr_5y is None:
+            return "Weak"
+        if cagr_5y >= 6:
+            return "Strong"
+        if cagr_5y >= 3:
+            return "Moderate"
+        return "Weak"
+
+    @staticmethod
     def display_key_highlights(
         data: StockData,
         score: int,
@@ -127,15 +157,9 @@ class UIComponents:
         r3[1].metric("Income on $10K", income_10k)
         r3[2].metric("Data confidence", f"{quality:.0f}%" if quality is not None else "—")
 
-        yield_view = "Optimal" if data.dividend_yield_pct and 2.5 <= data.dividend_yield_pct <= 4.5 else (
-            "Caution" if data.dividend_yield_pct and data.dividend_yield_pct > 8 else "Neutral"
-        )
-        payout_view = "Safe" if data.payout_ratio_pct is not None and data.payout_ratio_pct <= 60 else (
-            "Watch" if data.payout_ratio_pct is not None and data.payout_ratio_pct <= 80 else "Risky"
-        )
-        growth_view = "Strong" if cagr_5y is not None and cagr_5y >= 6 else (
-            "Moderate" if cagr_5y is not None and cagr_5y >= 3 else "Weak"
-        )
+        yield_view = UIComponents._yield_context(data.dividend_yield_pct)
+        payout_view = UIComponents._payout_context(data.payout_ratio_pct)
+        growth_view = UIComponents._growth_context(cagr_5y)
         st.caption(
             "Selection context · "
             f"Yield: {yield_view} · Payout: {payout_view} · Growth: {growth_view} · Valuation: {drawdown}"
