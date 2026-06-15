@@ -16,6 +16,7 @@ Research Dividend Kings and Aristocrats, track your holdings, monitor dividend i
 
 - [Features](#features)
 - [Architecture](#architecture)
+- [Architecture Guardrails](#architecture-guardrails)
 - [Quick Start — Docker (recommended)](#quick-start--docker-recommended)
 - [Local Development (no Docker)](#local-development-no-docker)
 - [Authentication](#authentication)
@@ -60,6 +61,16 @@ Browser → Caddy (HTTPS 443) → Streamlit :8501 → PostgreSQL 16
 | **Reverse proxy** | Caddy (host) | Auto-TLS via Let's Encrypt |
 
 > **All portfolio data is user-scoped in PostgreSQL.** No SQLite or ChromaDB is used at runtime when `DATABASE_URL` is set.
+
+## Architecture Guardrails
+
+Use these conventions when extending the app so features remain fast, testable, and consistent:
+
+- **One portfolio context per flow**: use `services.portfolio_context.create_portfolio_context()` for holdings + journal + dividends in the same request.
+- **Service-first UI**: keep `ui/*` focused on rendering and state; move data orchestration and fallback logic to `services/*`.
+- **Batch over per-symbol loops**: prefer `get_by_symbols()` / `load_documents()` style bulk fetches for holdings and screening views.
+- **Cloud SQL as runtime source of truth**: when `DATABASE_URL` is set, avoid introducing new runtime SQLite/Chroma write paths.
+- **Date parsing discipline**: parse DB values through `db.parsing` helpers to support both PostgreSQL and local SQLite tests.
 
 ---
 
@@ -261,6 +272,15 @@ Each stock receives a composite 0–100 score based on dividend quality factors.
 | Financial Strength | 10% | Debt/Equity, current ratio |
 | Profitability | 10% | ROE, profit margins |
 | Size / Stability | 5% | Market cap (larger = more stable) |
+
+### Selection workflow (high level)
+
+Use this order to keep dividend decisions consistent:
+
+1. **Income quality first** — check yield, payout ratio, and dividend safety together.
+2. **Durability second** — verify streak length and 5Y dividend growth.
+3. **Valuation third** — review P/E and distance from 52-week high.
+4. **Balance check** — use score composition to confirm strength is not coming from a single category.
 
 ### Recommendations
 

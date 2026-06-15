@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from models.stock import StockData
-from services.scoring import Recommendation
+from services.scoring import Recommendation, ScoringService
 from utils.formatting import (
     format_currency,
     format_percent,
@@ -93,9 +93,15 @@ class UIComponents:
         streak = dh.consecutive_years if dh else None
         cagr_5y = dh.cagr_5y if dh else None
         safety = data.dividend_safety_score
+        quality = data.data_quality_score
         income_10k = (
             f"${(data.dividend_yield_pct / 100) * 10000:,.0f}/yr"
             if data.dividend_yield_pct
+            else "—"
+        )
+        drawdown = (
+            f"{abs(data.price_to_52w_high_pct):.1f}% below 52w high"
+            if data.price_to_52w_high_pct is not None
             else "—"
         )
 
@@ -118,8 +124,37 @@ class UIComponents:
 
         r3 = st.columns(3)
         r3[0].metric("Price", UIComponents.format_currency(data.price))
-        r3[1].metric("P/E", UIComponents.format_number(data.trailing_pe, 1))
-        r3[2].metric("Income on $10K", income_10k)
+        r3[1].metric("Income on $10K", income_10k)
+        r3[2].metric("Data confidence", f"{quality:.0f}%" if quality is not None else "—")
+
+        yield_view = "Optimal" if data.dividend_yield_pct and 2.5 <= data.dividend_yield_pct <= 4.5 else (
+            "Caution" if data.dividend_yield_pct and data.dividend_yield_pct > 8 else "Neutral"
+        )
+        payout_view = "Safe" if data.payout_ratio_pct is not None and data.payout_ratio_pct <= 60 else (
+            "Watch" if data.payout_ratio_pct is not None and data.payout_ratio_pct <= 80 else "Risky"
+        )
+        growth_view = "Strong" if cagr_5y is not None and cagr_5y >= 6 else (
+            "Moderate" if cagr_5y is not None and cagr_5y >= 3 else "Weak"
+        )
+        st.caption(
+            "Selection context · "
+            f"Yield: {yield_view} · Payout: {payout_view} · Growth: {growth_view} · Valuation: {drawdown}"
+        )
+
+        with st.expander("Score composition", expanded=False):
+            components = ScoringService.calculate_score_breakdown(data)
+            breakdown = pd.DataFrame(
+                [
+                    {
+                        "Category": item.label,
+                        "Points": item.points,
+                        "Max": item.max_points,
+                        "Coverage %": round((item.points / item.max_points) * 100, 1),
+                    }
+                    for item in components
+                ]
+            )
+            st.dataframe(breakdown, use_container_width=True, hide_index=True)
 
     @staticmethod
     def display_prime_metrics(data: StockData, score: int) -> None:
