@@ -1691,7 +1691,7 @@ class PortfolioDetailsView:
         st.caption(
             "Annual dividend per share from analysed stocks. "
             "Green heatmap cells = higher DPS vs prior years. "
-            "Current year is projected (est.) for fair comparison with complete years."
+            "Incomplete current-year values are projected for fair comparison with complete years."
         )
 
         if not growth_data:
@@ -2325,4 +2325,3 @@ class PortfolioDetailsView:
         section_key = current_portfolio_section_key()
         render_portfolio_status_line()
         cls._render_portfolio_section(section_key)
-

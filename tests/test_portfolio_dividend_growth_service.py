@@ -154,6 +154,24 @@ def test_yoy_growth_matrix_first_year_is_blank() -> None:
     assert matrix.loc[0, "2024"] == 10.0
 
 
+def test_annual_matrix_uses_plain_year_columns() -> None:
+    items = [
+        SymbolDividendGrowth(
+            symbol="KO",
+            company="Coca-Cola",
+            annual_by_year={2025: 2.0},
+            growth_years=0,
+            cagr_since_start=None,
+            latest_annual=2.0,
+            shares=10.0,
+        )
+    ]
+    service = PortfolioDividendGrowthService(portfolio_store=MagicMockPortfolio())  # type: ignore[arg-type]
+    matrix = service.annual_matrix_dataframe(items)
+    assert "2025" in matrix.columns
+    assert "2025 (est.)" not in matrix.columns
+
+
 # ---------------------------------------------------------------------------
 # New tests: pre-ownership filtering
 # ---------------------------------------------------------------------------

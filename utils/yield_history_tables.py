@@ -10,11 +10,20 @@ from typing import Any
 
 import pandas as pd
 
+from utils.dividend_amounts import payments_per_year
 
-def year_column_label(year: int, *, today: date | None = None) -> str:
-    """Format a calendar year for tables/charts; current year is marked estimated."""
+
+def year_column_label(
+    year: int,
+    *,
+    today: date | None = None,
+    estimated: bool | None = None,
+) -> str:
+    """Format a calendar year for tables/charts."""
     today = today or date.today()
-    if year == today.year:
+    if estimated is None:
+        estimated = year == today.year
+    if estimated:
         return f"{year} (est.)"
     return str(year)
 
@@ -26,6 +35,27 @@ def _payment_counts_by_year(records: list[Any]) -> dict[int, int]:
         if ex is not None:
             counts[int(ex.year)] += 1
     return dict(counts)
+
+
+def _is_incomplete_year(
+    year: int,
+    payment_count: int,
+    *,
+    document: Any = None,
+    all_records: list[Any] | None = None,
+    today: date | None = None,
+) -> bool:
+    """Return whether the calendar year still needs projected values."""
+    today = today or date.today()
+    if year != today.year:
+        return False
+
+    records = all_records or []
+    expected_payments = payments_per_year(
+        records,
+        stored_frequency=getattr(document, "payment_frequency", None) if document else None,
+    )
+    return payment_count < expected_payments
 
 
 def estimate_annual_dividend_for_year(
@@ -46,7 +76,13 @@ def estimate_annual_dividend_for_year(
     today = today or date.today()
     ytd_paid = round(float(ytd_total), 4) if ytd_total else None
 
-    if year != today.year:
+    if not _is_incomplete_year(
+        year,
+        payment_count,
+        document=document,
+        all_records=all_records,
+        today=today,
+    ):
         return round(float(ytd_total), 4), "Complete", None
 
     if document is not None:
@@ -125,7 +161,7 @@ def yearly_dividend_per_share_table(
     today = date.today()
     rows = []
     for year in sorted(totals):
-        display_dps, _, _ = estimate_annual_dividend_for_year(
+        display_dps, status, _ = estimate_annual_dividend_for_year(
             year,
             totals[year],
             counts[year],
@@ -134,7 +170,7 @@ def yearly_dividend_per_share_table(
             today=today,
         )
         row: dict[str, Any] = {
-            "Year": year_column_label(year, today=today),
+            "Year": year_column_label(year, today=today, estimated=status != "Complete"),
             "Dividend / share $": display_dps,
         }
         rows.append(row)
@@ -177,7 +213,7 @@ def yearly_yield_exposure_table(channel_data: Any, *, today: date | None = None)
         is_current = year == today.year
         rows.append(
             {
-                "Year": year_column_label(year, today=today),
+                "Year": year_column_label(year, today=today, estimated=is_current),
                 "Avg yield %": round(avg_yield, 2) if avg_yield is not None else None,
                 "Year-end price $": round(end_price, 2) if end_price is not None else None,
                 "Trailing div $": round(trailing_div, 2) if trailing_div is not None else None,

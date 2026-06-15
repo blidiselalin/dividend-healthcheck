@@ -198,7 +198,7 @@ class PortfolioDividendGrowthService:
         for item in items:
             row: dict[str, Any] = {"Ticker": item.symbol, "Company": item.company}
             for year in years:
-                row[year_column_label(year)] = item.annual_by_year.get(year)
+                row[year_column_label(year, estimated=False)] = item.annual_by_year.get(year)
             row["Growth years"] = item.growth_years
             row["CAGR %"] = item.cagr_since_start
             rows.append(row)
@@ -225,7 +225,7 @@ class PortfolioDividendGrowthService:
         return pd.DataFrame(
             [
                 {
-                    "Year": year_column_label(year),
+                    "Year": year_column_label(year, estimated=False),
                     "Est. dividends $": round(value, 2),
                 }
                 for year, value in sorted(totals.items())
@@ -244,7 +244,7 @@ class PortfolioDividendGrowthService:
             row: dict[str, Any] = {"Ticker": item.symbol}
             sorted_years = sorted(item.annual_by_year)
             for index, year in enumerate(sorted_years):
-                label = year_column_label(year)
+                label = year_column_label(year, estimated=False)
                 if index == 0:
                     row[label] = None
                     continue
@@ -269,7 +269,7 @@ class PortfolioDividendGrowthService:
 
         items_sorted = sorted(items, key=lambda item: item.latest_annual or 0, reverse=True)
         years = sorted({year for item in items for year in item.annual_by_year})
-        year_labels = [year_column_label(year) for year in years]
+        year_labels = [year_column_label(year, estimated=False) for year in years]
         y_labels = [f"{item.symbol}" for item in items_sorted]
         z = [[item.annual_by_year.get(year) for year in years] for item in items_sorted]
 
@@ -314,7 +314,7 @@ class PortfolioDividendGrowthService:
             years = sorted(item.annual_by_year)
             fig.add_trace(
                 go.Scatter(
-                    x=[year_column_label(year) for year in years],
+                    x=[year_column_label(year, estimated=False) for year in years],
                     y=[item.annual_by_year[year] for year in years],
                     mode="lines+markers",
                     name=item.symbol,

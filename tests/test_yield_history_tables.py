@@ -67,6 +67,21 @@ def test_complete_year_returns_summed_total() -> None:
     assert ytd is None
 
 
+def test_current_year_with_full_annual_schedule_is_complete() -> None:
+    doc = type("Doc", (), {"annual_dividend": 1.2, "dividend_rate": None, "payment_frequency": 1})()
+    display, status, ytd = estimate_annual_dividend_for_year(
+        2026,
+        1.2,
+        1,
+        document=doc,
+        all_records=[DividendRecord(ex_date=date(2026, 3, 1), payment_date=None, amount=1.2)],
+        today=date(2026, 6, 1),
+    )
+    assert display == 1.2
+    assert status == "Complete"
+    assert ytd is None
+
+
 def test_yearly_dividend_per_share_from_library() -> None:
     doc = StockDocument(symbol="KO", name="Coca-Cola", source=DataSource.YAHOO)
     doc.dividend_history = [
@@ -95,6 +110,29 @@ def test_current_year_dividend_is_projected_for_comparison() -> None:
     current = table.loc[table["Year"] == year_column_label(2026, today=date(2026, 5, 19))]
     assert not current.empty
     assert current["Dividend / share $"].iloc[0] == 6.56
+
+
+def test_current_year_dividend_table_omits_estimate_for_completed_annual_payer() -> None:
+    doc = StockDocument(symbol="MAIN", name="Main Street Capital", source=DataSource.YAHOO)
+    doc.payment_frequency = 1
+    doc.annual_dividend = 1.2
+    doc.dividend_history = [
+        DividendRecord(ex_date=date(2025, 3, 1), payment_date=None, amount=1.1),
+        DividendRecord(ex_date=date(2026, 3, 1), payment_date=None, amount=1.2),
+    ]
+
+    from utils import yield_history_tables
+
+    original_date = yield_history_tables.date
+    yield_history_tables.date = type("date", (), {"today": staticmethod(lambda: date(2026, 6, 1))})
+    try:
+        table = yearly_dividend_per_share_table(doc)
+    finally:
+        yield_history_tables.date = original_date
+
+    assert "2026" in list(table["Year"])
+    assert "2026 (est.)" not in list(table["Year"])
+    assert table.loc[table["Year"] == "2026", "Dividend / share $"].iloc[0] == 1.2
 
 
 def test_estimate_annual_dividend_scales_partial_payments() -> None:
