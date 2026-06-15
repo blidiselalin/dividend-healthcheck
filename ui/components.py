@@ -154,15 +154,17 @@ class UIComponents:
 
         r3 = st.columns(3)
         r3[0].metric("Price", UIComponents.format_currency(data.price))
-        r3[1].metric("Income on $10K", income_10k)
-        r3[2].metric("Data confidence", f"{quality:.0f}%" if quality is not None else "—")
+        r3[1].metric("P/E", UIComponents.format_number(data.trailing_pe, 1))
+        r3[2].metric("Income on $10K", income_10k)
 
         yield_view = UIComponents._yield_context(data.dividend_yield_pct)
         payout_view = UIComponents._payout_context(data.payout_ratio_pct)
         growth_view = UIComponents._growth_context(cagr_5y)
+        confidence = f"{quality:.0f}%" if quality is not None else "—"
         st.caption(
             "Selection context · "
-            f"Yield: {yield_view} · Payout: {payout_view} · Growth: {growth_view} · Valuation: {drawdown}"
+            f"Yield: {yield_view} · Payout: {payout_view} · Growth: {growth_view} · "
+            f"Valuation: {drawdown} · Data confidence: {confidence}"
         )
 
         with st.expander("Score composition", expanded=False):
