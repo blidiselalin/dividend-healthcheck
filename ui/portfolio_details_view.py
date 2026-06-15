@@ -1409,8 +1409,7 @@ class PortfolioDetailsView:
         with col_refresh:
             if st.button("🔄 Refresh benchmark prices", key="benchmark_refresh_btn"):
                 with st.spinner("Fetching benchmark prices from Yahoo Finance…"):
-                    from services.portfolio_benchmark_service import PortfolioBenchmarkService as _Svc
-                    result = _Svc().refresh_benchmark_prices()
+                    result = PortfolioBenchmarkService().refresh_benchmark_prices()
                 _load_benchmark_comparison.clear()
                 written = sum(result.values())
                 st.success(f"Saved {written} price rows. Reloading…")

@@ -162,7 +162,7 @@ class PortfolioBenchmarkService:
                         price_store.upsert_prices(
                             sym,
                             {
-                                ts.date() if hasattr(ts, "date") else ts: float(val)
+                                ts.date() if isinstance(ts, pd.Timestamp) else ts: float(val)
                                 for ts, val in series.items()
                                 if val is not None
                             },
@@ -223,7 +223,7 @@ class PortfolioBenchmarkService:
                 written = price_store.upsert_prices(
                     sym,
                     {
-                        ts.date() if hasattr(ts, "date") else ts: float(val)
+                        ts.date() if isinstance(ts, pd.Timestamp) else ts: float(val)
                         for ts, val in series.items()
                         if val is not None
                     },

@@ -23,6 +23,7 @@ from typing import Any
 
 from config import DATA_DIR
 from db.connection import use_cloud_sql
+from db.parsing import parse_date, parse_optional_date
 
 logger = logging.getLogger(__name__)
 
@@ -223,9 +224,7 @@ class BenchmarkPriceStore:
             ).fetchall()
         result: dict[date, float] = {}
         for row in rows:
-            pd_val = row["price_date"]
-            if isinstance(pd_val, str):
-                pd_val = date.fromisoformat(pd_val[:10])
+            pd_val = parse_date(row["price_date"])
             result[pd_val] = float(row["close_usd"])
         return result
 
@@ -252,10 +251,7 @@ class BenchmarkPriceStore:
             ).fetchone()
         if not row:
             return None
-        val = row["price_date"]
-        if isinstance(val, str):
-            return date.fromisoformat(val[:10])
-        return val
+        return parse_optional_date(row["price_date"])
 
     def price_count(self, symbol: str) -> int:
         sym = symbol.upper()
