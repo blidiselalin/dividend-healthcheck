@@ -95,6 +95,27 @@ class PostgresMarketStore:
                 return None
             return _document_from_row(row, conn=conn)
 
+    def get_by_symbols(self, symbols: list[str]) -> dict[str, Any]:
+        """Batch-fetch multiple documents in a single query; returns {symbol: document}."""
+        if not symbols:
+            return {}
+        from db.connection import ensure_schema, get_connection
+
+        ensure_schema()
+        targets = [s.upper() for s in symbols if s]
+        with get_connection() as conn:
+            query = (
+                "SELECT " + _STOCK_DOCUMENT_COLUMNS + "\n"
+                "FROM stock_documents\n"
+                "WHERE symbol = ANY(%s)"
+            )
+            rows = conn.execute(query, (targets,)).fetchall()
+            return {
+                row["symbol"]: _document_from_row(row, conn=conn)
+                for row in rows
+                if row
+            }
+
     def get_all_documents(self) -> list[Any]:
         from db.connection import ensure_schema, get_connection
 

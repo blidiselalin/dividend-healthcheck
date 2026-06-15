@@ -33,6 +33,7 @@ class SymbolDividendGrowth:
     cagr_since_start: float | None
     latest_annual: float | None
     shares: float
+    first_owned_year: int | None = None  # year user first held this stock
 
 
 class PortfolioDividendGrowthService:
@@ -42,9 +43,11 @@ class PortfolioDividendGrowthService:
         self,
         vector_store: Any | None = None,
         portfolio_store: PortfolioStore | None = None,
+        journal_store: Any | None = None,
     ) -> None:
         self._vector_store = vector_store
         self.portfolio = portfolio_store or PortfolioStore(seed=False)
+        self._journal_store = journal_store
 
     @property
     def vector_store(self) -> Any:
@@ -53,6 +56,26 @@ class PortfolioDividendGrowthService:
 
             self._vector_store = get_shared_vector_store()
         return self._vector_store
+
+    @property
+    def journal_store(self) -> Any:
+        if self._journal_store is None:
+            from data_ingestion.purchase_journal_store import PurchaseJournalStore
+
+            self._journal_store = PurchaseJournalStore(seed=False)
+        return self._journal_store
+
+    def _first_owned_years(self) -> dict[str, int]:
+        """Return {symbol: first_year_owned} from the purchase journal."""
+        result: dict[str, int] = {}
+        try:
+            for purchase in self.journal_store.list_purchases():
+                year = purchase.purchase_date.year
+                if purchase.symbol not in result or year < result[purchase.symbol]:
+                    result[purchase.symbol] = year
+        except Exception:  # noqa: BLE001
+            pass
+        return result
 
     def _annual_dividends_from_history(
         self,
@@ -115,10 +138,19 @@ class PortfolioDividendGrowthService:
 
     def build_symbol_growth(self, since_year: int = SINCE_YEAR) -> list[SymbolDividendGrowth]:
         holdings = {h.symbol: h for h in self.portfolio.list_holdings()}
-        results: list[SymbolDividendGrowth] = []
+        if not holdings:
+            return []
 
+        # Batch-fetch all documents in one query instead of N individual round-trips.
+        docs = self.vector_store.get_by_symbols(list(holdings.keys()))
+
+        # Determine first year each symbol was owned from the purchase journal,
+        # falling back to the holding's dividend_tracking_since date.
+        journal_first_years = self._first_owned_years()
+
+        results: list[SymbolDividendGrowth] = []
         for symbol, holding in sorted(holdings.items()):
-            doc = self.vector_store.get_by_symbol(symbol)
+            doc = docs.get(symbol.upper())
             if not doc or not doc.dividend_history:
                 continue
             annual = self._annual_dividends_from_history(
@@ -128,6 +160,12 @@ class PortfolioDividendGrowthService:
             )
             if not annual:
                 continue
+
+            # Resolve first year: journal > tracking_since > None
+            first_owned_year: int | None = journal_first_years.get(symbol)
+            if first_owned_year is None and holding.dividend_tracking_since is not None:
+                first_owned_year = holding.dividend_tracking_since.year
+
             results.append(
                 SymbolDividendGrowth(
                     symbol=symbol,
@@ -137,6 +175,7 @@ class PortfolioDividendGrowthService:
                     cagr_since_start=self._cagr(annual),
                     latest_annual=annual[max(annual)],
                     shares=holding.shares,
+                    first_owned_year=first_owned_year,
                 )
             )
         return results
@@ -164,11 +203,18 @@ class PortfolioDividendGrowthService:
     def portfolio_cash_by_year(
         self, symbols: list[SymbolDividendGrowth] | None = None
     ) -> pd.DataFrame:
-        """Estimated annual dividend cash = annual DPS x shares."""
+        """Estimated annual dividend cash = annual DPS x shares.
+
+        Only counts cash for years in which the user actually held the stock.
+        Years before ``first_owned_year`` are skipped so that the bar chart
+        reflects dividends actually *received*, not theoretical pre-ownership values.
+        """
         items = symbols if symbols is not None else self.build_symbol_growth()
         totals: dict[int, float] = defaultdict(float)
         for item in items:
             for year, dps in item.annual_by_year.items():
+                if item.first_owned_year is not None and year < item.first_owned_year:
+                    continue
                 totals[year] += dps * item.shares
         from utils.yield_history_tables import year_column_label
 
@@ -300,7 +346,7 @@ class PortfolioDividendGrowthService:
             )
         )
         fig.update_layout(
-            title=f"Estimated portfolio dividends (DPS x shares, since {SINCE_YEAR})",
+            title=f"Estimated portfolio dividends received (DPS x shares owned, since {SINCE_YEAR})",
             yaxis_title="USD / year",
             height=380,
             margin={"t": 50, "b": 40},
