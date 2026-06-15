@@ -289,7 +289,6 @@ class PortfolioDividendIncomeService:
                 x=years,
                 y=pivot["Month"].tolist(),
                 colorscale="Greens",
-                zmin=0,
                 colorbar={"title": "USD", "thickness": 14, "len": 0.8},
                 hovertemplate="%{y} %{x}<br>$%{z:,.2f}<extra></extra>",
             )

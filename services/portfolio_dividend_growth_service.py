@@ -229,7 +229,6 @@ class PortfolioDividendGrowthService:
                 x=year_labels,
                 y=y_labels,
                 colorscale="Greens",
-                zmin=0,
                 colorbar={"title": "$/share", "thickness": 14, "len": 0.8},
                 hovertemplate="%{y} %{x}<br>$%{z:.4f}/share<extra></extra>",
             )
