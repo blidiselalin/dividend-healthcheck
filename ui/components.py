@@ -13,15 +13,17 @@ from models.stock import StockData
 from services.scoring import Recommendation, ScoringService
 from utils.formatting import (
     format_currency,
-    format_percent,
-    format_number,
     format_large_number,
+    format_number,
+    format_percent,
     format_years,
 )
 
 try:
     from services.yield_channel_chart import (
         YieldChannelService,
+    )
+    from services.yield_channel_chart import (
         is_available as yield_chart_available,
     )
     YIELD_CHART_AVAILABLE = yield_chart_available()
@@ -32,6 +34,8 @@ try:
     from services.news_service import (
         NewsService,
         NewsSummary,
+    )
+    from services.news_service import (
         is_available as news_available,
     )
     NEWS_AVAILABLE = news_available()
@@ -39,8 +43,8 @@ except ImportError:
     NEWS_AVAILABLE = False
 
 try:
-    from data_ingestion.vector_store import VectorStore
     from data_ingestion.models import StockDocument
+    from data_ingestion.vector_store import VectorStore
     VECTOR_DB_AVAILABLE = True
 except ImportError:
     VECTOR_DB_AVAILABLE = False

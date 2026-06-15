@@ -52,11 +52,14 @@ class ScoringService:
     @staticmethod
     def calculate_score(data: StockData) -> int:
         """Calculate strategic investment score (0-100)."""
-        total = sum(component.points for component in ScoringService.calculate_score_breakdown(data))
+        total = sum(
+            component.points
+            for component in ScoringService.calculate_score_breakdown(data)
+        )
         return min(total, 100)
 
     @staticmethod
-    def calculate_score_breakdown(data: StockData) -> list[ScoreComponent]:
+    def calculate_score_breakdown(data: StockData) -> list[ScoreComponent]:  # noqa: C901
         """Return category-level score contributions used in the total score."""
         components: list[ScoreComponent] = []
 
