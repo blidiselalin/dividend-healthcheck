@@ -2325,4 +2325,3 @@ class PortfolioDetailsView:
         section_key = current_portfolio_section_key()
         render_portfolio_status_line()
         cls._render_portfolio_section(section_key)
-

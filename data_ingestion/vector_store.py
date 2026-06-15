@@ -555,6 +555,25 @@ class VectorStore:
             logger.error(f"Error getting {symbol}: {e}")
             return None
 
+    def get_by_symbols(self, symbols: list[str]) -> dict[str, Any]:
+        """
+        Batch-fetch documents for a list of symbols; returns {symbol: document}.
+
+        Uses a single DB query on PostgreSQL for efficiency.  Falls back to
+        sequential ``get_by_symbol`` calls on other backends.
+        """
+        if not symbols:
+            return {}
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.get_by_symbols(symbols)  # type: ignore[no-any-return]
+        # Fallback / ChromaDB: sequential lookup (no batch API available)
+        result: dict[str, Any] = {}
+        for symbol in symbols:
+            doc = self.get_by_symbol(symbol)
+            if doc is not None:
+                result[symbol.upper()] = doc
+        return result
+
     def get_dividend_kings(self, min_streak: int = 50) -> list[StockDocument]:
         """
         Get all Dividend Kings (50+ years of increases).
