@@ -363,6 +363,7 @@ python ingest_data.py --enrich-existing
 python ingest_data.py --enrich-existing --symbols KO,JNJ,PG
 
 # Backfill price + dividend history (run after initial ingest)
+# --backfill-limit controls the maximum number of symbols processed per run
 python ingest_data.py --backfill-history --backfill-limit 120
 
 # Sync JSONB history arrays → normalized history tables (repeat until synced=0)
@@ -440,7 +441,7 @@ python -m db --migrate
 | **Recommended** | **`e2-medium`** | **4 GB** | **~$27/month** |
 | Heavy analysis / many users | `e2-standard-2` | 8 GB | ~$53/month |
 
-**`e2-medium` is the sweet spot** — it gives PostgreSQL, Streamlit, and the enrichment pipeline comfortable headroom without idle memory pressure. Use `e2-small` only for occasional personal use; it can run out of memory during bulk S&P 500 enrichment.
+**`e2-medium` is the sweet spot** — it gives PostgreSQL, Streamlit, and the enrichment pipeline comfortable headroom without memory pressure during normal operation. Use `e2-small` only for occasional personal use; it can run out of memory during bulk S&P 500 enrichment.
 
 Use **30 GB** Balanced persistent disk and set a billing budget alert. Stop the VM when not in use to save credits.
 
