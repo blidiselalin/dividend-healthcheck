@@ -237,6 +237,103 @@ def render_empty_home() -> None:
     render_real_user_getting_started()
 
 
+def render_stocks_overview(rows: List[PortfolioDetailRow]) -> None:
+    """Compact stocks table sorted by current value with the most important parameters."""
+    import pandas as pd
+
+    if not rows:
+        return
+
+    sorted_rows = sorted(rows, key=lambda r: r.current_value or 0.0, reverse=True)
+    all_tickers = [r.ticker for r in sorted_rows]
+
+    data = []
+    for row in sorted_rows:
+        data.append(
+            {
+                "Ticker": row.ticker,
+                "Company": row.company,
+                "Price": row.current_price,
+                "Value ($)": row.current_value,
+                "Weight %": row.weight_pct,
+                "Profit %": row.profit_pct,
+                "Div Yield %": row.dividend_yield_pct,
+                "Income/Yr": row.annual_income,
+                "Sector": row.sector or "—",
+                "Div Growth Yrs": row.growth_years,
+            }
+        )
+
+    df = pd.DataFrame(data)
+
+    st.markdown("#### All holdings")
+    st.caption("Sorted by current value — click a row ticker to open its full analysis.")
+
+    st.dataframe(
+        df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Ticker": st.column_config.TextColumn("Ticker", width="small"),
+            "Company": st.column_config.TextColumn("Company", width="medium"),
+            "Price": st.column_config.NumberColumn(
+                "Price",
+                format="$%.2f",
+                width="small",
+            ),
+            "Value ($)": st.column_config.NumberColumn(
+                "Value ($)",
+                format="$%,.0f",
+                width="small",
+            ),
+            "Weight %": st.column_config.ProgressColumn(
+                "Weight %",
+                format="%.1f%%",
+                min_value=0,
+                max_value=100,
+                width="small",
+            ),
+            "Profit %": st.column_config.NumberColumn(
+                "Profit %",
+                format="%.1f%%",
+                width="small",
+            ),
+            "Div Yield %": st.column_config.NumberColumn(
+                "Div Yield %",
+                format="%.2f%%",
+                width="small",
+            ),
+            "Income/Yr": st.column_config.NumberColumn(
+                "Income/Yr",
+                format="$%,.0f",
+                width="small",
+            ),
+            "Sector": st.column_config.TextColumn("Sector", width="medium"),
+            "Div Growth Yrs": st.column_config.NumberColumn(
+                "Div Growth Yrs",
+                format="%d yrs",
+                width="small",
+            ),
+        },
+    )
+
+    st.caption("Tap a ticker to open its analysis")
+    cols = st.columns(min(len(sorted_rows), 5))
+    for index, row in enumerate(sorted_rows):
+        with cols[index % 5]:
+            profit = row.profit_pct
+            hint = f"${(row.current_value or 0):,.0f}"
+            if profit is not None:
+                hint += f" · {profit:+.1f}%"
+            if st.button(
+                row.ticker,
+                key=f"home_stock_{row.ticker}",
+                use_container_width=True,
+                help=hint,
+            ):
+                set_holding_selection(row.ticker, nav_tickers=all_tickers)
+
+
 def render_compact_summary(rows: List[PortfolioDetailRow]) -> None:
     from services.portfolio_analysis_preload import PortfolioAnalysisPreload
     from services.portfolio_month_dividends import current_month_paid_dividends
@@ -275,6 +372,9 @@ def render_compact_summary(rows: List[PortfolioDetailRow]) -> None:
                     row.ticker,
                     nav_tickers=[item.ticker for item in ranked],
                 )
+
+    st.divider()
+    render_stocks_overview(rows)
 
 
 def render_portfolio_home_header(
