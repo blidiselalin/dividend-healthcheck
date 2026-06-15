@@ -33,7 +33,7 @@ class _MockJournal:
     def __init__(self, records: list[PurchaseRecord]) -> None:
         self._records = records
 
-    def list_purchases(self, *, portfolio_only: bool = True) -> list[PurchaseRecord]:  # noqa: ARG002
+    def list_purchases(self) -> list[PurchaseRecord]:
         return self._records
 
 

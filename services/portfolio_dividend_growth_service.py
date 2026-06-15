@@ -73,8 +73,12 @@ class PortfolioDividendGrowthService:
                 year = purchase.purchase_date.year
                 if purchase.symbol not in result or year < result[purchase.symbol]:
                     result[purchase.symbol] = year
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            import logging
+
+            logging.getLogger(__name__).debug(
+                "Could not read purchase journal for ownership tracking: %s", exc
+            )
         return result
 
     def _annual_dividends_from_history(
