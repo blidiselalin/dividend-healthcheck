@@ -22,8 +22,6 @@ from utils.formatting import (
 try:
     from services.yield_channel_chart import (
         YieldChannelService,
-    )
-    from services.yield_channel_chart import (
         is_available as yield_chart_available,
     )
     YIELD_CHART_AVAILABLE = yield_chart_available()
@@ -34,8 +32,6 @@ try:
     from services.news_service import (
         NewsService,
         NewsSummary,
-    )
-    from services.news_service import (
         is_available as news_available,
     )
     NEWS_AVAILABLE = news_available()
@@ -43,8 +39,8 @@ except ImportError:
     NEWS_AVAILABLE = False
 
 try:
-    from data_ingestion.models import StockDocument
     from data_ingestion.vector_store import VectorStore
+    from data_ingestion.models import StockDocument
     VECTOR_DB_AVAILABLE = True
 except ImportError:
     VECTOR_DB_AVAILABLE = False
@@ -153,7 +149,9 @@ class UIComponents:
                         "Category": item.label,
                         "Points": item.points,
                         "Max": item.max_points,
-                        "Coverage %": round((item.points / item.max_points) * 100, 1),
+                        "Coverage %": round((item.points / item.max_points) * 100, 1)
+                        if item.max_points
+                        else 0.0,
                     }
                     for item in components
                 ]
