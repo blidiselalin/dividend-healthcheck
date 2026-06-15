@@ -13,7 +13,7 @@ import pandas as pd
 
 from data_ingestion.portfolio_store import PortfolioStore
 from data_ingestion.purchase_journal_store import PurchaseJournalStore, PurchaseRecord
-from utils.chart_theme import style_figure
+from utils.chart_theme import PALETTE, bottom_legend, outside_bar_text, style_figure
 
 try:
     import plotly.graph_objects as go
@@ -285,9 +285,9 @@ class PortfolioPurchaseJournalService:
             )
         )
         fig.update_layout(
-            title="Acquisition value split (estimated from journal x shares)",
+            title="Acquisition Value by Holding",
             height=480,
-            margin={"t": 50, "b": 20},
+            margin={"t": 60, "b": 20},
         )
         return style_figure(fig)
 
@@ -316,9 +316,9 @@ class PortfolioPurchaseJournalService:
             )
         )
         fig.update_layout(
-            title="Purchase count split (journal transactions)",
+            title="Purchase Count by Holding",
             height=420,
-            margin={"t": 50, "b": 20},
+            margin={"t": 60, "b": 20},
         )
         return style_figure(fig)
 
@@ -357,11 +357,11 @@ class PortfolioPurchaseJournalService:
             )
         )
         fig.update_layout(
-            title="Purchases vs estimated value",
-            xaxis_title="# purchases (journal)",
-            yaxis_title="Estimated acquisition value $",
+            title="Purchases vs Estimated Acquisition Value",
+            xaxis_title="Number of Purchases",
+            yaxis_title="Estimated Acquisition Value (USD)",
             height=480,
-            margin={"t": 50, "b": 40},
+            margin={"t": 60, "b": 40},
         )
         return style_figure(fig)
 
@@ -377,10 +377,10 @@ class PortfolioPurchaseJournalService:
         fig = go.Figure()
         fig.add_trace(
             go.Bar(
-                name="Acquisition value $",
+                name="Acquisition Value (USD)",
                 x=tickers,
                 y=[s.journal_acquisition_usd for s in top],
-                marker_color="#1976d2",
+                marker_color=PALETTE["deposit"],
                 yaxis="y",
                 offsetgroup=0,
                 hovertemplate="%{x}<br>$%{y:,.0f}<extra></extra>",
@@ -388,23 +388,23 @@ class PortfolioPurchaseJournalService:
         )
         fig.add_trace(
             go.Bar(
-                name="# purchases",
+                name="# Purchases",
                 x=tickers,
                 y=[s.lot_count for s in top],
-                marker_color="#43a047",
+                marker_color=PALETTE["primary_light"],
                 yaxis="y2",
                 offsetgroup=1,
                 hovertemplate="%{x}<br>%{y} trades<extra></extra>",
             )
         )
         fig.update_layout(
-            title="Top 20: acquisition value vs number of buys",
+            title="Top 20 Holdings — Acquisition Value vs. Purchase Count",
             barmode="group",
-            yaxis={"title": "Value $"},
-            yaxis2={"title": "# purchases", "overlaying": "y", "side": "right"},
+            yaxis={"title": "Acquisition Value (USD)"},
+            yaxis2={"title": "Number of Purchases", "overlaying": "y", "side": "right"},
             height=440,
-            margin={"t": 50, "b": 120},
-            xaxis={"tickangle": -45},
+            margin={"t": 60, "b": 80},
+            xaxis={"tickangle": -45, "automargin": True},
             legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
         )
         return style_figure(fig)
@@ -435,7 +435,7 @@ class PortfolioPurchaseJournalService:
         )
 
         fig.update_layout(
-            title="Purchase journal — timeline",
+            title="Purchase Journal — Timeline",
             xaxis_title="Date",
             yaxis={
                 "tickmode": "array",
@@ -443,7 +443,7 @@ class PortfolioPurchaseJournalService:
                 "ticktext": symbols,
             },
             height=max(420, 22 * len(symbols)),
-            margin={"t": 50, "b": 40, "l": 80},
+            margin={"t": 60, "b": 40, "l": 80},
         )
         return style_figure(fig)
 
@@ -457,15 +457,15 @@ class PortfolioPurchaseJournalService:
             go.Bar(
                 x=yearly["Year"].astype(str),
                 y=yearly["Purchases"],
-                marker_color="#43a047",
+                marker_color=PALETTE["primary"],
                 hovertemplate="%{x}<br>%{y} purchases<extra></extra>",
             )
         )
         fig.update_layout(
-            title="Purchases per year",
-            yaxis_title="Transactions",
+            title="Purchases per Year",
+            yaxis_title="Number of Transactions",
             height=340,
-            margin={"t": 50, "b": 40},
+            margin={"t": 60, "b": 40},
         )
         return style_figure(fig)
 
@@ -489,11 +489,11 @@ class PortfolioPurchaseJournalService:
                 )
             )
         fig.update_layout(
-            title="Purchase price over time (by ticker)",
+            title="Purchase Price Over Time by Ticker",
             xaxis_title="Date",
-            yaxis_title="Price $",
+            yaxis_title="Purchase Price (USD)",
             height=440,
-            margin={"t": 50, "b": 40},
-            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
+            margin={"t": 60, "b": 60},
+            legend=bottom_legend(),
         )
         return style_figure(fig)

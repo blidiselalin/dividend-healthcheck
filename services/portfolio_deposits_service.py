@@ -10,7 +10,12 @@ from typing import Any
 import pandas as pd
 
 from data_ingestion.deposits_store import DepositsStore, MonthlyDeposit
-from utils.chart_theme import style_figure
+from utils.chart_theme import (
+    PALETTE,
+    evolution_chart_margins,
+    monthly_category_axis,
+    style_figure,
+)
 
 try:
     import plotly.graph_objects as go
@@ -92,13 +97,15 @@ class PortfolioDepositsService:
             return None
 
         labels = [item.label for item in records]
+        n = len(labels)
         fig = make_subplots(specs=[[{"secondary_y": True}]])
         fig.add_trace(
             go.Bar(
                 x=labels,
                 y=[item.deposit_eur for item in records],
-                name="Deposit €",
-                marker_color="#1976d2",
+                name="Monthly Deposit",
+                marker_color=PALETTE["deposit"],
+                opacity=0.85,
                 hovertemplate="%{x}<br>€%{y:,.2f}<extra></extra>",
             ),
             secondary_y=False,
@@ -107,22 +114,24 @@ class PortfolioDepositsService:
             go.Scatter(
                 x=labels,
                 y=[item.portfolio_eur for item in records],
-                name="Portfolio €",
+                name="Portfolio Value",
                 mode="lines+markers",
-                line={"color": "#43a047", "width": 2},
+                line={"color": PALETTE["income"], "width": 2.5},
+                marker={"size": 5},
                 hovertemplate="%{x}<br>€%{y:,.2f}<extra></extra>",
             ),
             secondary_y=True,
         )
         fig.update_layout(
-            title="Monthly deposits and portfolio value (€)",
+            title="Monthly Deposits and Portfolio Value (€)",
             height=420,
-            margin={"t": 50, "b": 120},
+            margin=evolution_chart_margins(n, legend_bottom=True, dual_y=True),
             legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
-            xaxis={"tickangle": -45},
+            hovermode="x unified",
         )
-        fig.update_yaxes(title_text="Deposit €", secondary_y=False)
-        fig.update_yaxes(title_text="Portfolio €", secondary_y=True)
+        fig.update_xaxes(**monthly_category_axis(n))
+        fig.update_yaxes(title_text="Deposit (€)", secondary_y=False)
+        fig.update_yaxes(title_text="Portfolio Value (€)", secondary_y=True)
         return style_figure(fig)
 
     def create_cumulative_chart(self, deposits: list[MonthlyDeposit] | None = None) -> Any:
@@ -139,23 +148,26 @@ class PortfolioDepositsService:
             cumulative_eur.append(running)
 
         labels = [item.label for item in records]
+        n = len(labels)
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(
                 x=labels,
                 y=cumulative_eur,
-                name="Total deposits (cumulative)",
+                name="Cumulative Deposits",
                 mode="lines+markers",
                 fill="tozeroy",
-                line={"color": "#5c6bc0", "width": 2},
+                fillcolor="rgba(92, 107, 192, 0.12)",
+                line={"color": "#5c6bc0", "width": 2.5},
+                marker={"size": 5},
                 hovertemplate="%{x}<br>€%{y:,.2f}<extra></extra>",
             )
         )
         fig.update_layout(
-            title="Cumulative deposits (€)",
-            yaxis_title="€ cumulative",
+            title="Cumulative Deposits (€)",
+            yaxis_title="Cumulative Deposits (€)",
             height=360,
-            margin={"t": 50, "b": 120},
-            xaxis={"tickangle": -45},
+            margin=evolution_chart_margins(n),
         )
+        fig.update_xaxes(**monthly_category_axis(n))
         return style_figure(fig)

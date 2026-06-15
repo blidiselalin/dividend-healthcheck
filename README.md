@@ -1,268 +1,288 @@
 # 👑 DividendScope
 
-**Intelligent financial analytics for dividend investors.**
+**Intelligent dividend analytics and portfolio tracking for income investors.**
 
-Analyze elite Dividend Kings (50+ years of consecutive increases), assess dividend safety, track payout sustainability, and discover high-quality income opportunities — powered by a local vector database for fast, offline analysis.
+Research Dividend Kings and Aristocrats, track your holdings, monitor dividend income, and deploy to the cloud — all in one self-hosted Streamlit app backed by PostgreSQL.
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Streamlit](https://img.shields.io/badge/streamlit-1.30+-red.svg)](https://streamlit.io/)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![Streamlit](https://img.shields.io/badge/streamlit-1.42+-red.svg)](https://streamlit.io/)
+[![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-336791.svg)](https://www.postgresql.org/)
+[![Docker](https://img.shields.io/badge/docker-compose-2496ED.svg)](https://docs.docker.com/compose/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
 
 ## Table of Contents
 
-- [Prerequisites](#prerequisites)
-- [Quick Start — UI in 3 Steps](#quick-start--ui-in-3-steps)
-- [Full Setup — With Local Vector Database](#full-setup--with-local-vector-database)
-- [Using the UI](#using-the-ui)
-- [Project Structure](#project-structure)
-- [Configuration](#configuration)
-- [Market data sources](#market-data-sources)
-- [Features Reference](#features-reference)
-- [Data Download & Ingestion CLI](#data-download--ingestion-cli)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Quick Start — Docker (recommended)](#quick-start--docker-recommended)
+- [Local Development (no Docker)](#local-development-no-docker)
+- [Authentication](#authentication)
+- [Portfolio Management](#portfolio-management)
+- [Market Data & Ingestion CLI](#market-data--ingestion-cli)
 - [Scoring Framework](#scoring-framework)
+- [Project Structure](#project-structure)
+- [Configuration Reference](#configuration-reference)
+- [Cloud Deployment (GCP)](#cloud-deployment-gcp)
 - [Troubleshooting](#troubleshooting)
 
 ---
 
-## Prerequisites
+## Features
 
-| Requirement | Version | Notes |
-|---|---|---|
-| **Python** | 3.10 or higher | [Download](https://www.python.org/downloads/) |
-| **pip** | Latest recommended | Comes with Python |
-| Internet access | — | Required for live market data (Yahoo / optional APIs) |
-
-> **No API keys required.** Market data uses Yahoo Finance, SEC EDGAR, and Stooq — all free public sources.
+| Category | What you get |
+|---|---|
+| **Stock Research** | Dividend Kings & Aristocrats analysis, yield-channel charts, sector comparison, news & sentiment |
+| **Portfolio Tracking** | Holdings, purchase journal, monthly deposits, realized/unrealized P&L |
+| **Dividend Income** | Monthly income calendar, dividend receipt log, CAGR and growth trend |
+| **Risk & Allocation** | Sector concentration, risk monitor, benchmark comparison |
+| **PDF Reports** | One-click research reports with score card and investment thesis |
+| **Assistant** | In-app FAQ chatbot; optional Hugging Face LLM for broader replies |
+| **Admin Panel** | Database administration, market library sync, schema migrations |
+| **No API keys** | All market data from Yahoo Finance, SEC EDGAR, and Stooq — free public sources |
 
 ---
 
-## Quick Start — UI in 3 Steps
+## Architecture
 
-The fastest way to get the app running. Uses live public API data with no local database setup required.
+```
+Browser → Caddy (HTTPS 443) → Streamlit :8501 → PostgreSQL 16
+```
 
-**Step 1 — Clone and enter the project**
+| Component | Technology | Role |
+|---|---|---|
+| **App** | Streamlit 1.42+ | UI, auth, API |
+| **Database** | PostgreSQL 16 (Docker) | Users, portfolios, market library |
+| **Auth** | Google OAuth (OIDC) via `streamlit[auth]` | Login, user isolation |
+| **Market data** | `stock_documents` table (JSONB) | Shared S&P 500 library; hourly price refresh |
+| **Price/dividend history** | `stock_price_history`, `stock_dividend_history` | Yield charts, income calendar |
+| **Reverse proxy** | Caddy (host) | Auto-TLS via Let's Encrypt |
+
+> **All portfolio data is user-scoped in PostgreSQL.** No SQLite or ChromaDB is used at runtime when `DATABASE_URL` is set.
+
+---
+
+## Quick Start — Docker (recommended)
+
+Requires [Docker Desktop](https://docs.docker.com/get-docker/) (or Docker + Docker Compose on Linux).
+
+**1. Clone the repository**
 
 ```bash
 git clone https://github.com/blidiselalin/dividend-healthcheck.git
 cd dividend-healthcheck
 ```
 
-**Step 2 — Install dependencies**
+**2. Create the environment file**
 
 ```bash
+cp .env.example .env
+# Edit .env — change POSTGRES_PASSWORD before first run
+```
+
+**3. Start the app**
+
+```bash
+docker compose up -d --build
+```
+
+**4. Populate the market library** (first run only — takes ~15–20 minutes)
+
+```bash
+docker compose exec dividendscope python ingest_data.py --ensure-sp500 --enrich-existing
+```
+
+**5. Open the app**
+
+Navigate to **http://localhost:8501**.
+
+> The container entrypoint applies database migrations automatically on every start. You do not need to run migrations manually.
+
+---
+
+## Local Development (no Docker)
+
+Use this path for running tests or iterating on code without a full Docker stack.
+
+**Requirements:** Python 3.12, pip
+
+```bash
+git clone https://github.com/blidiselalin/dividend-healthcheck.git
+cd dividend-healthcheck
 pip install -r requirements.txt
-```
-
-**Step 3 — Launch the UI**
-
-```bash
 streamlit run app.py
 ```
 
-Open **http://localhost:8501** in your browser. The app is ready to use.
+Without `DATABASE_URL` set, the app automatically falls back to ChromaDB (SQLite-backed) for the market library and local files for portfolios. This is fine for development but not recommended for production.
 
-> **Tip:** On first launch the sidebar shows `🌐 Public API`. This is normal — it means the app is fetching live data directly from the market. Analysis may take a few seconds per stock due to API rate limiting.
-
----
-
-## Full Setup — With Local Vector Database
-
-For faster analysis, offline use, and enriched historical data, populate the local vector database. This is optional but highly recommended for the full experience.
-
-**Step 1 — Download public stock data**
+**Run tests**
 
 ```bash
-python download_data.py
-```
-
-This fetches Dividend Kings and Aristocrats data from public sources into `~/.dividendscope/data/downloads/`. The script has built-in rate limiting — expect 5–15 minutes for a full download.
-
-**Step 2 — Ingest data into the vector database**
-
-```bash
-python ingest_data.py --enrich
-```
-
-The `--enrich` flag also pulls live fundamentals (P/E, payout ratio, etc.) from yfinance for each stock. This takes 10–20 minutes for the full list.
-
-**Step 3 — Launch the UI**
-
-```bash
-streamlit run app.py
-```
-
-Once the vector database is populated, the sidebar shows `🗄️ Vector DB (N stocks)`. All analysis now runs from local data — no API calls for the core metrics.
-
-### Environment Variable Override
-
-By default, data is stored at `~/.dividendscope/data/`. Override with:
-
-```bash
-export DIVIDENDSCOPE_DATA_DIR=/your/custom/path
-streamlit run app.py
+python -m pytest tests/ -m "not integration"
 ```
 
 ---
 
-## Using the UI
+## Authentication
 
-### Sidebar
+Authentication uses **Google OAuth (OIDC)** via `streamlit[auth]`. It is required in production and optional locally.
 
-| Element | Description |
-|---|---|
-| **Analysis Mode** | Switch between Single Stock and All Dividend Kings |
-| **Data Source** | Shows whether DB or live API is active |
-| **Assistant** | In-app chat (FAQ for navigation and dividends; optional `HUGGINGFACE_API_KEY` on the server for broader replies) |
+### Set up Google OAuth
 
-### Single Stock Analysis
+1. [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services** → **Credentials** → **Create credentials** → **OAuth 2.0 Client ID**.
+2. Application type: **Web application**.
+3. Authorized redirect URI: `https://your-domain/oauth2callback` (or `http://localhost:8501/oauth2callback` locally).
+4. Copy the **Client ID** and **Client Secret**.
 
-1. Select a ticker from the Dividend Kings dropdown, or type any symbol in the text box
-2. Click **Analyze** to load data
-3. The **Prime Metrics** panel shows the 6 most important dividend figures at a glance
-4. Scroll down for the **Investment Thesis**, **Sector Comparison**, **Yield Channels** chart, and detailed metric tables
-5. Expand the **News & Sentiment** section for recent headlines and sentiment score
-6. Click **Download PDF Report** to export a professional research report
+### Configure Streamlit secrets
 
-### All Dividend Kings Analysis
+Create `.streamlit/secrets.toml` (gitignored):
 
-1. Select **All Dividend Kings** in the sidebar
-2. Click **Run Full Analysis** — this analyzes all stocks in the list (~2–3 minutes via API, ~30 seconds with DB)
-3. Use the **Filters** to narrow by minimum dividend streak and yield range
-4. The results table is sortable; click any column header to re-rank
-5. Use **Export CSV** or **Export PDF** to save results
+```toml
+[auth]
+redirect_uri = "https://your-domain/oauth2callback"
+cookie_secret = "a-random-string-at-least-32-chars"
 
-### Data Source Status
+[auth.providers.google]
+client_id     = "YOUR_CLIENT_ID.apps.googleusercontent.com"
+client_secret = "YOUR_CLIENT_SECRET"
+```
 
-| Sidebar indicator | Meaning |
-|---|---|
-| `🗄️ Vector DB (N stocks)` | Local database active — fast, offline-capable |
-| `🌐 Public API (DB empty)` | Live API mode — populate DB with `python ingest_data.py --enrich` |
-| `🌐 Public API only` | chromadb not installed — install it to enable the local database |
+### Access control
+
+By default, anyone with a Google account can log in. To restrict to specific emails, use the **Admin panel** → **Access requests** feature in the sidebar.
+
+### Demo / test mode
+
+Without secrets configured, the app renders a **Try as Demo User** button that loads a read-only sample portfolio — useful for evaluating the app before setting up OAuth.
 
 ---
 
-## Project Structure
+## Portfolio Management
 
-```
-dividend-healthcheck/
-├── app.py                         # Streamlit entry point
-├── config.py                      # Stock lists, scoring weights, thresholds
-├── download_data.py               # Automated public data downloader
-├── ingest_data.py                 # Vector database ingestion CLI
-├── requirements.txt               # All Python dependencies
-│
-├── models/
-│   └── stock.py                   # StockData and DividendHistory dataclasses
-│
-├── services/
-│   ├── stock_service.py           # Live data from yfinance
-│   ├── enhanced_stock_service.py  # DB-first, API fallback orchestration
-│   ├── vectordb_service.py        # Read-only vector DB service for the UI
-│   ├── scoring.py                 # Dividend-focused 0–100 scoring engine
-│   ├── sector_service.py          # Sector peer comparison
-│   ├── news_service.py            # News aggregation and sentiment analysis
-│   ├── report_generator.py        # PDF research report generation
-│   └── yield_channel_chart.py     # "Dividends Don't Lie" chart builder
-│
-├── ui/
-│   ├── components.py              # Reusable Streamlit UI components
-│   └── views.py                   # Page views (Single Stock / Full Analysis)
-│
-├── data_ingestion/                # Vector database pipeline
-│   ├── models.py                  # StockDocument, DividendRecord schemas
-│   ├── stock_enricher.py          # Multi-source enrich entry (Yahoo + SEC + Stooq)
-│   ├── providers/                 # Yahoo, SEC EDGAR, Stooq adapters + StockSnapshot
-│   ├── downloaders.py             # StockQuote.io + Nasdaq CSV parsers
-│   ├── fetch_stockquote.py        # StockQuote.io automated fetcher
-│   ├── fetch_nasdaq.py            # Nasdaq historical data fetcher
-│   ├── yfinance_enricher.py       # Legacy yfinance post-processing (streaks, CAGR)
-│   ├── vector_store.py            # ChromaDB wrapper (search, get, upsert)
-│   └── pipeline.py                # Ingestion orchestration and CLI logic
-│
-└── tests/
-    └── test_data_accuracy.py      # Data accuracy tests
-```
+Once logged in, every user gets an isolated portfolio scoped to their account.
 
-**Data stored outside the repo** (never committed):
+### Holdings & Purchase Journal
 
-```
-~/.dividendscope/data/
-├── downloads/
-│   ├── stockquote/                # StockQuote.io CSV exports
-│   └── nasdaq/                    # Nasdaq historical CSVs
-└── vectordb/                      # ChromaDB persistent storage
-```
+- Add holdings manually via the **Manage** panel or import from a CSV
+- Each purchase is recorded in the journal with cost basis, quantity, and date
+- The dashboard shows unrealized P&L, sector allocation, and market value
+
+### Dividend Income
+
+- **Monthly calendar** — upcoming ex-dates and estimated payments
+- **Receipt log** — confirmed dividend payments with amounts
+- **Growth chart** — income CAGR over time
+
+### Deposits & Benchmarks
+
+- Log monthly deposits to track invested capital separately from gains
+- Compare portfolio total return against S&P 500 benchmark
 
 ---
 
-## Configuration
+## Market Data & Ingestion CLI
 
-All tunable parameters live in `config.py`. No environment variables needed for basic use.
+Market data is shared across all users in the `stock_documents` PostgreSQL table. An hourly background job refreshes prices automatically.
 
-```python
-# Stock universe — edit to add/remove tickers
-DIVIDEND_KINGS = ["KO", "JNJ", "PG", ...]      # 50+ year streak stocks
-DIVIDEND_ARISTOCRATS = ["ABBV", "ADM", ...]     # 25+ year streak stocks
-
-# Scoring thresholds
-RECOMMENDATION_THRESHOLDS = {
-    "strong_buy": 80,
-    "buy": 65,
-    "accumulate": 50,
-    "hold": 35,
-}
-
-# API rate limiting (increase if hitting limits)
-API_DELAY_SECONDS = 0.2
-API_TIMEOUT_SECONDS = 30
-
-# Data freshness — how many days before re-fetching from API
-DEFAULT_STALENESS_DAYS = 7
-```
-
----
-
-## Market data sources
+### Market data sources
 
 Enrichment runs through `data_ingestion/stock_enricher.py` in priority order:
 
-| Source | API key? | Fills gaps in |
-|--------|----------|----------------|
+| Source | API key? | Provides |
+|---|---|---|
 | **Yahoo Finance** (yfinance) | No | Price, dividends, fundamentals, history |
-| **SEC EDGAR** | No | Company name, sector (SIC), margins, ROE, debt/equity from filings |
-| **Stooq** | No | Daily OHLCV history and 52-week range when Yahoo history fails |
+| **SEC EDGAR** | No | Company name, sector (SIC), margins, ROE, debt/equity |
+| **Stooq** | No | Daily OHLCV history when Yahoo fails |
 
-Providers only fill **missing** fields; nothing is overwritten.
+Providers only fill **missing** fields; existing data is never overwritten.
 
-SEC requests require a descriptive `User-Agent` header (SEC policy, not a secret). Default is built in; override for production:
+> SEC requests require a `User-Agent` header (SEC policy). The default is built in. Override for production:
+> ```bash
+> export SEC_EDGAR_USER_AGENT="DividendScope/1.0 (you@yourdomain.com)"
+> ```
+
+### Ingestion commands
 
 ```bash
-export SEC_EDGAR_USER_AGENT="DividendScope/1.0 (you@yourdomain.com)"
+# Populate S&P 500 universe (first run)
+python ingest_data.py --ensure-sp500
+
+# Enrich all stocks with live fundamentals (recommended after populate)
+python ingest_data.py --enrich-existing
+
+# Backfill price and dividend history
+python ingest_data.py --backfill-history --backfill-limit 120
+
+# Sync JSONB history into normalized tables (repeat until output shows synced=0)
+python ingest_data.py --sync-history-tables
+
+# Enrich specific symbols only
+python ingest_data.py --enrich-existing --symbols KO,JNJ,PG
+
+# Database utilities
+python ingest_data.py --stats                    # Show document counts
+python ingest_data.py --list-kings               # List all Dividend Kings in library
+python ingest_data.py --search "high yield tech" # Semantic search
+python ingest_data.py --export backup.json       # Export library to JSON
+python ingest_data.py --import backup.json       # Restore from JSON
 ```
 
-Check active providers:
+### Download commands (raw data files)
 
-```python
-from data_ingestion.stock_enricher import provider_status
-print(provider_status())
+```bash
+# Download Dividend Kings + Aristocrats data
+python download_data.py
+
+# Download specific symbols
+python download_data.py --symbols KO JNJ PG
+
+# Skip price history (faster)
+python download_data.py --no-prices --no-history
+
+# Download then ingest in one step
+python download_data.py --run-ingestion
 ```
 
 ---
 
-## Features Reference
+## Scoring Framework
 
-### What Are Dividend Kings?
+Each stock receives a composite 0–100 score based on dividend quality factors.
 
-**Dividend Kings** are companies that have raised their dividends for **50 or more consecutive years**. This requires:
+| Factor | Weight | Description |
+|---|---|---|
+| Dividend Streak | 20% | Consecutive years of increases (50+ = max) |
+| Dividend Safety | 15% | Payout ratio and coverage ratio |
+| Dividend Yield | 15% | Current yield (2.5–4.5% is the optimal range) |
+| Dividend Growth | 15% | 5-year CAGR of dividend increases |
+| Valuation | 10% | P/E ratio and price vs. 52-week high |
+| Financial Strength | 10% | Debt/Equity, current ratio |
+| Profitability | 10% | ROE, profit margins |
+| Size / Stability | 5% | Market cap (larger = more stable) |
 
-- 📈 Consistent earnings through multiple economic cycles
-- 💪 Conservative financial management
-- 🛡️ Durable competitive advantages
-- 👥 Shareholder-focused leadership
+### Recommendations
 
-Only ~50 companies in the U.S. have achieved this elite status.
+| Score | Label |
+|---|---|
+| 80–100 | **STRONG BUY** |
+| 65–79 | **BUY** |
+| 50–64 | **ACCUMULATE** |
+| 35–49 | **HOLD** |
+| <35 | **AVOID** |
+
+### Dividend Yield Channels
+
+Based on Geraldine Weiss's methodology: yield is the most honest valuation signal for dividend stocks.
+
+| Zone | Yield percentile | Signal |
+|---|---|---|
+| 💎 Deep Value | 90th+ | Strong Buy |
+| 🟢 Value | 75th–90th | Buy |
+| 🟡 Fair Value | 25th–75th | Hold / DCA |
+| 🟠 Caution | 10th–25th | Wait |
+| 🔴 Expensive | <10th | Avoid / Trim |
 
 ### Dividend Tiers
 
@@ -274,159 +294,183 @@ Only ~50 companies in the U.S. have achieved this elite status.
 | Contender | 5–9 | 📈 |
 | Starter | <5 | 🌱 |
 
-### Key Investor Metrics (Prime View)
-
-| Metric | Why It Matters |
-|---|---|
-| **Dividend Streak** | Years of consecutive increases — the defining factor |
-| **Dividend Yield** | Current income potential |
-| **5Y Dividend Growth** | CAGR of dividend increases |
-| **Dividend Safety** | Payout ratio and coverage analysis |
-| **Payout Ratio** | Sustainability of current dividend |
-| **Income per $10K** | Actual annual income from a $10,000 investment |
-
-### Dividend Yield Channels ("Dividends Don't Lie")
-
-Based on Geraldine Weiss's 1988 methodology: a stock's dividend yield is its most honest valuation signal.
-
-| Zone | Yield Percentile | Signal | Action |
-|---|---|---|---|
-| 💎 Deep Value | 90th+ | Exceptional opportunity | Strong Buy |
-| 🟢 Value | 75th–90th | Good value | Buy |
-| 🟡 Fair Value | 25th–75th | Fairly priced | Hold / DCA |
-| 🟠 Caution | 10th–25th | Below average value | Wait |
-| 🔴 Expensive | <10th | Price stretched | Avoid / Trim |
-
-### News & Sentiment
-
-Aggregates headlines from Yahoo Finance and Google News RSS. No API key required.
-
-| Label | Meaning |
-|---|---|
-| 📈 Bullish | More positive than negative signals |
-| 📉 Bearish | More negative than positive signals |
-| 🔄 Mixed | Both positive and negative present |
-| ➖ Neutral | No strong signal detected |
-
-### PDF Research Reports
-
-Install `reportlab` (included in `requirements.txt`) then export from the UI. Reports include score card, dividend analysis, valuation metrics, and automated investment thesis.
-
 ---
 
-## Data Download & Ingestion CLI
+## Project Structure
 
-### Download Commands
-
-```bash
-# Download all data (Dividend Kings + Aristocrats)
-python download_data.py
-
-# Download specific symbols only
-python download_data.py --symbols KO JNJ PG MMM
-
-# Download from a single source
-python download_data.py --source nasdaq
-python download_data.py --source stockquote
-
-# Skip price history (faster)
-python download_data.py --no-prices --no-history
-
-# Download and ingest in one command
-python download_data.py --run-ingestion
+```
+dividend-healthcheck/
+├── app.py                          # Streamlit entry point
+├── config.py                       # Stock lists, scoring weights, thresholds
+├── ingest_data.py                  # Market library ingestion CLI
+├── download_data.py                # Public data downloader
+├── requirements.txt                # Python dependencies
+│
+├── auth/                           # Authentication (Google OAuth, user store, access requests)
+│
+├── db/                             # PostgreSQL layer
+│   ├── connection.py               # Connection pool, schema migrations
+│   ├── parsing.py                  # Date/type helpers for DB rows
+│   ├── postgres_market_store.py    # Stock documents CRUD
+│   └── postgres_market_history_store.py  # Price & dividend history tables
+│
+├── migrations/                     # Incremental SQL migration files
+│   ├── 001_initial.sql
+│   ├── 002_dividend_receipts.sql
+│   └── 003_stock_market_history.sql
+│
+├── models/
+│   └── stock.py                    # StockData and DividendHistory dataclasses
+│
+├── services/
+│   ├── enhanced_stock_service.py   # DB-first, API-fallback orchestration
+│   ├── portfolio_context.py        # Shared portfolio store factory
+│   ├── portfolio_service.py        # Holdings, journal, deposits
+│   ├── scoring.py                  # 0–100 dividend scoring engine
+│   ├── news_service.py             # News aggregation and sentiment
+│   ├── report_generator.py         # PDF report generation
+│   ├── yield_channel_chart.py      # "Dividends Don't Lie" chart builder
+│   ├── chatbot_service.py          # FAQ + optional Hugging Face assistant
+│   ├── hourly_market_update.py     # Background price refresh
+│   └── ...                         # Portfolio analytics (allocation, risk, income, benchmark)
+│
+├── data_ingestion/                 # Market library ingestion pipeline
+│   ├── stock_enricher.py           # Yahoo + SEC EDGAR + Stooq enrichment
+│   ├── providers/                  # Per-source adapters
+│   ├── vector_store.py             # ChromaDB wrapper (dev/test fallback)
+│   └── pipeline.py                 # CLI orchestration
+│
+├── ui/                             # Streamlit pages and components
+│   ├── views.py                    # Single-stock and full-analysis pages
+│   ├── portfolio_home.py           # Portfolio welcome and quick-actions
+│   ├── portfolio_details_view.py   # Holdings, journal, income views
+│   ├── admin_page.py               # Database admin and market library sync
+│   ├── chatbot_widget.py           # Sidebar assistant widget
+│   └── ...                         # Charts, risk panel, sidebar, theme
+│
+├── deploy/gcp/                     # GCP-specific scripts (bootstrap, Caddy, HTTPS)
+├── scripts/                        # update_cloud_docker.sh, docker-entrypoint.sh
+└── tests/                          # pytest suite (unit + integration)
 ```
 
-### Ingestion Commands
+**Persistent data** (Docker volume `dividendscope-persistent-data → /data`, never committed):
 
-```bash
-# Full ingestion (parse downloaded files into vector DB)
-python ingest_data.py
-
-# Ingest and enrich with live yfinance data (recommended)
-python ingest_data.py --enrich
-
-# Process a single source
-python ingest_data.py --source stockquote
-python ingest_data.py --source nasdaq
-
-# Process one file
-python ingest_data.py --file path/to/fundamentals.csv
-
-# Enrich stocks already in the database
-python ingest_data.py --enrich-existing
-python ingest_data.py --enrich-existing --symbols KO,JNJ,PG
-
-# Database utilities
-python ingest_data.py --stats                    # Show document counts
-python ingest_data.py --list-kings               # List all Dividend Kings
-python ingest_data.py --search "high yield tech" # Semantic search
-python ingest_data.py --consolidate              # Remove duplicates
-python ingest_data.py --fix-values              # Fix invalid data
-python ingest_data.py --export backup.json      # Export to JSON
-python ingest_data.py --import backup.json      # Import from JSON
-python ingest_data.py --clear                   # Wipe the database
-
-# Create sample CSV files (to see expected input format)
-python ingest_data.py --create-samples
 ```
-
-### Expected CSV Formats
-
-**StockQuote fundamentals (`fundamentals.csv`)**
-```csv
-Symbol,Name,Sector,Industry,MarketCap,PE,DivYield,PayoutRatio
-KO,Coca-Cola,Consumer Defensive,Beverages,265000000000,25.4,3.12,75.2
-```
-
-**Nasdaq historical (`KO_historical.csv`)**
-```csv
-Date,Close/Last,Volume,Open,High,Low
-03/14/2024,$60.12,12345678,$59.85,$60.45,$59.72
+/data/
+├── postgres/     PostgreSQL cluster (all user and market data)
+├── users/        legacy SQLite import source (one-time migration only)
+└── vectordb/     legacy Chroma import source (one-time migration only)
 ```
 
 ---
 
-## Scoring Framework
+## Configuration Reference
 
-| Factor | Weight | Description |
-|---|---|---|
-| Dividend Streak | 20% | Consecutive years of increases (50+ = max score) |
-| Dividend Safety | 15% | Payout ratio and coverage ratio |
-| Dividend Yield | 15% | Current yield (2.5–4.5% optimal range) |
-| Dividend Growth | 15% | 5-year CAGR of dividend increases |
-| Valuation | 10% | P/E ratio and price vs. 52-week high |
-| Financial Strength | 10% | Debt/Equity, current ratio |
-| Profitability | 10% | ROE, profit margins |
-| Size / Stability | 5% | Market cap (larger = more stable) |
+### Environment variables (`.env`)
 
-### Recommendation Thresholds
+```bash
+# Required in production — change before first deploy
+POSTGRES_USER=dividendscope
+POSTGRES_PASSWORD=change-me-in-production
+POSTGRES_DB=dividendscope
 
-| Score | Label | Meaning |
-|---|---|---|
-| 80–100 | **STRONG BUY** | Excellent across all factors |
-| 65–79 | **BUY** | Strong fundamentals, good value |
-| 50–64 | **ACCUMULATE** | Solid, consider building a position |
-| 35–49 | **HOLD** | Maintain current position |
-| <35 | **AVOID** | Significant concerns |
+# Built by Docker Compose from the vars above (do not set manually in compose)
+# DATABASE_URL=******postgres:5432/dividendscope
+
+# Optional
+SEC_EDGAR_USER_AGENT=DividendScope/1.0 (you@yourdomain.com)
+DIVIDENDSCOPE_CHATBOT_ENABLED=1
+HUGGINGFACE_API_KEY=hf_...        # Server-side only — never expose to the browser
+DIVIDENDSCOPE_CHATBOT_MODEL=facebook/blenderbot-400M-distill
+```
+
+Copy `.env.example` to `.env` to get started.
+
+### Scoring and stock universe (`config.py`)
+
+```python
+DIVIDEND_KINGS = ["KO", "JNJ", "PG", ...]    # 50+ year streak stocks
+DIVIDEND_ARISTOCRATS = ["ABBV", "ADM", ...]   # 25+ year streak stocks
+
+RECOMMENDATION_THRESHOLDS = {
+    "strong_buy": 80, "buy": 65, "accumulate": 50, "hold": 35,
+}
+
+API_DELAY_SECONDS = 0.2      # Increase if hitting rate limits
+DEFAULT_STALENESS_DAYS = 7   # Days before re-fetching from API
+```
+
+---
+
+## Cloud Deployment (GCP)
+
+The recommended production setup is a **Google Compute Engine VM** running Docker Compose with Caddy for HTTPS.
+
+### Recommended VM instances
+
+| Use case | Machine type | vCPU | RAM | Approx. cost / month |
+|---|---|---|---|---|
+| Personal / trial | **e2-micro** | 2 (shared) | 1 GB | ~$7 ¹ |
+| **Recommended** | **e2-small** | 2 (shared) | 2 GB | ~$14 |
+| Small team (3–10 users) | **e2-medium** | 2 (shared) | 4 GB | ~$27 |
+| Larger team / heavy ingestion | **e2-standard-2** | 2 | 8 GB | ~$49 |
+
+> ¹ e2-micro is free-tier eligible (1 per account, `us-*` regions). It may be slow during initial ingestion. Upgrade to e2-small if the app feels sluggish.
+>
+> All estimates are for `us-central1`, sustained-use discounts applied. Add ~$2–4/month for a 30 GB boot disk. Costs are covered by the GCP $300 free trial (90 days).
+
+**Disk:** 30 GB Balanced persistent disk is sufficient for most deployments. Use 50 GB if you plan to ingest full S&P 500 history.
+
+### Deploy
+
+```bash
+# 1. Bootstrap Docker on a fresh Ubuntu 22.04 VM
+curl -fsSL https://raw.githubusercontent.com/blidiselalin/dividend-healthcheck/main/deploy/gcp/vm-bootstrap.sh | bash
+# Log out and back in so the docker group applies
+
+# 2. Clone, configure, and start
+git clone https://github.com/blidiselalin/dividend-healthcheck.git
+cd dividend-healthcheck
+cp .env.example .env   # edit POSTGRES_PASSWORD
+docker compose up -d --build
+
+# 3. Populate market library (first run)
+docker compose exec dividendscope python ingest_data.py --ensure-sp500 --enrich-existing
+
+# 4. Enable HTTPS (Caddy + Let's Encrypt — requires a domain pointed at the VM)
+sudo ./deploy/gcp/setup-https-caddy.sh
+```
+
+### Update an existing deployment
+
+```bash
+cd ~/dividend-healthcheck
+git pull
+./scripts/update_cloud_docker.sh
+```
+
+For a full deployment walkthrough including DNS, static IP, OAuth redirect URIs, and Caddy configuration, see **[DEPLOY-GCP.md](DEPLOY-GCP.md)**.
 
 ---
 
 ## Troubleshooting
 
-| Issue | Solution |
+| Issue | Fix |
 |---|---|
-| `ModuleNotFoundError` | Run `pip install -r requirements.txt` |
-| App opens but shows no data | Check internet connection; yfinance requires network access |
-| Slow single-stock analysis | Normal — API rate limiting adds ~0.2 s/request. Use vector DB to speed up. |
-| Slow full analysis (API mode) | Expected (~2–3 min for 50+ stocks). Run `python ingest_data.py --enrich` to build the DB. |
-| Sidebar shows `🌐 Public API (DB empty)` | Run `python download_data.py && python ingest_data.py --enrich` |
-| `chromadb` import errors | Run `pip install chromadb>=0.4.22`; the app works without it (API-only mode) |
-| Download rate limits / timeouts | Built-in delays handle most cases; try `--symbols` to download a smaller batch |
-| PDF export fails | Run `pip install reportlab` |
-| News section empty | Run `pip install feedparser` (optional); Yahoo Finance news still works without it |
-| `streamlit: command not found` | Run `pip install streamlit` or use `python -m streamlit run app.py` |
-| Port 8501 already in use | Run `streamlit run app.py --server.port 8502` |
+| `ModuleNotFoundError` | `pip install -r requirements.txt` |
+| App starts but shows no data | Check internet; yfinance needs network access |
+| Postgres connection refused | `docker compose ps` — wait for the `healthy` status on the `postgres` service |
+| `🌐 Public API (DB empty)` in sidebar | Run `python ingest_data.py --ensure-sp500 --enrich-existing` |
+| Slow first-run ingestion | Normal — 15–20 min for full S&P 500 enrichment; market data is cached afterwards |
+| `chromadb` import errors | `pip install chromadb>=0.4.22`; app works without it (API-only mode) |
+| PDF export fails | `pip install reportlab` (included in `requirements.txt`) |
+| News section empty | `pip install feedparser` (optional); Yahoo Finance news still works without it |
+| Port 8501 already in use | `streamlit run app.py --server.port 8502` |
+| `Server: nginx` on HTTPS domain | Run `sudo ./deploy/gcp/setup-https-caddy.sh` on VM (replaces nginx with Caddy) |
+| Container name already in use | `docker rm -f dividendscope && docker compose up -d --build` |
+| Out of memory on VM | Upgrade to e2-small (2 GB) or e2-medium (4 GB) |
+| Google login redirect mismatch | Add the exact redirect URI to your Google OAuth 2.0 client and to `.streamlit/secrets.toml` |
 
 ---
 
-**Disclaimer:** This tool is for educational purposes only. Not financial advice. Always do your own research and consult a qualified professional before investing.
+**Disclaimer:** DividendScope is for educational and informational purposes only. It is not financial advice. Always conduct your own research and consult a qualified professional before making investment decisions.

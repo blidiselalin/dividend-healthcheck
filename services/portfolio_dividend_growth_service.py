@@ -12,7 +12,7 @@ from typing import Any
 import pandas as pd
 
 from data_ingestion.portfolio_store import PortfolioStore
-from utils.chart_theme import style_figure
+from utils.chart_theme import PALETTE, bottom_legend, outside_bar_text, style_figure
 
 try:
     import plotly.graph_objects as go
@@ -229,13 +229,14 @@ class PortfolioDividendGrowthService:
                 x=year_labels,
                 y=y_labels,
                 colorscale="Greens",
+                colorbar={"title": "$/share", "thickness": 14, "len": 0.8},
                 hovertemplate="%{y} %{x}<br>$%{z:.4f}/share<extra></extra>",
             )
         )
         fig.update_layout(
-            title=f"Annual dividend / share (since {SINCE_YEAR})",
+            title=f"Annual Dividend per Share Since {SINCE_YEAR}",
             height=max(480, 18 * len(items_sorted)),
-            margin={"t": 50, "b": 40, "l": 60},
+            margin={"t": 60, "b": 40, "l": 60},
         )
         return style_figure(fig)
 
@@ -274,11 +275,11 @@ class PortfolioDividendGrowthService:
                 )
             )
         fig.update_layout(
-            title=f"Dividend / share growth (top {len(ranked)} CAGR, since {SINCE_YEAR})",
-            yaxis_title="USD / share / year",
+            title=f"Dividend Growth — Top {len(ranked)} by CAGR Since {SINCE_YEAR}",
+            yaxis_title="Dividend per Share (USD / year)",
             height=480,
-            margin={"t": 50, "b": 40},
-            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
+            margin={"t": 60, "b": 60},
+            legend=bottom_legend(),
         )
         return style_figure(fig)
 
@@ -293,17 +294,17 @@ class PortfolioDividendGrowthService:
             go.Bar(
                 x=cash_df["Year"].astype(str),
                 y=cash_df["Est. dividends $"],
-                marker_color="#2e7d32",
+                marker_color=PALETTE["income"],
                 text=[f"${value:,.0f}" for value in cash_df["Est. dividends $"]],
-                textposition="outside",
                 hovertemplate="%{x}<br>$%{y:,.0f}<extra></extra>",
+                **outside_bar_text(),
             )
         )
         fig.update_layout(
-            title=f"Estimated portfolio dividends (DPS x shares, since {SINCE_YEAR})",
-            yaxis_title="USD / year",
+            title=f"Estimated Portfolio Dividends per Year Since {SINCE_YEAR}",
+            yaxis_title="Estimated Income (USD / year)",
             height=380,
-            margin={"t": 50, "b": 40},
+            margin={"t": 60, "b": 40},
         )
         return style_figure(fig)
 
@@ -330,12 +331,13 @@ class PortfolioDividendGrowthService:
                 y=yoy["Ticker"].tolist(),
                 colorscale="RdYlGn",
                 zmid=0,
+                colorbar={"title": "%", "thickness": 14, "len": 0.8},
                 hovertemplate="%{y} %{x}<br>%{z:+.1f}%<extra></extra>",
             )
         )
         fig.update_layout(
-            title="YoY dividend / share growth (%)",
+            title="Year-over-Year Dividend Growth per Share (%)",
             height=max(480, 18 * len(yoy)),
-            margin={"t": 50, "b": 40, "l": 60},
+            margin={"t": 60, "b": 40, "l": 60},
         )
         return style_figure(fig)

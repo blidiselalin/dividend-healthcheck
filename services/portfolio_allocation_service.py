@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-from utils.chart_theme import style_figure
+from utils.chart_theme import PALETTE, outside_bar_text, style_figure
 
 if TYPE_CHECKING:
     from services.portfolio_details_service import PortfolioDetailRow
@@ -161,14 +161,15 @@ class PortfolioAllocationService:
                 hole=0.45,
                 textinfo="label+percent",
                 textposition="outside",
+                textfont={"size": 11},
                 hovertemplate="<b>%{label}</b><br>%{percent}<br>$%{customdata:,.0f}<extra></extra>",
                 customdata=df["Value USD"],
             )
         )
         fig.update_layout(
-            title="Sector allocation (by portfolio weight)",
+            title="Sector Allocation — Portfolio Weight",
             height=420,
-            margin={"t": 50, "b": 20, "l": 20, "r": 20},
+            margin={"t": 60, "b": 20, "l": 20, "r": 20},
             showlegend=False,
         )
         return style_figure(fig)
@@ -194,15 +195,16 @@ class PortfolioAllocationService:
                 marker_colors=[colors.get(b, "#9e9e9e") for b in df["Bucket"]],
                 textinfo="label+percent",
                 textposition="outside",
+                textfont={"size": 11},
                 hovertemplate="<b>%{label}</b><br>%{percent}<br>$%{customdata:,.0f}<br>%{meta} holdings<extra></extra>",  # noqa: E501
                 customdata=df["Value USD"],
                 meta=df["Positions"],
             )
         )
         fig.update_layout(
-            title="Market cap distribution ($1B-$10B · $10B-$200B · >$200B)",
+            title="Market Cap Distribution — Portfolio Weight",
             height=420,
-            margin={"t": 50, "b": 20, "l": 20, "r": 20},
+            margin={"t": 60, "b": 20, "l": 20, "r": 20},
             showlegend=False,
         )
         return style_figure(fig)
@@ -219,17 +221,17 @@ class PortfolioAllocationService:
                 y=ordered["Sector"],
                 x=ordered["Weight %"],
                 orientation="h",
-                marker_color="#1976d2",
+                marker_color=PALETTE["primary"],
                 text=[f"{value:.1f}%" for value in ordered["Weight %"]],
-                textposition="outside",
                 hovertemplate="<b>%{y}</b><br>%{x:.1f}%<br>$%{customdata:,.0f}<extra></extra>",
                 customdata=ordered["Value USD"],
+                **outside_bar_text(),
             )
         )
         fig.update_layout(
-            title="Sector weights",
-            xaxis_title="Portfolio weight %",
+            title="Sector Weights",
+            xaxis_title="Portfolio Weight (%)",
             height=max(320, 28 * len(ordered)),
-            margin={"t": 50, "b": 40, "l": 10, "r": 40},
+            margin={"t": 60, "b": 40, "l": 10, "r": 60},
         )
         return style_figure(fig)
