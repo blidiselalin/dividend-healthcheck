@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from data_ingestion.models import DataSource, DividendRecord, StockDocument
 from utils.yield_history_tables import (
     estimate_annual_dividend_for_year,
@@ -112,7 +114,9 @@ def test_current_year_dividend_is_projected_for_comparison() -> None:
     assert current["Dividend / share $"].iloc[0] == 6.56
 
 
-def test_current_year_dividend_table_omits_estimate_for_completed_annual_payer() -> None:
+def test_current_year_dividend_table_omits_estimate_for_completed_annual_payer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     doc = StockDocument(symbol="MAIN", name="Main Street Capital", source=DataSource.YAHOO)
     doc.payment_frequency = 1
     doc.annual_dividend = 1.2
@@ -123,12 +127,12 @@ def test_current_year_dividend_table_omits_estimate_for_completed_annual_payer()
 
     from utils import yield_history_tables
 
-    original_date = yield_history_tables.date
-    yield_history_tables.date = type("date", (), {"today": staticmethod(lambda: date(2026, 6, 1))})
-    try:
-        table = yearly_dividend_per_share_table(doc)
-    finally:
-        yield_history_tables.date = original_date
+    monkeypatch.setattr(
+        yield_history_tables,
+        "date",
+        type("date", (), {"today": staticmethod(lambda: date(2026, 6, 1))}),
+    )
+    table = yearly_dividend_per_share_table(doc)
 
     assert "2026" in list(table["Year"])
     assert "2026 (est.)" not in list(table["Year"])

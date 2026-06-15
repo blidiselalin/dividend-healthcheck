@@ -10,6 +10,11 @@ from typing import Any
 
 import pandas as pd
 
+ANNUAL_PAYMENT_FREQUENCY = 1
+SEMI_ANNUAL_PAYMENT_FREQUENCY = 2
+QUARTERLY_PAYMENT_FREQUENCY = 4
+MONTHLY_PAYMENT_FREQUENCY = 12
+
 
 def year_column_label(
     year: int,
@@ -48,7 +53,13 @@ def _is_incomplete_year(
         return False
 
     stored_frequency = getattr(document, "payment_frequency", None) if document else None
-    if stored_frequency not in (1, 2, 4, 12):
+    valid_frequencies = (
+        ANNUAL_PAYMENT_FREQUENCY,
+        SEMI_ANNUAL_PAYMENT_FREQUENCY,
+        QUARTERLY_PAYMENT_FREQUENCY,
+        MONTHLY_PAYMENT_FREQUENCY,
+    )
+    if stored_frequency not in valid_frequencies:
         return True
 
     expected_payments = int(stored_frequency)
