@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Sequence
 
+import pandas as pd
 import streamlit as st
 
 from auth.demo_portfolio import load_demo_ui_snapshot, reset_demo_database
@@ -239,8 +240,6 @@ def render_empty_home() -> None:
 
 def render_stocks_overview(rows: List[PortfolioDetailRow]) -> None:
     """Compact stocks table sorted by current value with the most important parameters."""
-    import pandas as pd
-
     if not rows:
         return
 
