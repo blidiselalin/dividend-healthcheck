@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import TYPE_CHECKING, Any
 
-from utils.chart_theme import style_figure
+from utils.chart_theme import PALETTE, outside_bar_text, style_figure
 from utils.dividend_amounts import (
     expected_payment_months,
     normalize_payment_amount,
@@ -424,16 +424,16 @@ def create_month_comparison_chart(calendar: PortfolioDividendCalendar) -> Any:
                 y=totals,
                 marker_color=colors,
                 text=[f"${value:,.0f}" for value in totals],
-                textposition="outside",
                 hovertemplate="%{x}<br>$%{y:,.2f}<extra></extra>",
+                **outside_bar_text(),
             )
         ]
     )
     fig.update_layout(
-        title="Monthly dividend cash expectation",
-        yaxis_title="Expected cash (USD)",
+        title="Monthly Dividend Cash — Previous / Current / Next Month",
+        yaxis_title="Expected Cash (USD)",
         height=360,
-        margin={"t": 50, "b": 40},
+        margin={"t": 60, "b": 40},
     )
     return style_figure(fig)
 
@@ -469,9 +469,9 @@ def create_month_payers_chart(exposure: MonthDividendExposure) -> Any:
         )
     )
     fig.update_layout(
-        title=f"Dividend payers — {exposure.label}",
-        xaxis_title="Expected cash (USD)",
+        title=f"Dividend Payers — {exposure.label}",
+        xaxis_title="Expected Cash (USD)",
         height=max(320, 26 * len(ordered)),
-        margin={"l": 10, "r": 10, "t": 50, "b": 40},
+        margin={"l": 10, "r": 60, "t": 60, "b": 40},
     )
     return style_figure(fig)

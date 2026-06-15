@@ -10,11 +10,12 @@ import streamlit as st
 
 from utils.chart_theme import style_figure
 
-# Clean toolbar: zoom/pan/download only
+# Clean toolbar: zoom/pan/download only — no Plotly branding
 PLOTLY_CONFIG: dict = {
     "displayModeBar": True,
     "displaylogo": False,
     "responsive": True,
+    "scrollZoom": False,
     "modeBarButtonsToRemove": [
         "lasso2d",
         "select2d",

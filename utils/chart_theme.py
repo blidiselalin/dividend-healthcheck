@@ -16,6 +16,12 @@ PALETTE: dict[str, str] = {
     "grid": "rgba(148, 163, 184, 0.22)",
     "plot_bg": "#f8fafc",
     "paper": "#ffffff",
+    # Semantic aliases used across chart services
+    "income": "#2e7d32",       # dividend income / net cash — green
+    "deposit": "#1565c0",      # capital deposits — blue
+    "portfolio": "#2e7d32",    # portfolio value line — green
+    "benchmark": "#6a1b9a",    # benchmark series — purple
+    "warning": "#ef6c00",      # MoM change / caution — orange
 }
 
 # Weiss yield zones (low → high yield / cheap → expensive price)
@@ -27,6 +33,7 @@ YIELD_ZONE_COLORS: dict[str, str] = {
     "Expensive": "#dc2626",
 }
 
+# Ordered palette for categorical series (bar groups, line charts)
 CATEGORICAL: tuple[str, ...] = (
     "#0f766e",
     "#0369a1",
@@ -47,7 +54,7 @@ def style_figure(
     margin: dict[str, int] | None = None,
 ) -> Any:
     """Apply DividendScope defaults without removing trace-specific layout."""
-    top = 56 if title else 36
+    top = 60 if title else 36
     default_margin = {"l": 52, "r": 28, "t": top, "b": 44}
     if margin:
         default_margin.update(margin)
@@ -61,6 +68,7 @@ def style_figure(
 
     layout: dict[str, Any] = {
         "template": "plotly_white",
+        "autosize": True,
         "font": {
             "family": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
             "size": 12,
@@ -69,7 +77,13 @@ def style_figure(
         "paper_bgcolor": PALETTE["paper"],
         "plot_bgcolor": PALETTE["plot_bg"],
         "hovermode": "x unified",
-        "hoverlabel": {"bgcolor": "white", "font_size": 12, "font_color": PALETTE["text"]},
+        "hoverlabel": {
+            "bgcolor": "white",
+            "bordercolor": PALETTE["grid"],
+            "font_size": 12,
+            "font_color": PALETTE["text"],
+            "namelength": -1,
+        },
         "margin": default_margin,
         "showlegend": legend,
     }
@@ -80,7 +94,8 @@ def style_figure(
             "text": title,
             "x": 0,
             "xanchor": "left",
-            "font": {"size": 14, "color": PALETTE["text"]},
+            "font": {"size": 15, "color": PALETTE["text"], "weight": "bold"},
+            "pad": {"b": 8},
         }
     if horizontal_legend and legend:
         layout["legend"] = {
@@ -89,8 +104,10 @@ def style_figure(
             "y": 1.02,
             "xanchor": "left",
             "x": 0,
-            "font": {"size": 10},
+            "font": {"size": 11},
             "bgcolor": "rgba(255,255,255,0.85)",
+            "bordercolor": PALETTE["grid"],
+            "borderwidth": 1,
         }
 
     fig.update_layout(**layout)
@@ -100,6 +117,7 @@ def style_figure(
         linecolor=PALETTE["grid"],
         tickfont={"size": 11, "color": PALETTE["muted"]},
         title_font={"size": 12, "color": PALETTE["muted"]},
+        automargin=True,
     )
     fig.update_yaxes(
         showgrid=True,
@@ -107,6 +125,7 @@ def style_figure(
         linecolor=PALETTE["grid"],
         tickfont={"size": 11, "color": PALETTE["muted"]},
         title_font={"size": 12, "color": PALETTE["muted"]},
+        automargin=True,
     )
     return fig
 
@@ -156,8 +175,19 @@ def bottom_legend() -> dict[str, Any]:
         "y": -0.22,
         "x": 0.5,
         "xanchor": "center",
-        "font": {"size": 10},
+        "font": {"size": 11},
         "bgcolor": "rgba(255,255,255,0.92)",
+        "bordercolor": "rgba(148, 163, 184, 0.3)",
+        "borderwidth": 1,
+    }
+
+
+def outside_bar_text() -> dict[str, Any]:
+    """Trace-level kwargs for bars with outside text labels (prevents clipping)."""
+    return {
+        "textposition": "outside",
+        "cliponaxis": False,
+        "textfont": {"size": 11},
     }
 
 

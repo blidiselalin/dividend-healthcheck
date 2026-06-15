@@ -16,7 +16,14 @@ from data_ingestion.benchmark_purchases_seed import (
     BENCHMARK_SHARES_BY_PERIOD,
 )
 from data_ingestion.deposits_store import DepositsStore, MonthlyDeposit
-from utils.chart_theme import style_figure
+from utils.chart_theme import (
+    PALETTE,
+    bottom_legend,
+    evolution_chart_margins,
+    monthly_category_axis,
+    outside_bar_text,
+    style_figure,
+)
 
 try:
     import plotly.graph_objects as go
@@ -254,14 +261,14 @@ class PortfolioBenchmarkService:
                 )
 
         fig.update_layout(
-            title="Portfolio vs benchmarks (same monthly share purchases)",
-            yaxis_title="Value € (USD converted at deposit FX rate)",
+            title="Portfolio vs All Benchmarks — Same Monthly Purchases",
+            yaxis_title="Value (€, USD converted at deposit FX rate)",
             height=480,
-            margin={"t": 50, "b": 120},
-            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
-            xaxis={"tickangle": -45},
+            margin=evolution_chart_margins(len(labels), legend_bottom=True),
+            legend=bottom_legend(),
             hovermode="x unified",
         )
+        fig.update_xaxes(**monthly_category_axis(len(labels)))
         return style_figure(fig)
 
     def build_yearly_summary(self, comparison_df: pd.DataFrame) -> pd.DataFrame:
@@ -330,14 +337,14 @@ class PortfolioBenchmarkService:
             )
 
         fig.update_layout(
-            title="Portfolio vs S&P 500 vs SCHD",
-            yaxis_title="Value €",
+            title="Portfolio vs S&P 500 vs SCHD — Monthly Value",
+            yaxis_title="Value (€)",
             height=440,
-            margin={"t": 50, "b": 120},
-            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
-            xaxis={"tickangle": -45},
+            margin=evolution_chart_margins(len(labels), legend_bottom=True),
+            legend=bottom_legend(),
             hovermode="x unified",
         )
+        fig.update_xaxes(**monthly_category_axis(len(labels)))
         return style_figure(fig)
 
     def create_yearly_end_values_chart(self, yearly_df: pd.DataFrame) -> Any:
@@ -366,12 +373,12 @@ class PortfolioBenchmarkService:
             )
 
         fig.update_layout(
-            title="Year-end value — Portfolio vs S&P 500 vs SCHD",
+            title="Year-End Value — Portfolio vs S&P 500 vs SCHD",
             barmode="group",
-            yaxis_title="€",
+            yaxis_title="Year-End Value (€)",
             height=400,
-            margin={"t": 50, "b": 40},
-            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
+            margin={"t": 60, "b": 40},
+            legend=bottom_legend(),
         )
         return style_figure(fig)
 
@@ -401,12 +408,12 @@ class PortfolioBenchmarkService:
             )
 
         fig.update_layout(
-            title="Annual return (YoY) — Portfolio vs S&P 500 vs SCHD",
+            title="Annual Return (YoY %) — Portfolio vs S&P 500 vs SCHD",
             barmode="group",
-            yaxis_title="YoY %",
+            yaxis_title="Year-over-Year Return (%)",
             height=400,
-            margin={"t": 50, "b": 40},
-            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
+            margin={"t": 60, "b": 40},
+            legend=bottom_legend(),
         )
         return style_figure(fig)
 
@@ -457,12 +464,12 @@ class PortfolioBenchmarkService:
             )
 
         fig.update_layout(
-            title="Annual distribution (% of combined EOY value)",
+            title="Annual Value Distribution — Portfolio vs Benchmarks (%)",
             barmode="stack",
-            yaxis_title="% of total",
+            yaxis_title="Share of Combined EOY Value (%)",
             height=400,
-            margin={"t": 50, "b": 40},
-            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
+            margin={"t": 60, "b": 40},
+            legend=bottom_legend(),
         )
         return style_figure(fig)
 
@@ -476,16 +483,16 @@ class PortfolioBenchmarkService:
             go.Bar(
                 x=years,
                 y=yearly_df["Deposits €"],
-                marker_color="#1976d2",
+                marker_color=PALETTE["deposit"],
                 text=[f"€{value:,.0f}" for value in yearly_df["Deposits €"]],
-                textposition="outside",
                 hovertemplate="%{x}<br>€%{y:,.0f}<extra></extra>",
+                **outside_bar_text(),
             )
         )
         fig.update_layout(
-            title="Deposits per calendar year",
-            yaxis_title="€ deposited",
+            title="Deposits per Calendar Year",
+            yaxis_title="Amount Deposited (€)",
             height=340,
-            margin={"t": 50, "b": 40},
+            margin={"t": 60, "b": 40},
         )
         return style_figure(fig)
