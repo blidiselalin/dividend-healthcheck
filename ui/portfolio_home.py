@@ -238,6 +238,7 @@ def render_empty_home() -> None:
 
 
 _CARDS_PER_ROW = 4
+_CARD_COMPANY_NAME_MAX_LEN = 22
 
 
 def render_stocks_overview(rows: List[PortfolioDetailRow]) -> None:
@@ -261,7 +262,7 @@ def render_stocks_overview(rows: List[PortfolioDetailRow]) -> None:
                     f"{row.profit_pct:+.1f}%" if row.profit_pct is not None else None
                 )
                 st.metric(
-                    label=f"**{row.ticker}** · {row.company[:22].rstrip()}",
+                    label=f"**{row.ticker}** · {row.company[:_CARD_COMPANY_NAME_MAX_LEN].rstrip()}",
                     value=price_str,
                     delta=profit_delta,
                     help=row.sector or "",
