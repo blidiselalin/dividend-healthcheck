@@ -9,17 +9,17 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 import streamlit as st
 
-from models.stock import StockData
-from services.scoring import Recommendation, ScoringService
 from config import (
-    YIELD_OPTIMAL_MIN,
-    YIELD_OPTIMAL_MAX,
-    YIELD_CAUTION_MIN,
-    GROWTH_STRONG_MIN,
     GROWTH_MODERATE_MIN,
+    GROWTH_STRONG_MIN,
     PAYOUT_SAFE,
     PAYOUT_WATCH,
+    YIELD_CAUTION_MIN,
+    YIELD_OPTIMAL_MAX,
+    YIELD_OPTIMAL_MIN,
 )
+from models.stock import StockData
+from services.scoring import Recommendation, ScoringService
 from utils.formatting import (
     format_currency,
     format_large_number,
