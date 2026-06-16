@@ -94,10 +94,14 @@ def get_document(symbol: str) -> StockDocument | None:
 
 
 def load_documents(symbols: list[str]) -> dict[str, Any]:
-    """Load library documents for many tickers (missing symbols omitted)."""
-    documents: dict[str, Any] = {}
-    for symbol in symbols:
-        document = get_document(symbol)
-        if document is not None:
-            documents[symbol.upper()] = document
-    return documents
+    """Load library documents for many tickers in a single batch query.
+
+    Uses ``get_by_symbols`` on the underlying store, which issues one
+    ``WHERE symbol = ANY(...)`` query on PostgreSQL instead of N separate
+    round-trips.  Missing symbols are silently omitted from the result.
+    """
+    if not symbols:
+        return {}
+    return get_shared_vector_store().get_by_symbols(  # type: ignore[no-any-return]
+        [s.upper() for s in symbols if s]
+    )
