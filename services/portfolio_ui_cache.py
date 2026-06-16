@@ -223,7 +223,7 @@ def hydrate_session_from_disk() -> bool:  # noqa: C901
     if bundle.get("attention_summary") is not None:
         st.session_state[SESSION_SUMMARY_KEY] = bundle["attention_summary"]
     if bundle.get("risk_checked_at"):
-        st.session_state[SESSION_CHECKED_AT_KEY] = bundle["risk_checked_at"]
+        st.session_state[SESSION_CHECKED_AT_KEY] = _coerce_datetime(bundle["risk_checked_at"]) or bundle["risk_checked_at"]
     details_time = _coerce_datetime(bundle.get("portfolio_details_time"))
     if details_time:
         st.session_state["portfolio_details_time"] = details_time

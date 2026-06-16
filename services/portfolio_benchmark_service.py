@@ -143,10 +143,8 @@ class PortfolioBenchmarkService:
         # Seed ETF metadata once (no-op if already present)
         try:
             price_store.seed_etf_info_if_empty()
-        except Exception:  # pragma: no cover
-            pass
-
-        closes: dict[str, pd.Series[Any]] = {}
+        except Exception as exc:  # pragma: no cover
+            logger.debug("ETF metadata seed failed (non-fatal): %s", exc)
         for benchmark in BENCHMARKS:
             sym = benchmark.yfinance_symbol
             # Check whether stored data covers the requested range.
@@ -167,8 +165,8 @@ class PortfolioBenchmarkService:
                                 if val is not None
                             },
                         )
-                    except Exception:  # pragma: no cover
-                        pass
+                    except Exception as exc:  # pragma: no cover
+                        logger.debug("Could not persist benchmark prices for %s: %s", sym, exc)
 
             # Load the full range from the store (combines persisted + newly fetched).
             stored = price_store.load_prices(sym, start, end)
