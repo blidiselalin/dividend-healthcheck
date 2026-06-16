@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import pickle
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -99,9 +99,9 @@ def test_cache_is_fresh_when_recent_and_library_unchanged(monkeypatch: pytest.Mo
 
 
 def test_hydrate_skips_stale_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    cache_path = tmp_path / "portfolio_ui_session.pkl"
+    cache_path = tmp_path / "portfolio_ui_session.json"
     bundle = _sample_bundle(saved_at=datetime.now() - timedelta(days=10))
-    cache_path.write_bytes(pickle.dumps(bundle))
+    cache_path.write_text(json.dumps(bundle), encoding="utf-8")
 
     class FakeSession(dict):
         def get(self, key: str, default: Any = None) -> Any:
@@ -123,9 +123,9 @@ def test_hydrate_skips_stale_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
 
 def test_hydrate_loads_fresh_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    cache_path = tmp_path / "portfolio_ui_session.pkl"
+    cache_path = tmp_path / "portfolio_ui_session.json"
     bundle = _sample_bundle()
-    cache_path.write_bytes(pickle.dumps(bundle))
+    cache_path.write_text(json.dumps(bundle), encoding="utf-8")
 
     class FakeSession(dict):
         pass

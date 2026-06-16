@@ -4,10 +4,13 @@ Consolidated admin console — market library, history pipelines, and database t
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 from typing import Any, Dict, Optional
 
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 
 from auth.user_context import is_app_admin
 from db.connection import use_cloud_sql
@@ -454,10 +457,8 @@ def _render_history_tab() -> None:
                 f"**{thin['yield_ready']}/{thin['total']}** yield-ready in the library.",
                 kind="warning",
             )
-    except Exception:
-        pass
-
-    col_backfill, col_sync = st.columns(2)
+    except Exception as exc:
+        logger.warning("Could not render thin-history notice: %s", exc)
 
     with col_backfill:
         st.markdown("**Backfill thin history**")

@@ -4,10 +4,15 @@ Reusable UI components for Streamlit display.
 This module provides display components optimized for dividend investor decision-making.
 """
 
+from __future__ import annotations
+
+import logging
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 
 from config import (
     GROWTH_MODERATE_MIN,
@@ -608,8 +613,8 @@ class UIComponents:
                         ref_doc = get_document(ref_sym)
                         if ref_doc is not None:
                             vector_docs = {**vector_docs, ref_sym: ref_doc}
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("Could not fetch reference document for %s: %s", ref_sym, exc)
                 with st.expander(
                     f"📈 Yield Channel: {top_ref['symbol']} vs {current_stock.symbol}",
                     expanded=False

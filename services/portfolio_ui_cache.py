@@ -7,7 +7,7 @@ when the shared market library was updated after the cached snapshot was saved.
 
 from __future__ import annotations
 
-import pickle
+import json
 from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -35,9 +35,9 @@ def _cache_path() -> Path:
     try:
         from config import DATA_DIR
 
-        return DATA_DIR / "portfolio_ui_session.pkl"
+        return DATA_DIR / "portfolio_ui_session.json"
     except ImportError:
-        return Path("data/portfolio_ui_session.pkl")
+        return Path("data/portfolio_ui_session.json")
 
 
 _DATE_FIELDS = ("ex_dividend_date", "dividend_pay_date")
@@ -125,23 +125,25 @@ def save_session_cache() -> None:
     if not rows:
         return
 
+    risk_checked_at = st.session_state.get(SESSION_CHECKED_AT_KEY)
+    # Serialise only JSON-safe fields.  Complex analysis objects (stock_cache,
+    # yield_cache, vector_docs) are excluded; they are rebuilt lazily on next load.
     bundle: dict[str, Any] = {
-        "version": 1,
+        "version": 2,
         "saved_at": datetime.now().isoformat(timespec="seconds"),
         "rows": [_row_to_dict(row) for row in rows],
         "attention_summary": st.session_state.get(SESSION_SUMMARY_KEY),
-        "risk_checked_at": st.session_state.get(SESSION_CHECKED_AT_KEY),
-        "portfolio_stock_cache": st.session_state.get("portfolio_stock_cache"),
-        "portfolio_yield_cache": st.session_state.get("portfolio_yield_cache"),
-        "portfolio_vector_docs": st.session_state.get("portfolio_vector_docs"),
+        "risk_checked_at": risk_checked_at.isoformat() if isinstance(risk_checked_at, datetime) else risk_checked_at,
         "portfolio_details_time": st.session_state.get("portfolio_details_time"),
-        "portfolio_analysis_ready": st.session_state.get("portfolio_analysis_ready", False),
+        # Analysis caches are intentionally omitted; flag is forced False so the
+        # UI knows to trigger a background reload after hydration.
+        "portfolio_analysis_ready": False,
     }
     try:
         cache_path = _cache_path()
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        with cache_path.open("wb") as handle:
-            pickle.dump(bundle, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        with cache_path.open("w", encoding="utf-8") as handle:
+            json.dump(bundle, handle, default=str)
         logger.info(
             "Portfolio UI cache saved path=%s holdings=%d",
             cache_path,
@@ -179,8 +181,8 @@ def hydrate_session_from_disk() -> bool:  # noqa: C901
         return False
 
     try:
-        with cache_path.open("rb") as handle:
-            bundle = pickle.load(handle)  # noqa: S301
+        with cache_path.open("r", encoding="utf-8") as handle:
+            bundle = json.load(handle)
     except Exception as exc:
         logger.warning("Could not load portfolio UI cache: %s", exc)
         try:
@@ -222,12 +224,6 @@ def hydrate_session_from_disk() -> bool:  # noqa: C901
         st.session_state[SESSION_SUMMARY_KEY] = bundle["attention_summary"]
     if bundle.get("risk_checked_at"):
         st.session_state[SESSION_CHECKED_AT_KEY] = bundle["risk_checked_at"]
-    if bundle.get("portfolio_stock_cache") is not None:
-        st.session_state["portfolio_stock_cache"] = bundle["portfolio_stock_cache"]
-    if bundle.get("portfolio_yield_cache") is not None:
-        st.session_state["portfolio_yield_cache"] = bundle["portfolio_yield_cache"]
-    if bundle.get("portfolio_vector_docs") is not None:
-        st.session_state["portfolio_vector_docs"] = bundle["portfolio_vector_docs"]
     details_time = _coerce_datetime(bundle.get("portfolio_details_time"))
     if details_time:
         st.session_state["portfolio_details_time"] = details_time
@@ -445,11 +441,12 @@ def refresh_portfolio_after_library_update() -> bool:
     cache_path = _cache_path()
     if cache_path.is_file():
         try:
-            with cache_path.open("rb") as handle:
-                bundle = pickle.load(handle)  # noqa: S301
+            with cache_path.open("r", encoding="utf-8") as handle:
+                bundle = json.load(handle)
             if not cache_is_stale(bundle):
                 return False
-        except Exception:
+        except Exception as exc:
+            logger.debug("Could not read portfolio UI cache for staleness check: %s", exc)
             clear_session_cache()
 
     try:

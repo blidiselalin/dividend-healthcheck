@@ -125,6 +125,10 @@ def start_job(  # noqa: C901
         pass
 
     def _progress(value: float, message: str = "") -> None:
+        # _STORE_LOCK makes this callback safe to call from the worker thread.
+        # Each session has its own scope_key, so concurrent sessions do not
+        # share state.  If multi-user parallelism grows, consider per-session
+        # locks to reduce contention.
         with _STORE_LOCK:
             stored = _JOB_STORE.get(scope_key, {}).get(job_id)
             if stored is None:

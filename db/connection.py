@@ -32,8 +32,8 @@ def get_database_url() -> str | None:
             import streamlit as st
 
             url = str(st.secrets.get("DATABASE_URL", "")).strip()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Streamlit secrets not available for DATABASE_URL lookup: %s", exc)
 
     return url or None
 
@@ -279,7 +279,8 @@ def open_portfolio_db(
             from auth.user_context import resolve_portfolio_db_path
 
             db_path = resolve_portfolio_db_path()
-        except Exception:
+        except Exception as exc:
+            logger.debug("Could not resolve portfolio db path from user context: %s", exc)
             from config import DATA_DIR
 
             db_path = DATA_DIR / "portfolio.db"
