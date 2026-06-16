@@ -69,6 +69,44 @@ def test_journal_delete_purchase(
     assert journal_store.list_purchases(portfolio_only=False) == []
 
 
+def test_portfolio_upsert_rejects_negative_avg_cost(portfolio_store: PortfolioStore) -> None:
+    with pytest.raises(ValueError, match="[Cc]ost"):
+        portfolio_store.upsert_holding("X", shares=1, avg_cost_per_share=-1.0)
+
+
+def test_portfolio_update_holding_returns_none_for_missing(
+    portfolio_store: PortfolioStore,
+) -> None:
+    result = portfolio_store.update_holding("MISSING", shares=5)
+    assert result is None
+
+
+def test_portfolio_set_dividends_paid(portfolio_store: PortfolioStore) -> None:
+    portfolio_store.upsert_holding("DIV", shares=10, avg_cost_per_share=50.0)
+    portfolio_store.set_dividends_paid("DIV", 123.45)
+    holding = portfolio_store.get_holding("DIV")
+    assert holding is not None
+    assert holding.dividends_paid == 123.45
+
+
+def test_journal_add_purchase_rejects_zero_price(
+    portfolio_store: PortfolioStore,
+    journal_store: PurchaseJournalStore,
+) -> None:
+    portfolio_store.upsert_holding("ZP", shares=1, avg_cost_per_share=1.0)
+    with pytest.raises(ValueError, match="[Pp]rice"):
+        journal_store.add_purchase("ZP", date(2024, 1, 1), 0.0)
+
+
+def test_journal_add_purchase_rejects_negative_price(
+    portfolio_store: PortfolioStore,
+    journal_store: PurchaseJournalStore,
+) -> None:
+    portfolio_store.upsert_holding("NP", shares=1, avg_cost_per_share=1.0)
+    with pytest.raises(ValueError, match="[Pp]rice"):
+        journal_store.add_purchase("NP", date(2024, 1, 1), -10.0)
+
+
 def test_deposits_upsert_and_delete(deposits_store: DepositsStore) -> None:
     dep = deposits_store.upsert_deposit(
         year=2025,
