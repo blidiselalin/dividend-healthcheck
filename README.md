@@ -37,7 +37,8 @@ Research Dividend Kings and Aristocrats, track your holdings, monitor dividend i
 | **Stock Research** | Dividend Kings & Aristocrats analysis, yield-channel charts, sector comparison, news & sentiment |
 | **Portfolio Tracking** | Holdings, purchase journal, monthly deposits, realized/unrealized P&L |
 | **Dividend Income** | Monthly income calendar, dividend receipt log, CAGR and growth trend |
-| **Risk & Allocation** | Sector concentration, risk monitor, benchmark comparison |
+| **Risk & Allocation** | Sector concentration, risk monitor, attention items (payout ratio, streak breaks), benchmark comparison |
+| **Benchmark Comparison** | Portfolio total-return vs S&P 500, SCHD, Dow Jones, Nasdaq — same monthly purchases |
 | **PDF Reports** | One-click research reports with score card and investment thesis |
 | **Assistant** | In-app FAQ chatbot; optional Hugging Face LLM for broader replies |
 | **Admin Panel** | Database administration, market library sync, schema migrations |
@@ -58,6 +59,7 @@ Browser → Caddy (HTTPS 443) → Streamlit :8501 → PostgreSQL 16
 | **Auth** | Google OAuth (OIDC) via `streamlit[auth]` | Login, user isolation |
 | **Market data** | `stock_documents` table (JSONB) | Shared S&P 500 library; hourly price refresh |
 | **Price/dividend history** | `stock_price_history`, `stock_dividend_history` | Yield charts, income calendar |
+| **Benchmark comparison** | `benchmark_price_history`, `benchmark_etf_info` | Portfolio vs S&P 500 / SCHD / Dow / Nasdaq |
 | **Reverse proxy** | Caddy (host) | Auto-TLS via Let's Encrypt |
 
 > **All portfolio data is user-scoped in PostgreSQL.** No SQLite or ChromaDB is used at runtime when `DATABASE_URL` is set.
@@ -130,7 +132,11 @@ Without `DATABASE_URL` set, the app automatically falls back to ChromaDB (SQLite
 **Run tests**
 
 ```bash
+# Unit tests (no live database required)
 python -m pytest tests/ -m "not integration"
+
+# Run migrations manually (if needed outside a container)
+python -m db --migrate
 ```
 
 ---
@@ -232,12 +238,25 @@ python ingest_data.py --sync-history-tables
 # Enrich specific symbols only
 python ingest_data.py --enrich-existing --symbols KO,JNJ,PG
 
+# Add individual symbols to the library
+python ingest_data.py --add-symbols MSFT,AAPL
+
+# Refresh prices for all symbols in the library
+python ingest_data.py --refresh-prices
+
+# Trigger a single hourly-update cycle (prices + thin-row backfill)
+python ingest_data.py --hourly-update
+
+# Sync portfolio holdings data into the market library
+python ingest_data.py --sync-portfolio
+
 # Database utilities
 python ingest_data.py --stats                    # Show document counts
 python ingest_data.py --list-kings               # List all Dividend Kings in library
 python ingest_data.py --search "high yield tech" # Semantic search
 python ingest_data.py --export backup.json       # Export library to JSON
 python ingest_data.py --import backup.json       # Restore from JSON
+python ingest_data.py --export-snapshot          # Export snapshot for offline use
 ```
 
 ### Download commands (raw data files)
@@ -326,51 +345,128 @@ dividend-healthcheck/
 ├── download_data.py                # Public data downloader
 ├── requirements.txt                # Python dependencies
 │
-├── auth/                           # Authentication (Google OAuth, user store, access requests)
+├── auth/                           # Authentication
+│   ├── user_store.py               # User creation and lookup
+│   ├── user_context.py             # Current-session user helpers
+│   ├── access_requests.py          # Allow-list gate for new signups
+│   ├── settings.py                 # OAuth / allow-list config (env + secrets.toml)
+│   ├── login_view.py               # Login page UI
+│   ├── demo_portfolio.py           # Read-only demo portfolio (no login required)
+│   └── migration.py                # Legacy user data migration helpers
 │
-├── db/                             # PostgreSQL layer
+├── db/                             # PostgreSQL / SQLite data layer
+│   ├── __main__.py                 # `python -m db --migrate` CLI
 │   ├── connection.py               # Connection pool, schema migrations
 │   ├── parsing.py                  # Date/type helpers for DB rows
+│   ├── portfolio_scope.py          # Per-user DB scope helpers
+│   ├── benchmark_store.py          # Benchmark ETF price history + metadata
 │   ├── postgres_market_store.py    # Stock documents CRUD
 │   └── postgres_market_history_store.py  # Price & dividend history tables
 │
 ├── migrations/                     # Incremental SQL migration files
-│   ├── 001_initial.sql
-│   ├── 002_dividend_receipts.sql
-│   └── 003_stock_market_history.sql
+│   ├── 001_initial.sql             # Core schema (users, holdings, journal, market docs)
+│   ├── 002_dividend_receipts.sql   # Dividend receipt log
+│   ├── 003_stock_market_history.sql# Price & dividend history tables
+│   ├── 004_benchmark_price_history.sql  # Benchmark ETF price history + metadata
+│   └── 005_holdings_tracking_since_and_indexes.sql  # dividend_tracking_since + journal index
 │
 ├── models/
 │   └── stock.py                    # StockData and DividendHistory dataclasses
 │
 ├── services/
 │   ├── enhanced_stock_service.py   # DB-first, API-fallback orchestration
+│   ├── stock_analysis_service.py   # Full per-symbol analysis pipeline
+│   ├── stock_history_backfill.py   # Backfill price/dividend history from Yahoo
 │   ├── portfolio_context.py        # Shared portfolio store factory
-│   ├── portfolio_service.py        # Holdings, journal, deposits
-│   ├── scoring.py                  # 0–100 dividend scoring engine
-│   ├── news_service.py             # News aggregation and sentiment
-│   ├── report_generator.py         # PDF report generation
-│   ├── yield_channel_chart.py      # "Dividends Don't Lie" chart builder
-│   ├── chatbot_service.py          # FAQ + optional Hugging Face assistant
-│   ├── hourly_market_update.py     # Background price refresh
-│   └── ...                         # Portfolio analytics (allocation, risk, income, benchmark)
+│   ├── portfolio_service.py        # Core holdings/journal/deposits store
+│   ├── portfolio_management_service.py   # Add/edit/remove holdings
+│   ├── portfolio_details_service.py      # Holdings enrichment with live prices
+│   ├── portfolio_holdings_summary.py     # Value/P&L strip
+│   ├── portfolio_holding_detail_service.py  # Per-symbol deep-dive
+│   ├── portfolio_allocation_service.py   # Sector and market-cap breakdown
+│   ├── portfolio_benchmark_service.py    # Portfolio vs benchmark ETF comparison
+│   ├── portfolio_dividend_calendar.py    # Upcoming ex-dates and payments
+│   ├── portfolio_dividend_income_service.py  # Income CAGR and growth charts
+│   ├── portfolio_dividend_growth_service.py  # Per-symbol growth trend
+│   ├── portfolio_dividend_sync_service.py    # Sync dividend receipts from market data
+│   ├── portfolio_month_dividends.py      # Monthly income totals
+│   ├── portfolio_risk_monitor_service.py # Risk snapshot (attention items + cache)
+│   ├── portfolio_attention_service.py    # Attention rules (high payout, streak breaks…)
+│   ├── portfolio_analysis_preload.py     # Batch preload yield charts for all holdings
+│   ├── portfolio_refresh.py             # Reload live prices into session
+│   ├── portfolio_ui_cache.py            # JSON session cache for fast startup
+│   ├── portfolio_session.py             # Session state helpers
+│   ├── portfolio_vector_sync.py         # Sync holdings into shared market library
+│   ├── portfolio_zone_overview.py       # Yield-zone summary (Weiss methodology)
+│   ├── portfolio_deposits_service.py    # Monthly deposit tracking
+│   ├── portfolio_purchase_journal_service.py  # Purchase journal views and charts
+│   ├── portfolio_dashboard_service.py   # Dashboard orchestration
+│   ├── analysis_evidence.py             # Data-source evidence overlay
+│   ├── scoring.py                       # 0–100 dividend scoring engine
+│   ├── news_service.py                  # News aggregation and sentiment
+│   ├── report_generator.py              # PDF report generation
+│   ├── yield_channel_chart.py           # "Dividends Don't Lie" chart builder
+│   ├── chatbot_service.py               # FAQ + optional Hugging Face assistant
+│   ├── hourly_market_update.py          # Hourly background price refresh job
+│   ├── price_refresh_scheduler.py       # Background scheduler for price refresh
+│   ├── db_price_refresh.py              # Price update helper (writes to DB)
+│   ├── db_admin_service.py              # Admin operations (validate, sync, stats)
+│   ├── live_price.py                    # Fetch live prices on top of DB snapshots
+│   ├── shared_market_db.py              # Shared market library access helpers
+│   ├── market_library_migration.py      # One-time Chroma→Postgres import
+│   ├── snapshot_sync_service.py         # JSONB→normalized table sync
+│   ├── sector_service.py                # Sector comparison and peer ranking
+│   ├── sp500_peers_service.py           # S&P 500 peer selection for portfolio
+│   ├── dividend_timing.py               # Dividend timing rules
+│   ├── deferred_startup.py              # Defer heavy init to background threads
+│   ├── background_jobs.py               # Long-running background task wrappers
+│   └── vectordb_service.py              # Chroma/fallback store service (dev only)
 │
 ├── data_ingestion/                 # Market library ingestion pipeline
 │   ├── stock_enricher.py           # Yahoo + SEC EDGAR + Stooq enrichment
-│   ├── providers/                  # Per-source adapters
+│   ├── yfinance_enricher.py        # yfinance-specific enrichment helpers
+│   ├── pipeline.py                 # CLI orchestration
 │   ├── vector_store.py             # ChromaDB wrapper (dev/test fallback)
-│   └── pipeline.py                 # CLI orchestration
+│   ├── portfolio_store.py          # Holdings store (SQLite local / Postgres cloud)
+│   ├── purchase_journal_store.py   # Purchase journal store
+│   ├── dividend_receipt_store.py   # Dividend receipt log store
+│   ├── dividend_income_store.py    # Monthly net dividend income store
+│   ├── deposits_store.py           # Monthly deposit store
+│   ├── dividend_universe.py        # Dividend Kings/Aristocrats universe helpers
+│   ├── sp500_universe.py           # S&P 500 constituent list helpers
+│   ├── benchmark_purchases_seed.py # Benchmark ETF monthly share purchase seed data
+│   ├── providers/                  # Per-source adapters (Yahoo, SEC, Stooq, snapshot)
+│   └── ...                         # Downloaders, seed data, fetch utilities
 │
 ├── ui/                             # Streamlit pages and components
 │   ├── views.py                    # Single-stock and full-analysis pages
 │   ├── portfolio_home.py           # Portfolio welcome and quick-actions
-│   ├── portfolio_details_view.py   # Holdings, journal, income views
+│   ├── portfolio_details_view.py   # Holdings, journal, income, benchmark views
+│   ├── portfolio_sidebar.py        # Sidebar navigation and status
+│   ├── portfolio_manage_panel.py   # Add/edit/remove holdings UI
+│   ├── portfolio_risk_panel.py     # Risk monitor and attention panel
+│   ├── portfolio_summary.py        # Holdings value/P&L summary strip
 │   ├── admin_page.py               # Database admin and market library sync
+│   ├── db_admin_panel.py           # Low-level DB admin tools
+│   ├── sp500_research_picker.py    # Pick any S&P 500 symbol for full analysis
+│   ├── analysis_evidence.py        # Data-source evidence overlay
 │   ├── chatbot_widget.py           # Sidebar assistant widget
-│   └── ...                         # Charts, risk panel, sidebar, theme
+│   ├── dividend_timing_display.py  # Upcoming / paid dividend styled tables
+│   ├── charts.py                   # Shared chart utilities
+│   ├── components.py               # Reusable UI components
+│   ├── sidebar_progress_panel.py   # Background job progress display
+│   ├── market_library_cache.py     # Market library cache status display
+│   ├── auth_account_panel.py       # Account settings and logout
+│   ├── access_request_panel.py     # Access request management UI
+│   ├── app_about.py                # About page (purpose, data sources, usage)
+│   └── theme.py                    # Visual theme helpers and palette
 │
 ├── deploy/gcp/                     # GCP-specific scripts (bootstrap, Caddy, HTTPS)
 ├── scripts/                        # update_cloud_docker.sh, docker-entrypoint.sh
 └── tests/                          # pytest suite (unit + integration)
+    ├── conftest.py                 # Shared fixtures; SQLite backend for unit tests
+    ├── support/                    # Test helpers (market fixtures, postgres mock)
+    └── integration/                # Live-Postgres integration tests (CI only)
 ```
 
 **Persistent data** (Docker volume `dividendscope-persistent-data → /data`, never committed):
@@ -397,11 +493,34 @@ POSTGRES_DB=dividendscope
 # Built by Docker Compose from the vars above (do not set manually in compose)
 # DATABASE_URL=******postgres:5432/dividendscope
 
-# Optional
+# Optional: SEC EDGAR User-Agent (SEC policy requires identification — not an API key)
 SEC_EDGAR_USER_AGENT=DividendScope/1.0 (you@yourdomain.com)
+
+# Optional: Sidebar assistant — FAQ works without keys; HF enables broader chat (server-side only)
 DIVIDENDSCOPE_CHATBOT_ENABLED=1
 HUGGINGFACE_API_KEY=hf_...        # Server-side only — never expose to the browser
 DIVIDENDSCOPE_CHATBOT_MODEL=facebook/blenderbot-400M-distill
+
+# Optional: Data directory overrides
+DIVIDENDSCOPE_DATA_DIR=/data      # Override default data root (default: /data in Docker)
+
+# Optional: Market library behaviour
+DIVIDENDSCOPE_HISTORY_REFRESH_HOURS=6     # Hours between automatic history refresh (default: 6)
+DIVIDENDSCOPE_AUTO_BACKFILL_ON_LOAD=1     # Backfill thin rows on container start (default: 1)
+DIVIDENDSCOPE_SKIP_LEGACY_IMPORT=0        # Skip one-time Chroma→Postgres import (default: 0)
+
+# Optional: Price refresh scheduler
+DIVIDENDSCOPE_DISABLE_PRICE_SCHEDULER=0  # Disable background price refresh (default: 0)
+DIVIDENDSCOPE_PRICE_REFRESH_SECONDS=3600 # Override price refresh interval in seconds
+
+# Optional: Auth overrides (also configurable via .streamlit/secrets.toml)
+DIVIDENDSCOPE_AUTH_DISABLE=0             # Bypass auth for local dev (default: 0)
+DIVIDENDSCOPE_DEV_EMAIL=you@example.com  # Auto-login email when auth is disabled
+DIVIDENDSCOPE_ADMIN_EMAILS=admin@x.com   # Comma-separated admin email allow-list
+DIVIDENDSCOPE_ALLOWED_EMAILS=            # Comma-separated email allow-list (empty = allow all)
+
+# Optional: Logging
+DIVIDENDSCOPE_LOG_LEVEL=INFO             # Log level (DEBUG / INFO / WARNING / ERROR)
 ```
 
 Copy `.env.example` to `.env` to get started.
@@ -482,6 +601,7 @@ For a full deployment walkthrough including DNS, static IP, OAuth redirect URIs,
 | Postgres connection refused | `docker compose ps` — wait for the `healthy` status on the `postgres` service |
 | `🌐 Public API (DB empty)` in sidebar | Run `python ingest_data.py --ensure-sp500 --enrich-existing` |
 | Slow first-run ingestion | Normal — 15–20 min for full S&P 500 enrichment; market data is cached afterwards |
+| Benchmark chart shows no data | Run `python ingest_data.py --refresh-prices` to fetch benchmark ETF history |
 | `chromadb` import errors | `pip install chromadb>=0.4.22`; app works without it (API-only mode) |
 | PDF export fails | `pip install reportlab` (included in `requirements.txt`) |
 | News section empty | `pip install feedparser` (optional); Yahoo Finance news still works without it |
@@ -490,6 +610,7 @@ For a full deployment walkthrough including DNS, static IP, OAuth redirect URIs,
 | Container name already in use | `docker rm -f dividendscope && docker compose up -d --build` |
 | Out of memory on VM | Upgrade to e2-small (2 GB) or e2-medium (4 GB) |
 | Google login redirect mismatch | Add the exact redirect URI to your Google OAuth 2.0 client and to `.streamlit/secrets.toml` |
+| Schema out of date | Run `python -m db --migrate` (or restart the container — entrypoint does this automatically) |
 
 ---
 

@@ -460,6 +460,7 @@ def _render_history_tab() -> None:
     except Exception as exc:
         logger.warning("Could not render thin-history notice: %s", exc)
 
+    col_backfill, col_sync = st.columns(2)
     with col_backfill:
         st.markdown("**Backfill thin history**")
         st.caption("Fetch missing price/dividend series into stock_documents.")

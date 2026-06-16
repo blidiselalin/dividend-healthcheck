@@ -126,6 +126,7 @@ def render_admin_access_requests() -> None:
             admin_email = user.email if user else ""
         except Exception as exc:
             logger.debug("Could not resolve admin email for access approval: %s", exc)
+        with col_a:
             if st.button("Approve", key=approve_key, use_container_width=True, type="primary"):
                 if store.approve(item.email, reviewer_email=admin_email):
                     st.session_state.pop("access_request_just_sent", None)

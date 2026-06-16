@@ -145,6 +145,7 @@ class PortfolioBenchmarkService:
             price_store.seed_etf_info_if_empty()
         except Exception as exc:  # pragma: no cover
             logger.debug("ETF metadata seed failed (non-fatal): %s", exc)
+        closes: dict[str, pd.Series] = {}
         for benchmark in BENCHMARKS:
             sym = benchmark.yfinance_symbol
             # Check whether stored data covers the requested range.
