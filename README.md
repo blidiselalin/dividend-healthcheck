@@ -17,6 +17,7 @@ Research Dividend Kings and Aristocrats, track your holdings, monitor dividend i
 - [Features](#features)
 - [Architecture](#architecture)
 - [Architecture Guardrails](#architecture-guardrails)
+- [Installation at a Glance](#installation-at-a-glance)
 - [Quick Start — Docker (recommended)](#quick-start--docker-recommended)
 - [Local Development (no Docker)](#local-development-no-docker)
 - [Authentication](#authentication)
@@ -76,66 +77,67 @@ Use these conventions when extending the app so features remain fast, testable, 
 
 ---
 
+## Installation at a Glance
+
+Choose one path:
+
+1. **Docker (recommended)** — fastest way to run the full app with PostgreSQL.
+2. **Local development** — run Streamlit directly for feature work and tests.
+3. **GCP VM** — production-style setup with HTTPS and update automation.
+
+If you're unsure, start with **Docker Quick Start** below.
+
+---
+
 ## Quick Start — Docker (recommended)
 
 Requires [Docker Desktop](https://docs.docker.com/get-docker/) (or Docker + Docker Compose on Linux).
 
-**1. Clone the repository**
-
 ```bash
 git clone https://github.com/blidiselalin/dividend-healthcheck.git
 cd dividend-healthcheck
-```
-
-**2. Create the environment file**
-
-```bash
 cp .env.example .env
-# Edit .env — change POSTGRES_PASSWORD before first run
-```
-
-**3. Start the app**
-
-```bash
+# Edit .env and set a strong POSTGRES_PASSWORD
 docker compose up -d --build
 ```
 
-**4. Populate the market library** (first run only — takes ~15–20 minutes)
+Open: **http://localhost:8501**
+
+First-run market library load (recommended once):
 
 ```bash
 docker compose exec dividendscope python ingest_data.py --ensure-sp500 --enrich-existing
 ```
 
-**5. Open the app**
+Optional: complete historical tables sync if you want full yield/dividend history immediately:
 
-Navigate to **http://localhost:8501**.
+```bash
+docker compose exec dividendscope python ingest_data.py --sync-history-tables
+```
 
-> The container entrypoint applies database migrations automatically on every start. You do not need to run migrations manually.
+> Migrations run automatically at container start via the entrypoint.
 
 ---
 
 ## Local Development (no Docker)
 
-Use this path for running tests or iterating on code without a full Docker stack.
-
-**Requirements:** Python 3.12, pip
+Use this for feature work and tests without running the full Docker stack.
 
 ```bash
 git clone https://github.com/blidiselalin/dividend-healthcheck.git
 cd dividend-healthcheck
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Without `DATABASE_URL` set, the app automatically falls back to ChromaDB (SQLite-backed) for the market library and local files for portfolios. This is fine for development but not recommended for production.
+Without `DATABASE_URL`, local development uses fallback local storage paths. Production should use PostgreSQL via Docker/GCP.
 
-**Run tests**
+Common local commands:
 
 ```bash
-# Unit tests (no live database required)
-python -m pytest tests/ -m "not integration"
-
-# Run migrations manually (if needed outside a container)
+python -m pytest tests/ -m "not integration" -q --tb=short
 python -m db --migrate
 ```
 
@@ -560,23 +562,23 @@ The recommended production setup is a **Google Compute Engine VM** running Docke
 
 **Disk:** 30 GB Balanced persistent disk is sufficient for most deployments. Use 50 GB if you plan to ingest full S&P 500 history.
 
-### Deploy
+### Deploy (quick path)
 
 ```bash
-# 1. Bootstrap Docker on a fresh Ubuntu 22.04 VM
+# 1) Bootstrap Docker on Ubuntu 22.04
 curl -fsSL https://raw.githubusercontent.com/blidiselalin/dividend-healthcheck/main/deploy/gcp/vm-bootstrap.sh | bash
-# Log out and back in so the docker group applies
+# then log out and back in so docker group membership applies
 
-# 2. Clone, configure, and start
+# 2) Clone and configure
 git clone https://github.com/blidiselalin/dividend-healthcheck.git
 cd dividend-healthcheck
-cp .env.example .env   # edit POSTGRES_PASSWORD
-docker compose up -d --build
+cp .env.example .env
+# edit POSTGRES_PASSWORD in .env
 
-# 3. Populate market library (first run)
-docker compose exec dividendscope python ingest_data.py --ensure-sp500 --enrich-existing
+# 3) Start app + run migrations + ingest data
+./scripts/update_cloud_docker.sh --ingest
 
-# 4. Enable HTTPS (Caddy + Let's Encrypt — requires a domain pointed at the VM)
+# 4) Enable HTTPS (domain must point to VM IP)
 sudo ./deploy/gcp/setup-https-caddy.sh
 ```
 
@@ -584,7 +586,6 @@ sudo ./deploy/gcp/setup-https-caddy.sh
 
 ```bash
 cd ~/dividend-healthcheck
-git pull
 ./scripts/update_cloud_docker.sh
 ```
 
@@ -599,7 +600,7 @@ For a full deployment walkthrough including DNS, static IP, OAuth redirect URIs,
 | `ModuleNotFoundError` | `pip install -r requirements.txt` |
 | App starts but shows no data | Check internet; yfinance needs network access |
 | Postgres connection refused | `docker compose ps` — wait for the `healthy` status on the `postgres` service |
-| `🌐 Public API (DB empty)` in sidebar | Run `python ingest_data.py --ensure-sp500 --enrich-existing` |
+| `🌐 Public API (DB empty)` in sidebar | Run `docker compose exec dividendscope python ingest_data.py --ensure-sp500 --enrich-existing` |
 | Slow first-run ingestion | Normal — 15–20 min for full S&P 500 enrichment; market data is cached afterwards |
 | Benchmark chart shows no data | Run `python ingest_data.py --refresh-prices` to fetch benchmark ETF history |
 | `chromadb` import errors | `pip install chromadb>=0.4.22`; app works without it (API-only mode) |
