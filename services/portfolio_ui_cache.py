@@ -183,6 +183,11 @@ def hydrate_session_from_disk() -> bool:  # noqa: C901
             bundle = pickle.load(handle)  # noqa: S301
     except Exception as exc:
         logger.warning("Could not load portfolio UI cache: %s", exc)
+        try:
+            cache_path.unlink(missing_ok=True)
+            logger.info("Removed corrupted portfolio UI cache file: %s", cache_path)
+        except OSError:
+            pass
         if user_has_holdings_in_db():
             logger.info(
                 "Portfolio UI cache corrupted; warming synchronously from DB to prevent empty UI."
