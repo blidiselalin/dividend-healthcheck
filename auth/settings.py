@@ -4,10 +4,13 @@ Read authentication settings from Streamlit secrets and environment variables.
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import FrozenSet, List, Optional
 
 _AUTH_SECTION = "auth"
+
+logger = logging.getLogger(__name__)
 
 
 def _auth_section() -> dict:
@@ -126,8 +129,8 @@ def is_email_allowed(email: str) -> bool:
 
         if AccessRequestStore().is_approved(normalized):
             return True
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("AccessRequestStore check failed for %s: %s", normalized, exc)
 
     allow = allowed_emails()
     if not allow:

@@ -146,10 +146,45 @@ class PortfolioStore:
 
     def get_holding(self, symbol: str) -> PortfolioHolding | None:
         symbol = symbol.strip().upper()
-        for holding in self.list_holdings():
-            if holding.symbol.upper() == symbol:
-                return holding
-        return None
+        with self._connect() as connection:
+            if connection.is_postgres:
+                row = connection.execute(
+                    """
+                    SELECT
+                      symbol, shares, avg_cost_per_share, acquisition_value,
+                      commission, dividends_paid, estimated_avg_price,
+                      sort_order, company_name, dividend_tracking_since
+                    FROM holdings
+                    WHERE user_id = ? AND symbol = ?
+                    """,
+                    (connection.user_id, symbol),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    """
+                    SELECT
+                      symbol, shares, avg_cost_per_share, acquisition_value,
+                      commission, dividends_paid, estimated_avg_price,
+                      sort_order, company_name, dividend_tracking_since
+                    FROM holdings
+                    WHERE symbol = ?
+                    """,
+                    (symbol,),
+                ).fetchone()
+        if row is None:
+            return None
+        return PortfolioHolding(
+            symbol=row["symbol"],
+            shares=row["shares"],
+            avg_cost_per_share=row["avg_cost_per_share"],
+            acquisition_value=row["acquisition_value"],
+            commission=row["commission"],
+            dividends_paid=row["dividends_paid"],
+            estimated_avg_price=row["estimated_avg_price"] or 0.0,
+            sort_order=row["sort_order"],
+            company_name=row["company_name"],
+            dividend_tracking_since=parse_optional_date(row["dividend_tracking_since"]),
+        )
 
     def holding_exists(self, symbol: str) -> bool:
         return self.get_holding(symbol) is not None

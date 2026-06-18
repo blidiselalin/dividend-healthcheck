@@ -156,6 +156,12 @@ class PortfolioManagementService:
                 symbols=[normalized],
             )
         sync_received_dividends(db_path=self.portfolio.db_path, symbols=[normalized])
+        try:
+            from services.portfolio_session import invalidate_holdings_cache
+
+            invalidate_holdings_cache()
+        except Exception:  # noqa: S110
+            pass
         return {
             "holding": holding,
             "vector_sync": vector_stats,
@@ -234,6 +240,12 @@ class PortfolioManagementService:
         removed = self.portfolio.delete_holding(normalized)
         if removed:
             sync_received_dividends(db_path=self.portfolio.db_path)
+            try:
+                from services.portfolio_session import invalidate_holdings_cache
+
+                invalidate_holdings_cache()
+            except Exception:  # noqa: S110
+                pass
         return removed
 
     def add_purchase(

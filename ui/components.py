@@ -4,18 +4,32 @@ Reusable UI components for Streamlit display.
 This module provides display components optimized for dividend investor decision-making.
 """
 
+from __future__ import annotations
+
+import logging
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import streamlit as st
 
+logger = logging.getLogger(__name__)
+
+from config import (
+    GROWTH_MODERATE_MIN,
+    GROWTH_STRONG_MIN,
+    PAYOUT_SAFE,
+    PAYOUT_WATCH,
+    YIELD_CAUTION_MIN,
+    YIELD_OPTIMAL_MAX,
+    YIELD_OPTIMAL_MIN,
+)
 from models.stock import StockData
-from services.scoring import Recommendation
+from services.scoring import Recommendation, ScoringService
 from utils.formatting import (
     format_currency,
-    format_percent,
-    format_number,
     format_large_number,
+    format_number,
+    format_percent,
     format_years,
 )
 
@@ -83,6 +97,36 @@ class UIComponents:
     # === KEY HIGHLIGHTS (Front Page) ===
 
     @staticmethod
+    def _yield_context(yield_pct: float | None) -> str:
+        if yield_pct is None:
+            return "Neutral"
+        if YIELD_OPTIMAL_MIN <= yield_pct <= YIELD_OPTIMAL_MAX:
+            return "Optimal"
+        if yield_pct > YIELD_CAUTION_MIN:
+            return "Caution"
+        return "Neutral"
+
+    @staticmethod
+    def _payout_context(payout_ratio_pct: float | None) -> str:
+        if payout_ratio_pct is None:
+            return "Risky"
+        if payout_ratio_pct <= PAYOUT_SAFE:
+            return "Safe"
+        if payout_ratio_pct <= PAYOUT_WATCH:
+            return "Watch"
+        return "Risky"
+
+    @staticmethod
+    def _growth_context(cagr_5y: float | None) -> str:
+        if cagr_5y is None:
+            return "Weak"
+        if cagr_5y >= GROWTH_STRONG_MIN:
+            return "Strong"
+        if cagr_5y >= GROWTH_MODERATE_MIN:
+            return "Moderate"
+        return "Weak"
+
+    @staticmethod
     def display_key_highlights(
         data: StockData,
         score: int,
@@ -93,9 +137,15 @@ class UIComponents:
         streak = dh.consecutive_years if dh else None
         cagr_5y = dh.cagr_5y if dh else None
         safety = data.dividend_safety_score
+        quality = data.data_quality_score
         income_10k = (
             f"${(data.dividend_yield_pct / 100) * 10000:,.0f}/yr"
             if data.dividend_yield_pct
+            else "—"
+        )
+        drawdown = (
+            f"{abs(data.price_to_52w_high_pct):.1f}% below 52w high"
+            if data.price_to_52w_high_pct is not None
             else "—"
         )
 
@@ -120,6 +170,33 @@ class UIComponents:
         r3[0].metric("Price", UIComponents.format_currency(data.price))
         r3[1].metric("P/E", UIComponents.format_number(data.trailing_pe, 1))
         r3[2].metric("Income on $10K", income_10k)
+
+        yield_view = UIComponents._yield_context(data.dividend_yield_pct)
+        payout_view = UIComponents._payout_context(data.payout_ratio_pct)
+        growth_view = UIComponents._growth_context(cagr_5y)
+        confidence = f"{quality:.0f}%" if quality is not None else "—"
+        st.caption(
+            "Selection context · "
+            f"Yield: {yield_view} · Payout: {payout_view} · Growth: {growth_view} · "
+            f"Valuation: {drawdown} · Data confidence: {confidence}"
+        )
+
+        with st.expander("Score composition", expanded=False):
+            components = ScoringService.calculate_score_breakdown(data)
+            breakdown = pd.DataFrame(
+                [
+                    {
+                        "Category": item.label,
+                        "Points": item.points,
+                        "Max": item.max_points,
+                        "Coverage %": round((item.points / item.max_points) * 100, 1)
+                        if item.max_points
+                        else 0.0,
+                    }
+                    for item in components
+                ]
+            )
+            st.dataframe(breakdown, use_container_width=True, hide_index=True)
 
     @staticmethod
     def display_prime_metrics(data: StockData, score: int) -> None:
@@ -536,8 +613,8 @@ class UIComponents:
                         ref_doc = get_document(ref_sym)
                         if ref_doc is not None:
                             vector_docs = {**vector_docs, ref_sym: ref_doc}
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("Could not fetch reference document for %s: %s", ref_sym, exc)
                 with st.expander(
                     f"📈 Yield Channel: {top_ref['symbol']} vs {current_stock.symbol}",
                     expanded=False

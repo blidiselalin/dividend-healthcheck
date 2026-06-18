@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 
 _pool = None
 _schema_ready = False
+# Set of user_ids for which the users row has already been ensured this process.
+# Avoids an INSERT ON CONFLICT round-trip on every open_portfolio_db() call.
+_ensured_user_rows: set[str] = set()
 
 
 def get_database_url() -> str | None:
@@ -32,8 +35,8 @@ def get_database_url() -> str | None:
             import streamlit as st
 
             url = str(st.secrets.get("DATABASE_URL", "")).strip()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Streamlit secrets not available for DATABASE_URL lookup: %s", exc)
 
     return url or None
 
@@ -170,6 +173,8 @@ def portfolio_user_id() -> str:
 def _ensure_user_row(user_id: str) -> None:
     if not use_cloud_sql():
         return
+    if user_id in _ensured_user_rows:
+        return
     with get_connection() as conn:
         conn.execute(
             """
@@ -179,6 +184,7 @@ def _ensure_user_row(user_id: str) -> None:
             """,
             (user_id, f"{user_id}@users.local", "User"),
         )
+    _ensured_user_rows.add(user_id)
 
 
 class DbCursor:
@@ -279,7 +285,8 @@ def open_portfolio_db(
             from auth.user_context import resolve_portfolio_db_path
 
             db_path = resolve_portfolio_db_path()
-        except Exception:
+        except Exception as exc:
+            logger.debug("Could not resolve portfolio db path from user context: %s", exc)
             from config import DATA_DIR
 
             db_path = DATA_DIR / "portfolio.db"

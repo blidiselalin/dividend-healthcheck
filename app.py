@@ -36,8 +36,8 @@ def _bootstrap_secrets_env() -> None:
         ):
             if key in st.secrets:
                 os.environ.setdefault(key, str(st.secrets[key]))
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Streamlit secrets not available (expected outside cloud): %s", exc)
 
 
 _bootstrap_secrets_env()
@@ -47,8 +47,8 @@ try:
 
     if use_cloud_sql():
         ensure_schema()
-except Exception:
-    pass
+except Exception as exc:
+    logger.warning("Schema initialisation skipped: %s", exc)
 
 _PROCESS_BOOT_LOGGED = False
 
@@ -99,8 +99,8 @@ def _startup_db_light() -> dict:
         from data_ingestion.stock_enricher import log_provider_status
 
         log_provider_status(logger)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Provider status log unavailable: %s", exc)
     try:
         from services.price_refresh_scheduler import start_price_refresh_scheduler
 
@@ -175,8 +175,8 @@ def _render_data_badge() -> None:
                 status = dict(status)
                 status["_coverage_scheduled"] = True
                 st.session_state["market_db_status"] = status
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Coverage badge refresh could not be scheduled: %s", exc)
         cov = status.get("sp500_coverage") or {}
         sp = (
             f" · S&P {cov.get('analysed_sp500', 0)}/{cov.get('universe_total', 0)}"

@@ -80,10 +80,10 @@ def _library_reload_needed() -> bool:
     if not cache_path.is_file():
         return False
     try:
-        import pickle
+        import json
 
-        with cache_path.open("rb") as handle:
-            bundle = pickle.load(handle)  # noqa: S301
+        with cache_path.open("r", encoding="utf-8") as handle:
+            bundle = json.load(handle)
         return cache_is_stale(bundle)
     except Exception:
         clear_session_cache()

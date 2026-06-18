@@ -5,6 +5,7 @@ Hypothetical benchmark portfolios from monthly index/ETF share purchases.
 from __future__ import annotations
 
 import calendar
+import logging
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
@@ -16,6 +17,7 @@ from data_ingestion.benchmark_purchases_seed import (
     BENCHMARK_SHARES_BY_PERIOD,
 )
 from data_ingestion.deposits_store import DepositsStore, MonthlyDeposit
+from db.benchmark_store import BenchmarkPriceStore
 from utils.chart_theme import (
     PALETTE,
     bottom_legend,
@@ -24,6 +26,8 @@ from utils.chart_theme import (
     outside_bar_text,
     style_figure,
 )
+
+logger = logging.getLogger(__name__)
 
 try:
     import plotly.graph_objects as go
@@ -122,17 +126,59 @@ class PortfolioBenchmarkService:
         self,
         deposits: list[MonthlyDeposit],
     ) -> dict[str, dict[str, float]]:
-        """period_key -> {benchmark_key: month-end close USD}."""
-        if not YFINANCE_AVAILABLE or not deposits:
+        """period_key -> {benchmark_key: month-end close USD}.
+
+        Prices are loaded from the persistent ``benchmark_price_history`` table
+        first.  Any symbol whose stored history does not reach the last deposit
+        month is (re-)fetched from Yahoo Finance and then persisted so future
+        calls do not need a network request.
+        """
+        if not deposits:
             return {}
 
         start = deposits[0].period
         end = _month_end(deposits[-1].period) + timedelta(days=5)
-        closes: dict[str, pd.Series[Any]] = {}
+
+        price_store = BenchmarkPriceStore()
+        # Seed ETF metadata once (no-op if already present)
+        try:
+            price_store.seed_etf_info_if_empty()
+        except Exception as exc:  # pragma: no cover
+            logger.debug("ETF metadata seed failed (non-fatal): %s", exc)
+        closes: dict[str, pd.Series] = {}
         for benchmark in BENCHMARKS:
-            series = self._download_close_series(benchmark.yfinance_symbol, start, end)
-            if not series.empty:
-                closes[benchmark.key] = series
+            sym = benchmark.yfinance_symbol
+            # Check whether stored data covers the requested range.
+            latest = price_store.latest_date(sym)
+            need_fetch = latest is None or latest < _month_end(deposits[-1].period)
+
+            if need_fetch and YFINANCE_AVAILABLE:
+                fetch_start = (latest + timedelta(days=1)) if latest else start
+                series = self._download_close_series(sym, fetch_start, end)
+                if not series.empty:
+                    # Persist new rows to the store.
+                    try:
+                        price_store.upsert_prices(
+                            sym,
+                            {
+                                ts.date() if isinstance(ts, pd.Timestamp) else ts: float(val)
+                                for ts, val in series.items()
+                                if val is not None
+                            },
+                        )
+                    except Exception as exc:  # pragma: no cover
+                        logger.debug("Could not persist benchmark prices for %s: %s", sym, exc)
+
+            # Load the full range from the store (combines persisted + newly fetched).
+            stored = price_store.load_prices(sym, start, end)
+            if stored:
+                idx = pd.to_datetime(list(stored.keys()))
+                closes[benchmark.key] = pd.Series(list(stored.values()), index=idx)
+            elif YFINANCE_AVAILABLE:
+                # Fallback: use in-memory series if store is unavailable.
+                series = self._download_close_series(sym, start, end)
+                if not series.empty:
+                    closes[benchmark.key] = series
 
         result: dict[str, dict[str, float]] = {}
         for deposit in deposits:
@@ -147,6 +193,46 @@ class PortfolioBenchmarkService:
                     period_prices[key] = float(val)
             result[deposit.period_key] = period_prices
         return result
+
+    def refresh_benchmark_prices(self) -> dict[str, int]:
+        """Force-fetch all benchmark symbols from Yahoo Finance and persist results.
+
+        Returns ``{yfinance_symbol: rows_written}`` for each benchmark.
+        Useful for an admin "Refresh benchmark prices" button.
+        """
+        if not YFINANCE_AVAILABLE:
+            return {}
+
+        deposits = self.store.list_deposits()
+        if not deposits:
+            return {}
+
+        start = deposits[0].period
+        end = _month_end(deposits[-1].period) + timedelta(days=5)
+        price_store = BenchmarkPriceStore()
+        results: dict[str, int] = {}
+
+        for benchmark in BENCHMARKS:
+            sym = benchmark.yfinance_symbol
+            series = self._download_close_series(sym, start, end)
+            if series.empty:
+                results[sym] = 0
+                continue
+            try:
+                written = price_store.upsert_prices(
+                    sym,
+                    {
+                        ts.date() if isinstance(ts, pd.Timestamp) else ts: float(val)
+                        for ts, val in series.items()
+                        if val is not None
+                    },
+                )
+                results[sym] = written
+            except Exception as exc:
+                logger.warning("Could not persist prices for %s: %s", sym, exc)
+                results[sym] = 0
+
+        return results
 
     def build_comparison_dataframe(
         self,

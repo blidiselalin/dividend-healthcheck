@@ -480,27 +480,39 @@ def inspect_stock_symbol(symbol: str) -> dict[str, Any]:
               s.last_updated,
               s.source,
               GREATEST(
-                COALESCE((SELECT COUNT(*) FROM stock_price_history p WHERE p.symbol = s.symbol), 0),
+                COALESCE(ph.price_count, 0),
                 jsonb_array_length(COALESCE(s.document->'price_history', '[]'::jsonb))
               ) AS price_points,
               GREATEST(
-                COALESCE(
-                  (SELECT COUNT(*) FROM stock_dividend_history d WHERE d.symbol = s.symbol), 0
-                ),
+                COALESCE(dh.div_count, 0),
                 jsonb_array_length(COALESCE(s.document->'dividend_history', '[]'::jsonb))
               ) AS dividend_payments,
-              (SELECT MIN(price_date) FROM stock_price_history p
-               WHERE p.symbol = s.symbol) AS first_price_date,
-              (SELECT MAX(price_date) FROM stock_price_history p
-               WHERE p.symbol = s.symbol) AS last_price_date,
-              (SELECT MIN(ex_date) FROM stock_dividend_history d
-               WHERE d.symbol = s.symbol) AS first_dividend_date,
-              (SELECT MAX(ex_date) FROM stock_dividend_history d
-               WHERE d.symbol = s.symbol) AS last_dividend_date
+              ph.first_price_date,
+              ph.last_price_date,
+              dh.first_dividend_date,
+              dh.last_dividend_date
             FROM stock_documents s
+            LEFT JOIN (
+              SELECT symbol,
+                     COUNT(*)         AS price_count,
+                     MIN(price_date)  AS first_price_date,
+                     MAX(price_date)  AS last_price_date
+              FROM stock_price_history
+              WHERE symbol = %s
+              GROUP BY symbol
+            ) ph ON ph.symbol = s.symbol
+            LEFT JOIN (
+              SELECT symbol,
+                     COUNT(*)      AS div_count,
+                     MIN(ex_date)  AS first_dividend_date,
+                     MAX(ex_date)  AS last_dividend_date
+              FROM stock_dividend_history
+              WHERE symbol = %s
+              GROUP BY symbol
+            ) dh ON dh.symbol = s.symbol
             WHERE s.symbol = %s
             """,
-            (sym,),
+            (sym, sym, sym),
         ).fetchone()
     if not row:
         return {"ok": False, "symbol": sym, "message": "Symbol not in stock_documents"}

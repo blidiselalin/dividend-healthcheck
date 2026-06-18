@@ -4,12 +4,16 @@ User-facing access request UI and admin approval controls.
 
 from __future__ import annotations
 
+import logging
+
 import streamlit as st
 
 from auth.access_requests import AccessRequestStatus, AccessRequestStore
 from auth.settings import invite_only_signup
 from auth.user_context import google_identity
 from ui.theme import render_notice, sidebar_heading
+
+logger = logging.getLogger(__name__)
 
 
 def render_access_denied_panel() -> None:
@@ -120,9 +124,8 @@ def render_admin_access_requests() -> None:
 
             user = current_user()
             admin_email = user.email if user else ""
-        except Exception:
-            pass
-
+        except Exception as exc:
+            logger.debug("Could not resolve admin email for access approval: %s", exc)
         with col_a:
             if st.button("Approve", key=approve_key, use_container_width=True, type="primary"):
                 if store.approve(item.email, reviewer_email=admin_email):

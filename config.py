@@ -256,6 +256,18 @@ PAYOUT_SAFE: Final[float] = 60.0
 PAYOUT_MODERATE: Final[float] = 75.0
 PAYOUT_ELEVATED: Final[float] = 90.0
 
+# Dividend yield context thresholds (shared between UI display and scoring)
+YIELD_OPTIMAL_MIN: Final[float] = 2.5   # lower bound of optimal income range
+YIELD_OPTIMAL_MAX: Final[float] = 4.5   # upper bound of optimal income range
+YIELD_CAUTION_MIN: Final[float] = 8.0   # above this → potential dividend trap
+
+# Dividend growth context thresholds (shared between UI display and scoring)
+GROWTH_STRONG_MIN: Final[float] = 6.0   # ≥ 6 % CAGR → strong growth
+GROWTH_MODERATE_MIN: Final[float] = 3.0  # ≥ 3 % CAGR → moderate growth
+
+# Payout watch threshold for UI context (complements PAYOUT_SAFE = 60)
+PAYOUT_WATCH: Final[float] = 80.0       # 60 < payout ≤ 80 → watch zone
+
 
 # =============================================================================
 # API & RATE LIMITING

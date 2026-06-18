@@ -1400,8 +1400,20 @@ class PortfolioDetailsView:
         st.markdown("##### Benchmark comparison (S&P 500 & SCHD)")
         st.caption(
             "Same monthly share purchases as on the deposits sheet. "
-            "Month-end closing prices (Yahoo Finance), converted to €."
+            "Month-end closing prices (Yahoo Finance), converted to €. "
+            "Prices are cached in the database and refreshed on demand."
         )
+
+        # Refresh button — triggers a fresh Yahoo Finance fetch and DB write
+        col_refresh, _ = st.columns([1, 4])
+        with col_refresh:
+            if st.button("🔄 Refresh benchmark prices", key="benchmark_refresh_btn"):
+                with st.spinner("Fetching benchmark prices from Yahoo Finance…"):
+                    result = PortfolioBenchmarkService().refresh_benchmark_prices()
+                _load_benchmark_comparison.clear()
+                written = sum(result.values())
+                st.success(f"Saved {written} price rows. Reloading…")
+                st.rerun()
 
         try:
             comparison_df = _load_benchmark_comparison()
@@ -1547,6 +1559,61 @@ class PortfolioDetailsView:
                 "text/csv",
                 key="portfolio_benchmark_yearly_csv",
             )
+
+        cls._render_etf_best_practices()
+
+    @classmethod
+    def _render_etf_best_practices(cls) -> None:
+        """Expandable ETF / index reference cards with best-practice notes."""
+        from db.benchmark_store import BENCHMARK_ETF_SEED, BenchmarkPriceStore
+
+        with st.expander("📘 Benchmark ETF reference & best practices"):
+            st.caption(
+                "Key facts and investment considerations for each index/ETF used "
+                "in the comparison above."
+            )
+            # Try to load from DB; fall back to the embedded seed if DB unavailable.
+            try:
+                stored = BenchmarkPriceStore().get_all_etf_info()
+            except Exception:
+                stored = {}
+
+            # Merge: DB rows override the seed so live edits surface immediately.
+            info_map: dict[str, dict] = {}
+            for sym, meta in BENCHMARK_ETF_SEED.items():
+                info_map[sym] = dict(meta)
+            for sym, meta in stored.items():
+                info_map[sym.upper()] = meta
+
+            from data_ingestion.benchmark_purchases_seed import BENCHMARK_META
+
+            ordered_symbols = [yf_sym for _, _, yf_sym, _ in BENCHMARK_META]
+            for sym in ordered_symbols:
+                info = info_map.get(sym.upper())
+                if not info:
+                    continue
+                display = info.get("display_name") or sym
+                full_name = info.get("full_name") or ""
+                description = info.get("description") or ""
+                expense = info.get("expense_ratio_pct")
+                category = info.get("category") or ""
+                best = info.get("best_practices") or ""
+
+                st.markdown(f"**{display}** — {full_name}")
+                meta_parts = []
+                if category:
+                    meta_parts.append(f"Category: {category}")
+                if expense is not None:
+                    meta_parts.append(f"Expense ratio: {expense:.2f} %")
+                else:
+                    meta_parts.append("Expense ratio: N/A (index)")
+                if meta_parts:
+                    st.caption("  ·  ".join(meta_parts))
+                if description:
+                    st.write(description)
+                if best:
+                    st.markdown(best)
+                st.divider()
 
     @classmethod
     def _render_purchase_journal_page(cls) -> None:

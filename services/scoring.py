@@ -7,7 +7,16 @@ emphasizing the key metrics that matter most to income investors.
 
 from dataclasses import dataclass
 
-from config import RECOMMENDATION_THRESHOLDS
+from config import (
+    GROWTH_MODERATE_MIN,
+    GROWTH_STRONG_MIN,
+    PAYOUT_SAFE,
+    PAYOUT_WATCH,
+    RECOMMENDATION_THRESHOLDS,
+    YIELD_CAUTION_MIN,
+    YIELD_OPTIMAL_MAX,
+    YIELD_OPTIMAL_MIN,
+)
 from models.stock import StockData
 
 
@@ -28,6 +37,16 @@ class Recommendation:
     confidence: float = 100.0
 
 
+@dataclass(frozen=True)
+class ScoreComponent:
+    """One score category contribution."""
+
+    key: str
+    label: str
+    points: int
+    max_points: int
+
+
 class ScoringService:
     """Service for dividend-focused investment scoring.
 
@@ -40,211 +59,255 @@ class ScoringService:
     """
 
     @staticmethod
-    def calculate_score(data: StockData) -> int:  # noqa: C901
-        """Calculate strategic investment score (0-100).
+    def calculate_score(data: StockData) -> int:
+        """Calculate strategic investment score (0-100)."""
+        total = sum(
+            component.points
+            for component in ScoringService.calculate_score_breakdown(data)
+        )
+        return min(total, 100)
 
-        Weights:
-        - Dividend Streak: 20 pts
-        - Dividend Safety: 15 pts
-        - Dividend Yield: 15 pts
-        - Dividend Growth: 15 pts
-        - Valuation: 10 pts
-        - Financial Strength: 10 pts
-        - Profitability: 10 pts
-        - Size/Stability: 5 pts
-        """
-        score = 0
+    @staticmethod
+    def calculate_score_breakdown(data: StockData) -> list[ScoreComponent]:  # noqa: C901
+        """Return category-level score contributions used in the total score."""
+        components: list[ScoreComponent] = []
 
-        # === DIVIDEND STREAK (20 points) ===
-        # The defining characteristic of Dividend Kings
+        streak_points = 0
         if data.dividend_history:
             years = data.dividend_history.consecutive_years
             if years >= 50:
-                score += 20  # True Dividend King
+                streak_points = 20
             elif years >= 40:
-                score += 18
+                streak_points = 18
             elif years >= 30:
-                score += 16
+                streak_points = 16
             elif years >= 25:
-                score += 14  # Aristocrat
+                streak_points = 14
             elif years >= 20:
-                score += 12
+                streak_points = 12
             elif years >= 15:
-                score += 10
+                streak_points = 10
             elif years >= 10:
-                score += 8  # Achiever
+                streak_points = 8
             elif years >= 5:
-                score += 5  # Contender
+                streak_points = 5
             elif years >= 1:
-                score += 2
+                streak_points = 2
+        components.append(
+            ScoreComponent(
+                key="streak",
+                label="Dividend streak",
+                points=streak_points,
+                max_points=20,
+            )
+        )
 
-        # === DIVIDEND SAFETY (15 points) ===
-        # Payout ratio - lower is safer
+        safety_points = 0
         if data.payout_ratio_pct is not None:
             pr = data.payout_ratio_pct
             if pr <= 40:
-                score += 10
+                safety_points += 10
             elif pr <= 50:
-                score += 9
-            elif pr <= 60:
-                score += 8
+                safety_points += 9
+            elif pr <= PAYOUT_SAFE:
+                safety_points += 8
             elif pr <= 70:
-                score += 6
-            elif pr <= 80:
-                score += 4
+                safety_points += 6
+            elif pr <= PAYOUT_WATCH:
+                safety_points += 4
             elif pr <= 100:
-                score += 2
-            # >100% is risky, 0 points
-
-        # Dividend coverage (EPS/DPS) - higher is safer
+                safety_points += 2
         if data.dividend_coverage is not None:
             if data.dividend_coverage >= 3:
-                score += 5
+                safety_points += 5
             elif data.dividend_coverage >= 2:
-                score += 4
+                safety_points += 4
             elif data.dividend_coverage >= 1.5:
-                score += 3
+                safety_points += 3
             elif data.dividend_coverage >= 1.2:
-                score += 2
+                safety_points += 2
             elif data.dividend_coverage >= 1:
-                score += 1
+                safety_points += 1
+        components.append(
+            ScoreComponent(
+                key="safety",
+                label="Dividend safety",
+                points=min(safety_points, 15),
+                max_points=15,
+            )
+        )
 
-        # === DIVIDEND YIELD (15 points) ===
-        # Sweet spot is 2-5% - not too low, not suspiciously high
+        yield_points = 0
         if data.dividend_yield_pct is not None:
             dy = data.dividend_yield_pct
-            if 2.5 <= dy <= 4.5:
-                score += 15  # Optimal range
-            elif 2.0 <= dy < 2.5 or 4.5 < dy <= 5.5:
-                score += 13
+            if YIELD_OPTIMAL_MIN <= dy <= YIELD_OPTIMAL_MAX:
+                yield_points = 15
+            elif 2.0 <= dy < YIELD_OPTIMAL_MIN or YIELD_OPTIMAL_MAX < dy <= 5.5:
+                yield_points = 13
             elif 1.5 <= dy < 2.0 or 5.5 < dy <= 6.5:
-                score += 10
-            elif 1.0 <= dy < 1.5 or 6.5 < dy <= 8.0:
-                score += 7
-            elif dy >= 0.5 or 8.0 < dy <= 10:
-                score += 4
-            # Very high yields (>10%) often signal risk
+                yield_points = 10
+            elif 1.0 <= dy < 1.5 or 6.5 < dy <= YIELD_CAUTION_MIN:
+                yield_points = 7
+            elif 0.5 <= dy < 1.0 or YIELD_CAUTION_MIN < dy <= 10:
+                yield_points = 4
+        components.append(
+            ScoreComponent(
+                key="yield",
+                label="Dividend yield",
+                points=yield_points,
+                max_points=15,
+            )
+        )
 
-        # === DIVIDEND GROWTH (15 points) ===
-        # Historical CAGR indicates future growth potential
+        growth_points = 0
         if data.dividend_history:
-            # Use 5-year CAGR primarily
             cagr = data.dividend_history.cagr_5y
             if cagr >= 10:
-                score += 15
+                growth_points = 15
             elif cagr >= 8:
-                score += 13
-            elif cagr >= 6:
-                score += 11
+                growth_points = 13
+            elif cagr >= GROWTH_STRONG_MIN:
+                growth_points = 11
             elif cagr >= 5:
-                score += 9
+                growth_points = 9
             elif cagr >= 4:
-                score += 7
-            elif cagr >= 3:
-                score += 5
+                growth_points = 7
+            elif cagr >= GROWTH_MODERATE_MIN:
+                growth_points = 5
             elif cagr >= 2:
-                score += 3
+                growth_points = 3
             elif cagr > 0:
-                score += 1
+                growth_points = 1
+        components.append(
+            ScoreComponent(
+                key="growth",
+                label="Dividend growth",
+                points=growth_points,
+                max_points=15,
+            )
+        )
 
-        # === VALUATION (10 points) ===
-        # P/E ratio assessment
+        valuation_points = 0
         pe = data.trailing_pe or data.forward_pe
         if pe and pe > 0:
             if pe <= 12:
-                score += 6
+                valuation_points += 6
             elif pe <= 15:
-                score += 5
+                valuation_points += 5
             elif pe <= 18:
-                score += 4
+                valuation_points += 4
             elif pe <= 22:
-                score += 3
+                valuation_points += 3
             elif pe <= 28:
-                score += 2
+                valuation_points += 2
             elif pe <= 35:
-                score += 1
-
-        # Price vs 52-week high (buying opportunity indicator)
+                valuation_points += 1
         if data.price_to_52w_high_pct is not None:
             off_high = abs(data.price_to_52w_high_pct)
             if off_high >= 20:
-                score += 4  # Significant discount
+                valuation_points += 4
             elif off_high >= 10:
-                score += 3
+                valuation_points += 3
             elif off_high >= 5:
-                score += 2
+                valuation_points += 2
             else:
-                score += 1  # Near high
+                valuation_points += 1
+        components.append(
+            ScoreComponent(
+                key="valuation",
+                label="Valuation",
+                points=min(valuation_points, 10),
+                max_points=10,
+            )
+        )
 
-        # === FINANCIAL STRENGTH (10 points) ===
-        # Debt-to-Equity
+        strength_points = 0
         if data.debt_to_equity is not None:
             de = data.debt_to_equity
             if de <= 0.3:
-                score += 5
+                strength_points += 5
             elif de <= 0.5:
-                score += 4
+                strength_points += 4
             elif de <= 0.8:
-                score += 3
+                strength_points += 3
             elif de <= 1.2:
-                score += 2
+                strength_points += 2
             elif de <= 2.0:
-                score += 1
-
-        # Liquidity (Current Ratio)
+                strength_points += 1
         if data.current_ratio:
             if data.current_ratio >= 2.0:
-                score += 5
+                strength_points += 5
             elif data.current_ratio >= 1.5:
-                score += 4
+                strength_points += 4
             elif data.current_ratio >= 1.2:
-                score += 3
+                strength_points += 3
             elif data.current_ratio >= 1.0:
-                score += 2
+                strength_points += 2
             elif data.current_ratio >= 0.8:
-                score += 1
+                strength_points += 1
+        components.append(
+            ScoreComponent(
+                key="strength",
+                label="Financial strength",
+                points=min(strength_points, 10),
+                max_points=10,
+            )
+        )
 
-        # === PROFITABILITY (10 points) ===
-        # ROE
+        profitability_points = 0
         if data.roe_pct is not None:
             if data.roe_pct >= 25:
-                score += 5
+                profitability_points += 5
             elif data.roe_pct >= 18:
-                score += 4
+                profitability_points += 4
             elif data.roe_pct >= 12:
-                score += 3
+                profitability_points += 3
             elif data.roe_pct >= 8:
-                score += 2
+                profitability_points += 2
             elif data.roe_pct >= 5:
-                score += 1
-
-        # Profit Margins
+                profitability_points += 1
         if data.profit_margin_pct is not None:
             if data.profit_margin_pct >= 20:
-                score += 5
+                profitability_points += 5
             elif data.profit_margin_pct >= 15:
-                score += 4
+                profitability_points += 4
             elif data.profit_margin_pct >= 10:
-                score += 3
+                profitability_points += 3
             elif data.profit_margin_pct >= 5:
-                score += 2
+                profitability_points += 2
             elif data.profit_margin_pct > 0:
-                score += 1
+                profitability_points += 1
+        components.append(
+            ScoreComponent(
+                key="profitability",
+                label="Profitability",
+                points=min(profitability_points, 10),
+                max_points=10,
+            )
+        )
 
-        # === SIZE/STABILITY (5 points) ===
+        stability_points = 0
         if data.market_cap:
             if data.market_cap >= 100e9:
-                score += 5  # Mega cap
+                stability_points = 5
             elif data.market_cap >= 50e9:
-                score += 4  # Large cap
+                stability_points = 4
             elif data.market_cap >= 10e9:
-                score += 3  # Mid-large
+                stability_points = 3
             elif data.market_cap >= 2e9:
-                score += 2  # Mid cap
+                stability_points = 2
             else:
-                score += 1  # Small cap
+                stability_points = 1
+        components.append(
+            ScoreComponent(
+                key="stability",
+                label="Size/stability",
+                points=stability_points,
+                max_points=5,
+            )
+        )
 
-        return min(score, 100)
+        return components
 
     @staticmethod
     def get_recommendation(score: int, confidence: float = 100.0) -> Recommendation:

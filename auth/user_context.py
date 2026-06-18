@@ -192,7 +192,7 @@ def resolve_portfolio_db_path() -> Path:
 
 
 def resolve_user_session_cache_path() -> Path:
-    return resolve_user_data_dir() / "portfolio_ui_session.pkl"
+    return resolve_user_data_dir() / "portfolio_ui_session.json"
 
 
 def clear_portfolio_session_state() -> None:

@@ -237,6 +237,69 @@ def render_empty_home() -> None:
     render_real_user_getting_started()
 
 
+_CARDS_PER_ROW = 4
+_CARD_COMPANY_NAME_MAX_LEN = 22
+
+
+def render_stocks_overview(rows: List[PortfolioDetailRow]) -> None:
+    """Horizontal card grid — one card per holding, sorted by current value descending."""
+    if not rows:
+        return
+
+    sorted_rows = sorted(rows, key=lambda r: r.current_value or 0.0, reverse=True)
+    all_tickers = [r.ticker for r in sorted_rows]
+
+    st.markdown("#### All positions")
+    st.caption("Sorted by current value · tap **Open →** to drill into any holding.")
+
+    for chunk_start in range(0, len(sorted_rows), _CARDS_PER_ROW):
+        chunk = sorted_rows[chunk_start : chunk_start + _CARDS_PER_ROW]
+        cols = st.columns(_CARDS_PER_ROW)
+        for col_idx, row in enumerate(chunk):
+            with cols[col_idx]:
+                price_str = f"${row.current_price:,.2f}" if row.current_price is not None else "—"
+                profit_delta = (
+                    f"{row.profit_pct:+.1f}%" if row.profit_pct is not None else None
+                )
+                st.metric(
+                    label=f"**{row.ticker}** · {row.company[:_CARD_COMPANY_NAME_MAX_LEN].rstrip()}",
+                    value=price_str,
+                    delta=profit_delta,
+                    help=row.sector or "",
+                )
+
+                value_str = (
+                    f"${row.current_value:,.0f}" if row.current_value is not None else "—"
+                )
+                yield_str = (
+                    f"{row.dividend_yield_pct:.2f}%"
+                    if row.dividend_yield_pct is not None
+                    else "—"
+                )
+                weight_str = (
+                    f"{row.weight_pct:.1f}%"
+                    if row.weight_pct is not None
+                    else "—"
+                )
+                income_str = (
+                    f"${row.annual_income:,.0f}"
+                    if row.annual_income is not None
+                    else "—"
+                )
+                st.caption(
+                    f"Value {value_str} · Weight {weight_str}\n"
+                    f"Yield {yield_str} · Income/yr {income_str}"
+                )
+
+                if st.button(
+                    "Open →",
+                    key=f"home_card_{row.ticker}",
+                    use_container_width=True,
+                    help=f"{row.ticker} — {row.company}",
+                ):
+                    set_holding_selection(row.ticker, nav_tickers=all_tickers)
+
+
 def render_compact_summary(rows: List[PortfolioDetailRow]) -> None:
     from services.portfolio_analysis_preload import PortfolioAnalysisPreload
     from services.portfolio_month_dividends import current_month_paid_dividends
@@ -257,24 +320,8 @@ def render_compact_summary(rows: List[PortfolioDetailRow]) -> None:
         show_month_received=month_paid is not None,
     )
 
-    ranked = sorted(rows, key=lambda r: r.current_value or 0.0, reverse=True)[:8]
-    if not ranked:
-        return
-
-    st.caption("Tap a ticker to open its analysis")
-    cols = st.columns(4)
-    for index, row in enumerate(ranked):
-        with cols[index % 4]:
-            if st.button(
-                row.ticker,
-                key=f"home_quick_{row.ticker}",
-                use_container_width=True,
-                help=f"${(row.current_value or 0):,.0f}",
-            ):
-                set_holding_selection(
-                    row.ticker,
-                    nav_tickers=[item.ticker for item in ranked],
-                )
+    st.divider()
+    render_stocks_overview(rows)
 
 
 def render_portfolio_home_header(

@@ -5,10 +5,15 @@ This module contains the main view classes optimized for dividend investors,
 with key metrics prominently displayed on the first page.
 """
 
+from __future__ import annotations
+
+import logging
 from datetime import datetime
 from typing import Optional
 
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 
 from config import DATA_SOURCES
 from models.stock import StockData
@@ -84,8 +89,8 @@ def get_service_status() -> dict:
             status["document_count"] = doc_count
             status["sp500_coverage"] = market.get("sp500_coverage")
             return status
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Shared market db status unavailable: %s", exc)
 
     if VECTORDB_SERVICE_AVAILABLE:
         try:
@@ -101,11 +106,12 @@ def get_service_status() -> dict:
                     from services.sp500_peers_service import coverage_stats
                     cov = coverage_stats()
                     status["sp500_coverage"] = cov
-                except Exception:
+                except Exception as exc:
+                    logger.debug("S&P 500 coverage stats unavailable: %s", exc)
                     status["sp500_coverage"] = None
                 status["dividend_kings"] = stats.get("dividend_kings", 0)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("VectorDB service unavailable: %s", exc)
     
     if ENHANCED_SERVICE_AVAILABLE and status["mode"] == "API-only":
         status["mode"] = "Enhanced (API + DB)"
