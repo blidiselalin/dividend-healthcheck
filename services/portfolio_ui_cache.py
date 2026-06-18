@@ -8,6 +8,7 @@ when the shared market library was updated after the cached snapshot was saved.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -23,6 +24,10 @@ MAX_PORTFOLIO_CACHE_AGE = timedelta(hours=24)
 
 # Dividend receipt sync is heavy (history per holding); run at most this often on app open.
 DIVIDEND_SYNC_INTERVAL = timedelta(hours=6)
+
+# TTL for market_library_latest_update() — avoids a SELECT MAX per startup check.
+_LIBRARY_UPDATE_CACHE_TTL: float = 60.0
+_library_update_cache: tuple[datetime | None, float] | None = None
 
 
 def _cache_path() -> Path:
@@ -75,7 +80,25 @@ def _coerce_datetime(value: Any) -> datetime | None:
 
 
 def market_library_latest_update() -> datetime | None:
-    """Latest ``last_updated`` across PostgreSQL stock_documents (None if empty/local)."""
+    """Latest ``last_updated`` across PostgreSQL stock_documents (None if empty/local).
+
+    Cached for ``_LIBRARY_UPDATE_CACHE_TTL`` seconds so multiple calls within
+    the same render cycle (staleness check + library-reload decision) share one
+    database round-trip.
+    """
+    global _library_update_cache
+
+    now = time.monotonic()
+    if _library_update_cache is not None and (now - _library_update_cache[1]) < _LIBRARY_UPDATE_CACHE_TTL:
+        return _library_update_cache[0]
+
+    result = _fetch_market_library_latest_update()
+    _library_update_cache = (result, now)
+    return result
+
+
+def _fetch_market_library_latest_update() -> datetime | None:
+    """Uncached query for the latest stock_documents update timestamp."""
     try:
         from db.connection import ensure_schema, get_connection, use_cloud_sql
 
