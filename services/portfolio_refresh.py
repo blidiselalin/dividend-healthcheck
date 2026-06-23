@@ -58,6 +58,15 @@ def reload_portfolio_session(
         preload_analysis=True,
     )
     store_portfolio_payload(rows, preload)
+    try:
+        import streamlit as st
+        from utils.portfolio_db import compute_portfolio_db_fingerprint
+
+        st.session_state["_portfolio_db_fingerprint"] = compute_portfolio_db_fingerprint(
+            use_cache=False
+        )
+    except Exception as exc:
+        logger.debug("Could not store portfolio DB fingerprint after reload: %s", exc)
     logger.info("Portfolio reload finished (%d holdings)", len(rows))
     if refresh_risks:
         refresh_portfolio_risks(force=True, rows=rows, preload=preload)

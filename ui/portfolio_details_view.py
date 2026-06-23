@@ -1209,26 +1209,25 @@ class PortfolioDetailsView:
             paid_row1_a, paid_row1_b, paid_row1_c = st.columns(3)
             with paid_row1_a:
                 st.metric(
-                    "Received",
-                    f"${month_paid.net_usd:,.2f}"
-                    if month_paid.net_usd is not None
-                    else f"${month_paid.gross_usd:,.2f}",
+                    "Gross received",
+                    f"${month_paid.gross_usd:,.2f}",
                     month_paid.through_label,
                     help=(
-                        f"Cash received in {month_paid.month_label} with pay date on or before "
-                        f"{month_paid.through_date.strftime('%d %b %Y')}"
+                        f"Gross cash with pay date in {month_paid.month_label}, "
+                        f"on or before {month_paid.through_date.strftime('%d %b %Y')}. "
+                        "Recomputed from holdings and dividend history (Yahoo-aligned)."
                     ),
                 )
             with paid_row1_b:
                 st.metric(
-                    "Gross",
-                    f"${month_paid.gross_usd:,.2f}",
+                    "Net (est.)",
+                    f"${month_paid.net_usd:,.2f}" if month_paid.net_usd is not None else "—",
                     f"{month_paid.payer_count} payment{'s' if month_paid.payer_count != 1 else ''}"
                     if month_paid.payer_count
                     else "None yet",
                 )
             with paid_row1_c:
-                if month_paid.net_usd is not None:
+                if month_paid.net_usd is not None and month_paid.gross_usd > 0:
                     tax = round(month_paid.gross_usd - month_paid.net_usd, 2)
                     st.metric(
                         "Tax (est.)",
@@ -1237,9 +1236,9 @@ class PortfolioDetailsView:
                     )
                 else:
                     st.metric(
-                        "Net",
+                        "Tax (est.)",
                         "—",
-                        help="Reload live data to sync dividend receipts",
+                        help="Reload live data after dividend sync",
                     )
             st.divider()
 
@@ -2205,6 +2204,13 @@ class PortfolioDetailsView:
         )
 
         df = cls._rows_to_dataframe(rows, preload)
+        from services.portfolio_holdings_summary import sort_positions_worst_first
+
+        order = {
+            row.ticker: index for index, row in enumerate(sort_positions_worst_first(rows))
+        }
+        df["_sort"] = df["Ticker"].map(lambda ticker: order.get(ticker, 999))
+        df = df.sort_values("_sort").drop(columns=["_sort"])
 
         # Show a stale-price notice if any holdings are pending a live-price refresh.
         stale_tickers = [row.ticker for row in rows if getattr(row, "price_stale", False)]
@@ -2230,6 +2236,10 @@ class PortfolioDetailsView:
         st.session_state["portfolio_nav_tickers"] = filtered_tickers
 
         st.markdown("##### Positions table")
+        st.caption(
+            "Worst performers first · select a row to load holding detail below, "
+            "or use **Holding detail** for full dividend analysis."
+        )
         table_selection = st.dataframe(
             filtered,
             width="stretch",

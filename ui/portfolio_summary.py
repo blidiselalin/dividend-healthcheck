@@ -67,26 +67,28 @@ def render_holdings_summary(
 
     if include_received and index < len(metric_columns):
         received = month_paid
-        value = (
-            f"${received.net_usd:,.2f}"
-            if received.net_usd is not None
-            else f"${received.gross_usd:,.2f}"
-        )
+        value = f"${received.gross_usd:,.2f}"
         payer_delta = (
             f"{received.payer_count} payment{'s' if received.payer_count != 1 else ''}"
             if received.payer_count
             else "None yet"
         )
+        net_hint = (
+            f" · net ${received.net_usd:,.2f} est."
+            if received.net_usd is not None and received.gross_usd > 0
+            else ""
+        )
         metric_columns[index].metric(
             f"Received ({received.month_label.split()[0]})",
             value,
-            f"{received.through_label} · {payer_delta}",
+            f"{received.through_label} · {payer_delta}{net_hint}",
             help=(
-                f"Cash received with pay date in {received.month_label}, "
+                f"Gross cash received with pay date in {received.month_label}, "
                 f"on or before {received.through_date.strftime('%d %b %Y')}. "
-                f"Gross ${received.gross_usd:,.2f}"
+                "Shares on ex-date from your purchase journal when available — "
+                "same basis as Yahoo portfolio dividends."
                 + (
-                    f" · net ${received.net_usd:,.2f} after withholding (est.)"
+                    f" Net after withholding (est.) ${received.net_usd:,.2f}."
                     if received.net_usd is not None
                     else ""
                 )

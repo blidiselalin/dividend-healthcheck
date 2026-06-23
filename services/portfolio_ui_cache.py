@@ -163,6 +163,12 @@ def save_session_cache() -> None:
         "portfolio_analysis_ready": False,
     }
     try:
+        from utils.portfolio_db import compute_portfolio_db_fingerprint
+
+        bundle["db_fingerprint"] = compute_portfolio_db_fingerprint(use_cache=False)
+    except Exception as exc:
+        logger.debug("Could not compute portfolio DB fingerprint for cache: %s", exc)
+    try:
         cache_path = _cache_path()
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         with cache_path.open("w", encoding="utf-8") as handle:
@@ -229,6 +235,20 @@ def hydrate_session_from_disk() -> bool:  # noqa: C901
             return warm_portfolio_session_from_db(preload_charts=False)
         return False
 
+    try:
+        from utils.portfolio_db import compute_portfolio_db_fingerprint
+
+        current_fp = compute_portfolio_db_fingerprint(use_cache=False)
+        bundle_fp = bundle.get("db_fingerprint")
+        if bundle_fp and bundle_fp != current_fp:
+            logger.info(
+                "Portfolio UI cache fingerprint mismatch; warming from database instead."
+            )
+            clear_session_cache()
+            return warm_portfolio_session_from_db(preload_charts=False, force=True)
+    except Exception as exc:
+        logger.debug("Portfolio DB fingerprint check skipped during hydrate: %s", exc)
+
     if cache_is_stale(bundle):
         logger.info(
             "Portfolio UI cache stale (saved_at=%s); utilizing as "
@@ -252,6 +272,14 @@ def hydrate_session_from_disk() -> bool:  # noqa: C901
         st.session_state["portfolio_details_time"] = details_time
     st.session_state["portfolio_analysis_ready"] = bool(bundle.get("portfolio_analysis_ready"))
     st.session_state["portfolio_show_analysis"] = True
+    try:
+        from utils.portfolio_db import compute_portfolio_db_fingerprint
+
+        st.session_state["_portfolio_db_fingerprint"] = bundle.get("db_fingerprint") or compute_portfolio_db_fingerprint(
+            use_cache=False
+        )
+    except Exception as exc:
+        logger.debug("Could not store portfolio DB fingerprint after hydrate: %s", exc)
     logger.info(
         "Portfolio UI cache loaded path=%s holdings=%d saved_at=%s",
         cache_path,
@@ -289,7 +317,7 @@ def mark_dividend_sync_completed() -> None:
         logger.debug("Could not write dividend sync timestamp: %s", exc)
 
 
-def warm_portfolio_session_from_db(*, preload_charts: bool = False) -> bool:
+def warm_portfolio_session_from_db(*, preload_charts: bool = False, force: bool = False) -> bool:
     """
     Build holdings from the shared library without live prices when the session is empty.
 
@@ -300,7 +328,7 @@ def warm_portfolio_session_from_db(*, preload_charts: bool = False) -> bool:
     from services.portfolio_session import is_demo_session, user_has_holdings_in_db
     from ui.portfolio_risk_panel import store_portfolio_payload
 
-    if st.session_state.get("portfolio_details_rows"):
+    if st.session_state.get("portfolio_details_rows") and not force:
         return True
     if is_demo_session() or not user_has_holdings_in_db():
         return False
@@ -325,6 +353,14 @@ def warm_portfolio_session_from_db(*, preload_charts: bool = False) -> bool:
         analysis_ready=preload_charts,
     )
     st.session_state["portfolio_fast_loaded"] = not preload_charts
+    try:
+        from utils.portfolio_db import compute_portfolio_db_fingerprint
+
+        st.session_state["_portfolio_db_fingerprint"] = compute_portfolio_db_fingerprint(
+            use_cache=False
+        )
+    except Exception as exc:
+        logger.debug("Could not store portfolio DB fingerprint after warm load: %s", exc)
     logger.info("Portfolio fast-loaded from library (%d holdings)", len(rows))
     return True
 

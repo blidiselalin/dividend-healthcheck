@@ -28,6 +28,12 @@ def _after_change(
             reload_portfolio_session(sections=["all"])
     else:
         invalidate_section_caches(sections or ["journal", "deposits"])
+        try:
+            from services.portfolio_session import invalidate_holdings_cache
+
+            invalidate_holdings_cache()
+        except Exception:  # noqa: S110
+            pass
     st.success(message)
     st.rerun()
 

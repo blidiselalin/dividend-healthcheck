@@ -233,6 +233,14 @@ class PortfolioManagementService:
                 sync_portfolio_to_vector_db(enrich_missing=False, symbols=[holding.symbol])
                 sync_received_dividends(db_path=self.portfolio.db_path, symbols=[holding.symbol])
 
+        if holding is not None:
+            try:
+                from services.portfolio_session import invalidate_holdings_cache
+
+                invalidate_holdings_cache()
+            except Exception:  # noqa: S110
+                pass
+
         return holding
 
     def remove_ticker(self, symbol: str) -> bool:
@@ -260,6 +268,12 @@ class PortfolioManagementService:
         record = self.journal.add_purchase(normalized, purchase_date, price_usd)
         sync_portfolio_to_vector_db(enrich_missing=False, symbols=[normalized])
         sync_received_dividends(db_path=self.portfolio.db_path, symbols=[normalized])
+        try:
+            from services.portfolio_session import invalidate_holdings_cache
+
+            invalidate_holdings_cache()
+        except Exception:  # noqa: S110
+            pass
         return record
 
     def add_deposit(
@@ -272,7 +286,7 @@ class PortfolioManagementService:
         deposit_usd: float,
         portfolio_eur: float,
     ) -> MonthlyDeposit:
-        return self.deposits.upsert_deposit(
+        deposit = self.deposits.upsert_deposit(
             year=year,
             month=month,
             label=label,
@@ -280,6 +294,13 @@ class PortfolioManagementService:
             deposit_usd=deposit_usd,
             portfolio_eur=portfolio_eur,
         )
+        try:
+            from services.portfolio_session import invalidate_holdings_cache
+
+            invalidate_holdings_cache()
+        except Exception:  # noqa: S110
+            pass
+        return deposit
 
     def list_deposits(self) -> list[MonthlyDeposit]:
         return self.deposits.list_deposits()

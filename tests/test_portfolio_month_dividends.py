@@ -6,6 +6,9 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
+import pytest
+
+from data_ingestion.portfolio_store import PortfolioHolding
 from services.portfolio_dividend_calendar import (
     HoldingMonthDividend,
     MonthDividendExposure,
@@ -103,11 +106,87 @@ def test_net_received_through_applies_withholding() -> None:
     assert net_received_through(0.0, year=2026) is None
 
 
-def test_current_month_paid_returns_zero_snapshot_for_rows() -> None:
+def test_compute_month_received_uses_journal_shares_and_pay_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from data_ingestion.models import DividendRecord, StockDocument
+    from services.portfolio_month_dividends import compute_month_received_from_holdings
+    from services.portfolio_purchase_journal_service import EstimatedPurchaseLot
+
+    holding = PortfolioHolding(
+        symbol="KO",
+        shares=100.0,
+        avg_cost_per_share=50.0,
+        acquisition_value=5000.0,
+        commission=0.0,
+        dividends_paid=0.0,
+        estimated_avg_price=50.0,
+        sort_order=0,
+    )
+    doc = StockDocument(
+        symbol="KO",
+        name="Coca-Cola",
+        dividend_history=[
+            DividendRecord(
+                ex_date=date(2026, 6, 10),
+                payment_date=date(2026, 6, 15),
+                amount=0.485,
+            ),
+            DividendRecord(
+                ex_date=date(2026, 6, 12),
+                payment_date=date(2026, 6, 15),
+                amount=2.71,  # annual lump — must normalize
+            ),
+        ],
+        payment_frequency=4,
+        annual_dividend=2.71,
+    )
+    lots = [
+        EstimatedPurchaseLot(
+            symbol="KO",
+            purchase_date=date(2024, 1, 1),
+            label="01 Jan 2024",
+            price_usd=50.0,
+            estimated_shares=10.0,
+            estimated_value_usd=500.0,
+        ),
+    ]
+    monkeypatch.setattr(
+        "services.portfolio_holding_detail_service.PortfolioHoldingDetailService.estimated_lots_for_symbol",
+        lambda self, symbol: lots if symbol == "KO" else [],
+    )
+
+    gross, count = compute_month_received_from_holdings(
+        [holding],
+        {"KO": doc},
+        reference_date=date(2026, 6, 19),
+    )
+    assert count == 1
+    assert gross == round(0.485 * 10, 2)
+
+
+def test_current_month_paid_returns_zero_snapshot_for_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
     from services.portfolio_month_dividends import current_month_paid_dividends
 
+    monkeypatch.setattr(
+        "services.portfolio_month_dividends.PortfolioStore",
+        lambda: type(
+            "Store",
+            (),
+            {"list_holdings": lambda self: []},
+        )(),
+    )
+    monkeypatch.setattr(
+        "services.portfolio_month_dividends.gross_paid_in_calendar_month",
+        lambda *args, **kwargs: (0.0, 0),
+    )
+
     snapshot = current_month_paid_dividends(
-        rows=[],
+        rows=[SimpleNamespace(ticker="KO", ex_dividend_date=None, dividend_pay_date=None)],
         reference_date=date(2026, 6, 10),
     )
     assert snapshot is not None

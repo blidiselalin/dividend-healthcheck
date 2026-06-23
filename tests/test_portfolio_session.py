@@ -79,6 +79,10 @@ def test_sync_clears_stale_session_rows(
         "services.portfolio_ui_cache.clear_session_cache",
         _clear_disk,
     )
+    monkeypatch.setattr(
+        "services.portfolio_session.refresh_session_if_portfolio_db_changed",
+        lambda **kwargs: False,
+    )
 
     sync_portfolio_session_with_db()
     assert "session" in cleared

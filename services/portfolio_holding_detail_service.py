@@ -15,6 +15,7 @@ from services.portfolio_purchase_journal_service import (
     EstimatedPurchaseLot,
     PortfolioPurchaseJournalService,
 )
+from utils.dividend_amounts import normalize_payment_amount
 
 if TYPE_CHECKING:
     from data_ingestion.models import DividendRecord, StockDocument
@@ -151,23 +152,30 @@ class PortfolioHoldingDetailService:
         if not document or not document.dividend_history:
             return []
 
+        records = list(document.dividend_history)
         lots = self.estimated_lots_for_symbol(symbol)
         fallback = current_shares if not lots else 0.0
 
         rows: list[HoldingDividendRow] = []
-        for record in sorted(document.dividend_history, key=lambda r: r.ex_date):
+        for record in sorted(records, key=lambda r: r.ex_date):
             if not lots and tracking_since and record.ex_date < tracking_since:
                 continue
             pay = _cash_date(record)
             held = shares_as_of(lots, record.ex_date, fallback_shares=fallback)
             if held <= 0:
                 continue
-            cash = round(held * float(record.amount), 2)
+            per_share = normalize_payment_amount(
+                float(record.amount),
+                records,
+                document,
+                None,
+            )
+            cash = round(held * per_share, 2)
             rows.append(
                 HoldingDividendRow(
                     ex_date=record.ex_date,
                     pay_date=pay,
-                    per_share_usd=float(record.amount),
+                    per_share_usd=per_share,
                     shares_held=round(held, 4),
                     cash_usd=cash,
                 )

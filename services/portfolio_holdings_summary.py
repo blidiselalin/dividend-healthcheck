@@ -55,3 +55,14 @@ def compute_holdings_summary(rows: list[PortfolioDetailRow]) -> HoldingsSummary:
         unrealized_gl_usd=round(unrealized, 2),
         unrealized_gl_pct=round(unrealized_pct, 2) if unrealized_pct is not None else None,
     )
+
+
+def sort_positions_worst_first(rows: list[PortfolioDetailRow]) -> list[PortfolioDetailRow]:
+    """Sort by unrealized P/L % ascending — losses and laggards surface first."""
+
+    def _sort_key(row: PortfolioDetailRow) -> tuple[int, float]:
+        if row.profit_pct is None:
+            return (1, 0.0)
+        return (0, row.profit_pct)
+
+    return sorted(rows, key=_sort_key)

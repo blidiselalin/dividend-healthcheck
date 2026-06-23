@@ -215,6 +215,8 @@ def clear_portfolio_session_state() -> None:
         "portfolio_view_mode",
         "portfolio_selected_symbol",
         "portfolio_research_mode",
+        "_portfolio_db_fingerprint",
+        "_portfolio_db_refreshing",
         _SESSION_USER_KEY,
         _SESSION_EMAIL_KEY,
     ]

@@ -25,6 +25,12 @@ QUARTERLY_THRESHOLD = 3.5
 SEMI_ANNUAL_THRESHOLD = 1.5
 
 
+def _document_payment_frequency(document: StockDocument | None) -> int | None:
+    if not document:
+        return None
+    return getattr(document, "payment_frequency", None)
+
+
 def payments_per_year(
     records: Sequence[DividendRecord],
     *,
@@ -92,6 +98,8 @@ def trailing_annual_dividend(
         return None
     freq = frequency or detect_payment_frequency(records)
     ordered = sorted(records, key=lambda record: record.ex_date)
+    if len(ordered) < freq:
+        return None
     window = ordered[-freq:]
     if not window:
         return None
@@ -115,10 +123,7 @@ def resolve_annual_dividend_per_share(
 
     Prefers trailing payments from history, then document/stock annual fields.
     """
-    stored_freq = None
-    if document and document.payment_frequency:
-        stored_freq = document.payment_frequency
-
+    stored_freq = _document_payment_frequency(document)
     ttm = trailing_annual_dividend(
         records, frequency=payments_per_year(records, stored_frequency=stored_freq)
     )
@@ -126,8 +131,9 @@ def resolve_annual_dividend_per_share(
     if ttm is not None and ttm > 0:
         candidates.append(ttm)
 
-    if document and document.annual_dividend and document.annual_dividend > 0:
-        candidates.append(float(document.annual_dividend))
+    annual_doc = getattr(document, "annual_dividend", None) if document else None
+    if annual_doc and annual_doc > 0:
+        candidates.append(float(annual_doc))
     if stock and stock.dividend_rate and stock.dividend_rate > 0:
         candidates.append(float(stock.dividend_rate))
     if stock and stock.dividend_history and stock.dividend_history.current_annual > 0:
@@ -157,7 +163,7 @@ def _canonical_per_payment(
             return None
         freq = payments_per_year(
             records,
-            stored_frequency=document.payment_frequency if document else None,
+            stored_frequency=_document_payment_frequency(document),
         )
         return round(annual / freq, 4)
 
@@ -169,7 +175,7 @@ def _canonical_per_payment(
         annual = resolve_annual_dividend_per_share(records, document, stock)
         freq = payments_per_year(
             records,
-            stored_frequency=document.payment_frequency if document else None,
+            stored_frequency=_document_payment_frequency(document),
         )
         if annual and annual > 0 and median <= annual * 1.05:
             return round(annual / freq, 4)
@@ -180,7 +186,7 @@ def _canonical_per_payment(
         return None
     freq = payments_per_year(
         records,
-        stored_frequency=document.payment_frequency if document else None,
+        stored_frequency=_document_payment_frequency(document),
     )
     return round(annual / freq, 4)
 
@@ -203,7 +209,7 @@ def normalize_payment_amount(
     annual = resolve_annual_dividend_per_share(records, document, stock)
     freq = payments_per_year(
         records,
-        stored_frequency=document.payment_frequency if document else None,
+        stored_frequency=_document_payment_frequency(document),
     )
     if annual and annual > 0 and abs(raw_amount - annual) <= max(annual * 0.05, 0.01):
         return round(annual / freq, 4)

@@ -11,10 +11,11 @@ from typing import TYPE_CHECKING
 
 from data_ingestion.dividend_income_store import MONTH_LABELS, DividendIncomeStore
 from data_ingestion.dividend_receipt_store import DividendReceiptStore
-from data_ingestion.portfolio_store import PortfolioStore
+from data_ingestion.portfolio_store import PortfolioHolding, PortfolioStore
 from services.portfolio_dividend_calendar import build_portfolio_dividend_calendar
 
 if TYPE_CHECKING:
+    from data_ingestion.models import StockDocument
     from services.portfolio_analysis_preload import PortfolioAnalysisPreload
     from services.portfolio_details_service import PortfolioDetailRow
 
@@ -46,6 +47,67 @@ def net_received_through(gross_usd: float, *, year: int) -> float | None:
 
 def month_label_for(day: date) -> str:
     return f"{MONTH_LABELS[day.month - 1]} {day.year}"
+
+
+def _resolve_vector_docs(
+    holdings: list[PortfolioHolding],
+    preload: PortfolioAnalysisPreload | None,
+) -> dict[str, StockDocument]:
+    if preload and preload.vector_docs:
+        return preload.vector_docs
+    if not holdings:
+        return {}
+    from services.shared_market_db import load_documents
+
+    symbols = [holding.symbol for holding in holdings]
+    return load_documents(symbols)
+
+
+def compute_month_received_from_holdings(
+    holdings: list[PortfolioHolding],
+    vector_docs: dict[str, StockDocument],
+    *,
+    reference_date: date,
+) -> tuple[float, int]:
+    """
+    Gross cash received this month through `reference_date`.
+
+    Matches Yahoo-style portfolio dividends: pay date in month, shares held on ex-date,
+    normalized per-payment amounts, purchase journal when available.
+    """
+    from services.portfolio_holding_detail_service import PortfolioHoldingDetailService
+
+    detail = PortfolioHoldingDetailService()
+    total = 0.0
+    count = 0
+    seen: set[tuple[str, str]] = set()
+
+    for holding in holdings:
+        document = vector_docs.get(holding.symbol.upper()) or vector_docs.get(holding.symbol)
+        if not document:
+            continue
+        rows = detail.dividend_history(
+            holding.symbol,
+            document,
+            current_shares=holding.shares,
+            tracking_since=holding.dividend_tracking_since,
+            prefer_stored=False,
+        )
+        for row in rows:
+            if row.pay_date.year != reference_date.year:
+                continue
+            if row.pay_date.month != reference_date.month:
+                continue
+            if row.pay_date > reference_date:
+                continue
+            key = (holding.symbol.upper(), row.pay_date.isoformat())
+            if key in seen:
+                continue
+            seen.add(key)
+            total += row.cash_usd
+            count += 1
+
+    return round(total, 2), count
 
 
 def gross_paid_in_calendar_month(
@@ -119,32 +181,46 @@ def current_month_paid_dividends(
     """
     Paid dividend cash for the current month through `reference_date` (default today).
 
-    Uses synced receipts first; falls back to the dividend calendar received total.
+    Prefers a live recompute from holdings + dividend history (Yahoo-aligned).
+    Falls back to the dividend calendar or synced receipts when documents are unavailable.
     Always returns a snapshot when the portfolio has rows (including $0.00).
     """
     today = reference_date or date.today()
+    holdings = PortfolioStore().list_holdings()
+
     if rows is None:
-        if not PortfolioStore().list_holdings():
+        if not holdings:
             return None
         rows = []
 
-    # Prefer live calendar from preload to ensure calculation is up-to-date on page load
-    if rows and preload:
-        holdings = PortfolioStore().list_holdings()
-        if holdings:
-            row_dates = {row.ticker: (row.ex_dividend_date, row.dividend_pay_date) for row in rows}
-            calendar = build_portfolio_dividend_calendar(
-                holdings,
-                vector_docs=preload.vector_docs,
-                stock_data=preload.stock_data,
-                row_dates=row_dates,
-                reference_date=today,
-            )
-            current = calendar.current_month
-            gross = current.received_cash
-            payer_count = current.received_payer_count
+    vector_docs = _resolve_vector_docs(holdings, preload) if holdings else {}
+    gross = 0.0
+    payer_count = 0
+
+    if holdings and vector_docs:
+        gross, payer_count = compute_month_received_from_holdings(
+            holdings,
+            vector_docs,
+            reference_date=today,
+        )
+    elif rows and preload and holdings:
+        row_dates = {
+            row.ticker: (row.ex_dividend_date, row.dividend_pay_date) for row in rows
+        }
+        calendar = build_portfolio_dividend_calendar(
+            holdings,
+            vector_docs=preload.vector_docs,
+            stock_data=preload.stock_data,
+            row_dates=row_dates,
+            reference_date=today,
+        )
+        current = calendar.current_month
+        gross = current.received_cash
+        payer_count = current.received_payer_count
     else:
-        gross, payer_count = gross_paid_in_calendar_month(today.year, today.month, through=today)
+        gross, payer_count = gross_paid_in_calendar_month(
+            today.year, today.month, through=today
+        )
 
     net = net_received_through(gross, year=today.year)
 
