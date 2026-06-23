@@ -65,6 +65,7 @@ def test_sort_positions_worst_first() -> None:
 def test_build_positions_table_df_columns() -> None:
     df = build_positions_table_df([_row("KO", profit_pct=-5.0)])
     assert list(df.columns) == [
+        "Signal",
         "Ticker",
         "Company",
         "Value $",

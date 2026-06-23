@@ -287,6 +287,37 @@ def inject_app_theme() -> None:
         """,
         unsafe_allow_html=True,
     )
+    st.components.v1.html(
+        """
+        <script>
+        (function () {
+          const marker = "ds_streamlit_chunk_reload";
+          function shouldReload(message) {
+            if (!message) return false;
+            return message.includes("Failed to fetch dynamically imported module")
+              || message.includes("Importing a module script failed");
+          }
+          function reloadOnce() {
+            if (sessionStorage.getItem(marker)) return;
+            sessionStorage.setItem(marker, "1");
+            window.location.reload();
+          }
+          window.addEventListener("error", function (event) {
+            if (shouldReload(event.message || "")) reloadOnce();
+          }, true);
+          window.addEventListener("unhandledrejection", function (event) {
+            const reason = event.reason;
+            const message = typeof reason === "string"
+              ? reason
+              : (reason && reason.message) || "";
+            if (shouldReload(message)) reloadOnce();
+          });
+        })();
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
 
 
 def render_page_header(*, title: str, subtitle: str, compact: bool = False) -> None:

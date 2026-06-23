@@ -1,7 +1,10 @@
 """
 Compact portfolio positions table for the home view.
 
-Worst performers appear first; selecting a row opens full holding analysis.
+Worst performers appear first; pick a ticker below to open full holding analysis.
+
+Uses a plain ``st.dataframe`` (no pandas Styler / row selection) so production
+proxies do not need Streamlit's lazy-loaded data-grid overlay editor chunk.
 """
 
 from __future__ import annotations
@@ -19,6 +22,18 @@ from services.portfolio_holdings_summary import sort_positions_worst_first
 _COMPANY_MAX_LEN = 32
 
 
+def _profit_signal(profit_pct: float | None) -> str:
+    if profit_pct is None or (isinstance(profit_pct, float) and pd.isna(profit_pct)):
+        return "—"
+    if profit_pct <= -15:
+        return "Loss"
+    if profit_pct < 0:
+        return "Down"
+    if profit_pct >= 25:
+        return "Strong"
+    return "—"
+
+
 def build_positions_table_df(rows: list[PortfolioDetailRow]) -> pd.DataFrame:
     """Key figures only — readable at a glance on the home screen."""
     records = []
@@ -28,6 +43,7 @@ def build_positions_table_df(rows: list[PortfolioDetailRow]) -> pd.DataFrame:
             company = company[: _COMPANY_MAX_LEN - 1].rstrip() + "…"
         records.append(
             {
+                "Signal": _profit_signal(row.profit_pct),
                 "Ticker": row.ticker,
                 "Company": company,
                 "Value $": row.current_value,
@@ -42,35 +58,12 @@ def build_positions_table_df(rows: list[PortfolioDetailRow]) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
-def style_positions_table(df: pd.DataFrame) -> pd.DataFrame | object:
-    """Highlight P/L % so weak positions stand out."""
-
-    def _profit_style(value: object) -> str:
-        if value is None or (isinstance(value, float) and pd.isna(value)):
-            return ""
-        try:
-            pct = float(value)
-        except (TypeError, ValueError):
-            return ""
-        if pct <= -15:
-            return "background-color: #ffebee; color: #b71c1c; font-weight: 600"
-        if pct < 0:
-            return "background-color: #fff3e0; color: #bf360c; font-weight: 600"
-        if pct >= 25:
-            return "background-color: #e8f5e9; color: #1b5e20"
-        return ""
-
-    if df.empty:
-        return df
-    return df.style.map(_profit_style, subset=["P/L %"])
-
-
 def render_positions_table(
     rows: list[PortfolioDetailRow],
     *,
     table_key: str = "home_positions_table",
 ) -> None:
-    """Render sortable positions table; row selection opens holding analysis."""
+    """Render positions table and open-analysis control (no interactive grid selection)."""
     if not rows:
         return
 
@@ -79,25 +72,23 @@ def render_positions_table(
     sorted_rows = sort_positions_worst_first(rows)
     nav_tickers = [row.ticker for row in sorted_rows]
     df = build_positions_table_df(sorted_rows)
-    display_df = style_positions_table(df)
 
     st.markdown("#### All positions")
     st.caption(
-        "Worst performers first · select a row to open dividend analysis for that ticker."
+        "Worst performers first · choose a ticker below to open dividend analysis."
     )
 
-    selection = st.dataframe(
-        display_df,
+    st.dataframe(
+        df,
         width="stretch",
         hide_index=True,
-        on_select="rerun",
-        selection_mode="single-row",
         key=table_key,
         column_config={
-            "Ticker": st.column_config.TextColumn(
+            "Signal": st.column_config.TextColumn(
                 width="small",
-                help="Select the row to open full analysis.",
+                help="Loss / Down / Strong from unrealized P/L %.",
             ),
+            "Ticker": st.column_config.TextColumn(width="small"),
             "Company": st.column_config.TextColumn(width="medium"),
             "Value $": st.column_config.NumberColumn(format="$%.0f"),
             "Weight %": st.column_config.NumberColumn(format="%.1f%%"),
@@ -109,7 +100,18 @@ def render_positions_table(
         },
     )
 
-    selected_rows = getattr(getattr(selection, "selection", None), "rows", None)
-    if selected_rows:
-        ticker = df.iloc[selected_rows[0]]["Ticker"]
-        set_holding_selection(ticker, nav_tickers=nav_tickers)
+    pick_col, action_col = st.columns([4, 1])
+    with pick_col:
+        selected = st.selectbox(
+            "Analyze holding",
+            nav_tickers,
+            format_func=lambda symbol: next(
+                (f"{row.ticker} — {row.company}" for row in sorted_rows if row.ticker == symbol),
+                symbol,
+            ),
+            key=f"{table_key}_pick",
+        )
+    with action_col:
+        st.markdown('<div style="height: 1.65rem"></div>', unsafe_allow_html=True)
+        if st.button("Open →", key=f"{table_key}_open", use_container_width=True):
+            set_holding_selection(selected, nav_tickers=nav_tickers)

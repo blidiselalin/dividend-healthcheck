@@ -4,6 +4,18 @@
 pulse-dividend.duckdns.org {
 	encode gzip
 
+	@streamlit_static path /static/*
+	handle @streamlit_static {
+		reverse_proxy localhost:8501 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+		}
+		header Cache-Control "no-cache, must-revalidate"
+	}
+
 	reverse_proxy localhost:8501 {
 		header_up Host {host}
 		header_up X-Real-IP {remote_host}
