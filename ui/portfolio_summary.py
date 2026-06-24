@@ -47,6 +47,10 @@ def render_holdings_summary(
         from services.portfolio_details_service import PortfolioDetailsService
 
         rows = PortfolioDetailsService().enrich_rows_previous_close(rows)
+        try:
+            st.session_state["portfolio_details_rows"] = rows
+        except Exception:  # noqa: S110
+            pass
 
     metrics = summary or compute_holdings_summary(rows)
     include_received = show_month_received and month_paid is not None

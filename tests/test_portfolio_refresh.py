@@ -52,17 +52,13 @@ def test_invalidate_all_clears_both_caches() -> None:
 
 
 def test_section_refresher_full_reload(monkeypatch: pytest.MonkeyPatch) -> None:
-    mock_reload = MagicMock()
+    mock_schedule = MagicMock()
     mock_rerun = MagicMock()
-    mock_spinner = MagicMock()
-    mock_spinner.__enter__ = MagicMock(return_value=None)
-    mock_spinner.__exit__ = MagicMock(return_value=None)
 
     import streamlit as st
 
-    monkeypatch.setattr(st, "spinner", lambda *a, **k: mock_spinner)
     monkeypatch.setattr(st, "rerun", mock_rerun)
-    with patch("services.portfolio_refresh.reload_portfolio_session", mock_reload):
+    with patch("services.portfolio_refresh.schedule_portfolio_reload", mock_schedule):
         make_section_refresher("holdings")()
-    mock_reload.assert_called_once()
+    mock_schedule.assert_called_once_with(live_prices=True, sections=["all"])
     mock_rerun.assert_called_once()

@@ -39,12 +39,32 @@ def invalidate_section_caches(sections: Iterable[SectionKey]) -> None:
         _load_benchmark_comparison.clear()
 
 
+def schedule_portfolio_reload(
+    *,
+    live_prices: bool = False,
+    sections: Iterable[SectionKey] | None = None,
+) -> None:
+    """Queue a non-blocking portfolio reload (library or live prices)."""
+    if sections:
+        invalidate_section_caches(sections)
+    else:
+        invalidate_section_caches(["all"])
+
+    from services.deferred_startup import schedule_portfolio_refresh
+
+    schedule_portfolio_refresh(live_prices=live_prices)
+
+
 def reload_portfolio_session(
     *,
     refresh_risks: bool = True,
     sections: Iterable[SectionKey] | None = None,
 ) -> PortfolioAnalysisPreload:
-    """Rebuild holdings rows and analysis preload after portfolio DB changes."""
+    """
+    Synchronous rebuild of holdings rows and analysis preload.
+
+    Prefer ``schedule_portfolio_reload`` in UI code so the app stays responsive.
+    """
     if sections:
         invalidate_section_caches(sections)
     else:
@@ -59,7 +79,6 @@ def reload_portfolio_session(
     )
     store_portfolio_payload(rows, preload)
     try:
-        import streamlit as st
         from utils.portfolio_db import compute_portfolio_db_fingerprint
 
         st.session_state["_portfolio_db_fingerprint"] = compute_portfolio_db_fingerprint(
@@ -84,8 +103,7 @@ def make_section_refresher(section: SectionKey) -> Callable[[], None]:
             "all",
         }
         if needs_full_reload:
-            with st.spinner("Refreshing portfolio market data…"):
-                reload_portfolio_session(sections=["all"])
+            schedule_portfolio_reload(live_prices=True, sections=["all"])
         else:
             invalidate_section_caches([section, "all"])
         st.rerun()

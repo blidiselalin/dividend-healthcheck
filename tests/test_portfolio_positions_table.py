@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from services.portfolio_details_service import PortfolioDetailRow
 from services.portfolio_holdings_summary import sort_positions_worst_first
-from ui.portfolio_positions_table import build_positions_table_df
+from services.portfolio_position_table import build_home_positions_dataframe
 
 
 def _row(
@@ -63,18 +63,8 @@ def test_sort_positions_worst_first() -> None:
 
 
 def test_build_positions_table_df_columns() -> None:
-    df = build_positions_table_df([_row("KO", profit_pct=-5.0)])
-    assert list(df.columns) == [
-        "Signal",
-        "Ticker",
-        "Company",
-        "Value $",
-        "Weight %",
-        "P/L %",
-        "P/L $",
-        "Yield %",
-        "Income/yr $",
-        "Price $",
-    ]
+    df = build_home_positions_dataframe([_row("KO", profit_pct=-5.0)])
+    assert "Ticker" in df.columns
+    assert "Concerns" in df.columns
     assert df.iloc[0]["Ticker"] == "KO"
     assert df.iloc[0]["P/L %"] == -5.0

@@ -122,6 +122,20 @@ stock_dividend_history   ← ex-date payments (yield charts, monthly exposure)
 
 **Admin validation:** Database admin → Run validation; symbol probe shows counts from `GREATEST(jsonb, table)`.
 
+## Portfolio UI session (Streamlit)
+
+Do **not** block Streamlit reruns with synchronous portfolio rebuilds in `ui/*`.
+
+| Concern | Module | Pattern |
+|---------|--------|---------|
+| DB changed since last load | `services/portfolio_session.py` | `compute_portfolio_db_fingerprint()` → `schedule_portfolio_refresh()` |
+| Fast startup | `services/portfolio_ui_cache.py` | `hydrate_session_from_disk()` reads JSON cache; stale/missing cache schedules `warm_portfolio` |
+| User-triggered reload | `services/portfolio_refresh.py` | `schedule_portfolio_reload(live_prices=…)` from sidebar/manage/tabs |
+| Apply job results | `services/deferred_startup.py` | `apply_background_results()` on main thread only |
+| Tests needing sync rebuild | `services/portfolio_refresh.py` | `reload_portfolio_session()` — not for production UI paths |
+
+Fingerprint covers: `holdings`, `purchase_journal`, `monthly_deposits`, `dividend_receipts`, `net_dividends` (`utils/portfolio_db.py`).
+
 ## Safe change checklist
 
 - [ ] Migrations added for Postgres schema changes?
@@ -131,6 +145,7 @@ stock_dividend_history   ← ex-date payments (yield charts, monthly exposure)
 - [ ] History dual-write via `PostgresMarketStore.add_documents()` or `PostgresMarketHistoryStore`?
 - [ ] Unit tests pass without `DATABASE_URL`?
 - [ ] No new Chroma/SQLite runtime dependencies when `use_cloud_sql()`?
+- [ ] Portfolio UI changes use `schedule_portfolio_reload()` / background jobs — not blocking `build_rows_with_cache` in render paths?
 - [ ] Chatbot changes keep replies server-side and include educational disclaimer?
 
 ## Deploy (VM)

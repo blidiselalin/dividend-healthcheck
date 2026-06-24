@@ -12,6 +12,7 @@ from auth.user_context import is_app_admin
 from services.background_jobs import has_active_jobs
 from services.deferred_startup import (
     JOB_LIVE_RELOAD,
+    JOB_PORTFOLIO_DB_REFRESH,
     JOB_WARM_PORTFOLIO,
     JOB_YIELD_PRELOAD,
     apply_background_results,
@@ -42,7 +43,12 @@ def _background_progress_fragment() -> None:
         elif job.status == "done":
             st.success(f"{label} ✓")
 
-    rerun_kinds = {JOB_YIELD_PRELOAD, JOB_WARM_PORTFOLIO, JOB_LIVE_RELOAD}
+    rerun_kinds = {
+        JOB_YIELD_PRELOAD,
+        JOB_WARM_PORTFOLIO,
+        JOB_LIVE_RELOAD,
+        JOB_PORTFOLIO_DB_REFRESH,
+    }
     if applied_kinds and any(kind in rerun_kinds for kind in applied_kinds):
         st.rerun()
 

@@ -12,7 +12,7 @@ from auth.demo_portfolio import load_demo_ui_snapshot, reset_demo_database
 from auth.test_user import is_test_user, sign_out_test_user, test_user_session_active
 from auth.user_context import clear_portfolio_session_state, current_user, resolve_portfolio_db_path
 from services.portfolio_details_service import PortfolioDetailRow
-from services.portfolio_session import is_demo_session, sync_portfolio_session_with_db
+from services.portfolio_session import is_demo_session
 from ui.app_about import render_app_about
 from ui.theme import (
     PORTFOLIO_LABEL_BY_KEY,
@@ -226,8 +226,6 @@ def render_empty_home_demo() -> None:
 
 def render_empty_home() -> None:
     """Welcome when no portfolio snapshot is in session."""
-    sync_portfolio_session_with_db()
-
     if is_demo_session():
         render_empty_home_demo()
         return
@@ -246,7 +244,7 @@ def render_stocks_overview(rows: List[PortfolioDetailRow]) -> None:
 
 def render_compact_summary(rows: List[PortfolioDetailRow]) -> None:
     from services.portfolio_analysis_preload import PortfolioAnalysisPreload
-    from services.portfolio_month_dividends import current_month_paid_dividends
+    from services.portfolio_month_dividends import cached_current_month_paid_dividends
     from ui.portfolio_summary import render_holdings_summary
 
     preload = None
@@ -257,7 +255,7 @@ def render_compact_summary(rows: List[PortfolioDetailRow]) -> None:
             st.session_state.get("portfolio_vector_docs", {}),
         )
 
-    month_paid = current_month_paid_dividends(rows=rows, preload=preload)
+    month_paid = cached_current_month_paid_dividends(rows=rows, preload=preload)
     render_holdings_summary(
         rows,
         month_paid=month_paid,
@@ -271,7 +269,6 @@ def render_compact_summary(rows: List[PortfolioDetailRow]) -> None:
 def render_portfolio_home_header(
     rows: Optional[List[PortfolioDetailRow]],
 ) -> bool:
-    sync_portfolio_session_with_db()
     render_app_about(expanded=False)
     render_test_user_banner()
 

@@ -231,3 +231,39 @@ def current_month_paid_dividends(
         net_usd=net,
         payer_count=payer_count,
     )
+
+
+def cached_current_month_paid_dividends(
+    *,
+    rows: list[PortfolioDetailRow] | None = None,
+    preload: PortfolioAnalysisPreload | None = None,
+    reference_date: date | None = None,
+) -> CurrentMonthPaidDividends | None:
+    """
+    Session-scoped cache for month-to-date dividends.
+
+    Recomputes when the portfolio DB fingerprint or calendar day changes.
+    """
+    try:
+        import streamlit as st
+    except Exception:
+        return current_month_paid_dividends(
+            rows=rows,
+            preload=preload,
+            reference_date=reference_date,
+        )
+
+    today = reference_date or date.today()
+    fp = st.session_state.get("_portfolio_db_fingerprint", "")
+    cache_key = f"month_paid_{fp}_{today.isoformat()}"
+    cached = st.session_state.get(cache_key)
+    if cached is not None:
+        return cached
+    result = current_month_paid_dividends(
+        rows=rows,
+        preload=preload,
+        reference_date=today,
+    )
+    if result is not None:
+        st.session_state[cache_key] = result
+    return result

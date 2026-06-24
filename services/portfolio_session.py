@@ -100,11 +100,26 @@ def _clear_stale_session_when_empty() -> None:
     st.session_state.pop(_PORTFOLIO_DB_FINGERPRINT_KEY, None)
 
 
+def _portfolio_refresh_job_running() -> bool:
+    from services.deferred_startup import (
+        JOB_LIVE_RELOAD,
+        JOB_PORTFOLIO_DB_REFRESH,
+        JOB_WARM_PORTFOLIO,
+        _job_running,
+    )
+
+    return any(
+        _job_running(kind)
+        for kind in (JOB_PORTFOLIO_DB_REFRESH, JOB_LIVE_RELOAD, JOB_WARM_PORTFOLIO)
+    )
+
+
 def refresh_session_if_portfolio_db_changed(*, force: bool = False) -> bool:
     """
-    Reload portfolio session rows when portfolio-local DB tables changed.
+    Queue a background portfolio reload when portfolio-local DB tables changed.
 
-    Returns True when a reload was performed.
+    Returns True only when a synchronous reload was performed (legacy; always False
+    now that reloads run in background threads).
     """
     if is_demo_session():
         return False
@@ -116,18 +131,17 @@ def refresh_session_if_portfolio_db_changed(*, force: bool = False) -> bool:
 
     if not user_has_holdings_in_db():
         st.session_state[_PORTFOLIO_DB_FINGERPRINT_KEY] = compute_portfolio_db_fingerprint(
-            use_cache=False
+            use_cache=True
         )
         return False
 
     if not st.session_state.get("portfolio_details_rows") and not force:
         return False
 
-    current = compute_portfolio_db_fingerprint(use_cache=False)
+    current = compute_portfolio_db_fingerprint(use_cache=True)
     previous = st.session_state.get(_PORTFOLIO_DB_FINGERPRINT_KEY)
 
     if not force and previous is not None and current == previous:
-        st.session_state[_PORTFOLIO_DB_FINGERPRINT_KEY] = current
         return False
 
     if not force and previous is None and st.session_state.get("portfolio_details_rows"):
@@ -148,30 +162,33 @@ def refresh_session_if_portfolio_db_changed(*, force: bool = False) -> bool:
         st.session_state[_PORTFOLIO_DB_FINGERPRINT_KEY] = current
         return False
 
+    if _portfolio_refresh_job_running():
+        st.session_state[_PORTFOLIO_DB_FINGERPRINT_KEY] = current
+        return False
+
     st.session_state[_PORTFOLIO_DB_REFRESHING_KEY] = True
     try:
         logger.info(
-            "Portfolio DB changed (fingerprint %s -> %s); reloading session",
+            "Portfolio DB changed (fingerprint %s -> %s); scheduling background reload",
             (previous or "")[:12],
             current[:12],
         )
-        from services.portfolio_refresh import reload_portfolio_session
+        from services.deferred_startup import schedule_portfolio_refresh
 
-        reload_portfolio_session(refresh_risks=True, sections=["all"])
-        current = compute_portfolio_db_fingerprint(use_cache=False)
+        schedule_portfolio_refresh(live_prices=False)
+        st.session_state[_PORTFOLIO_DB_FINGERPRINT_KEY] = current
     finally:
         st.session_state.pop(_PORTFOLIO_DB_REFRESHING_KEY, None)
 
-    st.session_state[_PORTFOLIO_DB_FINGERPRINT_KEY] = current
-    return True
+    return False
 
 
 def sync_portfolio_session_with_db() -> None:
     """
     Align Streamlit portfolio state with the current user's DB.
 
-    Clears stale UI when holdings were removed, and reloads rows when portfolio
-    details changed in the database since the last session load.
+    Clears stale UI when holdings were removed, and schedules a background reload
+    when portfolio details changed in the database since the last session load.
     """
     if is_demo_session():
         return

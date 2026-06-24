@@ -29,6 +29,7 @@ JOB_HISTORY_TABLE_SYNC = "history_table_sync"
 JOB_ENSURE_SP500 = "ensure_sp500"
 JOB_ENSURE_TOP_DIVIDEND = "ensure_top_dividend"
 JOB_PRICE_REFRESH = "price_refresh"
+JOB_PORTFOLIO_DB_REFRESH = "portfolio_db_refresh"
 
 
 def apply_background_results() -> list[str]:
@@ -47,6 +48,7 @@ def apply_background_results() -> list[str]:
         JOB_ENSURE_SP500: _apply_ensure_sp500,
         JOB_ENSURE_TOP_DIVIDEND: _apply_ensure_top_dividend,
         JOB_PRICE_REFRESH: _apply_price_refresh,
+        JOB_PORTFOLIO_DB_REFRESH: _apply_portfolio_db_refresh,
     }
     applied_kinds = apply_completed_jobs(handlers)  # type: ignore[arg-type]
     if applied_kinds:
@@ -176,19 +178,56 @@ def schedule_portfolio_warm_if_needed() -> None:
     start_job(JOB_WARM_PORTFOLIO, "Loading portfolio", _worker)
 
 
-def schedule_library_reload_if_needed() -> None:
-    if not _library_reload_needed():
-        return
+def schedule_portfolio_refresh(*, live_prices: bool = False) -> str | None:
+    """
+    Queue a portfolio reload after DB edits or fingerprint drift.
+
+    Fast (library) reload by default; ``live_prices=True`` fetches live quotes + charts.
+    """
+    if live_prices:
+        if _job_running(JOB_PORTFOLIO_DB_REFRESH) or _job_running(JOB_WARM_PORTFOLIO):
+            return None
+        return _start_live_reload_job(label="Refreshing live prices")
+
+    if (
+        _job_running(JOB_LIVE_RELOAD)
+        or _job_running(JOB_WARM_PORTFOLIO)
+        or _job_running(JOB_PORTFOLIO_DB_REFRESH)
+    ):
+        return None
 
     def _worker(progress: ProgressCallback) -> dict[str, Any]:
-        progress(0.05, "Reloading after library update…")
+        progress(0.05, "Reading holdings from database…")
+        from services.portfolio_ui_cache import compute_fast_portfolio_payload
+
+        payload = compute_fast_portfolio_payload(progress_callback=progress)
+        progress(1.0, "Portfolio updated")
+        return payload
+
+    return start_job(
+        JOB_PORTFOLIO_DB_REFRESH,
+        "Updating portfolio",
+        _worker,
+    )
+
+
+def _start_live_reload_job(*, label: str = "Refreshing portfolio") -> str | None:
+    def _worker(progress: ProgressCallback) -> dict[str, Any]:
+        progress(0.05, "Fetching live prices…")
         from services.portfolio_ui_cache import compute_live_portfolio_payload
 
         payload = compute_live_portfolio_payload(progress_callback=progress)
         progress(1.0, "Live reload complete")
         return payload
 
-    start_job(JOB_LIVE_RELOAD, "Refreshing portfolio", _worker)
+    return start_job(JOB_LIVE_RELOAD, label, _worker)
+
+
+def schedule_library_reload_if_needed() -> None:
+    if not _library_reload_needed():
+        return
+
+    _start_live_reload_job(label="Refreshing after library update")
 
 
 def schedule_coverage_badge_refresh() -> None:
@@ -460,6 +499,40 @@ def _apply_yield_preload(result: dict[str, Any]) -> None:
         logger.debug("Risk watchlist rebuild after yield preload skipped: %s", exc)
 
 
+def _apply_portfolio_db_refresh(result: dict[str, Any]) -> None:
+    import streamlit as st
+
+    from services.portfolio_ui_cache import save_session_cache
+    from ui.portfolio_risk_panel import store_portfolio_payload
+
+    rows = result.get("rows") or []
+    preload = result.get("preload")
+    if not rows or preload is None:
+        return
+    store_portfolio_payload(
+        rows,
+        preload,
+        analysis_ready=bool(result.get("analysis_ready")),
+    )
+    if result.get("fast_loaded"):
+        st.session_state["portfolio_fast_loaded"] = True
+    try:
+        from utils.portfolio_db import (
+            compute_portfolio_db_fingerprint,
+            invalidate_portfolio_db_fingerprint_cache,
+        )
+
+        invalidate_portfolio_db_fingerprint_cache()
+        st.session_state["_portfolio_db_fingerprint"] = compute_portfolio_db_fingerprint(
+            use_cache=False
+        )
+    except Exception as exc:
+        logger.debug("Could not store fingerprint after DB refresh: %s", exc)
+    save_session_cache()
+    schedule_yield_preload_if_needed()
+    logger.info("Background portfolio DB refresh: %d holdings", len(rows))
+
+
 def _apply_warm_portfolio(result: dict[str, Any]) -> None:
     import streamlit as st
 
@@ -482,6 +555,7 @@ def _apply_warm_portfolio(result: dict[str, Any]) -> None:
 def _apply_live_reload(result: dict[str, Any]) -> None:
     import streamlit as st
 
+    from services.portfolio_ui_cache import save_session_cache
     from ui.portfolio_risk_panel import refresh_portfolio_risks, store_portfolio_payload
 
     rows = result.get("rows") or []
@@ -493,6 +567,19 @@ def _apply_live_reload(result: dict[str, Any]) -> None:
     st.session_state["_portfolio_library_sync_done"] = True
     st.session_state.pop("portfolio_fast_loaded", None)
     st.session_state.pop("_portfolio_stale_cache_loaded", None)
+    try:
+        from utils.portfolio_db import (
+            compute_portfolio_db_fingerprint,
+            invalidate_portfolio_db_fingerprint_cache,
+        )
+
+        invalidate_portfolio_db_fingerprint_cache()
+        st.session_state["_portfolio_db_fingerprint"] = compute_portfolio_db_fingerprint(
+            use_cache=False
+        )
+    except Exception as exc:
+        logger.debug("Could not store fingerprint after live reload: %s", exc)
+    save_session_cache()
     logger.info("Background live reload: %d holdings", len(rows))
 
 

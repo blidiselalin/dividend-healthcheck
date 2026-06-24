@@ -182,6 +182,59 @@ def save_session_cache() -> None:
         logger.warning("Could not save portfolio UI cache: %s", exc)
 
 
+def _schedule_background_portfolio_warm() -> None:
+    """Queue a fast library load without blocking the Streamlit UI thread."""
+    try:
+        from services.deferred_startup import schedule_portfolio_warm_if_needed
+
+        schedule_portfolio_warm_if_needed()
+    except Exception as exc:
+        logger.debug("Could not schedule portfolio warm: %s", exc)
+
+
+def _apply_disk_bundle(bundle: dict[str, Any], *, cache_path: Path) -> bool:
+    """Restore session_state from a saved portfolio UI cache bundle."""
+    import streamlit as st
+
+    from services.portfolio_details_service import PortfolioDetailsService
+    from ui.portfolio_risk_panel import SESSION_CHECKED_AT_KEY, SESSION_SUMMARY_KEY
+
+    rows_payload = bundle.get("rows") or []
+    if not rows_payload:
+        return False
+
+    restored_rows = [_row_from_dict(item) for item in rows_payload]
+    st.session_state["portfolio_details_rows"] = (
+        PortfolioDetailsService().enrich_rows_previous_close(restored_rows)
+    )
+    if bundle.get("attention_summary") is not None:
+        st.session_state[SESSION_SUMMARY_KEY] = bundle["attention_summary"]
+    if bundle.get("risk_checked_at"):
+        st.session_state[SESSION_CHECKED_AT_KEY] = (
+            _coerce_datetime(bundle["risk_checked_at"]) or bundle["risk_checked_at"]
+        )
+    details_time = _coerce_datetime(bundle.get("portfolio_details_time"))
+    if details_time:
+        st.session_state["portfolio_details_time"] = details_time
+    st.session_state["portfolio_analysis_ready"] = bool(bundle.get("portfolio_analysis_ready"))
+    st.session_state["portfolio_show_analysis"] = True
+    try:
+        from utils.portfolio_db import compute_portfolio_db_fingerprint
+
+        st.session_state["_portfolio_db_fingerprint"] = bundle.get("db_fingerprint") or compute_portfolio_db_fingerprint(
+            use_cache=True
+        )
+    except Exception as exc:
+        logger.debug("Could not store portfolio DB fingerprint after hydrate: %s", exc)
+    logger.info(
+        "Portfolio UI cache loaded path=%s holdings=%d saved_at=%s",
+        cache_path,
+        len(rows_payload),
+        bundle.get("saved_at", "?"),
+    )
+    return True
+
+
 def hydrate_session_from_disk() -> bool:  # noqa: C901
     """
     Restore portfolio session from disk if the in-memory session is empty.
@@ -191,7 +244,6 @@ def hydrate_session_from_disk() -> bool:  # noqa: C901
     import streamlit as st
 
     from services.portfolio_session import is_demo_session, user_has_holdings_in_db
-    from ui.portfolio_risk_panel import SESSION_CHECKED_AT_KEY, SESSION_SUMMARY_KEY
 
     if not is_demo_session() and not user_has_holdings_in_db():
         clear_session_cache()
@@ -203,10 +255,8 @@ def hydrate_session_from_disk() -> bool:  # noqa: C901
     cache_path = _cache_path()
     if not cache_path.exists():
         if user_has_holdings_in_db():
-            logger.info(
-                "No portfolio UI cache found; warming synchronously from DB to prevent empty UI."
-            )
-            return warm_portfolio_session_from_db(preload_charts=False)
+            logger.info("No portfolio UI cache; scheduling background warm.")
+            _schedule_background_portfolio_warm()
         return False
 
     try:
@@ -220,73 +270,55 @@ def hydrate_session_from_disk() -> bool:  # noqa: C901
         except OSError:
             pass
         if user_has_holdings_in_db():
-            logger.info(
-                "Portfolio UI cache corrupted; warming synchronously from DB to prevent empty UI."
-            )
-            return warm_portfolio_session_from_db(preload_charts=False)
+            logger.info("Portfolio UI cache corrupted; scheduling background warm.")
+            _schedule_background_portfolio_warm()
         return False
 
     rows_payload = bundle.get("rows") or []
     if not rows_payload:
         if user_has_holdings_in_db():
-            logger.info(
-                "Portfolio UI cache empty; warming synchronously from DB to prevent empty UI."
-            )
-            return warm_portfolio_session_from_db(preload_charts=False)
+            logger.info("Portfolio UI cache empty; scheduling background warm.")
+            _schedule_background_portfolio_warm()
         return False
 
+    fp_mismatch = False
     try:
         from utils.portfolio_db import compute_portfolio_db_fingerprint
 
-        current_fp = compute_portfolio_db_fingerprint(use_cache=False)
+        current_fp = compute_portfolio_db_fingerprint(use_cache=True)
         bundle_fp = bundle.get("db_fingerprint")
         if bundle_fp and bundle_fp != current_fp:
+            fp_mismatch = True
             logger.info(
-                "Portfolio UI cache fingerprint mismatch; warming from database instead."
+                "Portfolio UI cache fingerprint mismatch; showing cached rows "
+                "and scheduling background refresh."
             )
-            clear_session_cache()
-            return warm_portfolio_session_from_db(preload_charts=False, force=True)
+            try:
+                from services.deferred_startup import schedule_portfolio_refresh
+
+                schedule_portfolio_refresh(live_prices=False)
+            except Exception as exc:
+                logger.debug("Could not schedule portfolio refresh after mismatch: %s", exc)
     except Exception as exc:
         logger.debug("Portfolio DB fingerprint check skipped during hydrate: %s", exc)
 
-    if cache_is_stale(bundle):
-        logger.info(
-            "Portfolio UI cache stale (saved_at=%s); utilizing as "
-            "fallback and scheduling background reload",
-            bundle.get("saved_at", "?"),
-        )
+    if cache_is_stale(bundle) or fp_mismatch:
+        if cache_is_stale(bundle):
+            logger.info(
+                "Portfolio UI cache stale (saved_at=%s); utilizing as "
+                "fallback and scheduling background reload",
+                bundle.get("saved_at", "?"),
+            )
         st.session_state["_portfolio_stale_cache_loaded"] = True
+        if cache_is_stale(bundle) and not fp_mismatch:
+            try:
+                from services.deferred_startup import schedule_library_reload_if_needed
 
-    from services.portfolio_details_service import PortfolioDetailsService
+                schedule_library_reload_if_needed()
+            except Exception as exc:
+                logger.debug("Could not schedule library reload: %s", exc)
 
-    restored_rows = [_row_from_dict(item) for item in rows_payload]
-    st.session_state["portfolio_details_rows"] = (
-        PortfolioDetailsService().enrich_rows_previous_close(restored_rows)
-    )
-    if bundle.get("attention_summary") is not None:
-        st.session_state[SESSION_SUMMARY_KEY] = bundle["attention_summary"]
-    if bundle.get("risk_checked_at"):
-        st.session_state[SESSION_CHECKED_AT_KEY] = _coerce_datetime(bundle["risk_checked_at"]) or bundle["risk_checked_at"]
-    details_time = _coerce_datetime(bundle.get("portfolio_details_time"))
-    if details_time:
-        st.session_state["portfolio_details_time"] = details_time
-    st.session_state["portfolio_analysis_ready"] = bool(bundle.get("portfolio_analysis_ready"))
-    st.session_state["portfolio_show_analysis"] = True
-    try:
-        from utils.portfolio_db import compute_portfolio_db_fingerprint
-
-        st.session_state["_portfolio_db_fingerprint"] = bundle.get("db_fingerprint") or compute_portfolio_db_fingerprint(
-            use_cache=False
-        )
-    except Exception as exc:
-        logger.debug("Could not store portfolio DB fingerprint after hydrate: %s", exc)
-    logger.info(
-        "Portfolio UI cache loaded path=%s holdings=%d saved_at=%s",
-        cache_path,
-        len(rows_payload),
-        bundle.get("saved_at", "?"),
-    )
-    return True
+    return _apply_disk_bundle(bundle, cache_path=cache_path)
 
 
 def _dividend_sync_meta_path() -> Path:

@@ -74,6 +74,42 @@ Use these conventions when extending the app so features remain fast, testable, 
 - **Batch over per-symbol loops**: prefer `get_by_symbols()` / `load_documents()` style bulk fetches for holdings and screening views.
 - **Cloud SQL as runtime source of truth**: when `DATABASE_URL` is set, avoid introducing new runtime SQLite/Chroma write paths.
 - **Date parsing discipline**: parse DB values through `db.parsing` helpers to support both PostgreSQL and local SQLite tests.
+- **Background-first UI**: heavy portfolio work (live prices, yield preload, dividend sync, vector linking) runs in **background threads** via `services/deferred_startup.py` + `services/background_jobs.py`. UI code should call `schedule_portfolio_reload()` — not block reruns with `reload_portfolio_session()` or synchronous `build_rows_with_cache(use_live_prices=True)`.
+- **Single DB sync checkpoint**: `sync_portfolio_session_with_db()` runs once at app startup (`app.py`). Do not call it from every tab render.
+
+### Portfolio UI runtime
+
+Streamlit reruns stay responsive by separating **paint** from **reload**:
+
+```
+Browser rerun
+  → sync_portfolio_session_with_db()     # fingerprint check; queues refresh if DB changed
+  → hydrate_session_from_disk()          # restore per-user JSON cache when session is empty
+  → apply_background_results()           # merge finished background jobs into session_state
+  → schedule_startup_tasks()             # warm / dividend sync / yield preload on first open
+  → UI reads st.session_state only       # no full portfolio rebuild on tab navigation
+```
+
+| Layer | Module | Role |
+|---|---|---|
+| **Session sync** | `services/portfolio_session.py` | Detect portfolio DB changes via `utils/portfolio_db.compute_portfolio_db_fingerprint()`; schedule background refresh |
+| **Disk cache** | `services/portfolio_ui_cache.py` | Per-user `portfolio_ui_session.json` (rows, preload, risk summary, fingerprint) for instant startup |
+| **Job queue** | `services/deferred_startup.py` | Schedule warm load, live reload, yield preload, dividend sync |
+| **Job registry** | `services/background_jobs.py` | Thread-safe workers; results applied on the main Streamlit thread |
+| **UI triggers** | `services/portfolio_refresh.py` | `schedule_portfolio_reload()` for sidebar/manage/section refresh; `reload_portfolio_session()` for tests/scripts only |
+| **Progress** | `ui/sidebar_progress_panel.py` | Polls every 2s while jobs run; reruns when warm/live/yield/DB refresh completes |
+
+**Background job kinds** (see `services/deferred_startup.py`):
+
+| Job | When | What it does |
+|---|---|---|
+| `warm_portfolio` | Empty session, holdings in DB | Fast load from market library (no live API prices) |
+| `yield_preload` | After fast load | Batch yield-channel charts for all holdings |
+| `live_reload` | **Reload live data** button | Live prices + full analysis preload + risk rescan |
+| `portfolio_db_refresh` | After edits or fingerprint drift | Re-read holdings from DB (library prices) |
+| `dividend_sync` | Startup (≤ every 6h) | Sync received dividend receipts from market history |
+
+**Caching:** month-to-date dividends use `cached_current_month_paid_dividends()` (keyed by DB fingerprint + date). Section tabs use `@st.cache_data` where appropriate (e.g. dividend growth, benchmark comparison).
 
 ---
 
@@ -182,6 +218,23 @@ Without secrets configured, the app renders a **Try as Demo User** button that l
 
 Once logged in, every user gets an isolated portfolio scoped to their account.
 
+### Home & holdings overview
+
+- **Home** shows a summary strip (value, day change, P/L, month dividends received) and a **positions table** sorted worst-first
+- Click a ticker row to open full holding analysis (yield channel, fundamentals, journal)
+- Portfolio state is restored from a **disk cache** on startup; heavy reloads run in the **Background tasks** sidebar panel
+
+### Reloading data
+
+| Action | Behaviour |
+|---|---|
+| **Reload live data** (sidebar) | Queues a background `live_reload` — fetches live prices, rebuilds charts, refreshes watchlists |
+| **Refresh watchlists** | Fast rescan from cached rows (no new prices) |
+| **Manage portfolio** edits | Queues `portfolio_db_refresh` — views update in background after saves |
+| **Per-tab Update** | Dashboard/holdings/dividends tabs queue live reload; journal/deposits clear section cache only |
+
+The UI paints immediately from cache; numbers refresh when the background job completes (sidebar shows progress).
+
 ### Holdings & Purchase Journal
 
 - Add holdings manually via the **Manage** panel or import from a CSV
@@ -193,6 +246,7 @@ Once logged in, every user gets an isolated portfolio scoped to their account.
 - **Monthly calendar** — upcoming ex-dates and estimated payments
 - **Receipt log** — confirmed dividend payments with amounts
 - **Growth chart** — income CAGR over time
+- **Month received (Home / Dashboard)** — gross cash paid this month through today, recomputed from holdings + dividend history (Yahoo-aligned); cached per session
 
 ### Deposits & Benchmarks
 
@@ -391,13 +445,14 @@ dividend-healthcheck/
 │   ├── portfolio_dividend_income_service.py  # Income CAGR and growth charts
 │   ├── portfolio_dividend_growth_service.py  # Per-symbol growth trend
 │   ├── portfolio_dividend_sync_service.py    # Sync dividend receipts from market data
-│   ├── portfolio_month_dividends.py      # Monthly income totals
+│   ├── portfolio_month_dividends.py      # Monthly income totals + session-cached month received
+│   ├── portfolio_position_table.py       # Home positions table (concerns, sort worst-first)
 │   ├── portfolio_risk_monitor_service.py # Risk snapshot (attention items + cache)
 │   ├── portfolio_attention_service.py    # Attention rules (high payout, streak breaks…)
 │   ├── portfolio_analysis_preload.py     # Batch preload yield charts for all holdings
-│   ├── portfolio_refresh.py             # Reload live prices into session
-│   ├── portfolio_ui_cache.py            # JSON session cache for fast startup
-│   ├── portfolio_session.py             # Session state helpers
+│   ├── portfolio_refresh.py             # schedule_portfolio_reload + sync reload (tests)
+│   ├── portfolio_ui_cache.py            # JSON session cache + hydrate/warm/fast/live payloads
+│   ├── portfolio_session.py             # DB fingerprint sync + holdings cache helpers
 │   ├── portfolio_vector_sync.py         # Sync holdings into shared market library
 │   ├── portfolio_zone_overview.py       # Yield-zone summary (Weiss methodology)
 │   ├── portfolio_deposits_service.py    # Monthly deposit tracking
@@ -442,9 +497,10 @@ dividend-healthcheck/
 │
 ├── ui/                             # Streamlit pages and components
 │   ├── views.py                    # Single-stock and full-analysis pages
-│   ├── portfolio_home.py           # Portfolio welcome and quick-actions
+│   ├── portfolio_home.py           # Portfolio welcome, summary, positions table
 │   ├── portfolio_details_view.py   # Holdings, journal, income, benchmark views
-│   ├── portfolio_sidebar.py        # Sidebar navigation and status
+│   ├── portfolio_positions_table.py # Home positions table UI (row click → analysis)
+│   ├── portfolio_sidebar.py        # Sidebar navigation, reload, manage entry
 │   ├── portfolio_manage_panel.py   # Add/edit/remove holdings UI
 │   ├── portfolio_risk_panel.py     # Risk monitor and attention panel
 │   ├── portfolio_summary.py        # Holdings value/P&L summary strip
@@ -462,6 +518,11 @@ dividend-healthcheck/
 │   ├── access_request_panel.py     # Access request management UI
 │   ├── app_about.py                # About page (purpose, data sources, usage)
 │   └── theme.py                    # Visual theme helpers and palette
+│
+├── utils/                          # Shared helpers (non-UI)
+│   ├── portfolio_db.py             # Portfolio DB fingerprint + holding count helpers
+│   ├── dividend_amounts.py         # Dividend normalization and frequency helpers
+│   └── ...                         # yfinance config, chart theme, parsing helpers
 │
 ├── deploy/gcp/                     # GCP-specific scripts (bootstrap, Caddy, HTTPS)
 ├── scripts/                        # update_cloud_docker.sh, docker-entrypoint.sh
@@ -602,6 +663,9 @@ For a full deployment walkthrough including DNS, static IP, OAuth redirect URIs,
 | Postgres connection refused | `docker compose ps` — wait for the `healthy` status on the `postgres` service |
 | `🌐 Public API (DB empty)` in sidebar | Run `docker compose exec dividendscope python ingest_data.py --ensure-sp500 --enrich-existing` |
 | Slow first-run ingestion | Normal — 15–20 min for full S&P 500 enrichment; market data is cached afterwards |
+| Portfolio empty briefly after login | Normal — wait for **Background tasks** → *Loading portfolio*; disk cache fills on first successful load |
+| Numbers stale after editing holdings | Wait for *Updating portfolio* in sidebar, or click **Reload live data** |
+| `Failed to fetch dynamically imported module` (Streamlit JS) | Hard-refresh the browser (Ctrl+Shift+R). Production Caddy sets `no-cache` on `/static/*` — redeploy Caddyfile if needed |
 | Benchmark chart shows no data | Run `python ingest_data.py --refresh-prices` to fetch benchmark ETF history |
 | `chromadb` import errors | `pip install chromadb>=0.4.22`; app works without it (API-only mode) |
 | PDF export fails | `pip install reportlab` (included in `requirements.txt`) |

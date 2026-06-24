@@ -99,14 +99,6 @@ def _load_dividend_growth():
     return PortfolioDividendGrowthService().build_symbol_growth()
 
 
-def _load_portfolio_payload(
-    *,
-    use_live_prices: bool = True,
-) -> tuple[List[PortfolioDetailRow], PortfolioAnalysisPreload]:
-    """Load holdings table + analysis preload (stored in session_state)."""
-    return PortfolioDetailsService().build_rows_with_cache(use_live_prices=use_live_prices)
-
-
 def _preload_from_session() -> PortfolioAnalysisPreload:
     return PortfolioAnalysisPreload.from_caches(
         st.session_state.get("portfolio_stock_cache", {}),
@@ -1201,9 +1193,9 @@ class PortfolioDetailsView:
         if preload is None or st.session_state.get("portfolio_fast_loaded"):
             preload = _preload_from_session()
 
-        from services.portfolio_month_dividends import current_month_paid_dividends
+        from services.portfolio_month_dividends import cached_current_month_paid_dividends
 
-        month_paid = current_month_paid_dividends(rows=rows, preload=preload)
+        month_paid = cached_current_month_paid_dividends(rows=rows, preload=preload)
         if month_paid is not None:
             st.markdown("##### Dividends received this month")
             paid_row1_a, paid_row1_b, paid_row1_c = st.columns(3)
@@ -2371,10 +2363,7 @@ class PortfolioDetailsView:
 
     @classmethod
     def render(cls) -> None:
-        from services.portfolio_session import sync_portfolio_session_with_db
         from ui.portfolio_home import render_empty_home, render_portfolio_home_header
-
-        sync_portfolio_session_with_db()
 
         if st.session_state.get("portfolio_view_mode") == PORTFOLIO_VIEW_HOLDING:
             research_mode = bool(st.session_state.get("portfolio_research_mode"))

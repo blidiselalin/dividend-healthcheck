@@ -11,7 +11,7 @@ from typing import Callable, Optional
 import streamlit as st
 
 from services.portfolio_management_service import PortfolioManagementService
-from services.portfolio_refresh import reload_portfolio_session
+from services.portfolio_refresh import schedule_portfolio_reload
 from services.portfolio_session import is_demo_session, user_has_holdings_in_db
 
 
@@ -21,20 +21,17 @@ def _after_change(
     full_reload: bool = True,
     sections: Optional[list[str]] = None,
 ) -> None:
-    from services.portfolio_refresh import invalidate_section_caches
+    from services.portfolio_session import invalidate_holdings_cache
 
+    invalidate_holdings_cache()
     if full_reload:
-        with st.spinner("Updating portfolio views and vector database…"):
-            reload_portfolio_session(sections=["all"])
+        schedule_portfolio_reload(live_prices=False, sections=sections or ["all"])
+        st.success(f"{message} Updating views in the background.")
     else:
-        invalidate_section_caches(sections or ["journal", "deposits"])
-        try:
-            from services.portfolio_session import invalidate_holdings_cache
+        from services.portfolio_refresh import invalidate_section_caches
 
-            invalidate_holdings_cache()
-        except Exception:  # noqa: S110
-            pass
-    st.success(message)
+        invalidate_section_caches(sections or ["journal", "deposits"])
+        st.success(message)
     st.rerun()
 
 

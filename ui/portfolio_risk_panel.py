@@ -113,7 +113,8 @@ def _rebuild_attention_from_session() -> Optional[AttentionSummary]:
 @st.fragment
 def _portfolio_risk_sidebar_fragment() -> None:
     """Show cached risk data; full scan only when the user requests it."""
-    hydrate_session_from_disk()
+    if not st.session_state.get("portfolio_details_rows"):
+        hydrate_session_from_disk()
 
     summary = get_cached_attention_summary()
     if summary is None and st.session_state.get("portfolio_details_rows"):
@@ -227,6 +228,9 @@ def _render_risk_sidebar_content(summary: Optional[AttentionSummary] = None) -> 
         key="portfolio_risk_full_reload",
         help="Fetch live prices, rebuild charts, and refresh all watchlists (~1–2 min)",
     ):
-        with st.spinner("Reloading portfolio…"):
-            refresh_portfolio_risks(force=True)
+        from services.portfolio_refresh import schedule_portfolio_reload
+
+        schedule_portfolio_reload(live_prices=True, sections=["all"])
+        st.toast("Reloading portfolio in the background…")
         st.rerun()
+        return
