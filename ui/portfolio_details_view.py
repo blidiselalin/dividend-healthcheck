@@ -1864,6 +1864,13 @@ class PortfolioDetailsView:
         preload: Optional[PortfolioAnalysisPreload] = None,
     ) -> None:
         """Monthly dividend calendar plus net cash received (after tax)."""
+        from ui.beta_disclaimer import render_research_disclaimer
+        from ui.beta_feedback import render_beta_feedback
+        from ui.portfolio_summary import render_portfolio_dividend_income_strip
+
+        if rows:
+            render_portfolio_dividend_income_strip(rows)
+            st.divider()
 
         if rows and preload:
             st.markdown("##### 1. Monthly dividend calendar")
@@ -1880,6 +1887,9 @@ class PortfolioDetailsView:
         st.divider()
         st.markdown("##### 2. Net dividends received")
         cls._render_dividend_income_page()
+        st.divider()
+        render_research_disclaimer(compact=True)
+        render_beta_feedback(page="Dividend income", key_suffix="dividend_income")
 
     @classmethod
     def _render_dividend_income_page(cls) -> None:

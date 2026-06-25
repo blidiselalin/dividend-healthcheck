@@ -84,6 +84,43 @@ def render_notice(message: str, *, kind: str = "info") -> None:
     st.markdown(f'<div class="{css_class}">{message}</div>', unsafe_allow_html=True)
 
 
+def inject_command_center_theme() -> None:
+    """Styles for the pre-login Dividend Command Center."""
+    st.markdown(
+        """
+        <style>
+        .cc-hero {
+            text-align: center;
+            padding: 1.5rem 1rem 2rem;
+            margin-bottom: 0.5rem;
+        }
+        .cc-hero-eyebrow {
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 0.78rem;
+            color: #64748b;
+            margin: 0 0 0.5rem 0;
+        }
+        .cc-hero-title {
+            font-size: 2rem;
+            font-weight: 700;
+            line-height: 1.2;
+            margin: 0 0 0.75rem 0;
+            color: #0f172a;
+        }
+        .cc-hero-sub {
+            font-size: 1.05rem;
+            color: #475569;
+            max-width: 42rem;
+            margin: 0 auto;
+            line-height: 1.5;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def inject_app_theme() -> None:
     st.markdown(
         """
@@ -282,6 +319,16 @@ def inject_app_theme() -> None:
             margin: 0.2rem 0 0.65rem 0;
             min-height: 2.4rem;
             word-break: break-word;
+        }
+        .ds-onboarding-sidebar-hint {
+            font-size: 0.82rem;
+            color: rgba(49, 51, 63, 0.85);
+            background: rgba(28, 131, 225, 0.08);
+            border-left: 3px solid rgba(28, 131, 225, 0.55);
+            padding: 0.45rem 0.55rem;
+            margin: 0 0 0.75rem 0;
+            line-height: 1.4;
+            border-radius: 0 4px 4px 0;
         }
         </style>
         """,

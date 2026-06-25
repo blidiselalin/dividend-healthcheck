@@ -19,9 +19,9 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 WELCOME_MESSAGE = (
-    "Hi! I'm the **DividendScope assistant**. Ask how to use the app, name a ticker "
-    "(e.g. **ABBV**), or try: *reload live data*, *yield channels*, *my portfolio*. "
-    "I explain features and concepts — not personalized buy/sell advice."
+    "Hi! I'm the **DividendScope assistant**. New here? On Home, open **Getting started — step-by-step guide**. "
+    "Ask how to use the app, name a ticker (e.g. **ABBV**), or try: *reload live data*, *yield channels*, "
+    "*my portfolio*. I explain features and concepts — not personalized buy/sell advice."
 )
 
 DISCLAIMER = (
@@ -38,7 +38,8 @@ _TICKER_RE = re.compile(r"\b[A-Z]{1,5}\b")
 _APP_FAQ: Sequence[tuple[tuple[str, ...], str]] = (
     (
         ("reload", "live data", "refresh price", "fresh price"),
-        "Use **Reload live data** in the sidebar to refresh holdings prices and analysis. "
+        "Use **Reload live data** in the sidebar to queue a **background** refresh of prices, "
+        "yield charts, and watchlists. Progress appears under **Background tasks**. "
         "Use **Refresh watchlists** for a faster risk-list update without new prices.",
     ),
     (
@@ -49,18 +50,20 @@ _APP_FAQ: Sequence[tuple[tuple[str, ...], str]] = (
     ),
     (
         ("add holding", "add stock", "manage portfolio", "new ticker"),
-        "Go to **Manage portfolio** in the sidebar to add or edit positions, shares, "
-        "and cost basis.",
+        "Go to **Manage portfolio** in the sidebar → **Add ticker** (symbol, shares, cost). "
+        "Views update in the **background** after you save — watch **Background tasks**. "
+        "Then use **Reload live data** for today's prices and charts.",
     ),
     (
         ("dividend sync", "dividend receipt", "paid dividend", "cash received"),
         "Paid dividends are synced from the shared library into your journal periodically. "
-        "After changing holdings, use **Reload live data** to refresh totals.",
+        "After changing holdings, wait for the background update or use **Reload live data**.",
     ),
     (
-        ("cache", "slow", "first load", "loading"),
-        "The first open may build rows from the shared library; later visits use a session cache. "
-        "**Reload live data** forces a full refresh.",
+        ("cache", "slow", "first load", "loading", "background"),
+        "Heavy work runs in **Background tasks** (sidebar) so the UI stays responsive. "
+        "The first visit may warm holdings from the shared library; later visits use a disk cache. "
+        "**Reload live data** queues a full live refresh in the background.",
     ),
     (
         ("s&p", "sp500", "library", "analysed stock"),
@@ -74,16 +77,17 @@ _APP_FAQ: Sequence[tuple[tuple[str, ...], str]] = (
         "stored per user in PostgreSQL.",
     ),
     (
-        ("help", "how to use", "getting started"),
-        "Start under **Manage portfolio**, then **Reload live data**. Explore **Holdings**, "
-        "**Dividends**, and the dashboard tabs. Use the examples on the home page "
-        "for a guided tour.",
+        ("help", "how to use", "getting started", "onboarding", "new user"),
+        "Open **Getting started — step-by-step guide** on Home (4 steps): "
+        "**Manage portfolio** → wait for **Background tasks** → **Reload live data** → "
+        "explore **Holdings** / **Dividend income**. Expand **What is DividendScope?** for "
+        "what each section contains.",
     ),
     (
         ("risk", "watchlist", "attention", "buy zone"),
-        "After **Reload live data**, use **Refresh watchlists** for buy/risk lists from "
-        "cached analysis. Yield zones on **Holdings** show green (historically high yield) "
-        "vs red (expensive).",
+        "After **Reload live data** (background job), check **Portfolio risks** in the sidebar. "
+        "**Refresh watchlists** rescans from cached rows without new prices. Yield zones on "
+        "**Holdings** show green (historically high yield) vs red (expensive).",
     ),
     (
         ("dividend yield", "what is yield", "yield mean"),
@@ -92,9 +96,10 @@ _APP_FAQ: Sequence[tuple[tuple[str, ...], str]] = (
         "relatively cheap or rich prices — not a buy signal alone.",
     ),
     (
-        ("dashboard", "overview", "performance"),
-        "The **Dashboard** tab shows capital deposited, portfolio value, and evolution over time. "
-        "Load holdings first with **Reload live data** if numbers look empty.",
+        ("dashboard", "overview", "performance", "home"),
+        "**Home** shows value, P/L, month dividends received, and a positions table. "
+        "**Deposits & benchmarks** tracks capital deposited and index comparison. "
+        "If numbers are empty, finish **Getting started** on Home or wait for **Background tasks**.",
     ),
 )
 

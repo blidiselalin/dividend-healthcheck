@@ -101,10 +101,11 @@ class PortfolioDetailsService:
     def build_rows_with_cache(  # noqa: C901
         self,
         *,
+        holdings: list[PortfolioHolding] | None = None,
         use_live_prices: bool = False,
         preload_analysis: bool = True,
     ) -> tuple[list[PortfolioDetailRow], PortfolioAnalysisPreload]:
-        holdings = self.store.list_holdings()
+        holdings = holdings if holdings is not None else self.store.list_holdings()
         symbols = [holding.symbol for holding in holdings]
         if use_live_prices:
             logger.info(

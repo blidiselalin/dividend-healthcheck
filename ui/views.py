@@ -178,6 +178,13 @@ class SingleStockView:
         UIComponents.display_key_highlights(data, score, rec)
 
         st.divider()
+        UIComponents.display_dividend_section(
+            data,
+            symbol=symbol,
+            vector_doc=vector_doc,
+        )
+
+        st.divider()
         UIComponents.display_yield_channel_chart(
             symbol,
             years=10,
@@ -240,6 +247,11 @@ class SingleStockView:
         cls._render_report_section(data, score, rec, pros, cons, symbol)
 
         st.divider()
+        from ui.beta_disclaimer import render_research_disclaimer
+        from ui.beta_feedback import render_beta_feedback
+
+        render_research_disclaimer(compact=True)
+        render_beta_feedback(page=f"Stock detail · {symbol}", key_suffix=f"stock_{symbol}")
         cls._render_data_source_footer(
             data, confidence, symbol=symbol, vector_doc=vector_doc
         )

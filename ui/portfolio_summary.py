@@ -119,3 +119,41 @@ def render_holdings_summary(
     )
 
     return metrics
+
+
+def render_portfolio_dividend_income_strip(rows: List[PortfolioDetailRow]) -> None:
+    """Estimated portfolio dividend income — annual, monthly, yield, top payers."""
+    if not rows:
+        return
+
+    total_annual = sum(row.annual_income or 0.0 for row in rows)
+    total_value = sum(row.current_value or 0.0 for row in rows)
+    portfolio_yield = (total_annual / total_value * 100) if total_value > 0 and total_annual > 0 else None
+
+    st.markdown("##### Portfolio dividend income")
+    c1, c2, c3 = st.columns(3)
+    c1.metric(
+        "Est. annual income",
+        f"${total_annual:,.2f}" if total_annual else "—",
+        help="Sum of annual dividend per share × shares held.",
+    )
+    c2.metric(
+        "Est. monthly average",
+        f"${total_annual / 12:,.2f}" if total_annual else "—",
+    )
+    c3.metric(
+        "Portfolio yield",
+        f"{portfolio_yield:.2f}%" if portfolio_yield is not None else "—",
+        help="Estimated annual dividend income ÷ current portfolio value.",
+    )
+
+    ranked = sorted(rows, key=lambda row: row.annual_income or 0.0, reverse=True)
+    if ranked and any(row.annual_income for row in ranked):
+        st.caption(
+            "Top by income: "
+            + " · ".join(
+                f"**{row.ticker}** ${row.annual_income:,.0f}/yr"
+                for row in ranked[:5]
+                if row.annual_income
+            )
+        )

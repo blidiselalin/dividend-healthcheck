@@ -144,8 +144,9 @@ def _render_risk_sidebar_content(summary: Optional[AttentionSummary] = None) -> 
 
     if summary is None:
         st.info(
-            "No portfolio snapshot yet. Use **Reload live data** in the sidebar "
-            "to load holdings and run the first scan (~1–2 min)."
+            "No portfolio snapshot yet. Add a holding under **Manage portfolio**, wait for "
+            "**Background tasks**, then click **Reload live data** for the first risk scan "
+            "(runs in the background)."
         )
         return
 

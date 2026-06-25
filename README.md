@@ -22,6 +22,7 @@ Research Dividend Kings and Aristocrats, track your holdings, monitor dividend i
 - [Local Development (no Docker)](#local-development-no-docker)
 - [Authentication](#authentication)
 - [Portfolio Management](#portfolio-management)
+- [New user guide](#new-user-guide)
 - [Market Data & Ingestion CLI](#market-data--ingestion-cli)
 - [Scoring Framework](#scoring-framework)
 - [Project Structure](#project-structure)
@@ -210,7 +211,61 @@ By default, anyone with a Google account can log in. To restrict to specific ema
 
 ### Demo / test mode
 
-Without secrets configured, the app renders a **Try as Demo User** button that loads a read-only sample portfolio — useful for evaluating the app before setting up OAuth.
+Without Google OAuth configured, the login screen offers **Continue as test user** — a demo workspace with sample holdings (KO, JNJ, O) and a **Test mode — quick tour** on Home. Useful for evaluating the app before setting up OAuth.
+
+---
+
+## New user guide
+
+### Try before sign-up (Command Center)
+
+Logged-out visitors see the **Dividend Command Center** — a full-width homepage, not a text landing page:
+
+| Section | What it does |
+|---|---|
+| **Hero + search** | Add up to **3 tickers** to a session try-list (starts with KO, JNJ, O) |
+| **Demo dashboard** | Next-12-month dividend forecast chart, annual income run-rate, upcoming payouts, safety alerts |
+| **Feature cards** | Track income · Analyze safety · Forecast growth |
+| **Sample stock report** | Yield, payout, streak, and safety score from the shared library |
+| **Import options** | Manual (now), CSV and broker sync (planned) |
+| **CTA** | **Create portfolio — Sign up with Google** — try-list holdings copy into the new account |
+
+This matches the product story: **past dividends → current safety → future income**.
+
+### After sign-up (authenticated Home)
+
+### What DividendScope contains
+
+| Area | Where in the app | What you get |
+|---|---|---|
+| **Portfolio snapshot** | Home | Total value, day change, P/L, dividends received this month, positions table (worst first — click a row for analysis) |
+| **Holdings** | Home → section button | Full table, filters, yield zones, compare same-sector positions |
+| **Dividend income** | Home → section button | Monthly calendar, cash received, upcoming ex-dates |
+| **Dividend growth** | Home → section button | Per-share growth and trends across your holdings |
+| **Purchase journal** | Home → section button | Buy dates, lots, share counts |
+| **Deposits & benchmarks** | Home → section button | Monthly deposits, portfolio € value, comparison vs S&P 500 / SCHD / Dow / Nasdaq |
+| **Research** | Home (S&P picker) | Analyze any S&P 500 symbol before you buy |
+| **Risk & watchlists** | Sidebar | Buy opportunities, dividend timing, high-risk flags (after live reload) |
+| **Manage portfolio** | Sidebar expander | Add/edit holdings, log purchases, monthly deposits |
+| **Assistant** | Sidebar | FAQ and how-to (optional Hugging Face for broader chat) |
+
+Your **holdings, journal, deposits, and receipts** are private to your account in PostgreSQL. **Market history** (prices, dividends, fundamentals) comes from a **shared S&P library** used by all users.
+
+### Setup in four steps (first visit)
+
+1. **Add your first ticker** — Sidebar → **Manage portfolio** → **Add ticker** (symbol, shares, average cost) → **Add to portfolio**
+2. **Wait for background load** — Watch **Background tasks** in the sidebar; Home fills in from the shared library (usually seconds)
+3. **Reload live data** (recommended) — Sidebar → **Reload live data** for today's prices, yield charts, and watchlists (runs in background)
+4. **Explore** — Use section buttons on Home; click any ticker for full analysis
+
+Optional later: **Purchase** and **Monthly evolution** tabs under Manage portfolio; **Refresh watchlists** for a fast risk rescan without new prices.
+
+### Where to get help in the app
+
+- **What is DividendScope?** expander on Home — purpose, what you manage, data sources
+- **Getting started — step-by-step guide** on Home — progress checklist (dismiss when done)
+- **Next step** caption under **Portfolio** in the sidebar
+- **Assistant** — ask *getting started*, *reload live data*, *yield channels*, or a ticker symbol
 
 ---
 
@@ -223,6 +278,7 @@ Once logged in, every user gets an isolated portfolio scoped to their account.
 - **Home** shows a summary strip (value, day change, P/L, month dividends received) and a **positions table** sorted worst-first
 - Click a ticker row to open full holding analysis (yield channel, fundamentals, journal)
 - Portfolio state is restored from a **disk cache** on startup; heavy reloads run in the **Background tasks** sidebar panel
+- **New users:** a **Getting started — step-by-step guide** on Home walks through add holding → background load → reload live data → explore tabs (sidebar shows the current next step)
 
 ### Reloading data
 
@@ -450,6 +506,7 @@ dividend-healthcheck/
 │   ├── portfolio_risk_monitor_service.py # Risk snapshot (attention items + cache)
 │   ├── portfolio_attention_service.py    # Attention rules (high payout, streak breaks…)
 │   ├── portfolio_analysis_preload.py     # Batch preload yield charts for all holdings
+│   ├── guest_playground.py         # Pre-login try-list (max 3 tickers, session-only)
 │   ├── portfolio_refresh.py             # schedule_portfolio_reload + sync reload (tests)
 │   ├── portfolio_ui_cache.py            # JSON session cache + hydrate/warm/fast/live payloads
 │   ├── portfolio_session.py             # DB fingerprint sync + holdings cache helpers
@@ -498,6 +555,8 @@ dividend-healthcheck/
 ├── ui/                             # Streamlit pages and components
 │   ├── views.py                    # Single-stock and full-analysis pages
 │   ├── portfolio_home.py           # Portfolio welcome, summary, positions table
+│   ├── command_center_home.py      # Pre-login Dividend Command Center UI
+│   ├── portfolio_onboarding.py     # Post-sign-up onboarding checklist
 │   ├── portfolio_details_view.py   # Holdings, journal, income, benchmark views
 │   ├── portfolio_positions_table.py # Home positions table UI (row click → analysis)
 │   ├── portfolio_sidebar.py        # Sidebar navigation, reload, manage entry

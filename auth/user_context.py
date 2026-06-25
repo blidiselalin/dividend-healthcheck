@@ -278,6 +278,15 @@ def ensure_user_session() -> Optional[AppUser]:
             from services.portfolio_ui_cache import clear_session_cache
 
             clear_session_cache()
+            from services.guest_playground import migrate_guest_holdings_to_portfolio
+
+            migrated = migrate_guest_holdings_to_portfolio(db_path)
+            if migrated:
+                logger.info(
+                    "Migrated %d guest try-list holding(s) for %s",
+                    migrated,
+                    user.email,
+                )
         if user.is_admin or is_admin_email(user.email):
             if restore_owner_portfolio(user.id, user_dir):
                 logger.info(

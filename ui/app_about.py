@@ -77,7 +77,7 @@ def _render_what_you_manage() -> None:
             - **S&P analysed stocks** — one server-wide database of historical prices and dividends
             - Same-sector comparison against your other holdings
 
-            **Watchlists** (after reload)
+            **Watchlists** (after **Reload live data**)
             - Buy ideas (value + yield zones)
             - High-risk holdings only when severity is real
             """
@@ -115,10 +115,23 @@ def _render_data_sources() -> None:
         - **{DATA_SOURCES['historical']}** — dividend and price history for trends and growth
 
         Your portfolio amounts (shares, deposits, purchases) stay **in your account only**.
-        The **S&P historical library** lives in **PostgreSQL** (`stock_documents`) and is **shared by every user**;
-        reload updates live prices for your positions when you choose.
+        The **S&P historical library** lives in **PostgreSQL** (`stock_documents`) and is **shared by every user**.
+        After you add holdings, the app loads from that library in the **background**; use **Reload live data**
+        in the sidebar when you want today's prices and full yield charts.
+        """
+    )
+    st.markdown(
+        """
+        #### New here?
+
+        On **Home**, open **Getting started — step-by-step guide** for the full setup flow
+        (add ticker → background load → reload live data → explore tabs). The sidebar shows your
+        **Next step** until you dismiss the guide. Ask the **Assistant** for quick how-to answers.
         """
     )
     st.caption(
         "Educational tool only — not investment advice. Always verify data before acting."
     )
+    from ui.beta_disclaimer import render_beta_pricing_placeholder
+
+    render_beta_pricing_placeholder()

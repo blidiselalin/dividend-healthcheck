@@ -136,6 +136,8 @@ Do **not** block Streamlit reruns with synchronous portfolio rebuilds in `ui/*`.
 
 Fingerprint covers: `holdings`, `purchase_journal`, `monthly_deposits`, `dividend_receipts`, `net_dividends` (`utils/portfolio_db.py`).
 
+**New-user onboarding:** step definitions in `services/portfolio_onboarding.py`, UI in `ui/portfolio_onboarding.py` — keep copy aligned with background-job flow and `PORTFOLIO_NAV` section hints in `ui/theme.py`.
+
 ## Safe change checklist
 
 - [ ] Migrations added for Postgres schema changes?

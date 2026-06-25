@@ -172,6 +172,11 @@ def render_portfolio_manage_sidebar() -> None:
 
     expand_manage = is_demo_session() or not user_has_holdings_in_db()
     with st.sidebar.expander("Manage portfolio", expanded=expand_manage):
+        if st.session_state.get("portfolio_onboarding_show_manage_tip") and not user_has_holdings_in_db():
+            st.info(
+                "**Step 1:** Add ticker tab below — symbol, shares, average cost, then **Add to portfolio**. "
+                "Views refresh in the background automatically."
+            )
         tab_add, tab_edit, tab_buy, tab_evolution = st.tabs(
             ["Add ticker", "Edit position", "Purchase", "Monthly evolution"]
         )

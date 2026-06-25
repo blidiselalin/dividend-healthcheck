@@ -163,37 +163,9 @@ def render_try_it_examples(*, expanded: bool = False) -> None:
 
 def render_real_user_getting_started() -> None:
     """Walkthrough for signed-in users with an empty portfolio."""
-    st.markdown("### Your portfolio is empty")
-    st.write(
-        "Add your first holding to unlock the dashboard, holdings table, dividend "
-        "calendar, and per-stock analysis. Market history comes from the shared "
-        "S&P library; only your positions are stored in your account."
-    )
+    from ui.portfolio_onboarding import render_real_user_getting_started as _render_onboarding_home
 
-    st.markdown("#### Get started in four steps")
-    st.markdown(
-        """
-        1. In the **sidebar**, open **Manage portfolio** (expanded below if this is your first visit).
-        2. Open the **Add ticker** tab — enter a symbol (e.g. `VZ`, `KO`, `JNJ`), share count, and average cost per share.
-        3. Click **Add to portfolio** (Yahoo Finance validates the ticker unless you skip validation).
-        4. Click **Reload live data** in the sidebar to load prices, scores, and charts for your holdings.
-        """
-    )
-
-    st.markdown("#### What you can add next")
-    st.markdown(
-        """
-        - **Purchase** tab — log buy dates and prices for cost-basis history.
-        - **Deposit** tab — record monthly cash you add to the account.
-        - **Holdings** section — after reload, filter positions and open full analysis per ticker.
-        """
-    )
-
-    render_notice(
-        "<strong>Tip:</strong> You can analyze any S&P stock above before adding it to your portfolio. "
-        "Demo holdings (KO, JNJ, O) appear only in <strong>test user</strong> mode.",
-        kind="info",
-    )
+    _render_onboarding_home()
 
 
 def render_empty_home_demo() -> None:
@@ -222,6 +194,9 @@ def render_empty_home_demo() -> None:
 
     default_expand = st.session_state.get("portfolio_show_examples", False)
     render_try_it_examples(expanded=bool(default_expand))
+    from ui.portfolio_onboarding import render_demo_onboarding_checklist
+
+    render_demo_onboarding_checklist(expanded=True)
 
 
 def render_empty_home() -> None:
@@ -230,8 +205,6 @@ def render_empty_home() -> None:
         render_empty_home_demo()
         return
 
-    with st.expander("About DividendScope", expanded=False):
-        render_app_about(expanded=True)
     render_real_user_getting_started()
 
 
@@ -261,6 +234,15 @@ def render_compact_summary(rows: List[PortfolioDetailRow]) -> None:
         month_paid=month_paid,
         show_month_received=month_paid is not None,
     )
+    from ui.portfolio_summary import render_portfolio_dividend_income_strip
+
+    render_portfolio_dividend_income_strip(rows)
+
+    from ui.beta_disclaimer import render_research_disclaimer
+    from ui.beta_feedback import render_beta_feedback
+
+    render_research_disclaimer(compact=True)
+    render_beta_feedback(page="Portfolio home", key_suffix="portfolio_home")
 
     st.divider()
     render_stocks_overview(rows)
@@ -281,8 +263,14 @@ def render_portfolio_home_header(
         render_empty_home()
         return False
 
+    from ui.portfolio_onboarding import render_onboarding_banner_if_needed
+
+    render_onboarding_banner_if_needed()
     st.divider()
     render_compact_summary(rows)
+    from ui.portfolio_onboarding import render_onboarding_checklist
+
+    render_onboarding_checklist(expanded=False)
     render_portfolio_section_nav()
     render_try_it_examples(expanded=is_demo_session())
     st.divider()

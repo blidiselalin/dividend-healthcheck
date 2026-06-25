@@ -11,6 +11,7 @@ import streamlit as st
 
 from services.portfolio_ui_cache import hydrate_session_from_disk
 from ui.portfolio_manage_panel import render_portfolio_manage_sidebar
+from ui.portfolio_onboarding import mark_onboarding_live_reload_requested, render_onboarding_sidebar_hint
 from ui.portfolio_risk_panel import _rebuild_attention_from_session
 from services.portfolio_session import user_has_holdings_in_db
 from ui.theme import portfolio_data_ready, sidebar_heading
@@ -19,6 +20,7 @@ from ui.theme import portfolio_data_ready, sidebar_heading
 def _reload_live_data() -> None:
     from services.portfolio_refresh import schedule_portfolio_reload
 
+    mark_onboarding_live_reload_requested()
     schedule_portfolio_reload(live_prices=True, sections=["all"])
 
 
@@ -28,6 +30,7 @@ def render_portfolio_sidebar() -> None:
         hydrate_session_from_disk()
 
     sidebar_heading("Portfolio")
+    render_onboarding_sidebar_hint()
     if st.sidebar.button(
         "Home",
         use_container_width=True,
