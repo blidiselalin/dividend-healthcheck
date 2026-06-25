@@ -5,15 +5,17 @@ from __future__ import annotations
 import streamlit as st
 
 from services.beta_feedback import BetaFeedbackStore
+from ui.design_system import render_section_header
 
 
 def render_beta_feedback(*, page: str, key_suffix: str = "") -> None:
     """Collapsible feedback widget — rating, message, optional email."""
     suffix = f"_{key_suffix}" if key_suffix else ""
+    st.markdown('<div class="ds-feedback-trigger">', unsafe_allow_html=True)
     with st.expander("Send beta feedback", expanded=False):
-        st.caption(f"Page: **{page}**")
+        render_section_header("Share feedback", f"Help us improve · viewing **{page}**")
         rating = st.slider(
-            "Rating",
+            "Rating (1–5)",
             min_value=1,
             max_value=5,
             value=4,
@@ -44,7 +46,7 @@ def render_beta_feedback(*, page: str, key_suffix: str = "") -> None:
                 key=f"beta_feedback_email{suffix}",
             )
 
-        if st.button("Submit feedback", key=f"beta_feedback_submit{suffix}"):
+        if st.button("Submit feedback", key=f"beta_feedback_submit{suffix}", type="primary"):
             if not (message or "").strip():
                 st.warning("Please enter a message.")
                 return
@@ -61,3 +63,4 @@ def render_beta_feedback(*, page: str, key_suffix: str = "") -> None:
                 st.session_state.pop(f"beta_feedback_message{suffix}", None)
             except Exception as exc:
                 st.error(f"Could not save feedback: {exc}")
+    st.markdown("</div>", unsafe_allow_html=True)

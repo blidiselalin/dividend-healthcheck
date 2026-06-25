@@ -397,6 +397,7 @@ class UIComponents:
         """Prominent dividend block for stock detail — health, metrics, payout history."""
         from services.dividend_health import assess_dividend_health
         from ui.beta_disclaimer import YIELD_HISTORY_HELP
+        from ui.design_system import render_health_panel, render_metric_grid, render_section_header
         from utils.library_document import resolve_library_document
         from utils.yield_history_tables import yearly_dividend_per_share_table
 
@@ -404,75 +405,72 @@ class UIComponents:
         health = assess_dividend_health(data)
         dh = data.dividend_history
 
-        st.subheader("Dividends")
-        st.caption(YIELD_HISTORY_HELP)
-
-        badge_colors = {
-            "Healthy": ("#ecfdf5", "#047857", "#a7f3d0"),
-            "Watch": ("#fffbeb", "#b45309", "#fde68a"),
-            "Risky": ("#fef2f2", "#b91c1c", "#fecaca"),
-            "Not enough data": ("#f8fafc", "#475569", "#e2e8f0"),
-        }
-        bg, fg, border = badge_colors.get(health.label, badge_colors["Not enough data"])
-        st.markdown(
-            f"""
-            <div style="border:1px solid {border};background:{bg};color:{fg};
-                        border-radius:10px;padding:12px 14px;margin:8px 0 12px 0;">
-              <strong>Dividend health: {health.label}</strong>
-              <div style="font-size:0.88rem;margin-top:6px;color:#334155;">
-                {" · ".join(health.reasons[:3])}
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.markdown('<div class="ds-dividend-section">', unsafe_allow_html=True)
+        render_section_header("Dividends", YIELD_HISTORY_HELP)
+        render_health_panel(health.label, health.reasons)
         st.caption(health.disclaimer)
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric(
-            "Current yield",
-            UIComponents.format_percent(data.dividend_yield_pct)
-            if data.dividend_yield_pct is not None
-            else "Not available yet",
-        )
         annual = dh.current_annual if dh and dh.current_annual else data.dividend_rate
-        c2.metric(
-            "Annual dividend / share",
-            UIComponents.format_currency(annual) if annual else "Not available yet",
-        )
-        c3.metric(
-            "Frequency",
-            UIComponents._payment_frequency_label(dh.payment_frequency if dh else None),
-        )
-        c4.metric(
-            "Payout ratio",
-            UIComponents.format_percent(data.payout_ratio_pct, 0)
-            if data.payout_ratio_pct is not None
-            else "Not available yet",
-        )
-
-        c5, c6, c7, c8 = st.columns(4)
         ex_div = dh.ex_dividend_date if dh else None
-        c5.metric(
-            "Next ex-dividend",
-            ex_div.strftime("%d %b %Y") if ex_div else "Not available yet",
-        )
-        c6.metric(
-            "Next payment",
-            "Not available yet",
-            help="Payment dates are shown on the portfolio dividend calendar when held.",
-        )
-        c7.metric(
-            "5Y div growth",
-            UIComponents.format_percent(dh.cagr_5y)
-            if dh and dh.cagr_5y is not None
-            else "Not available yet",
-        )
-        c8.metric(
-            "Streak",
-            UIComponents.format_years(dh.consecutive_years)
-            if dh and dh.consecutive_years
-            else "Not available yet",
+        render_metric_grid(
+            [
+                (
+                    "Current yield",
+                    UIComponents.format_percent(data.dividend_yield_pct)
+                    if data.dividend_yield_pct is not None
+                    else "Not available yet",
+                    "Vs own history on chart below",
+                    True,
+                ),
+                (
+                    "Annual dividend / share",
+                    UIComponents.format_currency(annual) if annual else "Not available yet",
+                    "Trailing per share",
+                    True,
+                ),
+                (
+                    "Payout ratio",
+                    UIComponents.format_percent(data.payout_ratio_pct, 0)
+                    if data.payout_ratio_pct is not None
+                    else "Not available yet",
+                    "Earnings paid as dividends",
+                    True,
+                ),
+                (
+                    "5Y div growth",
+                    UIComponents.format_percent(dh.cagr_5y)
+                    if dh and dh.cagr_5y is not None
+                    else "Not available yet",
+                    "Compound annual growth",
+                    False,
+                ),
+                (
+                    "Next ex-dividend",
+                    ex_div.strftime("%d %b %Y") if ex_div else "Not available yet",
+                    "Upcoming ex-date",
+                    True,
+                ),
+                (
+                    "Streak",
+                    UIComponents.format_years(dh.consecutive_years)
+                    if dh and dh.consecutive_years
+                    else "Not available yet",
+                    "Consecutive raise years",
+                    False,
+                ),
+                (
+                    "Frequency",
+                    UIComponents._payment_frequency_label(dh.payment_frequency if dh else None),
+                    "Payments per year",
+                    False,
+                ),
+                (
+                    "Next payment",
+                    "Not available yet",
+                    "See portfolio calendar when held",
+                    False,
+                ),
+            ]
         )
 
         doc = resolve_library_document(symbol, vector_doc)
@@ -486,9 +484,10 @@ class UIComponents:
                 column_config={"Dividend / share $": st.column_config.NumberColumn(format="$%.4f")},
             )
         elif dh and dh.total_years:
-            st.info("Insufficient dividend history for a payout table in the library.")
+            st.info("Insufficient dividend data for a payout table in the library.")
         else:
             st.info("Dividend payout history is not available yet for this symbol.")
+        st.markdown("</div>", unsafe_allow_html=True)
 
     @staticmethod
     def display_valuation_metrics(data: StockData) -> None:
@@ -1025,17 +1024,16 @@ class UIComponents:
         analysis = service.format_analysis_summary(data)
 
         if show_header:
+            from ui.design_system import render_chart_card_header, render_yield_zone_headline
             from utils.yield_channel_history import yield_channel_history_label
 
             history_label = yield_channel_history_label(data.years_analyzed, requested=years)
-            st.markdown("### Dividend Yield Channels · *Dividends Don't Lie*")
             from ui.beta_disclaimer import YIELD_HISTORY_HELP
 
-            st.caption(
-                f"{YIELD_HISTORY_HELP} "
-                f"Geraldine Weiss (1988): yield vs its own history shows if price is fair. "
-                f"{history_label} · {data.data_points:,} chart points · "
-                f"${data.current_dividend:.2f}/yr dividend today."
+            render_chart_card_header(
+                "Dividend yield channels · Dividends Don't Lie",
+                f"{YIELD_HISTORY_HELP} {history_label} · {data.data_points:,} points · "
+                f"${data.current_dividend:.2f}/yr dividend today.",
             )
             if data.years_analyzed < years:
                 st.info(
@@ -1046,21 +1044,26 @@ class UIComponents:
         zone_color = YIELD_ZONE_COLORS.get(data.zone, "#0f766e")
         headline, sub = st.columns([1, 2])
         with headline:
-            st.markdown(
-                f"<p style='margin:0;font-size:1.45rem;font-weight:600;color:{zone_color}'>"
-                f"{analysis['zone_emoji']} {data.zone}</p>"
-                f"<p style='margin:0;color:#64748b;font-size:0.9rem'>"
-                f"Yield percentile {data.percentile:.0f}% · {analysis['action']}</p>",
-                unsafe_allow_html=True,
+            render_yield_zone_headline(
+                data.zone,
+                analysis["zone_emoji"],
+                f"Yield percentile {data.percentile:.0f}% · {analysis['action']}",
+                color=zone_color,
             )
         with sub:
             m1, m2, m3 = st.columns(3)
-            m1.metric("Current yield", f"{data.current_yield:.2f}%", f"{analysis['yield_vs_median']:+.2f}pp vs median")
+            m1.metric(
+                "Current yield",
+                f"{data.current_yield:.2f}%",
+                f"{analysis['yield_vs_median']:+.2f}pp vs median",
+                help="Highlighted — core dividend metric",
+            )
             m2.metric("Share price", f"${data.current_price:.2f}", f"Fair ≈ ${data.fair_value_price:.2f}")
             m3.metric(
                 "Median yield (10Y)",
                 f"{data.median_yield:.2f}%",
                 f"Range {data.min_yield:.1f}–{data.max_yield:.1f}%",
+                help="Historical yield context",
             )
 
         st.caption(analysis["action_detail"])
@@ -1087,6 +1090,10 @@ class UIComponents:
         fig = service.create_yield_channel_chart(data, height=480, show_annotations=False)
         if fig:
             show_chart(fig, key=f"yield_channel_{symbol}")
+        if show_header:
+            from ui.design_system import render_chart_card_footer
+
+            render_chart_card_footer()
 
         from utils.yield_history_tables import yearly_yield_exposure_table
 

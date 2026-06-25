@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import streamlit as st
 
+from ui.design_system import render_beta_badge, render_disclaimer_banner
+
 RESEARCH_DISCLAIMER = (
     "This app is for dividend tracking and research only. It does not provide financial advice."
 )
@@ -18,34 +20,15 @@ def render_research_disclaimer(*, compact: bool = False) -> None:
     if compact:
         st.caption(RESEARCH_DISCLAIMER)
     else:
-        st.info(RESEARCH_DISCLAIMER)
-
-
-def render_beta_badge() -> None:
-    st.markdown(
-        """
-        <span style="
-            display:inline-block;
-            background:#ecfdf5;
-            color:#047857;
-            border:1px solid #a7f3d0;
-            border-radius:999px;
-            padding:0.2rem 0.65rem;
-            font-size:0.78rem;
-            font-weight:600;
-            margin-bottom:0.5rem;
-        ">Free during beta · No credit card required</span>
-        """,
-        unsafe_allow_html=True,
-    )
+        render_disclaimer_banner(RESEARCH_DISCLAIMER)
 
 
 def render_beta_pricing_placeholder(*, expanded: bool = False) -> None:
     with st.expander("Pricing (beta)", expanded=expanded):
+        render_beta_badge(extra="Free during beta")
         st.markdown(
             """
-            **Free during beta.**  
-            No credit card required.
+            **No credit card required.**
 
             **Planned Pro pricing after launch:**  
             $5/month or $40/year.

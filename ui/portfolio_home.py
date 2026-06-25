@@ -229,14 +229,10 @@ def render_compact_summary(rows: List[PortfolioDetailRow]) -> None:
         )
 
     month_paid = cached_current_month_paid_dividends(rows=rows, preload=preload)
-    render_holdings_summary(
-        rows,
-        month_paid=month_paid,
-        show_month_received=month_paid is not None,
-    )
-    from ui.portfolio_summary import render_portfolio_dividend_income_strip
+    from ui.portfolio_summary import render_dividend_focus_block
 
-    render_portfolio_dividend_income_strip(rows)
+    render_dividend_focus_block(rows, month_paid=month_paid)
+    render_holdings_summary(rows, show_month_received=False)
 
     from ui.beta_disclaimer import render_research_disclaimer
     from ui.beta_feedback import render_beta_feedback

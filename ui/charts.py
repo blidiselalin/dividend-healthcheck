@@ -29,20 +29,34 @@ def show_chart(
     *,
     key: Optional[str] = None,
     height: Optional[int] = None,
+    title: Optional[str] = None,
+    subtitle: Optional[str] = None,
     **kwargs: Any,
 ) -> Any:
     """Render a styled Plotly figure full width (passes through Streamlit plotly_chart kwargs)."""
     if fig is None:
+        from ui.design_system import render_empty_state
+
+        render_empty_state("No chart data", "Reload live data or check the shared library.", icon="📉")
         return None
+    if title:
+        from ui.design_system import render_chart_card_header
+
+        render_chart_card_header(title, subtitle or "")
     if height is not None and fig.layout.height is None:
         fig.update_layout(height=height)
-    return st.plotly_chart(
+    result = st.plotly_chart(
         fig,
         width=kwargs.pop("width", "stretch"),
         key=key,
         config=PLOTLY_CONFIG,
         **kwargs,
     )
+    if title:
+        from ui.design_system import render_chart_card_footer
+
+        render_chart_card_footer()
+    return result
 
 
 __all__ = ["show_chart", "style_figure", "PLOTLY_CONFIG"]

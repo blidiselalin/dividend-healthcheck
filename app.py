@@ -120,7 +120,7 @@ def _startup_db_light() -> dict:
 
 st.set_page_config(
     page_title="DividendScope",
-    page_icon="👑",
+    page_icon="💹",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -247,6 +247,9 @@ def main() -> None:
         _render_sidebar_footer()
         return
     PortfolioDetailsView.render()
+    from ui.design_system import render_app_footer
+
+    render_app_footer()
     _render_sidebar_footer()
 
 

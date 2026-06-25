@@ -17,6 +17,42 @@ from services.portfolio_session import user_has_holdings_in_db
 from ui.theme import portfolio_data_ready, sidebar_heading
 
 
+from services.portfolio_session import user_has_holdings_in_db
+from ui.design_system import render_logo
+from ui.theme import portfolio_data_ready, sidebar_heading
+
+
+def _go_portfolio_section(section_label: str) -> None:
+    from ui.admin_page import set_admin_console_active
+    from ui.portfolio_home import PORTFOLIO_VIEW_OVERVIEW
+
+    set_admin_console_active(False)
+    st.session_state["portfolio_view_mode"] = PORTFOLIO_VIEW_OVERVIEW
+    st.session_state["portfolio_section_label"] = section_label
+    st.session_state.pop("portfolio_research_mode", None)
+    st.rerun()
+
+
+def _render_sidebar_quick_nav() -> None:
+    st.sidebar.caption("Navigate")
+    row1 = st.sidebar.columns(2)
+    with row1[0]:
+        if st.button("Dashboard", key="sidebar_nav_dashboard", use_container_width=True):
+            from ui.portfolio_home import navigate_to_portfolio_home
+
+            navigate_to_portfolio_home()
+    with row1[1]:
+        if st.button("Dividends", key="sidebar_nav_dividends", use_container_width=True):
+            _go_portfolio_section("Dividend income")
+    row2 = st.sidebar.columns(2)
+    with row2[0]:
+        if st.button("Watchlist", key="sidebar_nav_watchlist", use_container_width=True):
+            st.toast("Risk & timing watchlists are below.")
+    with row2[1]:
+        if st.button("Feedback", key="sidebar_nav_feedback", use_container_width=True):
+            st.toast("Use **Send beta feedback** on Home or any stock page.")
+
+
 def _reload_live_data() -> None:
     from services.portfolio_refresh import schedule_portfolio_reload
 
@@ -29,6 +65,9 @@ def render_portfolio_sidebar() -> None:
     if not st.session_state.get("portfolio_details_rows"):
         hydrate_session_from_disk()
 
+    render_logo(tagline="Portfolio workspace", sidebar=True)
+    _render_sidebar_quick_nav()
+    st.sidebar.divider()
     sidebar_heading("Portfolio")
     render_onboarding_sidebar_hint()
     if st.sidebar.button(

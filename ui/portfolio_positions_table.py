@@ -16,19 +16,7 @@ if TYPE_CHECKING:
 
 from services.portfolio_holdings_summary import sort_positions_worst_first
 from services.portfolio_position_table import build_home_positions_dataframe, risk_hints_by_ticker
-
-_POSITIONS_TABLE_CSS = """
-<style>
-[data-testid="stDataFrame"] div[data-testid="StyledFullScreenFrame"] {
-    border-radius: 10px;
-    border: 1px solid #e2e8f0;
-    overflow: hidden;
-}
-[data-testid="stDataFrame"] [role="gridcell"] {
-    font-variant-numeric: tabular-nums;
-}
-</style>
-"""
+from ui.design_system import render_section_header, wrap_table_container, close_table_container
 
 
 def _load_risk_hints() -> dict[str, str]:
@@ -58,12 +46,11 @@ def render_positions_table(
     nav_tickers = [row.ticker for row in sorted_rows]
     df = build_home_positions_dataframe(sorted_rows, risk_hints=_load_risk_hints())
 
-    st.markdown("#### All positions")
-    st.caption(
-        "Worst performers first · **click a ticker row** to open dividend analysis. "
-        "Red/orange P/L bars = loss · green = gain."
+    render_section_header(
+        "All positions",
+        "Worst performers first · click a row to open dividend analysis.",
     )
-    st.markdown(_POSITIONS_TABLE_CSS, unsafe_allow_html=True)
+    wrap_table_container()
 
     selection = st.dataframe(
         df,
@@ -110,6 +97,7 @@ def render_positions_table(
             "Sector": st.column_config.TextColumn(width="small"),
         },
     )
+    close_table_container()
 
     selected_rows = getattr(getattr(selection, "selection", None), "rows", None)
     if selected_rows:

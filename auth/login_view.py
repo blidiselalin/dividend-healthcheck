@@ -25,12 +25,13 @@ def _login_with_google() -> None:
 def render_login_page(*, access_denied: bool = False) -> None:
     if access_denied:
         from ui.app_about import render_app_about_compact
+        from ui.design_system import render_logo
         from ui.theme import inject_app_theme
 
         inject_app_theme()
         _left, center, _right = st.columns([1, 2, 1])
         with center:
-            st.markdown("## DividendScope")
+            render_logo(tagline="Beta access")
             render_app_about_compact()
             from ui.access_request_panel import render_access_denied_panel
 

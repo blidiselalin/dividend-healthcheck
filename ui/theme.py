@@ -86,42 +86,15 @@ def render_notice(message: str, *, kind: str = "info") -> None:
 
 def inject_command_center_theme() -> None:
     """Styles for the pre-login Dividend Command Center."""
-    st.markdown(
-        """
-        <style>
-        .cc-hero {
-            text-align: center;
-            padding: 1.5rem 1rem 2rem;
-            margin-bottom: 0.5rem;
-        }
-        .cc-hero-eyebrow {
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            font-size: 0.78rem;
-            color: #64748b;
-            margin: 0 0 0.5rem 0;
-        }
-        .cc-hero-title {
-            font-size: 2rem;
-            font-weight: 700;
-            line-height: 1.2;
-            margin: 0 0 0.75rem 0;
-            color: #0f172a;
-        }
-        .cc-hero-sub {
-            font-size: 1.05rem;
-            color: #475569;
-            max-width: 42rem;
-            margin: 0 auto;
-            line-height: 1.5;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    from ui.design_system import inject_design_system
+
+    inject_design_system()
 
 
 def inject_app_theme() -> None:
+    from ui.design_system import inject_design_system
+
+    inject_design_system()
     st.markdown(
         """
         <style>
@@ -172,19 +145,19 @@ def inject_app_theme() -> None:
             word-wrap: break-word;
         }
         .ds-notice-info {
-            background: #e0f2fe;
-            border: 1px solid #7dd3fc;
-            color: #0c4a6e;
+            background: rgba(56, 189, 248, 0.12);
+            border: 1px solid rgba(56, 189, 248, 0.35);
+            color: #bae6fd;
         }
         .ds-notice-success {
-            background: #dcfce7;
-            border: 1px solid #86efac;
-            color: #14532d;
+            background: rgba(52, 211, 153, 0.12);
+            border: 1px solid rgba(52, 211, 153, 0.35);
+            color: #a7f3d0;
         }
         .ds-notice-warning {
-            background: #fef9c3;
-            border: 1px solid #fde047;
-            color: #713f12;
+            background: rgba(251, 191, 36, 0.12);
+            border: 1px solid rgba(251, 191, 36, 0.35);
+            color: #fde68a;
         }
         div[data-testid="stMetric"] label,
         div[data-testid="stMetric"] label p,
@@ -230,8 +203,8 @@ def inject_app_theme() -> None:
             white-space: normal !important;
         }
         div[data-testid="stMetric"] {
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
+            background: var(--ds-surface) !important;
+            border: 1px solid var(--ds-border) !important;
             border-radius: 10px;
             padding: 0.55rem 0.75rem 0.45rem;
             min-height: 5.75rem;
@@ -239,7 +212,7 @@ def inject_app_theme() -> None:
         }
         div[data-testid="stMetric"] label {
             font-size: 0.72rem;
-            color: #64748b;
+            color: var(--ds-muted) !important;
             line-height: 1.35 !important;
             min-height: 2.4em;
             word-break: break-word;
@@ -248,7 +221,7 @@ def inject_app_theme() -> None:
         div[data-testid="stMetricValue"] {
             font-size: 1.15rem;
             font-weight: 600;
-            color: #0f172a;
+            color: var(--ds-text) !important;
             line-height: 1.25 !important;
             word-break: break-word;
         }
@@ -272,11 +245,12 @@ def inject_app_theme() -> None:
             overflow: visible !important;
         }
         .ds-hero {
-            background: linear-gradient(135deg, #0f766e 0%, #115e59 55%, #134e4a 100%);
+            background: linear-gradient(135deg, #134e4a 0%, #115e59 45%, #1a2740 100%);
             border-radius: 12px;
             padding: 1rem 1.25rem;
             margin-bottom: 0.75rem;
-            box-shadow: 0 6px 20px rgba(15, 118, 110, 0.18);
+            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(45, 212, 191, 0.2);
         }
         .ds-hero h2 {
             margin: 0 0 0.15rem 0;
@@ -305,15 +279,15 @@ def inject_app_theme() -> None:
             margin: 0 0 0.15rem 0;
             font-size: 1.05rem;
             font-weight: 650;
-            color: #0f172a;
+            color: var(--ds-text);
         }
         .ds-portfolio-nav-lead {
             margin: 0 0 0.85rem 0;
-            color: #64748b;
+            color: var(--ds-muted);
             font-size: 0.88rem;
         }
         .ds-portfolio-nav-hint {
-            color: #64748b;
+            color: var(--ds-muted);
             font-size: 0.8rem;
             line-height: 1.35;
             margin: 0.2rem 0 0.65rem 0;
@@ -368,9 +342,10 @@ def inject_app_theme() -> None:
 
 
 def render_page_header(*, title: str, subtitle: str, compact: bool = False) -> None:
+    from ui.design_system import render_section_header
+
     if compact:
-        st.markdown(f"### {title}")
-        st.caption(subtitle)
+        render_section_header(title, subtitle)
         return
     st.markdown(
         f'<div class="ds-hero"><h2>{title}</h2><p>{subtitle}</p></div>',
@@ -407,7 +382,8 @@ def render_portfolio_section_nav() -> str:
 
     st.markdown(
         """
-        <div class="ds-portfolio-nav">
+        <div class="ds-portfolio-nav-section">
+            <p class="ds-overline">Workspace</p>
             <p class="ds-portfolio-nav-title">Portfolio sections</p>
             <p class="ds-portfolio-nav-lead">
                 Jump to a section — home, holdings, income, growth, journal, or deposits.
