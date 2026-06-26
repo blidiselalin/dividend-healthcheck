@@ -1021,49 +1021,49 @@ class UIComponents:
         from utils.chart_theme import YIELD_ZONE_COLORS
 
         analysis = service.format_analysis_summary(data)
+        zone_color = YIELD_ZONE_COLORS.get(data.zone, "#2dd4bf")
 
         if show_header:
-            from ui.design_system import render_chart_card_header, render_yield_zone_headline
+            from ui.design_system import render_yield_channel_summary
             from utils.yield_channel_history import yield_channel_history_label
 
             history_label = yield_channel_history_label(data.years_analyzed, requested=years)
             from ui.beta_disclaimer import YIELD_HISTORY_HELP
 
-            render_chart_card_header(
+            render_yield_channel_summary(
                 "Dividend yield channels · Dividends Don't Lie",
                 f"{YIELD_HISTORY_HELP} {history_label} · {data.data_points:,} points · "
                 f"${data.current_dividend:.2f}/yr dividend today.",
+                zone=data.zone,
+                zone_emoji=analysis["zone_emoji"],
+                zone_color=zone_color,
+                zone_detail=f"Yield percentile {data.percentile:.0f}% · {analysis['action']}",
+                metrics=[
+                    (
+                        "Current yield",
+                        f"{data.current_yield:.2f}%",
+                        f"{analysis['yield_vs_median']:+.2f}pp vs median",
+                        True,
+                    ),
+                    (
+                        "Share price",
+                        f"${data.current_price:.2f}",
+                        f"Fair ≈ ${data.fair_value_price:.2f}",
+                        True,
+                    ),
+                    (
+                        "Median yield (10Y)",
+                        f"{data.median_yield:.2f}%",
+                        f"Range {data.min_yield:.1f}–{data.max_yield:.1f}%",
+                        False,
+                    ),
+                ],
             )
             if data.years_analyzed < years:
                 st.info(
                     f"Using **{data.years_analyzed} years** of available price/dividend history "
                     f"(requested up to {years} years)."
                 )
-
-        zone_color = YIELD_ZONE_COLORS.get(data.zone, "#0f766e")
-        headline, sub = st.columns([1, 2])
-        with headline:
-            render_yield_zone_headline(
-                data.zone,
-                analysis["zone_emoji"],
-                f"Yield percentile {data.percentile:.0f}% · {analysis['action']}",
-                color=zone_color,
-            )
-        with sub:
-            m1, m2, m3 = st.columns(3)
-            m1.metric(
-                "Current yield",
-                f"{data.current_yield:.2f}%",
-                f"{analysis['yield_vs_median']:+.2f}pp vs median",
-                help="Highlighted — core dividend metric",
-            )
-            m2.metric("Share price", f"${data.current_price:.2f}", f"Fair ≈ ${data.fair_value_price:.2f}")
-            m3.metric(
-                "Median yield (10Y)",
-                f"{data.median_yield:.2f}%",
-                f"Range {data.min_yield:.1f}–{data.max_yield:.1f}%",
-                help="Historical yield context",
-            )
 
         st.caption(analysis["action_detail"])
 
@@ -1089,10 +1089,6 @@ class UIComponents:
         fig = service.create_yield_channel_chart(data, height=480, show_annotations=False)
         if fig:
             show_chart(fig, key=f"yield_channel_{symbol}")
-        if show_header:
-            from ui.design_system import render_chart_card_footer
-
-            render_chart_card_footer()
 
         from utils.yield_history_tables import yearly_yield_exposure_table
 
@@ -1122,7 +1118,8 @@ class UIComponents:
             "Value": "Value",
             "Deep Value": "Deep value",
         }
-        tcols = st.columns(5)
+        from ui.design_system import render_metric_grid
+
         targets = [
             ("Expensive", data.expensive_price, data.yield_10th),
             ("Caution", data.caution_price, data.yield_25th),
@@ -1130,14 +1127,17 @@ class UIComponents:
             ("Value", data.value_price, data.yield_75th),
             ("Deep value", data.deep_value_price, data.yield_90th),
         ]
-        for col, (label, price, yld) in zip(tcols, targets):
-            active = zone_to_label.get(data.zone) == label
-            with col:
-                st.metric(
-                    label + (" ←" if active else ""),
+        render_metric_grid(
+            [
+                (
+                    label + (" · current zone" if zone_to_label.get(data.zone) == label else ""),
                     f"${price:.2f}",
                     f"at {yld:.1f}% yield",
+                    zone_to_label.get(data.zone) == label,
                 )
+                for label, price, yld in targets
+            ]
+        )
 
         # Educational section with Weiss methodology
         with st.expander("📖 Understanding the Dividends Don't Lie Strategy", expanded=False):

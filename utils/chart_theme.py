@@ -26,11 +26,11 @@ PALETTE: dict[str, str] = {
 
 # Weiss yield zones (low → high yield / cheap → expensive price)
 YIELD_ZONE_COLORS: dict[str, str] = {
-    "Deep Value": "#166534",
-    "Value": "#16a34a",
-    "Fair Value": "#ca8a04",
-    "Caution": "#ea580c",
-    "Expensive": "#dc2626",
+    "Deep Value": "#34d399",
+    "Value": "#4ade80",
+    "Fair Value": "#fbbf24",
+    "Caution": "#fb923c",
+    "Expensive": "#f87171",
 }
 
 # Ordered palette for categorical series (bar groups, line charts)
@@ -180,6 +180,91 @@ def bottom_legend() -> dict[str, Any]:
         "bordercolor": "rgba(148, 163, 184, 0.3)",
         "borderwidth": 1,
     }
+
+
+DARK_PALETTE: dict[str, str] = {
+    "paper": "#131c2e",
+    "plot": "#0f172a",
+    "text": "#e2e8f0",
+    "muted": "#94a3b8",
+    "grid": "rgba(148, 163, 184, 0.14)",
+    "border": "rgba(42, 58, 82, 0.9)",
+    "primary": "#2dd4bf",
+    "yield_line": "#fbbf24",
+    "yield_fill": "rgba(251, 191, 36, 0.14)",
+}
+
+
+def hex_rgba(hex_color: str, alpha: float) -> str:
+    value = hex_color.lstrip("#")
+    red = int(value[0:2], 16)
+    green = int(value[2:4], 16)
+    blue = int(value[4:6], 16)
+    return f"rgba({red},{green},{blue},{alpha})"
+
+
+def yield_zone_fill(zone_name: str, *, alpha: float = 0.16) -> str:
+    return hex_rgba(YIELD_ZONE_COLORS[zone_name], alpha)
+
+
+def style_yield_channel_figure(fig: Any, *, height: int = 480) -> Any:
+    """Dark dashboard styling for the Dividends Don't Lie yield channel chart."""
+    fig.update_layout(
+        height=height,
+        autosize=True,
+        template="plotly_dark",
+        font={
+            "family": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            "size": 12,
+            "color": DARK_PALETTE["text"],
+        },
+        paper_bgcolor=DARK_PALETTE["paper"],
+        plot_bgcolor=DARK_PALETTE["plot"],
+        hovermode="x unified",
+        hoverlabel={
+            "bgcolor": DARK_PALETTE["paper"],
+            "bordercolor": DARK_PALETTE["border"],
+            "font_size": 12,
+            "font_color": DARK_PALETTE["text"],
+            "namelength": -1,
+        },
+        margin={"l": 58, "r": 42, "t": 64, "b": 44},
+        showlegend=True,
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.03,
+            "xanchor": "left",
+            "x": 0,
+            "font": {"size": 10, "color": DARK_PALETTE["muted"]},
+            "bgcolor": "rgba(15, 23, 42, 0.92)",
+            "bordercolor": DARK_PALETTE["border"],
+            "borderwidth": 1,
+        },
+    )
+    fig.update_annotations(
+        font={
+            "size": 12,
+            "color": DARK_PALETTE["muted"],
+            "family": "system-ui, sans-serif",
+        },
+    )
+    fig.update_xaxes(
+        showgrid=True,
+        gridcolor=DARK_PALETTE["grid"],
+        linecolor=DARK_PALETTE["grid"],
+        tickfont={"size": 11, "color": DARK_PALETTE["muted"]},
+        zeroline=False,
+    )
+    fig.update_yaxes(
+        showgrid=True,
+        gridcolor=DARK_PALETTE["grid"],
+        linecolor=DARK_PALETTE["grid"],
+        tickfont={"size": 11, "color": DARK_PALETTE["muted"]},
+        title_font={"size": 12, "color": DARK_PALETTE["muted"]},
+        zeroline=False,
+    )
+    return fig
 
 
 def outside_bar_text() -> dict[str, Any]:

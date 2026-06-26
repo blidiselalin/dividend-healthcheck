@@ -9,8 +9,10 @@ import pandas as pd
 
 from services.yield_channel_chart import (
     YieldChannelData,
+    YieldChannelService,
     _ordered_percentiles,
 )
+from utils.chart_theme import DARK_PALETTE
 from utils.yfinance_history import align_dividends_to_price_index
 
 
@@ -76,6 +78,13 @@ def test_align_dividends_maps_ex_date_to_next_trading_day() -> None:
     merged = align_dividends_to_price_index(hist, divs)
     assert merged["Dividends"].sum() == 1.5
     assert merged.loc[pd.Timestamp("2020-01-06"), "Dividends"] == 1.5
+
+
+def test_create_yield_channel_chart_uses_dark_theme() -> None:
+    service = YieldChannelService()
+    fig = service.create_yield_channel_chart(_sample_channel(), height=420, show_annotations=False)
+    assert fig is not None
+    assert fig.layout.paper_bgcolor == DARK_PALETTE["paper"]
 
 
 def test_align_dividends_handles_timezone_aware_ex_dates() -> None:

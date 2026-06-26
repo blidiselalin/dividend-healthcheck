@@ -624,6 +624,59 @@ div[data-testid="stMetric"].ds-metric-dividend-highlight label p {
   margin: 0 -0.25rem -0.25rem;
 }
 
+/* Yield channel panel + Plotly on dark dashboard */
+.ds-yield-channel-panel {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  padding: 0.85rem;
+  margin: 0.5rem 0 0.35rem 0;
+  box-shadow: var(--ds-shadow);
+}
+.ds-yield-channel-panel .ds-section-header {
+  margin-bottom: 0.55rem;
+}
+.ds-yield-channel-panel .ds-metric-grid {
+  margin: 0.75rem 0 0;
+}
+.ds-yield-channel-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem 1rem;
+  margin: 0.15rem 0 0;
+  padding-left: 0.85rem;
+  border-left: 4px solid var(--ds-primary);
+}
+.ds-yield-zone-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 650;
+  font-size: 0.92rem;
+  padding: 0.22rem 0.62rem;
+  border-radius: 999px;
+  border: 1px solid;
+  background: rgba(15, 23, 42, 0.72);
+}
+.ds-yield-channel-meta .ds-yield-zone-sub {
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--ds-muted);
+}
+[data-testid="stPlotlyChart"] {
+  background: var(--ds-surface) !important;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  overflow: hidden;
+  margin: 0 0 1rem 0;
+  box-shadow: var(--ds-shadow);
+}
+[data-testid="stPlotlyChart"] .js-plotly-plot,
+[data-testid="stPlotlyChart"] .plot-container {
+  background: transparent !important;
+}
+
 /* Feature cards */
 .ds-feature-grid {
   display: grid;
@@ -937,6 +990,34 @@ def render_yield_zone_headline(zone: str, emoji: str, subtitle: str, *, color: s
         f'<p class="ds-yield-zone" style="color:{html.escape(color)}">'
         f"{html.escape(emoji)} {html.escape(zone)}</p>"
         f'<p class="ds-yield-zone-sub">{html.escape(subtitle)}</p>'
+        f"</div>"
+    )
+
+
+def render_yield_channel_summary(
+    title: str,
+    subtitle: str,
+    *,
+    zone: str,
+    zone_emoji: str,
+    zone_color: str,
+    zone_detail: str,
+    metrics: list[tuple[str, str, str] | tuple[str, str, str, bool]],
+) -> None:
+    """Header, zone chip, and key metrics for the yield channel chart block."""
+    zone_chip = (
+        f'<span class="ds-yield-zone-chip" style="border-color:{html.escape(zone_color)};'
+        f'color:{html.escape(zone_color)}">'
+        f"{html.escape(zone_emoji)} {html.escape(zone)}"
+        f"</span>"
+    )
+    render_html(
+        f'<div class="ds-yield-channel-panel">'
+        f"{_section_header_markup(title, subtitle)}"
+        f'<div class="ds-yield-channel-meta">{zone_chip}'
+        f'<p class="ds-yield-zone-sub">{html.escape(zone_detail)}</p>'
+        f"</div>"
+        f"{_metric_grid_markup(metrics)}"
         f"</div>"
     )
 

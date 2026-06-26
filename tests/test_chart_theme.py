@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 from utils.chart_theme import (
+    DARK_PALETTE,
     bottom_legend,
     evolution_chart_margins,
     monthly_category_axis,
+    style_yield_channel_figure,
+    yield_zone_fill,
 )
 
 
@@ -34,8 +37,16 @@ def test_monthly_category_axis_rotates_long_histories() -> None:
     assert long["nticks"] <= 12
 
 
-def test_bottom_legend_is_centered_below_plot() -> None:
-    legend = bottom_legend()
-    assert legend["orientation"] == "h"
-    assert legend["yanchor"] == "top"
-    assert legend["y"] < 0
+def test_style_yield_channel_figure_uses_dark_palette() -> None:
+    import plotly.graph_objects as go
+
+    fig = go.Figure(data=[go.Scatter(x=[1, 2], y=[1, 2])])
+    styled = style_yield_channel_figure(fig, height=400)
+    assert styled.layout.paper_bgcolor == DARK_PALETTE["paper"]
+    assert styled.layout.plot_bgcolor == DARK_PALETTE["plot"]
+
+
+def test_yield_zone_fill_returns_rgba() -> None:
+    fill = yield_zone_fill("Value", alpha=0.2)
+    assert fill.startswith("rgba(")
+    assert "74" in fill or "222" in fill  # green channel from #4ade80

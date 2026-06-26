@@ -132,13 +132,13 @@ class YieldChannelService:
         "Deep Value": {
             "min_pct": 90,
             "max_pct": 100,
-            "color": "#1a5f1a",
+            "color": "#34d399",
             "emoji": "🟢💎",
         },
-        "Value": {"min_pct": 75, "max_pct": 90, "color": "#4caf50", "emoji": "🟢"},
-        "Fair Value": {"min_pct": 25, "max_pct": 75, "color": "#ffc107", "emoji": "🟡"},
-        "Caution": {"min_pct": 10, "max_pct": 25, "color": "#ff9800", "emoji": "🟠"},
-        "Expensive": {"min_pct": 0, "max_pct": 10, "color": "#f44336", "emoji": "🔴"},
+        "Value": {"min_pct": 75, "max_pct": 90, "color": "#4ade80", "emoji": "🟢"},
+        "Fair Value": {"min_pct": 25, "max_pct": 75, "color": "#fbbf24", "emoji": "🟡"},
+        "Caution": {"min_pct": 10, "max_pct": 25, "color": "#fb923c", "emoji": "🟠"},
+        "Expensive": {"min_pct": 0, "max_pct": 10, "color": "#f87171", "emoji": "🔴"},
     }
 
     def __init__(self, vector_store: Any | None = None) -> None:
@@ -471,16 +471,18 @@ class YieldChannelService:
         if not PLOTLY_AVAILABLE or data is None:
             return None
 
+        from utils.chart_theme import DARK_PALETTE, style_yield_channel_figure, yield_zone_fill
+
         # Create figure with two subplots
         fig = make_subplots(
             rows=2,
             cols=1,
             row_heights=[0.65, 0.35],
             shared_xaxes=True,
-            vertical_spacing=0.08,
+            vertical_spacing=0.06,
             subplot_titles=(
-                f"<b>{data.symbol}</b> • Price with Yield-Based Valuation Zones",
-                f"Dividend Yield History ({data.years_analyzed}Y)",
+                "Share price · yield-based valuation zones",
+                f"Trailing dividend yield · {data.years_analyzed}Y history",
             ),
         )
 
@@ -510,10 +512,10 @@ class YieldChannelService:
 
         # Add zone fills (from top to bottom)
         zones = [
-            ("expensive", "caution", "rgba(244, 67, 54, 0.15)", "Expensive Zone"),
-            ("caution", "fair_value", "rgba(255, 152, 0, 0.12)", "Caution Zone"),
-            ("fair_value", "value", "rgba(255, 193, 7, 0.10)", "Fair Value Zone"),
-            ("value", "deep_value", "rgba(76, 175, 80, 0.12)", "Value Zone"),
+            ("expensive", "caution", yield_zone_fill("Expensive"), "Expensive zone"),
+            ("caution", "fair_value", yield_zone_fill("Caution"), "Caution zone"),
+            ("fair_value", "value", yield_zone_fill("Fair Value"), "Fair value zone"),
+            ("value", "deep_value", yield_zone_fill("Value"), "Value zone"),
         ]
 
         dates_rev = dates[::-1]
@@ -537,26 +539,38 @@ class YieldChannelService:
             )
 
         # Add zone boundary lines
+        from utils.chart_theme import YIELD_ZONE_COLORS
+
         zone_lines = [
             (
                 "expensive",
-                "#f44336",
+                YIELD_ZONE_COLORS["Expensive"],
                 "dash",
-                f"Expensive (Yield < {data.yield_10th:.1f}%)",
+                f"Expensive (< {data.yield_10th:.1f}%)",
             ),
-            ("caution", "#ff9800", "dot", f"Caution (Yield < {data.yield_25th:.1f}%)"),
+            (
+                "caution",
+                YIELD_ZONE_COLORS["Caution"],
+                "dot",
+                f"Caution (< {data.yield_25th:.1f}%)",
+            ),
             (
                 "fair_value",
-                "#9e9e9e",
+                YIELD_ZONE_COLORS["Fair Value"],
                 "solid",
-                f"Fair Value (Yield = {data.median_yield:.1f}%)",
+                f"Fair value ({data.median_yield:.1f}%)",
             ),
-            ("value", "#4caf50", "dot", f"Value (Yield > {data.yield_75th:.1f}%)"),
+            (
+                "value",
+                YIELD_ZONE_COLORS["Value"],
+                "dot",
+                f"Value (> {data.yield_75th:.1f}%)",
+            ),
             (
                 "deep_value",
-                "#1b5e20",
+                YIELD_ZONE_COLORS["Deep Value"],
                 "dash",
-                f"Deep Value (Yield > {data.yield_90th:.1f}%)",
+                f"Deep value (> {data.yield_90th:.1f}%)",
             ),
         ]
 
@@ -567,7 +581,7 @@ class YieldChannelService:
                     y=df[col].tolist(),
                     mode="lines",
                     name=name,
-                    line={"color": color, "width": 1.5, "dash": dash},
+                    line={"color": color, "width": 1.25, "dash": dash},
                     hovertemplate=f"{name.split(' (')[0]}: $%{{y:.2f}}<extra></extra>",
                 ),
                 row=1,
@@ -580,8 +594,8 @@ class YieldChannelService:
                 x=dates,
                 y=prices,
                 mode="lines",
-                name=f"{data.symbol} Price",
-                line={"color": "#1976d2", "width": 3},
+                name=f"{data.symbol} price",
+                line={"color": DARK_PALETTE["primary"], "width": 2.75},
                 hovertemplate="<b>%{x|%b %d, %Y}</b><br>Price: $%{y:.2f}<extra></extra>",
             ),
             row=1,
@@ -589,23 +603,24 @@ class YieldChannelService:
         )
 
         # Current price marker with zone color
-        zone_color = self.ZONES.get(data.zone, {}).get("color", "#1976d2")
+        zone_color = self.ZONES.get(data.zone, {}).get("color", DARK_PALETTE["primary"])
         fig.add_trace(
             go.Scatter(
                 x=[dates[-1]],
                 y=[data.current_price],
-                mode="markers+text",
-                name=f"Current: ${data.current_price:.2f}",
+                mode="markers",
+                name=f"Current ${data.current_price:.2f}",
                 marker={
-                    "size": 14,
+                    "size": 11,
                     "color": zone_color,
                     "symbol": "circle",
-                    "line": {"width": 2, "color": "white"},
+                    "line": {"width": 2, "color": DARK_PALETTE["text"]},
                 },
-                text=[f"${data.current_price:.2f}"],
-                textposition="top center",
-                textfont={"size": 11, "color": zone_color, "family": "Arial Black"},
                 showlegend=False,
+                hovertemplate=(
+                    f"<b>Current price</b><br>${data.current_price:.2f}<br>"
+                    f"{data.zone}<extra></extra>"
+                ),
             ),
             row=1,
             col=1,
@@ -619,10 +634,10 @@ class YieldChannelService:
                 x=dates,
                 y=yields,
                 mode="lines",
-                name="Dividend Yield",
-                line={"color": "#ff6f00", "width": 2.5},
+                name="Dividend yield",
+                line={"color": DARK_PALETTE["yield_line"], "width": 2.25},
                 fill="tozeroy",
-                fillcolor="rgba(255, 111, 0, 0.1)",
+                fillcolor=DARK_PALETTE["yield_fill"],
                 hovertemplate="<b>%{x|%b %d, %Y}</b><br>Yield: %{y:.2f}%<extra></extra>",
             ),
             row=2,
@@ -631,11 +646,11 @@ class YieldChannelService:
 
         # Zone thresholds
         yield_lines = [
-            (data.yield_10th, "#f44336", "dash", "10th Pctl (Expensive)"),
-            (data.yield_25th, "#ff9800", "dot", "25th Pctl"),
-            (data.median_yield, "#9e9e9e", "solid", "Median"),
-            (data.yield_75th, "#4caf50", "dot", "75th Pctl"),
-            (data.yield_90th, "#1b5e20", "dash", "90th Pctl (Value)"),
+            (data.yield_10th, YIELD_ZONE_COLORS["Expensive"], "dash", "10th pctl"),
+            (data.yield_25th, YIELD_ZONE_COLORS["Caution"], "dot", "25th pctl"),
+            (data.median_yield, YIELD_ZONE_COLORS["Fair Value"], "solid", "Median"),
+            (data.yield_75th, YIELD_ZONE_COLORS["Value"], "dot", "75th pctl"),
+            (data.yield_90th, YIELD_ZONE_COLORS["Deep Value"], "dash", "90th pctl"),
         ]
 
         for yval, color, dash, _label in yield_lines:
@@ -643,10 +658,14 @@ class YieldChannelService:
                 y=yval,
                 row=2,
                 col=1,
-                line={"color": color, "width": 1, "dash": dash},
+                line={"color": color, "width": 1.1, "dash": dash},
                 annotation={
                     "text": f"{yval:.1f}%",
                     "font": {"size": 9, "color": color},
+                    "bgcolor": "rgba(15, 23, 42, 0.85)",
+                    "bordercolor": color,
+                    "borderwidth": 1,
+                    "borderpad": 2,
                 },
                 annotation_position="right",
             )
@@ -656,83 +675,34 @@ class YieldChannelService:
             go.Scatter(
                 x=[dates[-1]],
                 y=[data.current_yield],
-                mode="markers+text",
+                mode="markers",
                 marker={
-                    "size": 12,
+                    "size": 10,
                     "color": zone_color,
                     "symbol": "diamond",
-                    "line": {"width": 2, "color": "white"},
+                    "line": {"width": 2, "color": DARK_PALETTE["text"]},
                 },
-                text=[f"{data.current_yield:.2f}%"],
-                textposition="top left",
-                textfont={"size": 10, "color": zone_color},
                 showlegend=False,
+                hovertemplate=(
+                    f"<b>Current yield</b><br>{data.current_yield:.2f}%<br>"
+                    f"{data.zone}<extra></extra>"
+                ),
             ),
             row=2,
             col=1,
         )
 
         # === Layout ===
-
-        fig.update_layout(
-            height=height,
-            showlegend=True,
-            legend={
-                "orientation": "h",
-                "yanchor": "bottom",
-                "y": 1.02,
-                "xanchor": "center",
-                "x": 0.5,
-                "font": {"size": 10},
-                "bgcolor": "rgba(255,255,255,0.8)",
-            },
-            hovermode="x unified",
-            margin={"l": 70, "r": 120, "t": 100, "b": 50},
-            paper_bgcolor="white",
-            plot_bgcolor="rgba(248, 249, 250, 0.5)",
-            font={"family": "Arial, sans-serif"},
-        )
-
-        # Y-axis formatting
-        fig.update_yaxes(
-            title_text="<b>Price ($)</b>",
-            title_font={"size": 11},
-            tickprefix="$",
-            gridcolor="rgba(200, 200, 200, 0.3)",
-            row=1,
-            col=1,
-        )
-        fig.update_yaxes(
-            title_text="<b>Yield (%)</b>",
-            title_font={"size": 11},
-            ticksuffix="%",
-            gridcolor="rgba(200, 200, 200, 0.3)",
-            row=2,
-            col=1,
-        )
-
-        # X-axis
-        fig.update_xaxes(
-            gridcolor="rgba(200, 200, 200, 0.3)",
-            showgrid=True,
-        )
+        fig.update_yaxes(title_text="Price ($)", tickprefix="$", row=1, col=1)
+        fig.update_yaxes(title_text="Yield (%)", ticksuffix="%", row=2, col=1)
+        style_yield_channel_figure(fig, height=height)
 
         # Add price target annotations on the right
         if show_annotations:
             annotations = [
-                (
-                    data.expensive_price,
-                    f"${data.expensive_price:.0f}",
-                    "#f44336",
-                    "Expensive",
-                ),
-                (
-                    data.fair_value_price,
-                    f"${data.fair_value_price:.0f}",
-                    "#757575",
-                    "Fair Value",
-                ),
-                (data.value_price, f"${data.value_price:.0f}", "#4caf50", "Value"),
+                (data.expensive_price, f"${data.expensive_price:.0f}", YIELD_ZONE_COLORS["Expensive"], "Expensive"),
+                (data.fair_value_price, f"${data.fair_value_price:.0f}", YIELD_ZONE_COLORS["Fair Value"], "Fair value"),
+                (data.value_price, f"${data.value_price:.0f}", YIELD_ZONE_COLORS["Value"], "Value"),
             ]
 
             for price, text, color, label in annotations:
@@ -746,11 +716,11 @@ class YieldChannelService:
                     arrowhead=0,
                     arrowwidth=1,
                     arrowcolor=color,
-                    ax=30,
+                    ax=24,
                     ay=0,
                     font={"size": 10, "color": color},
                     align="left",
-                    bgcolor="white",
+                    bgcolor=DARK_PALETTE["paper"],
                     bordercolor=color,
                     borderwidth=1,
                     borderpad=3,
