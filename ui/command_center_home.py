@@ -5,6 +5,7 @@ Pre-login Dividend Command Center — try 2–3 stocks before creating an accoun
 from __future__ import annotations
 
 from typing import Callable
+import html as html_module
 
 import streamlit as st
 
@@ -29,6 +30,7 @@ from ui.design_system import (
     render_chart_card_header,
     render_empty_state,
     render_feature_cards,
+    render_html,
     render_logo,
     render_metric_grid,
     render_page_divider,
@@ -53,7 +55,9 @@ def _render_hero_preview_card(dashboard: GuestDashboard) -> None:
     next_label = "Not available yet"
     if next_payout:
         when = next_payout.pay_date.strftime("%d %b") if next_payout.pay_date else "TBD"
-        next_label = f"{next_payout.symbol} · ${next_payout.amount_usd:,.0f} · {when}"
+        next_label = html_module.escape(
+            f"{next_payout.symbol} · ${next_payout.amount_usd:,.0f} · {when}"
+        )
 
     spark_values = [v for _, v in dashboard.monthly_forecast[:12]]
     spark_html = sparkline_bars(spark_values) if spark_values else ""
@@ -61,50 +65,39 @@ def _render_hero_preview_card(dashboard: GuestDashboard) -> None:
     alerts_html = ""
     for alert in dashboard.safety_alerts[:3]:
         icon = "🔴" if alert.severity == "high" else "🟠"
-        alerts_html += f'<p class="cc-alert-row">{icon} <span><strong>{alert.symbol}</strong> — {alert.message}</span></p>'
+        alerts_html += (
+            f'<p class="cc-alert-row">{icon} <span><strong>{html_module.escape(alert.symbol)}</strong>'
+            f" — {html_module.escape(alert.message)}</span></p>"
+        )
 
     if not alerts_html:
         alerts_html = '<p class="cc-alert-row">✓ <span>No high-severity alerts on try list</span></p>'
 
-    yield_label = f"{portfolio_yield:.2f}%" if portfolio_yield is not None else "—"
+    yield_label = html_module.escape(f"{portfolio_yield:.2f}%" if portfolio_yield is not None else "—")
+    next_label = html_module.escape(next_label)
 
-    st.markdown(
-        f"""
-        <div class="cc-preview-card" aria-label="Demo dashboard preview">
-          <p class="cc-preview-label">Live preview · try portfolio</p>
-          <div class="ds-metric-grid">
-            <div class="ds-metric-card ds-highlight">
-              <p class="ds-metric-label">Projected annual income</p>
-              <p class="ds-metric-value">${dashboard.annual_income_usd:,.2f}</p>
-            </div>
-            <div class="ds-metric-card ds-highlight">
-              <p class="ds-metric-label">Monthly average</p>
-              <p class="ds-metric-value">${monthly_avg:,.2f}</p>
-            </div>
-            <div class="ds-metric-card ds-highlight">
-              <p class="ds-metric-label">Portfolio yield</p>
-              <p class="ds-metric-value">{yield_label}</p>
-            </div>
-            <div class="ds-metric-card ds-highlight">
-              <p class="ds-metric-label">Next 12 months</p>
-              <p class="ds-metric-value">${forecast_total:,.2f}</p>
-            </div>
-            <div class="ds-metric-card ds-highlight">
-              <p class="ds-metric-label">Next payment</p>
-              <p class="ds-metric-value" style="font-size:0.92rem">{next_label}</p>
-            </div>
-            <div class="ds-metric-card">
-              <p class="ds-metric-label">Upcoming payouts</p>
-              <p class="ds-metric-value">{len(dashboard.next_payouts)}</p>
-            </div>
-          </div>
-          <p class="ds-metric-label" style="margin-top:0.75rem">Mini yield income trend (12 mo)</p>
-          {spark_html}
-          <p class="ds-metric-label" style="margin-top:0.65rem">Dividend health alerts</p>
-          {alerts_html}
-        </div>
-        """,
-        unsafe_allow_html=True,
+    render_html(
+        f'<div class="cc-preview-card" aria-label="Demo dashboard preview">'
+        f'<p class="cc-preview-label">Live preview · try portfolio</p>'
+        f'<div class="ds-metric-grid">'
+        f'<div class="ds-metric-card ds-highlight"><p class="ds-metric-label">Projected annual income</p>'
+        f'<p class="ds-metric-value">${dashboard.annual_income_usd:,.2f}</p></div>'
+        f'<div class="ds-metric-card ds-highlight"><p class="ds-metric-label">Monthly average</p>'
+        f'<p class="ds-metric-value">${monthly_avg:,.2f}</p></div>'
+        f'<div class="ds-metric-card ds-highlight"><p class="ds-metric-label">Portfolio yield</p>'
+        f'<p class="ds-metric-value">{yield_label}</p></div>'
+        f'<div class="ds-metric-card ds-highlight"><p class="ds-metric-label">Next 12 months</p>'
+        f'<p class="ds-metric-value">${forecast_total:,.2f}</p></div>'
+        f'<div class="ds-metric-card ds-highlight"><p class="ds-metric-label">Next payment</p>'
+        f'<p class="ds-metric-value" style="font-size:0.92rem">{next_label}</p></div>'
+        f'<div class="ds-metric-card"><p class="ds-metric-label">Upcoming payouts</p>'
+        f'<p class="ds-metric-value">{len(dashboard.next_payouts)}</p></div>'
+        f"</div>"
+        f'<p class="ds-metric-label" style="margin-top:0.75rem">Mini yield income trend (12 mo)</p>'
+        f"{spark_html}"
+        f'<p class="ds-metric-label" style="margin-top:0.65rem">Dividend health alerts</p>'
+        f"{alerts_html}"
+        f"</div>"
     )
 
 
@@ -113,17 +106,14 @@ def _render_hero(dashboard: GuestDashboard) -> None:
     with left:
         render_logo(tagline="Beta · Dividend research dashboard")
         render_beta_badge()
-        st.markdown(
-            """
-            <h1 class="cc-hero-title">
-              Track <span class="ds-accent">dividend yield history</span> and future income in one place.
-            </h1>
-            <p class="cc-hero-sub">
-                Analyze dividend yield trends, historical payouts, upcoming payments,
-                and estimated portfolio income.
-            </p>
-            """,
-            unsafe_allow_html=True,
+        render_html(
+            '<h1 class="cc-hero-title">'
+            'Track <span class="ds-accent">dividend yield history</span> and future income in one place.'
+            "</h1>"
+            '<p class="cc-hero-sub">'
+            "Analyze dividend yield trends, historical payouts, upcoming payments, "
+            "and estimated portfolio income."
+            "</p>"
         )
         c1, c2 = st.columns(2)
         with c1:
@@ -308,7 +298,6 @@ def _render_demo_dashboard(dashboard: GuestDashboard) -> None:
                 {label: amount for label, amount in dashboard.monthly_forecast},
                 height=320,
             )
-        st.markdown("</div>", unsafe_allow_html=True)
     else:
         render_empty_state(
             "No forecast data",
@@ -337,10 +326,7 @@ def _render_demo_dashboard(dashboard: GuestDashboard) -> None:
 
             msg = html_module.escape(alert.message)
             sym = html_module.escape(alert.symbol)
-            st.markdown(
-                f'<p class="cc-alert-row">{icon} <span><strong>{sym}</strong> — {msg}</span></p>',
-                unsafe_allow_html=True,
-            )
+            render_html(f'<p class="cc-alert-row">{icon} <span><strong>{sym}</strong> — {msg}</span></p>')
 
     if dashboard.rows:
         ranked = sorted(

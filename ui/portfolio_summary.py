@@ -9,11 +9,7 @@ import streamlit as st
 from services.portfolio_details_service import PortfolioDetailRow
 from services.portfolio_holdings_summary import HoldingsSummary, compute_holdings_summary
 from ui.design_system import (
-    close_dividend_focus_panel,
-    close_panel,
-    open_dividend_focus_panel,
-    open_panel,
-    render_metric_grid,
+    render_dividend_focus_panel,
     render_section_header,
 )
 
@@ -55,12 +51,6 @@ def render_dividend_focus_block(
     total_value = sum(row.current_value or 0.0 for row in rows)
     portfolio_yield = (total_annual / total_value * 100) if total_value > 0 and total_annual > 0 else None
 
-    open_dividend_focus_panel()
-    render_section_header(
-        "Dividend income at a glance",
-        "Yield, cash flow, and upcoming payouts — the metrics dividend investors watch first.",
-    )
-
     metrics: list[tuple[str, str, str, bool]] = []
     if month_paid is not None:
         net = (
@@ -98,7 +88,11 @@ def render_dividend_focus_block(
             ),
         ]
     )
-    render_metric_grid(metrics)
+    render_dividend_focus_panel(
+        "Dividend income at a glance",
+        "Yield, cash flow, and upcoming payouts — the metrics dividend investors watch first.",
+        metrics,
+    )
 
     ranked = sorted(rows, key=lambda row: row.annual_income or 0.0, reverse=True)
     if ranked and any(row.annual_income for row in ranked):
@@ -115,7 +109,6 @@ def render_dividend_focus_block(
                 if row.annual_income
             )
         )
-    close_dividend_focus_panel()
 
 
 def render_holdings_summary(
@@ -127,7 +120,6 @@ def render_holdings_summary(
     show_month_received: bool = False,
 ) -> HoldingsSummary:
     """Render broker-style holdings summary metrics (price / P&L focus)."""
-    open_panel()
     render_section_header("Portfolio snapshot", "Live value, day change, and unrealized gain/loss.")
     if summary is None and rows and any(row.previous_close is None for row in rows):
         from services.portfolio_details_service import PortfolioDetailsService
@@ -197,7 +189,6 @@ def render_holdings_summary(
         gl_delta,
     )
 
-    close_panel()
     return metrics
 
 

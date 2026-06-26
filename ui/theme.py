@@ -63,25 +63,28 @@ def normalize_nav_choice(value: str | None) -> str:
 
 def sidebar_heading(title: str) -> None:
     """Sidebar section title without Streamlit header anchors (avoids scroll clip)."""
-    st.sidebar.markdown(
-        f'<p class="ds-sidebar-heading">{title}</p>',
-        unsafe_allow_html=True,
-    )
+    from ui.design_system import render_html
+
+    render_html(f'<p class="ds-sidebar-heading">{title}</p>', sidebar=True)
 
 
 def main_content_start() -> None:
     """Top spacer so the first main-panel message is not under the app toolbar."""
-    st.markdown('<div class="ds-main-top-spacer" aria-hidden="true"></div>', unsafe_allow_html=True)
+    from ui.design_system import render_html
+
+    render_html('<div class="ds-main-top-spacer" aria-hidden="true"></div>')
 
 
 def render_notice(message: str, *, kind: str = "info") -> None:
     """Full-width notice that wraps cleanly (no clipped alert text)."""
+    from ui.design_system import render_html
+
     css_class = {
         "info": "ds-notice ds-notice-info",
         "success": "ds-notice ds-notice-success",
         "warning": "ds-notice ds-notice-warning",
     }.get(kind, "ds-notice ds-notice-info")
-    st.markdown(f'<div class="{css_class}">{message}</div>', unsafe_allow_html=True)
+    render_html(f'<div class="{css_class}">{message}</div>')
 
 
 def inject_command_center_theme() -> None:
@@ -342,15 +345,12 @@ def inject_app_theme() -> None:
 
 
 def render_page_header(*, title: str, subtitle: str, compact: bool = False) -> None:
-    from ui.design_system import render_section_header
+    from ui.design_system import render_html, render_section_header
 
     if compact:
         render_section_header(title, subtitle)
         return
-    st.markdown(
-        f'<div class="ds-hero"><h2>{title}</h2><p>{subtitle}</p></div>',
-        unsafe_allow_html=True,
-    )
+    render_html(f'<div class="ds-hero"><h2>{title}</h2><p>{subtitle}</p></div>')
 
 
 def resolve_portfolio_section_label(label: str | None) -> str:
@@ -380,17 +380,16 @@ def render_portfolio_section_nav() -> str:
     )
     st.session_state["portfolio_section_label"] = active_label
 
-    st.markdown(
-        """
-        <div class="ds-portfolio-nav-section">
-            <p class="ds-overline">Workspace</p>
-            <p class="ds-portfolio-nav-title">Portfolio sections</p>
-            <p class="ds-portfolio-nav-lead">
-                Jump to a section — home, holdings, income, growth, journal, or deposits.
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    from ui.design_system import render_html
+
+    render_html(
+        '<div class="ds-portfolio-nav-section">'
+        '<p class="ds-overline">Workspace</p>'
+        '<p class="ds-portfolio-nav-title">Portfolio sections</p>'
+        '<p class="ds-portfolio-nav-lead">'
+        "Jump to a section — home, holdings, income, growth, journal, or deposits."
+        "</p>"
+        "</div>"
     )
 
     selected_label = active_label
@@ -407,7 +406,7 @@ def render_portfolio_section_nav() -> str:
                 selected_label = label
                 st.session_state["portfolio_section_label"] = label
                 st.rerun()
-            st.markdown(f'<p class="ds-portfolio-nav-hint">{hint}</p>', unsafe_allow_html=True)
+            render_html(f'<p class="ds-portfolio-nav-hint">{hint}</p>')
 
     st.session_state["portfolio_section_label"] = selected_label
     return PORTFOLIO_SECTION_BY_LABEL[selected_label]

@@ -796,39 +796,118 @@ div[data-testid="stMetricDelta"][data-test-direction="down"] {
 """
 
 
+def render_html(markup: str, *, sidebar: bool = False) -> None:
+    """Render raw HTML without Markdown parsing (avoids indented blocks showing as code)."""
+    target = st.sidebar if sidebar else st
+    target.html(markup)
+
+
+def _section_header_markup(title: str, subtitle: str = "") -> str:
+    sub = f'<p class="ds-section-subtitle">{html.escape(subtitle)}</p>' if subtitle else ""
+    return (
+        f'<div class="ds-section-header">'
+        f'<h3 class="ds-section-title">{html.escape(title)}</h3>{sub}'
+        f"</div>"
+    )
+
+
+def _metric_card_markup(
+    label: str,
+    value: str,
+    hint: str = "",
+    *,
+    highlight: bool = False,
+) -> str:
+    cls = "ds-metric-card ds-highlight" if highlight else "ds-metric-card"
+    hint_html = f'<p class="ds-metric-hint">{html.escape(hint)}</p>' if hint else ""
+    return (
+        f'<div class="{cls}">'
+        f'<p class="ds-metric-label">{html.escape(label)}</p>'
+        f'<p class="ds-metric-value">{html.escape(value)}</p>'
+        f"{hint_html}"
+        f"</div>"
+    )
+
+
+def _health_panel_markup(label: str, reasons: tuple[str, ...] | list[str]) -> str:
+    kind = status_class_for_label(label)
+    dark_colors = {
+        "healthy": ("rgba(16, 185, 129, 0.12)", "#6ee7b7", "rgba(52, 211, 153, 0.35)"),
+        "watch": ("rgba(245, 158, 11, 0.1)", "#fcd34d", "rgba(251, 191, 36, 0.35)"),
+        "risky": ("rgba(239, 68, 68, 0.1)", "#fca5a5", "rgba(248, 113, 113, 0.35)"),
+        "unknown": ("rgba(148, 163, 184, 0.08)", "#cbd5e1", "rgba(148, 163, 184, 0.25)"),
+    }
+    bg, fg, border = dark_colors.get(kind, dark_colors["unknown"])
+    reason_text = html.escape(" · ".join(reasons[:3]) if reasons else "")
+    return (
+        f'<div class="ds-health-panel" style="background:{bg};border:1px solid {border};color:{fg};">'
+        f'<p class="ds-health-panel-title">Dividend health · {html.escape(label)}</p>'
+        f'<p class="ds-health-panel-body">{reason_text}</p>'
+        f"</div>"
+    )
+
+
+def _metric_grid_markup(
+    items: list[tuple[str, str, str] | tuple[str, str, str, bool]],
+    *,
+    highlight_all: bool = False,
+) -> str:
+    cards = []
+    for item in items:
+        if len(item) >= 4:
+            label, value, hint, highlighted = item[0], item[1], item[2], bool(item[3])
+        else:
+            label, value, hint = item[0], item[1], item[2]
+            highlighted = highlight_all
+        cards.append(_metric_card_markup(label, value, hint, highlight=highlighted))
+    return f'<div class="ds-metric-grid">{"".join(cards)}</div>'
+
+
 def render_page_divider() -> None:
-    st.markdown('<hr class="ds-page-divider" aria-hidden="true">', unsafe_allow_html=True)
+    render_html('<hr class="ds-page-divider" aria-hidden="true">')
 
 
 def open_dividend_focus_panel() -> None:
-    st.markdown('<div class="ds-dividend-focus">', unsafe_allow_html=True)
+    """Deprecated: use render_dividend_focus_panel instead."""
 
 
 def close_dividend_focus_panel() -> None:
-    st.markdown("</div>", unsafe_allow_html=True)
+    """Deprecated: use render_dividend_focus_panel instead."""
 
 
 def open_panel() -> None:
-    st.markdown('<div class="ds-panel">', unsafe_allow_html=True)
+    """Deprecated: Streamlit widgets cannot be wrapped by split HTML tags."""
 
 
 def close_panel() -> None:
-    st.markdown("</div>", unsafe_allow_html=True)
+    """Deprecated: Streamlit widgets cannot be wrapped by split HTML tags."""
+
+
+def render_dividend_focus_panel(
+    title: str,
+    subtitle: str,
+    metrics: list[tuple[str, str, str] | tuple[str, str, str, bool]],
+) -> None:
+    """Single HTML block for the dividend income highlight panel."""
+    render_html(
+        f'<div class="ds-dividend-focus">'
+        f"{_section_header_markup(title, subtitle)}"
+        f"{_metric_grid_markup(metrics)}"
+        f"</div>"
+    )
 
 
 def render_feature_cards(cards: list[tuple[str, str, str]]) -> None:
     """Render icon + title + body feature cards."""
     items = "".join(
-        f"""
-        <div class="ds-feature-card">
-          <div class="ds-feature-icon" aria-hidden="true">{html.escape(icon)}</div>
-          <p class="ds-feature-title">{html.escape(title)}</p>
-          <p class="ds-feature-body">{html.escape(body)}</p>
-        </div>
-        """
+        f'<div class="ds-feature-card">'
+        f'<div class="ds-feature-icon" aria-hidden="true">{html.escape(icon)}</div>'
+        f'<p class="ds-feature-title">{html.escape(title)}</p>'
+        f'<p class="ds-feature-body">{html.escape(body)}</p>'
+        f"</div>"
         for icon, title, body in cards
     )
-    st.markdown(f'<div class="ds-feature-grid">{items}</div>', unsafe_allow_html=True)
+    render_html(f'<div class="ds-feature-grid">{items}</div>')
 
 
 def render_ticker_chips(items: list[tuple[str, str]]) -> None:
@@ -837,49 +916,45 @@ def render_ticker_chips(items: list[tuple[str, str]]) -> None:
         f'<span class="ds-chip"><strong>{html.escape(symbol)}</strong> {html.escape(detail)}</span>'
         for symbol, detail in items
     )
-    st.markdown(f'<div class="ds-chip-row">{chips}</div>', unsafe_allow_html=True)
+    render_html(f'<div class="ds-chip-row">{chips}</div>')
 
 
 def render_payout_list(rows: list[tuple[str, str, str]]) -> None:
     """Render payout rows: (symbol, amount, meta)."""
     body = "".join(
-        f"""
-        <div class="ds-payout-row">
-          <span><strong>{html.escape(symbol)}</strong></span>
-          <span>{html.escape(amount)} <span class="ds-payout-meta">{html.escape(meta)}</span></span>
-        </div>
-        """
+        f'<div class="ds-payout-row">'
+        f"<span><strong>{html.escape(symbol)}</strong></span>"
+        f'<span>{html.escape(amount)} <span class="ds-payout-meta">{html.escape(meta)}</span></span>'
+        f"</div>"
         for symbol, amount, meta in rows
     )
-    st.markdown(f'<div class="ds-list-card">{body}</div>', unsafe_allow_html=True)
+    render_html(f'<div class="ds-list-card">{body}</div>')
 
 
 def render_yield_zone_headline(zone: str, emoji: str, subtitle: str, *, color: str) -> None:
-    st.markdown(
-        f"""
-        <div class="ds-yield-zone-wrap">
-          <p class="ds-yield-zone" style="color:{html.escape(color)}">{html.escape(emoji)} {html.escape(zone)}</p>
-          <p class="ds-yield-zone-sub">{html.escape(subtitle)}</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    render_html(
+        f'<div class="ds-yield-zone-wrap">'
+        f'<p class="ds-yield-zone" style="color:{html.escape(color)}">'
+        f"{html.escape(emoji)} {html.escape(zone)}</p>"
+        f'<p class="ds-yield-zone-sub">{html.escape(subtitle)}</p>'
+        f"</div>"
     )
 
 
 def inject_design_system() -> None:
     """Inject global design-system CSS once per run."""
-    st.markdown(f"<style>{DESIGN_SYSTEM_CSS}</style>", unsafe_allow_html=True)
+    render_html(f"<style>{DESIGN_SYSTEM_CSS}</style>")
 
 
 def render_logo(*, show_name: bool = True, tagline: str = "Dividend research", sidebar: bool = False) -> None:
-    beta_inline = '<span class="ds-beta-badge" style="margin:0 0 0 0.35rem;vertical-align:middle;font-size:0.65rem">Beta</span>'
+    beta_inline = (
+        '<span class="ds-beta-badge" style="margin:0 0 0 0.35rem;vertical-align:middle;font-size:0.65rem">Beta</span>'
+    )
     name_html = (
-        f"""
-        <div class="ds-brand-text">
-          <span class="ds-brand-name">{html.escape(PRODUCT_NAME)}{beta_inline}</span>
-          <span class="ds-brand-tagline">{html.escape(tagline)}</span>
-        </div>
-        """
+        f'<div class="ds-brand-text">'
+        f'<span class="ds-brand-name">{html.escape(PRODUCT_NAME)}{beta_inline}</span>'
+        f'<span class="ds-brand-tagline">{html.escape(tagline)}</span>'
+        f"</div>"
         if show_name
         else ""
     )
@@ -887,16 +962,12 @@ def render_logo(*, show_name: bool = True, tagline: str = "Dividend research", s
         f'<div class="ds-brand-row" role="img" aria-label="{html.escape(PRODUCT_NAME)} logo">'
         f"{LOGO_SVG}{name_html}</div>"
     )
-    if sidebar:
-        st.sidebar.markdown(markup, unsafe_allow_html=True)
-    else:
-        st.markdown(markup, unsafe_allow_html=True)
+    render_html(markup, sidebar=sidebar)
 
 
 def render_beta_badge(*, extra: str = "Free during beta") -> None:
-    st.markdown(
-        f'<span class="ds-beta-badge" aria-label="Beta version">{html.escape(extra)} · No credit card</span>',
-        unsafe_allow_html=True,
+    render_html(
+        f'<span class="ds-beta-badge" aria-label="Beta version">{html.escape(extra)} · No credit card</span>'
     )
 
 
@@ -907,38 +978,17 @@ def status_class_for_label(label: str) -> str:
 def render_status_badge(label: str, *, title: str | None = None) -> None:
     kind = status_class_for_label(label)
     title_attr = f' title="{html.escape(title)}"' if title else ""
-    st.markdown(
-        f'<span class="ds-status-badge ds-status-{kind}"{title_attr}>{html.escape(label)}</span>',
-        unsafe_allow_html=True,
+    render_html(
+        f'<span class="ds-status-badge ds-status-{kind}"{title_attr}>{html.escape(label)}</span>'
     )
 
 
 def render_section_header(title: str, subtitle: str = "") -> None:
-    sub = f'<p class="ds-section-subtitle">{html.escape(subtitle)}</p>' if subtitle else ""
-    st.markdown(
-        f"""
-        <div class="ds-section-header">
-          <h3 class="ds-section-title">{html.escape(title)}</h3>
-          {sub}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    render_html(_section_header_markup(title, subtitle))
 
 
 def render_metric_card(label: str, value: str, hint: str = "", *, highlight: bool = False) -> None:
-    hint_html = f'<p class="ds-metric-hint">{html.escape(hint)}</p>' if hint else ""
-    cls = "ds-metric-card ds-highlight" if highlight else "ds-metric-card"
-    st.markdown(
-        f"""
-        <div class="{cls}">
-          <p class="ds-metric-label">{html.escape(label)}</p>
-          <p class="ds-metric-value">{html.escape(value)}</p>
-          {hint_html}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    render_html(_metric_card_markup(label, value, hint, highlight=highlight))
 
 
 def render_metric_grid(
@@ -947,24 +997,7 @@ def render_metric_grid(
     highlight_all: bool = False,
 ) -> None:
     """Render a responsive grid of metric cards. Optional 4th tuple item = highlight."""
-    cards = []
-    for item in items:
-        if len(item) >= 4:
-            label, value, hint, highlighted = item[0], item[1], item[2], bool(item[3])
-        else:
-            label, value, hint = item[0], item[1], item[2]
-            highlighted = highlight_all
-        cls = "ds-metric-card ds-highlight" if highlighted else "ds-metric-card"
-        cards.append(
-            f"""
-        <div class="{cls}">
-          <p class="ds-metric-label">{html.escape(label)}</p>
-          <p class="ds-metric-value">{html.escape(value)}</p>
-          {f'<p class="ds-metric-hint">{html.escape(hint)}</p>' if hint else ''}
-        </div>
-        """
-        )
-    st.markdown(f'<div class="ds-metric-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
+    render_html(_metric_grid_markup(items, highlight_all=highlight_all))
 
 
 def render_empty_state(
@@ -973,59 +1006,50 @@ def render_empty_state(
     *,
     icon: str = "📊",
 ) -> None:
-    st.markdown(
-        f"""
-        <div class="ds-empty-state" role="status">
-          <div class="ds-empty-icon" aria-hidden="true">{html.escape(icon)}</div>
-          <p class="ds-empty-title">{html.escape(title)}</p>
-          <p class="ds-empty-body">{html.escape(body)}</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    render_html(
+        f'<div class="ds-empty-state" role="status">'
+        f'<div class="ds-empty-icon" aria-hidden="true">{html.escape(icon)}</div>'
+        f'<p class="ds-empty-title">{html.escape(title)}</p>'
+        f'<p class="ds-empty-body">{html.escape(body)}</p>'
+        f"</div>"
     )
 
 
 def render_chart_card_header(title: str, subtitle: str = "") -> None:
     sub = f'<p class="ds-chart-card-subtitle">{html.escape(subtitle)}</p>' if subtitle else ""
-    st.markdown(
-        f"""
-        <div class="ds-chart-card">
-          <p class="ds-chart-card-title">{html.escape(title)}</p>
-          {sub}
-        """,
-        unsafe_allow_html=True,
+    render_html(
+        f'<div class="ds-chart-card">'
+        f'<p class="ds-chart-card-title">{html.escape(title)}</p>{sub}'
+        f"</div>"
     )
 
 
 def render_chart_card_footer() -> None:
-    st.markdown("</div>", unsafe_allow_html=True)
+    """No-op: chart card header is a self-contained block."""
 
 
 def render_disclaimer_banner(message: str) -> None:
-    st.markdown(
-        f'<div class="ds-disclaimer-banner" role="note">{html.escape(message)}</div>',
-        unsafe_allow_html=True,
-    )
+    render_html(f'<div class="ds-disclaimer-banner" role="note">{html.escape(message)}</div>')
 
 
 def render_health_panel(label: str, reasons: tuple[str, ...] | list[str]) -> None:
-    kind = status_class_for_label(label)
-    dark_colors = {
-        "healthy": ("rgba(16, 185, 129, 0.12)", "#6ee7b7", "rgba(52, 211, 153, 0.35)"),
-        "watch": ("rgba(245, 158, 11, 0.1)", "#fcd34d", "rgba(251, 191, 36, 0.35)"),
-        "risky": ("rgba(239, 68, 68, 0.1)", "#fca5a5", "rgba(248, 113, 113, 0.35)"),
-        "unknown": ("rgba(148, 163, 184, 0.08)", "#cbd5e1", "rgba(148, 163, 184, 0.25)"),
-    }
-    bg, fg, border = dark_colors.get(kind, dark_colors["unknown"])
-    reason_text = html.escape(" · ".join(reasons[:3]) if reasons else "")
-    st.markdown(
-        f"""
-        <div class="ds-health-panel" style="background:{bg};border:1px solid {border};color:{fg};">
-          <p class="ds-health-panel-title">Dividend health · {html.escape(label)}</p>
-          <p class="ds-health-panel-body">{reason_text}</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    render_html(_health_panel_markup(label, reasons))
+
+
+def render_dividend_detail_block(
+    title: str,
+    subtitle: str,
+    health_label: str,
+    reasons: tuple[str, ...] | list[str],
+    metrics: list[tuple[str, str, str] | tuple[str, str, str, bool]],
+) -> None:
+    """Header, health, and metric grid in one HTML block for stock detail."""
+    render_html(
+        f'<div class="ds-dividend-section">'
+        f"{_section_header_markup(title, subtitle)}"
+        f"{_health_panel_markup(health_label, reasons)}"
+        f"{_metric_grid_markup(metrics)}"
+        f"</div>"
     )
 
 
@@ -1035,29 +1059,23 @@ def render_app_footer(*, show_pricing_hint: bool = True) -> None:
         if show_pricing_hint
         else ""
     )
-    st.markdown(
-        f"""
-        <footer class="ds-app-footer">
-          <div class="ds-footer-links">
-            <span>Disclaimer</span>
-            <span>Privacy</span>
-            <span>Terms</span>
-            <span>Feedback</span>
-          </div>
-          {pricing}
-          <p>{html.escape(PRODUCT_NAME)} — dividend tracking and research only. Not financial advice.</p>
-        </footer>
-        """,
-        unsafe_allow_html=True,
+    render_html(
+        f'<footer class="ds-app-footer">'
+        f'<div class="ds-footer-links">'
+        f"<span>Disclaimer</span><span>Privacy</span><span>Terms</span><span>Feedback</span>"
+        f"</div>"
+        f"{pricing}"
+        f"<p>{html.escape(PRODUCT_NAME)} — dividend tracking and research only. Not financial advice.</p>"
+        f"</footer>"
     )
 
 
 def wrap_table_container() -> None:
-    st.markdown('<div class="ds-table-wrap">', unsafe_allow_html=True)
+    """No-op: table styling is applied via global CSS on stDataFrame."""
 
 
 def close_table_container() -> None:
-    st.markdown("</div>", unsafe_allow_html=True)
+    """No-op: table styling is applied via global CSS on stDataFrame."""
 
 
 def sparkline_bars(values: list[float], *, max_height: int = 44) -> str:

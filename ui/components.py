@@ -397,22 +397,21 @@ class UIComponents:
         """Prominent dividend block for stock detail — health, metrics, payout history."""
         from services.dividend_health import assess_dividend_health
         from ui.beta_disclaimer import YIELD_HISTORY_HELP
-        from ui.design_system import render_health_panel, render_metric_grid, render_section_header
+        from ui.design_system import render_dividend_detail_block
         from utils.library_document import resolve_library_document
         from utils.yield_history_tables import yearly_dividend_per_share_table
 
         symbol = (symbol or data.symbol or "").upper()
         health = assess_dividend_health(data)
         dh = data.dividend_history
-
-        st.markdown('<div class="ds-dividend-section">', unsafe_allow_html=True)
-        render_section_header("Dividends", YIELD_HISTORY_HELP)
-        render_health_panel(health.label, health.reasons)
-        st.caption(health.disclaimer)
-
         annual = dh.current_annual if dh and dh.current_annual else data.dividend_rate
         ex_div = dh.ex_dividend_date if dh else None
-        render_metric_grid(
+
+        render_dividend_detail_block(
+            "Dividends",
+            YIELD_HISTORY_HELP,
+            health.label,
+            health.reasons,
             [
                 (
                     "Current yield",
@@ -472,6 +471,7 @@ class UIComponents:
                 ),
             ]
         )
+        st.caption(health.disclaimer)
 
         doc = resolve_library_document(symbol, vector_doc)
         yearly = yearly_dividend_per_share_table(doc) if doc is not None else pd.DataFrame()
@@ -487,7 +487,6 @@ class UIComponents:
             st.info("Insufficient dividend data for a payout table in the library.")
         else:
             st.info("Dividend payout history is not available yet for this symbol.")
-        st.markdown("</div>", unsafe_allow_html=True)
 
     @staticmethod
     def display_valuation_metrics(data: StockData) -> None:
