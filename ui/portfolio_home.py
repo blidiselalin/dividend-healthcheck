@@ -220,13 +220,14 @@ def render_compact_summary(rows: List[PortfolioDetailRow]) -> None:
     from services.portfolio_month_dividends import cached_current_month_paid_dividends
     from ui.portfolio_summary import render_holdings_summary
 
-    preload = None
-    if st.session_state.get("portfolio_analysis_ready"):
-        preload = PortfolioAnalysisPreload.from_caches(
-            st.session_state.get("portfolio_stock_cache", {}),
-            st.session_state.get("portfolio_yield_cache", {}),
-            st.session_state.get("portfolio_vector_docs", {}),
-        )
+    stock_cache = st.session_state.get("portfolio_stock_cache") or {}
+    yield_cache = st.session_state.get("portfolio_yield_cache") or {}
+    vector_docs = st.session_state.get("portfolio_vector_docs") or {}
+    preload = (
+        PortfolioAnalysisPreload.from_caches(stock_cache, yield_cache, vector_docs)
+        if stock_cache or yield_cache or vector_docs
+        else None
+    )
 
     month_paid = cached_current_month_paid_dividends(rows=rows, preload=preload)
     from ui.portfolio_summary import render_dividend_focus_block

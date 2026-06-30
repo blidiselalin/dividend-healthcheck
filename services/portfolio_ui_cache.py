@@ -138,8 +138,33 @@ def cache_is_stale(bundle: dict[str, Any]) -> bool:
     return False
 
 
-def save_session_cache() -> None:
-    """Write current Streamlit session portfolio state to disk."""
+_PENDING_CACHE_SAVE_KEY = "_portfolio_cache_save_pending"
+
+
+def save_session_cache(*, force: bool = False) -> None:
+    """Write current Streamlit session portfolio state to disk (debounced per rerun)."""
+    import streamlit as st
+
+    rows = st.session_state.get("portfolio_details_rows")
+    if not rows:
+        return
+
+    if not force:
+        st.session_state[_PENDING_CACHE_SAVE_KEY] = True
+        return
+
+    _write_session_cache()
+
+
+def flush_session_cache_if_pending() -> None:
+    """Persist debounced portfolio UI cache once per script run."""
+    import streamlit as st
+
+    if st.session_state.pop(_PENDING_CACHE_SAVE_KEY, False):
+        _write_session_cache()
+
+
+def _write_session_cache() -> None:
     import streamlit as st
 
     from ui.portfolio_risk_panel import SESSION_CHECKED_AT_KEY, SESSION_SUMMARY_KEY
@@ -182,14 +207,20 @@ def save_session_cache() -> None:
         logger.warning("Could not save portfolio UI cache: %s", exc)
 
 
-def _schedule_background_portfolio_warm() -> None:
-    """Queue a fast library load without blocking the Streamlit UI thread."""
-    try:
-        from services.deferred_startup import schedule_portfolio_warm_if_needed
+def _rebuild_risk_summary_if_needed() -> None:
+    """Build sidebar watchlists from cached rows without network I/O."""
+    import streamlit as st
 
-        schedule_portfolio_warm_if_needed()
+    from ui.portfolio_risk_panel import SESSION_SUMMARY_KEY, _rebuild_attention_from_session
+
+    if st.session_state.get(SESSION_SUMMARY_KEY):
+        return
+    if not st.session_state.get("portfolio_details_rows"):
+        return
+    try:
+        _rebuild_attention_from_session()
     except Exception as exc:
-        logger.debug("Could not schedule portfolio warm: %s", exc)
+        logger.debug("Risk watchlist rebuild skipped: %s", exc)
 
 
 def _apply_disk_bundle(bundle: dict[str, Any], *, cache_path: Path) -> bool:
@@ -232,6 +263,7 @@ def _apply_disk_bundle(bundle: dict[str, Any], *, cache_path: Path) -> bool:
         len(rows_payload),
         bundle.get("saved_at", "?"),
     )
+    _rebuild_risk_summary_if_needed()
     return True
 
 
@@ -255,8 +287,8 @@ def hydrate_session_from_disk() -> bool:  # noqa: C901
     cache_path = _cache_path()
     if not cache_path.exists():
         if user_has_holdings_in_db():
-            logger.info("No portfolio UI cache; scheduling background warm.")
-            _schedule_background_portfolio_warm()
+            logger.info("No portfolio UI cache; loading holdings from DB/library.")
+            return warm_portfolio_session_from_db()
         return False
 
     try:
@@ -270,15 +302,15 @@ def hydrate_session_from_disk() -> bool:  # noqa: C901
         except OSError:
             pass
         if user_has_holdings_in_db():
-            logger.info("Portfolio UI cache corrupted; scheduling background warm.")
-            _schedule_background_portfolio_warm()
+            logger.info("Portfolio UI cache corrupted; loading holdings from DB/library.")
+            return warm_portfolio_session_from_db()
         return False
 
     rows_payload = bundle.get("rows") or []
     if not rows_payload:
         if user_has_holdings_in_db():
-            logger.info("Portfolio UI cache empty; scheduling background warm.")
-            _schedule_background_portfolio_warm()
+            logger.info("Portfolio UI cache empty; loading holdings from DB/library.")
+            return warm_portfolio_session_from_db()
         return False
 
     fp_mismatch = False
@@ -394,7 +426,22 @@ def warm_portfolio_session_from_db(*, preload_charts: bool = False, force: bool 
     except Exception as exc:
         logger.debug("Could not store portfolio DB fingerprint after warm load: %s", exc)
     logger.info("Portfolio fast-loaded from library (%d holdings)", len(rows))
+    _rebuild_risk_summary_if_needed()
     return True
+
+
+def ensure_portfolio_session_loaded() -> bool:
+    """
+    Restore portfolio rows synchronously from disk or the shared library.
+
+    Returns True when ``portfolio_details_rows`` is populated. Background jobs
+    may still enrich prices and yield charts afterward.
+    """
+    import streamlit as st
+
+    if hydrate_session_from_disk():
+        return True
+    return bool(st.session_state.get("portfolio_details_rows"))
 
 
 def compute_yield_preload_payload(
@@ -468,6 +515,31 @@ def compute_live_portfolio_payload(
         "preload": preload,
         "analysis_ready": True,
         "fast_loaded": False,
+        "prices_only": False,
+    }
+
+
+def compute_live_prices_payload(
+    *,
+    progress_callback: ProgressCallback | None = None,
+) -> dict[str, Any]:
+    """Refresh live quotes only — keeps existing yield-chart preload (background-safe)."""
+    from services.portfolio_details_service import PortfolioDetailsService
+
+    if progress_callback:
+        progress_callback(0.1, "Fetching live prices…")
+    rows, preload = PortfolioDetailsService().build_rows_with_cache(
+        use_live_prices=True,
+        preload_analysis=False,
+    )
+    if progress_callback:
+        progress_callback(0.95, f"{len(rows)} holdings refreshed")
+    return {
+        "rows": rows,
+        "preload": preload,
+        "analysis_ready": False,
+        "fast_loaded": False,
+        "prices_only": True,
     }
 
 
@@ -490,7 +562,7 @@ def ensure_portfolio_yield_preload() -> bool:
     st.session_state["portfolio_vector_docs"] = payload["vector_docs"]
     st.session_state["portfolio_analysis_ready"] = True
     st.session_state.pop("portfolio_fast_loaded", None)
-    save_session_cache()
+    save_session_cache(force=True)
     logger.info(
         "Portfolio yield charts preloaded (%d channels)",
         len(payload["yield_channels"]),

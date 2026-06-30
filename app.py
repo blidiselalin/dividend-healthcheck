@@ -76,7 +76,6 @@ from auth.user_context import ensure_user_session
 from config import DATA_SOURCES
 from services.deferred_startup import apply_background_results, schedule_startup_tasks
 from services.portfolio_session import sync_portfolio_session_with_db
-from services.portfolio_ui_cache import hydrate_session_from_disk
 from ui.admin_page import render_admin_page_if_active, render_admin_sidebar_entry
 from ui.app_about import render_about_body
 from ui.auth_account_panel import render_account_sidebar
@@ -224,9 +223,11 @@ def main() -> None:
     from services.portfolio_session import is_demo_session, user_has_holdings_in_db
 
     apply_background_results()
-    if hydrate_session_from_disk():
+    from services.portfolio_ui_cache import ensure_portfolio_session_loaded
+
+    if ensure_portfolio_session_loaded():
         rows = st.session_state.get("portfolio_details_rows") or []
-        logger.info("Portfolio session hydrated from disk (%d holdings)", len(rows))
+        logger.info("Portfolio session ready (%d holdings)", len(rows))
 
     schedule_startup_tasks(
         is_demo=is_demo_session(),
@@ -251,6 +252,10 @@ def main() -> None:
 
     render_app_footer()
     _render_sidebar_footer()
+
+    from services.portfolio_ui_cache import flush_session_cache_if_pending
+
+    flush_session_cache_if_pending()
 
 
 if __name__ == "__main__":

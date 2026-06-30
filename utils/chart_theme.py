@@ -54,6 +54,10 @@ def style_figure(
     margin: dict[str, int] | None = None,
 ) -> Any:
     """Apply DividendScope defaults without removing trace-specific layout."""
+    palette = chart_palette()
+    from ui.theme_mode import THEME_LIGHT, get_theme_mode
+
+    is_light = get_theme_mode() == THEME_LIGHT
     top = 60 if title else 36
     default_margin = {"l": 52, "r": 28, "t": top, "b": 44}
     if margin:
@@ -67,21 +71,21 @@ def style_figure(
                     default_margin[edge] = value
 
     layout: dict[str, Any] = {
-        "template": "plotly_white",
+        "template": "plotly_white" if is_light else "plotly_dark",
         "autosize": True,
         "font": {
             "family": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
             "size": 12,
-            "color": PALETTE["text"],
+            "color": palette["text"],
         },
-        "paper_bgcolor": PALETTE["paper"],
-        "plot_bgcolor": PALETTE["plot_bg"],
+        "paper_bgcolor": palette["paper"],
+        "plot_bgcolor": palette["plot"],
         "hovermode": "x unified",
         "hoverlabel": {
-            "bgcolor": "white",
-            "bordercolor": PALETTE["grid"],
+            "bgcolor": palette["paper"],
+            "bordercolor": palette["border"],
             "font_size": 12,
-            "font_color": PALETTE["text"],
+            "font_color": palette["text"],
             "namelength": -1,
         },
         "margin": default_margin,
@@ -94,7 +98,7 @@ def style_figure(
             "text": title,
             "x": 0,
             "xanchor": "left",
-            "font": {"size": 15, "color": PALETTE["text"], "weight": "bold"},
+            "font": {"size": 15, "color": palette["text"], "weight": "bold"},
             "pad": {"b": 8},
         }
     if horizontal_legend and legend:
@@ -105,26 +109,26 @@ def style_figure(
             "xanchor": "left",
             "x": 0,
             "font": {"size": 11},
-            "bgcolor": "rgba(255,255,255,0.85)",
-            "bordercolor": PALETTE["grid"],
+            "bgcolor": palette["plot"],
+            "bordercolor": palette["grid"],
             "borderwidth": 1,
         }
 
     fig.update_layout(**layout)
     fig.update_xaxes(
         showgrid=True,
-        gridcolor=PALETTE["grid"],
-        linecolor=PALETTE["grid"],
-        tickfont={"size": 11, "color": PALETTE["muted"]},
-        title_font={"size": 12, "color": PALETTE["muted"]},
+        gridcolor=palette["grid"],
+        linecolor=palette["grid"],
+        tickfont={"size": 11, "color": palette["muted"]},
+        title_font={"size": 12, "color": palette["muted"]},
         automargin=True,
     )
     fig.update_yaxes(
         showgrid=True,
-        gridcolor=PALETTE["grid"],
-        linecolor=PALETTE["grid"],
-        tickfont={"size": 11, "color": PALETTE["muted"]},
-        title_font={"size": 12, "color": PALETTE["muted"]},
+        gridcolor=palette["grid"],
+        linecolor=palette["grid"],
+        tickfont={"size": 11, "color": palette["muted"]},
+        title_font={"size": 12, "color": palette["muted"]},
         automargin=True,
     )
     return fig
@@ -194,6 +198,27 @@ DARK_PALETTE: dict[str, str] = {
     "yield_fill": "rgba(251, 191, 36, 0.14)",
 }
 
+LIGHT_PALETTE: dict[str, str] = {
+    "paper": "#ffffff",
+    "plot": "#f8fafc",
+    "text": "#0f172a",
+    "muted": "#64748b",
+    "grid": "rgba(148, 163, 184, 0.35)",
+    "border": "rgba(203, 213, 225, 0.9)",
+    "primary": "#0f766e",
+    "yield_line": "#d97706",
+    "yield_fill": "rgba(217, 119, 6, 0.12)",
+}
+
+
+def chart_palette() -> dict[str, str]:
+    try:
+        from ui.theme_mode import THEME_LIGHT, get_theme_mode
+
+        return LIGHT_PALETTE if get_theme_mode() == THEME_LIGHT else DARK_PALETTE
+    except Exception:
+        return DARK_PALETTE
+
 
 def hex_rgba(hex_color: str, alpha: float) -> str:
     value = hex_color.lstrip("#")
@@ -208,24 +233,28 @@ def yield_zone_fill(zone_name: str, *, alpha: float = 0.16) -> str:
 
 
 def style_yield_channel_figure(fig: Any, *, height: int = 480) -> Any:
-    """Dark dashboard styling for the Dividends Don't Lie yield channel chart."""
+    """Dashboard styling for the Dividends Don't Lie yield channel chart."""
+    palette = chart_palette()
+    from ui.theme_mode import THEME_LIGHT, get_theme_mode
+
+    is_light = get_theme_mode() == THEME_LIGHT
     fig.update_layout(
         height=height,
         autosize=True,
-        template="plotly_dark",
+        template="plotly_white" if is_light else "plotly_dark",
         font={
             "family": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
             "size": 12,
-            "color": DARK_PALETTE["text"],
+            "color": palette["text"],
         },
-        paper_bgcolor=DARK_PALETTE["paper"],
-        plot_bgcolor=DARK_PALETTE["plot"],
+        paper_bgcolor=palette["paper"],
+        plot_bgcolor=palette["plot"],
         hovermode="x unified",
         hoverlabel={
-            "bgcolor": DARK_PALETTE["paper"],
-            "bordercolor": DARK_PALETTE["border"],
+            "bgcolor": palette["paper"],
+            "bordercolor": palette["border"],
             "font_size": 12,
-            "font_color": DARK_PALETTE["text"],
+            "font_color": palette["text"],
             "namelength": -1,
         },
         margin={"l": 58, "r": 42, "t": 64, "b": 44},
@@ -236,32 +265,32 @@ def style_yield_channel_figure(fig: Any, *, height: int = 480) -> Any:
             "y": 1.03,
             "xanchor": "left",
             "x": 0,
-            "font": {"size": 10, "color": DARK_PALETTE["muted"]},
-            "bgcolor": "rgba(15, 23, 42, 0.92)",
-            "bordercolor": DARK_PALETTE["border"],
+            "font": {"size": 10, "color": palette["muted"]},
+            "bgcolor": palette["plot"],
+            "bordercolor": palette["border"],
             "borderwidth": 1,
         },
     )
     fig.update_annotations(
         font={
             "size": 12,
-            "color": DARK_PALETTE["muted"],
+            "color": palette["muted"],
             "family": "system-ui, sans-serif",
         },
     )
     fig.update_xaxes(
         showgrid=True,
-        gridcolor=DARK_PALETTE["grid"],
-        linecolor=DARK_PALETTE["grid"],
-        tickfont={"size": 11, "color": DARK_PALETTE["muted"]},
+        gridcolor=palette["grid"],
+        linecolor=palette["grid"],
+        tickfont={"size": 11, "color": palette["muted"]},
         zeroline=False,
     )
     fig.update_yaxes(
         showgrid=True,
-        gridcolor=DARK_PALETTE["grid"],
-        linecolor=DARK_PALETTE["grid"],
-        tickfont={"size": 11, "color": DARK_PALETTE["muted"]},
-        title_font={"size": 12, "color": DARK_PALETTE["muted"]},
+        gridcolor=palette["grid"],
+        linecolor=palette["grid"],
+        tickfont={"size": 11, "color": palette["muted"]},
+        title_font={"size": 12, "color": palette["muted"]},
         zeroline=False,
     )
     return fig

@@ -9,14 +9,9 @@ from typing import Optional
 
 import streamlit as st
 
-from services.portfolio_ui_cache import hydrate_session_from_disk
 from ui.portfolio_manage_panel import render_portfolio_manage_sidebar
 from ui.portfolio_onboarding import mark_onboarding_live_reload_requested, render_onboarding_sidebar_hint
 from ui.portfolio_risk_panel import _rebuild_attention_from_session
-from services.portfolio_session import user_has_holdings_in_db
-from ui.theme import portfolio_data_ready, sidebar_heading
-
-
 from services.portfolio_session import user_has_holdings_in_db
 from ui.design_system import render_logo
 from ui.theme import portfolio_data_ready, sidebar_heading
@@ -62,8 +57,9 @@ def _reload_live_data() -> None:
 
 def render_portfolio_sidebar() -> None:
     """Portfolio sidebar: reload + manage (insights live on Home)."""
-    if not st.session_state.get("portfolio_details_rows"):
-        hydrate_session_from_disk()
+    from ui.theme_mode import render_theme_toggle
+
+    render_theme_toggle(sidebar=True)
 
     render_logo(tagline="Portfolio workspace", sidebar=True)
     _render_sidebar_quick_nav()

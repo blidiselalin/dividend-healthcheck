@@ -2338,7 +2338,7 @@ class PortfolioDetailsView:
         rows_loaded = st.session_state.get("portfolio_details_rows")
         portfolio_preload = (
             _preload_from_session()
-            if rows_loaded and st.session_state.get("portfolio_analysis_ready")
+            if rows_loaded
             else None
         )
 
@@ -2350,7 +2350,12 @@ class PortfolioDetailsView:
             )
         elif section == "holdings":
             if not rows_loaded:
-                st.info("Load data with **Reload live data** in the sidebar.")
+                from services.portfolio_session import user_has_holdings_in_db
+
+                if user_has_holdings_in_db():
+                    st.info("Loading positions from your portfolio… refresh the page if this persists.")
+                else:
+                    st.info("Add holdings under **Manage portfolio** to see positions here.")
                 return
             rows = st.session_state["portfolio_details_rows"]
             loaded_at = st.session_state["portfolio_details_time"]

@@ -295,30 +295,24 @@ class PortfolioDetailsService:
 
     @staticmethod
     def _schedule_deferred_live_reload(stale_symbols: list[str]) -> None:
-        """Launch a background live-price refresh for stale symbols (non-blocking)."""
+        """Mark stale quotes for a lightweight background refresh (non-blocking)."""
+        if not stale_symbols:
+            return
         try:
-            from services.deferred_startup import JOB_LIVE_RELOAD, _job_running
-            from services.background_jobs import start_job
-            from services.portfolio_analysis_preload import PortfolioAnalysisPreload
-            from typing import Any, Callable
+            import streamlit as st
 
-            if _job_running(JOB_LIVE_RELOAD):
+            if st.session_state.get("portfolio_fast_loaded"):
+                st.session_state["_stale_prices_pending"] = True
+                logger.debug(
+                    "Deferred price refresh queued for %d stale symbols (after fast load)",
+                    len(stale_symbols),
+                )
                 return
 
-            symbols = list(stale_symbols)
+            from services.deferred_startup import schedule_stale_price_refresh_if_needed
 
-            def _worker(progress: Callable[[float, str], None]) -> dict[str, Any]:
-                from services.portfolio_ui_cache import compute_live_portfolio_payload
-
-                progress(0.05, "Refreshing portfolio prices…")
-                payload = compute_live_portfolio_payload(progress_callback=progress)
-                progress(1.0, "Live reload complete")
-                return payload
-
-            start_job(JOB_LIVE_RELOAD, "Refreshing portfolio prices", _worker)
-            logger.debug(
-                "Scheduled deferred live-price reload for %d stale symbols", len(symbols)
-            )
+            st.session_state["_stale_prices_pending"] = True
+            schedule_stale_price_refresh_if_needed()
         except Exception as exc:
             logger.debug("Could not schedule deferred live reload: %s", exc)
 

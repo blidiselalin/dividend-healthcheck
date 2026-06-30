@@ -176,7 +176,9 @@ def _render_monthly_income_chart(dashboard: GuestDashboard) -> None:
     )
     try:
         import plotly.graph_objects as go
-        from utils.chart_theme import DARK_PALETTE, style_yield_channel_figure
+        from utils.chart_theme import chart_palette, style_yield_channel_figure
+
+        palette = chart_palette()
 
         labels = [label for label, _ in dashboard.monthly_forecast]
         values = [value for _, value in dashboard.monthly_forecast]
@@ -185,7 +187,7 @@ def _render_monthly_income_chart(dashboard: GuestDashboard) -> None:
                 go.Bar(
                     x=labels,
                     y=values,
-                    marker_color=DARK_PALETTE["primary"],
+                    marker_color=palette["primary"],
                     hovertemplate="%{x}<br>$%{y:,.2f}<extra></extra>",
                 )
             ]
@@ -318,6 +320,11 @@ def _render_signup_block(auth_block: Callable[[], None]) -> None:
 def render_command_center_page(*, auth_block: Callable[[], None]) -> None:
     """Focused pre-login homepage for the free beta try experience."""
     inject_command_center_theme()
+    _spacer, _theme = st.columns([6, 1.35])
+    with _theme:
+        from ui.theme_mode import render_theme_toggle
+
+        render_theme_toggle()
     _render_hero()
     render_page_divider()
     dashboard = _render_search_and_playground()

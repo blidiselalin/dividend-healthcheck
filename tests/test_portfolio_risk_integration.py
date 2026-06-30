@@ -132,6 +132,45 @@ def test_refresh_portfolio_risks_persists_session_summary(monkeypatch: pytest.Mo
     assert cached.total >= 1
 
 
+def test_refresh_portfolio_risks_uses_session_without_rebuild(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-force refresh must not call build_rows_with_cache when session has rows."""
+    from ui.portfolio_risk_panel import SESSION_SUMMARY_KEY, refresh_portfolio_risks
+
+    row = _row()
+    preload = PortfolioAnalysisPreload(
+        stock_data={},
+        yield_channels={"ARE": _yield_channel("Expensive")},
+        vector_docs={},
+    )
+    session = {
+        "portfolio_details_rows": [row],
+        "portfolio_stock_cache": preload.stock_data,
+        "portfolio_yield_cache": preload.yield_channels,
+        "portfolio_vector_docs": preload.vector_docs,
+    }
+    monkeypatch.setattr("streamlit.session_state", session, raising=False)
+
+    build_calls: list[bool] = []
+
+    def _forbidden_build(*args, **kwargs):
+        build_calls.append(True)
+        raise AssertionError("build_rows_with_cache should not run")
+
+    monkeypatch.setattr(
+        "services.portfolio_details_service.PortfolioDetailsService.build_rows_with_cache",
+        _forbidden_build,
+    )
+
+    summary = refresh_portfolio_risks(force=False)
+
+    assert summary is not None
+    assert summary.total >= 1
+    assert SESSION_SUMMARY_KEY in session
+    assert build_calls == []
+
+
 def test_apply_yield_preload_rebuilds_risk_watchlist(monkeypatch: pytest.MonkeyPatch) -> None:
     session: dict = {
         "portfolio_details_rows": [_row()],

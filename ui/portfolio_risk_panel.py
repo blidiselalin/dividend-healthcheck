@@ -5,7 +5,7 @@ Sidebar portfolio risk monitor — uses cached session data; refresh on demand o
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import streamlit as st
 
@@ -17,7 +17,7 @@ from services.portfolio_attention_service import (
 )
 from services.portfolio_details_service import PortfolioDetailRow
 from services.portfolio_risk_monitor_service import PortfolioRiskMonitorService
-from services.portfolio_ui_cache import hydrate_session_from_disk, save_session_cache
+from services.portfolio_ui_cache import save_session_cache
 
 SESSION_SUMMARY_KEY = "portfolio_attention_summary"
 SESSION_CHECKED_AT_KEY = "portfolio_risk_checked_at"
@@ -41,6 +41,20 @@ def store_portfolio_payload(
     save_session_cache()
 
 
+def _session_rows_and_preload() -> Tuple[
+    Optional[List[PortfolioDetailRow]], Optional[PortfolioAnalysisPreload]
+]:
+    rows = st.session_state.get("portfolio_details_rows")
+    if not rows:
+        return None, None
+    preload = PortfolioAnalysisPreload.from_caches(
+        st.session_state.get("portfolio_stock_cache") or {},
+        st.session_state.get("portfolio_yield_cache") or {},
+        st.session_state.get("portfolio_vector_docs") or {},
+    )
+    return rows, preload
+
+
 def get_cached_attention_summary() -> Optional[AttentionSummary]:
     return normalize_attention_summary(
         PortfolioRiskMonitorService.summary_from_store(
@@ -57,32 +71,49 @@ def refresh_portfolio_risks(
     preload: Optional[PortfolioAnalysisPreload] = None,
 ) -> Optional[AttentionSummary]:
     """
-    Reload portfolio data if needed, evaluate all holdings, store full risk list.
+    Evaluate holdings for risk/opportunity watchlists.
+
+    Uses cached session rows by default — never blocks on a full portfolio rebuild
+    unless ``force=True`` (explicit live reload).
     """
     monitor = PortfolioRiskMonitorService()
-    checked_at = st.session_state.get(SESSION_CHECKED_AT_KEY)
+
     if not force:
-        if get_cached_attention_summary() and st.session_state.get("portfolio_details_rows"):
-            return get_cached_attention_summary()
-        hydrate_session_from_disk()
-        if get_cached_attention_summary() and st.session_state.get("portfolio_details_rows"):
-            return get_cached_attention_summary()
+        cached = get_cached_attention_summary()
+        if cached is not None:
+            return cached
+
+        session_rows, session_preload = _session_rows_and_preload()
+        if session_rows:
+            rows = rows or session_rows
+            preload = preload or session_preload
+            summary = monitor.build_summary(rows, preload, include_news=include_news)
+            st.session_state[SESSION_SUMMARY_KEY] = monitor.summary_to_store(summary)
+            st.session_state[SESSION_CHECKED_AT_KEY] = datetime.now()
+            return summary
+        return None
 
     if st.session_state.get(SESSION_REFRESHING_KEY):
         return get_cached_attention_summary()
 
     st.session_state[SESSION_REFRESHING_KEY] = True
     try:
-        if force:
-            from services.portfolio_vector_sync import link_portfolio_in_vector_db
+        from services.portfolio_vector_sync import link_portfolio_in_vector_db
 
-            link_portfolio_in_vector_db()
+        link_portfolio_in_vector_db()
+
+        session_rows, session_preload = _session_rows_and_preload()
+        rows = rows or session_rows
+        preload = preload or session_preload
+
         if rows is None or preload is None:
             from services.portfolio_details_service import PortfolioDetailsService
 
             rows, preload = PortfolioDetailsService().build_rows_with_cache(
-                use_live_prices=force,
+                use_live_prices=True,
+                preload_analysis=True,
             )
+
         store_portfolio_payload(rows, preload)
         summary = monitor.build_summary(rows, preload, include_news=include_news)
         st.session_state[SESSION_SUMMARY_KEY] = monitor.summary_to_store(summary)
@@ -113,9 +144,6 @@ def _rebuild_attention_from_session() -> Optional[AttentionSummary]:
 @st.fragment
 def _portfolio_risk_sidebar_fragment() -> None:
     """Show cached risk data; full scan only when the user requests it."""
-    if not st.session_state.get("portfolio_details_rows"):
-        hydrate_session_from_disk()
-
     summary = get_cached_attention_summary()
     if summary is None and st.session_state.get("portfolio_details_rows"):
         summary = _rebuild_attention_from_session()
@@ -143,11 +171,16 @@ def _render_risk_sidebar_content(summary: Optional[AttentionSummary] = None) -> 
         st.caption(f"Last full reload: {checked_at.strftime('%Y-%m-%d %H:%M')}")
 
     if summary is None:
-        st.info(
-            "No portfolio snapshot yet. Add a holding under **Manage portfolio**, wait for "
-            "**Background tasks**, then click **Reload live data** for the first risk scan "
-            "(runs in the background)."
-        )
+        if st.session_state.get("portfolio_details_rows"):
+            st.caption(
+                "Risk watchlists appear once yield charts finish loading in the background."
+            )
+        else:
+            st.info(
+                "No portfolio snapshot yet. Add a holding under **Manage portfolio** — "
+                "positions load from the database immediately; use **Reload live data** "
+                "for a full live scan."
+            )
         return
 
     service = PortfolioAttentionService()

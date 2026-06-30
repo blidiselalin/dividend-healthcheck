@@ -50,32 +50,9 @@ LOGO_SVG = """
 </svg>
 """
 
-DESIGN_SYSTEM_CSS = """
-:root {
-  --ds-primary: #2dd4bf;
-  --ds-primary-dark: #14b8a6;
-  --ds-primary-light: #5eead4;
-  --ds-accent: #38bdf8;
-  --ds-bg: #0b1220;
-  --ds-bg-elevated: #0f172a;
-  --ds-surface: #131c2e;
-  --ds-surface-elevated: #1a2740;
-  --ds-border: #2a3a52;
-  --ds-border-subtle: #1e293b;
-  --ds-text: #e8eef7;
-  --ds-muted: #94a3b8;
-  --ds-highlight-bg: rgba(45, 212, 191, 0.1);
-  --ds-highlight-border: rgba(45, 212, 191, 0.5);
-  --ds-highlight-glow: 0 0 0 1px rgba(45, 212, 191, 0.25), 0 8px 28px rgba(45, 212, 191, 0.12);
-  --ds-radius: 12px;
-  --ds-radius-sm: 8px;
-  --ds-shadow: 0 1px 3px rgba(0, 0, 0, 0.35), 0 4px 18px rgba(0, 0, 0, 0.25);
-  --ds-shadow-lg: 0 10px 36px rgba(0, 0, 0, 0.45);
-  --ds-focus: 0 0 0 3px rgba(45, 212, 191, 0.4);
-}
-
+DESIGN_SYSTEM_BASE_CSS = """
 .stApp {
-  background: linear-gradient(180deg, #070d18 0%, var(--ds-bg) 160px, var(--ds-bg) 100%) !important;
+  background: var(--ds-app-gradient) !important;
   color: var(--ds-text);
 }
 
@@ -543,37 +520,87 @@ section.main {
 [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
   color: var(--ds-muted) !important;
 }
-[data-testid="stSidebar"] .stButton button {
+
+/* ---- Buttons (sidebar + main — visible in dark & light) ---- */
+.stButton > button,
+.stFormSubmitButton > button,
+.stDownloadButton > button {
   border-radius: 10px !important;
   font-weight: 600 !important;
-  transition: transform 0.12s ease, box-shadow 0.12s ease !important;
-}
-[data-testid="stSidebar"] .stButton button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(15, 118, 110, 0.12);
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.12s ease, box-shadow 0.12s ease !important;
 }
 
-/* Main panel buttons */
-[data-testid="stMain"] .stButton button {
-  border-radius: 10px !important;
-  font-weight: 600 !important;
-  transition: transform 0.12s ease, box-shadow 0.12s ease !important;
+.stButton > button[kind="secondary"],
+.stButton > button[data-testid="stBaseButton-secondary"],
+.stDownloadButton > button,
+.stFormSubmitButton > button[kind="secondary"],
+.stFormSubmitButton > button[data-testid="stBaseButton-secondary"] {
+  background-color: var(--ds-btn-bg) !important;
+  color: var(--ds-btn-text) !important;
+  border: 1px solid var(--ds-btn-border) !important;
+  box-shadow: var(--ds-btn-shadow) !important;
 }
-[data-testid="stMain"] .stButton button:hover {
+
+.stButton > button[kind="secondary"]:hover:not(:disabled),
+.stButton > button[data-testid="stBaseButton-secondary"]:hover:not(:disabled),
+.stDownloadButton > button:hover:not(:disabled),
+.stFormSubmitButton > button[kind="secondary"]:hover:not(:disabled),
+.stFormSubmitButton > button[data-testid="stBaseButton-secondary"]:hover:not(:disabled) {
+  background-color: var(--ds-btn-bg-hover) !important;
+  border-color: var(--ds-btn-border-hover) !important;
+  color: var(--ds-btn-text) !important;
   transform: translateY(-1px);
 }
-[data-testid="stMain"] .stButton button[kind="primary"],
-[data-testid="stMain"] .stButton button[data-testid="stBaseButton-primary"] {
-  background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%) !important;
-  border: none !important;
+
+.stButton > button[kind="primary"],
+.stButton > button[data-testid="stBaseButton-primary"],
+.stFormSubmitButton > button[kind="primary"],
+.stFormSubmitButton > button[data-testid="stBaseButton-primary"] {
+  background: linear-gradient(135deg, var(--ds-primary-light) 0%, var(--ds-primary-dark) 100%) !important;
+  border: 1px solid transparent !important;
   box-shadow: 0 2px 14px rgba(45, 212, 191, 0.28) !important;
-  color: #042f2e !important;
+  color: var(--ds-btn-primary-text) !important;
 }
-[data-testid="stMain"] .stButton button[kind="secondary"],
-[data-testid="stMain"] .stButton button[data-testid="stBaseButton-secondary"] {
+
+.stButton > button[kind="primary"]:hover:not(:disabled),
+.stButton > button[data-testid="stBaseButton-primary"]:hover:not(:disabled),
+.stFormSubmitButton > button[kind="primary"]:hover:not(:disabled),
+.stFormSubmitButton > button[data-testid="stBaseButton-primary"]:hover:not(:disabled) {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.stButton > button:disabled,
+.stFormSubmitButton > button:disabled,
+.stDownloadButton > button:disabled {
+  opacity: 0.55 !important;
+}
+
+/* Theme toggle (segmented control) */
+.ds-theme-toggle-wrap {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 0.65rem 0;
+}
+[data-testid="stSegmentedControl"] {
   background: var(--ds-surface-elevated) !important;
   border: 1px solid var(--ds-border) !important;
-  color: var(--ds-text) !important;
+  border-radius: 999px !important;
+  padding: 3px !important;
+  box-shadow: var(--ds-btn-shadow) !important;
+}
+[data-testid="stSegmentedControl"] button {
+  border-radius: 999px !important;
+  font-weight: 600 !important;
+  color: var(--ds-muted) !important;
+  background: transparent !important;
+  border: none !important;
+}
+[data-testid="stSegmentedControl"] button[aria-checked="true"],
+[data-testid="stSegmentedControl"] button[aria-selected="true"] {
+  background: var(--ds-btn-bg) !important;
+  color: var(--ds-btn-text) !important;
+  box-shadow: var(--ds-btn-shadow) !important;
 }
 
 /* Streamlit metrics — dark surfaces */
@@ -613,6 +640,16 @@ div[data-testid="stMetric"].ds-metric-dividend-highlight label p {
   border-color: var(--ds-border) !important;
   background: var(--ds-surface-elevated) !important;
   color: var(--ds-text) !important;
+}
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+[data-testid="stMultiSelect"] div[data-baseweb="select"] > div {
+  background: var(--ds-surface-elevated) !important;
+  border-color: var(--ds-border) !important;
+  color: var(--ds-text) !important;
+}
+[data-testid="stSelectbox"] label,
+[data-testid="stMultiSelect"] label {
+  color: var(--ds-muted) !important;
 }
 [data-testid="stAlert"] {
   background: var(--ds-surface) !important;
@@ -1022,9 +1059,16 @@ def render_yield_channel_summary(
     )
 
 
-def inject_design_system() -> None:
+def get_design_system_css(*, theme: str | None = None) -> str:
+    from ui.theme_mode import build_theme_root_css, get_theme_mode
+
+    mode = theme or get_theme_mode()
+    return build_theme_root_css(mode) + DESIGN_SYSTEM_BASE_CSS
+
+
+def inject_design_system(*, theme: str | None = None) -> None:
     """Inject global design-system CSS once per run."""
-    render_html(f"<style>{DESIGN_SYSTEM_CSS}</style>")
+    render_html(f"<style>{get_design_system_css(theme=theme)}</style>")
 
 
 def render_logo(*, show_name: bool = True, tagline: str = "Dividend research", sidebar: bool = False) -> None:

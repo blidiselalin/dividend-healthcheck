@@ -89,12 +89,18 @@ def render_notice(message: str, *, kind: str = "info") -> None:
 
 def inject_command_center_theme() -> None:
     """Styles for the pre-login Dividend Command Center."""
+    from ui.theme_mode import init_theme_mode
+
+    init_theme_mode()
     from ui.design_system import inject_design_system
 
     inject_design_system()
 
 
 def inject_app_theme() -> None:
+    from ui.theme_mode import init_theme_mode
+
+    init_theme_mode()
     from ui.design_system import inject_design_system
 
     inject_design_system()
@@ -190,7 +196,7 @@ def inject_app_theme() -> None:
         p.ds-sidebar-heading {
             font-size: 1rem;
             font-weight: 600;
-            color: #334155;
+            color: var(--ds-text);
             line-height: 1.5;
             margin: 0.85rem 0 0.35rem 0;
             padding: 0;
@@ -268,7 +274,7 @@ def inject_app_theme() -> None:
             opacity: 0.95;
         }
         .ds-hint {
-            color: #64748b;
+            color: var(--ds-muted);
             font-size: 0.88rem;
             margin: 0 0 0.75rem 0;
         }
@@ -434,8 +440,23 @@ def render_portfolio_status_line() -> None:
     if not portfolio_data_ready():
         return
     loaded_at = st.session_state.get("portfolio_details_time")
+    fast_loaded = st.session_state.get("portfolio_fast_loaded")
+    analysis_ready = st.session_state.get("portfolio_analysis_ready")
+    stale_cache = st.session_state.get("_portfolio_stale_cache_loaded")
+
+    parts: list[str] = []
     if loaded_at:
-        st.caption(
-            f"Portfolio snapshot {loaded_at.strftime('%d %b %H:%M')} — "
-            "use **Reload live data** after ingest; prices auto-refresh every 5 minutes in the backend"
+        parts.append(f"Snapshot {loaded_at.strftime('%d %b %H:%M')}")
+    if fast_loaded and not analysis_ready:
+        parts.append(
+            "positions from library — live prices and yield charts update in the background"
         )
+    elif stale_cache and not analysis_ready:
+        parts.append("cached snapshot — refreshing in the background")
+    elif analysis_ready:
+        parts.append("analysis ready — use **Reload live data** after ingest when needed")
+    else:
+        parts.append("prices auto-refresh every 5 minutes in the backend")
+
+    if parts:
+        st.caption(" · ".join(parts))

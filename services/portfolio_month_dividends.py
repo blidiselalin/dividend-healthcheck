@@ -255,15 +255,19 @@ def cached_current_month_paid_dividends(
 
     today = reference_date or date.today()
     fp = st.session_state.get("_portfolio_db_fingerprint", "")
-    cache_key = f"month_paid_{fp}_{today.isoformat()}"
-    cached = st.session_state.get(cache_key)
-    if cached is not None:
-        return cached
+    cache_day = st.session_state.get("_month_paid_cache_day")
+    cache_fp = st.session_state.get("_month_paid_cache_fp")
+    if cache_day == today.isoformat() and cache_fp == fp:
+        cached = st.session_state.get("_month_paid_cache")
+        if cached is not None:
+            return cached
     result = current_month_paid_dividends(
         rows=rows,
         preload=preload,
         reference_date=today,
     )
     if result is not None:
-        st.session_state[cache_key] = result
+        st.session_state["_month_paid_cache"] = result
+        st.session_state["_month_paid_cache_day"] = today.isoformat()
+        st.session_state["_month_paid_cache_fp"] = fp
     return result

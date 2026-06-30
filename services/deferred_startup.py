@@ -104,6 +104,7 @@ def schedule_startup_tasks(*, is_demo: bool, has_holdings: bool) -> None:
     else:
         schedule_portfolio_warm_if_needed()
     schedule_yield_preload_if_needed()
+    schedule_stale_price_refresh_if_needed()
     schedule_coverage_badge_refresh()
     schedule_auto_backfill_if_needed()
 
@@ -153,6 +154,40 @@ def schedule_yield_preload_if_needed() -> None:
         )
 
     start_job(JOB_YIELD_PRELOAD, "Loading yield charts", _worker)
+
+
+def schedule_stale_price_refresh_if_needed() -> None:
+    """Queue a live-price-only refresh when library quotes are stale."""
+    import streamlit as st
+
+    if not st.session_state.get("_stale_prices_pending"):
+        rows = st.session_state.get("portfolio_details_rows") or []
+        if not any(getattr(row, "price_stale", False) for row in rows):
+            return
+
+    if st.session_state.get("_deferred_price_refresh_scheduled"):
+        return
+    if not st.session_state.get("portfolio_details_rows"):
+        return
+    if (
+        _job_running(JOB_LIVE_RELOAD)
+        or _job_running(JOB_PORTFOLIO_DB_REFRESH)
+        or _job_running(JOB_WARM_PORTFOLIO)
+    ):
+        return
+
+    st.session_state["_deferred_price_refresh_scheduled"] = True
+    st.session_state.pop("_stale_prices_pending", None)
+
+    def _worker(progress: ProgressCallback) -> dict[str, Any]:
+        from services.portfolio_ui_cache import compute_live_prices_payload
+
+        progress(0.05, "Refreshing live prices…")
+        payload = compute_live_prices_payload(progress_callback=progress)
+        progress(1.0, "Prices updated")
+        return payload
+
+    start_job(JOB_LIVE_RELOAD, "Refreshing live prices", _worker)
 
 
 def schedule_portfolio_warm_if_needed() -> None:
@@ -490,7 +525,7 @@ def _apply_yield_preload(result: dict[str, Any]) -> None:
     st.session_state["portfolio_vector_docs"] = result.get("vector_docs") or {}
     st.session_state["portfolio_analysis_ready"] = True
     st.session_state.pop("portfolio_fast_loaded", None)
-    save_session_cache()
+    save_session_cache(force=True)
     try:
         from ui.portfolio_risk_panel import _rebuild_attention_from_session
 
@@ -528,7 +563,7 @@ def _apply_portfolio_db_refresh(result: dict[str, Any]) -> None:
         )
     except Exception as exc:
         logger.debug("Could not store fingerprint after DB refresh: %s", exc)
-    save_session_cache()
+    save_session_cache(force=True)
     schedule_yield_preload_if_needed()
     logger.info("Background portfolio DB refresh: %d holdings", len(rows))
 
@@ -555,6 +590,7 @@ def _apply_warm_portfolio(result: dict[str, Any]) -> None:
 def _apply_live_reload(result: dict[str, Any]) -> None:
     import streamlit as st
 
+    from services.portfolio_analysis_preload import PortfolioAnalysisPreload
     from services.portfolio_ui_cache import save_session_cache
     from ui.portfolio_risk_panel import refresh_portfolio_risks, store_portfolio_payload
 
@@ -562,7 +598,31 @@ def _apply_live_reload(result: dict[str, Any]) -> None:
     preload = result.get("preload")
     if not rows or preload is None:
         return
-    store_portfolio_payload(rows, preload, analysis_ready=True)
+
+    if result.get("prices_only"):
+        from datetime import datetime
+
+        existing_yield = st.session_state.get("portfolio_yield_cache") or {}
+        existing_docs = st.session_state.get("portfolio_vector_docs") or {}
+        merged_preload = PortfolioAnalysisPreload(
+            stock_data={
+                **dict(st.session_state.get("portfolio_stock_cache") or {}),
+                **preload.stock_data,
+            },
+            yield_channels=existing_yield,
+            vector_docs={**existing_docs, **preload.vector_docs},
+        )
+        st.session_state["portfolio_details_rows"] = rows
+        st.session_state["portfolio_stock_cache"] = merged_preload.stock_data
+        st.session_state["portfolio_vector_docs"] = merged_preload.vector_docs
+        st.session_state["portfolio_details_time"] = datetime.now()
+        refresh_portfolio_risks(force=False, rows=rows, preload=merged_preload)
+        save_session_cache(force=True)
+        logger.info("Background price refresh: %d holdings", len(rows))
+        return
+
+    analysis_ready = bool(result.get("analysis_ready", True))
+    store_portfolio_payload(rows, preload, analysis_ready=analysis_ready)
     refresh_portfolio_risks(force=True, rows=rows, preload=preload)
     st.session_state["_portfolio_library_sync_done"] = True
     st.session_state.pop("portfolio_fast_loaded", None)
@@ -579,7 +639,7 @@ def _apply_live_reload(result: dict[str, Any]) -> None:
         )
     except Exception as exc:
         logger.debug("Could not store fingerprint after live reload: %s", exc)
-    save_session_cache()
+    save_session_cache(force=True)
     logger.info("Background live reload: %d holdings", len(rows))
 
 
