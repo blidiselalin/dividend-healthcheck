@@ -508,11 +508,27 @@ def _job_running(kind: str) -> bool:
 def _apply_dividend_sync(result: Any) -> None:
     if result is None:
         return
+    import streamlit as st
+
     logger.info(
         "Background dividend sync: holdings=%s receipts=%s",
         getattr(result, "holdings_scanned", "?"),
         getattr(result, "receipts_added", "?"),
     )
+    for key in ("_month_paid_cache", "_month_paid_cache_day", "_month_paid_cache_fp"):
+        st.session_state.pop(key, None)
+    try:
+        from utils.portfolio_db import (
+            compute_portfolio_db_fingerprint,
+            invalidate_portfolio_db_fingerprint_cache,
+        )
+
+        invalidate_portfolio_db_fingerprint_cache()
+        st.session_state["_portfolio_db_fingerprint"] = compute_portfolio_db_fingerprint(
+            use_cache=False
+        )
+    except Exception as exc:
+        logger.debug("Could not refresh portfolio fingerprint after dividend sync: %s", exc)
 
 
 def _apply_yield_preload(result: dict[str, Any]) -> None:

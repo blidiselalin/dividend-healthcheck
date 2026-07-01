@@ -100,7 +100,11 @@ def compute_month_received_from_holdings(
                 continue
             if row.pay_date > reference_date:
                 continue
-            key = (holding.symbol.upper(), row.pay_date.isoformat())
+            key = (
+                holding.symbol.upper(),
+                row.ex_date.isoformat(),
+                round(row.per_share_usd, 6),
+            )
             if key in seen:
                 continue
             seen.add(key)
@@ -172,6 +176,61 @@ def net_paid_in_calendar_month(
     return None
 
 
+def gross_paid_in_synced_month(
+    year: int,
+    month: int,
+    *,
+    store: DividendIncomeStore | None = None,
+) -> float | None:
+    """Gross USD stored alongside synced monthly net totals (when available)."""
+    income_store = store or DividendIncomeStore()
+    for item in income_store.list_dividends():
+        if item.year == year and item.month == month:
+            return round(item.gross_usd, 2)
+    return None
+
+
+def _resolve_month_gross_and_net(
+    *,
+    year: int,
+    month: int,
+    through: date,
+    db_gross: float,
+    db_count: int,
+    computed_gross: float,
+    computed_count: int,
+) -> tuple[float, int, float | None]:
+    """
+    Choose gross payer count and net for the month.
+
+    Synced ``dividend_receipts`` are authoritative once any rows exist for the
+    month; live recompute is used only before the first sync.
+    """
+    if db_count > 0:
+        gross, payer_count = db_gross, db_count
+    elif computed_count > 0:
+        gross, payer_count = computed_gross, computed_count
+    else:
+        gross, payer_count = db_gross, db_count
+
+    synced_net = net_paid_in_calendar_month(year, month)
+    synced_gross = gross_paid_in_synced_month(year, month)
+
+    if db_count > 0 and synced_net is not None:
+        last_day = calendar.monthrange(year, month)[1]
+        month_end = date(year, month, last_day)
+        if through >= month_end and synced_gross is not None:
+            net = synced_net
+        else:
+            net = net_received_through(gross, year=year)
+    elif gross > 0:
+        net = net_received_through(gross, year=year)
+    else:
+        net = None
+
+    return gross, payer_count, net
+
+
 def current_month_paid_dividends(
     *,
     rows: list[PortfolioDetailRow] | None = None,
@@ -193,16 +252,35 @@ def current_month_paid_dividends(
             return None
         rows = []
 
-    vector_docs = _resolve_vector_docs(holdings, preload) if holdings else {}
-    gross = 0.0
-    payer_count = 0
+    db_gross, db_count = gross_paid_in_calendar_month(
+        today.year,
+        today.month,
+        through=today,
+    )
 
+    vector_docs = _resolve_vector_docs(holdings, preload) if holdings else {}
+    computed_gross = 0.0
+    computed_count = 0
     if holdings and vector_docs:
-        gross, payer_count = compute_month_received_from_holdings(
+        computed_gross, computed_count = compute_month_received_from_holdings(
             holdings,
             vector_docs,
             reference_date=today,
         )
+
+    if db_count > 0:
+        gross, payer_count, net = _resolve_month_gross_and_net(
+            year=today.year,
+            month=today.month,
+            through=today,
+            db_gross=db_gross,
+            db_count=db_count,
+            computed_gross=computed_gross,
+            computed_count=computed_count,
+        )
+    elif computed_count > 0:
+        gross, payer_count = computed_gross, computed_count
+        net = net_received_through(gross, year=today.year)
     elif rows and preload and holdings:
         row_dates = {
             row.ticker: (row.ex_dividend_date, row.dividend_pay_date) for row in rows
@@ -217,12 +295,17 @@ def current_month_paid_dividends(
         current = calendar.current_month
         gross = current.received_cash
         payer_count = current.received_payer_count
+        net = net_received_through(gross, year=today.year)
     else:
-        gross, payer_count = gross_paid_in_calendar_month(
-            today.year, today.month, through=today
+        gross, payer_count, net = _resolve_month_gross_and_net(
+            year=today.year,
+            month=today.month,
+            through=today,
+            db_gross=db_gross,
+            db_count=db_count,
+            computed_gross=computed_gross,
+            computed_count=computed_count,
         )
-
-    net = net_received_through(gross, year=today.year)
 
     return CurrentMonthPaidDividends(
         month_label=month_label_for(today),

@@ -94,7 +94,7 @@ def theme_tokens(mode: str) -> dict[str, str]:
         "btn-text": "#e8eef7",
         "btn-border": "#3d5270",
         "btn-border-hover": "#4a6282",
-        "btn-primary-text": "#042f2e",
+        "btn-primary-text": "#ecfdf5",
         "btn-shadow": "0 1px 3px rgba(0, 0, 0, 0.35)",
         "chart-paper": "#131c2e",
         "chart-plot": "#0f172a",

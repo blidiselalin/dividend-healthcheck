@@ -136,27 +136,8 @@ def _sync_monthly_net_from_receipts(ctx: Any) -> int:
     if not totals:
         return 0
 
-    with ctx.dividends._connect() as connection:
-        for (year, month), gross in totals.items():
-            rate = dividend_tax_rate(year)
-            net = round(gross * (1.0 - rate), 2)
-            period_key = f"{year:04d}-{month:02d}"
-            if connection.is_postgres:
-                connection.execute(
-                    """
-                    INSERT INTO net_dividends (user_id, period_key, year, month, net_usd)
-                    VALUES (?, ?, ?, ?, ?)
-                    ON CONFLICT (user_id, period_key) DO UPDATE SET net_usd = excluded.net_usd
-                    """,
-                    (connection.user_id, period_key, year, month, net),
-                )
-            else:
-                connection.execute(
-                    """
-                    INSERT INTO net_dividends (period_key, year, month, net_usd)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(period_key) DO UPDATE SET net_usd = excluded.net_usd
-                    """,
-                    (period_key, year, month, net),
-                )
+    for (year, month), gross in totals.items():
+        rate = dividend_tax_rate(year)
+        net = round(gross * (1.0 - rate), 2)
+        ctx.dividends.upsert_monthly_total(year, month, gross_usd=gross, net_usd=net)
     return len(totals)

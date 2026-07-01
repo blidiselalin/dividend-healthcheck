@@ -524,15 +524,20 @@ section.main {
 /* ---- Buttons (sidebar + main — visible in dark & light) ---- */
 .stButton > button,
 .stFormSubmitButton > button,
-.stDownloadButton > button {
+.stDownloadButton > button,
+[data-testid="stLinkButton"] a {
   border-radius: 10px !important;
   font-weight: 600 !important;
   transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.12s ease, box-shadow 0.12s ease !important;
 }
 
+/* Default / secondary buttons — Streamlit often omits kind until hover */
+.stButton > button:not([kind="primary"]):not([data-testid="stBaseButton-primary"]),
+.stFormSubmitButton > button:not([kind="primary"]):not([data-testid="stBaseButton-primary"]),
+.stDownloadButton > button,
+[data-testid="stLinkButton"] a,
 .stButton > button[kind="secondary"],
 .stButton > button[data-testid="stBaseButton-secondary"],
-.stDownloadButton > button,
 .stFormSubmitButton > button[kind="secondary"],
 .stFormSubmitButton > button[data-testid="stBaseButton-secondary"] {
   background-color: var(--ds-btn-bg) !important;
@@ -541,11 +546,14 @@ section.main {
   box-shadow: var(--ds-btn-shadow) !important;
 }
 
+.stButton > button:not([kind="primary"]):not([data-testid="stBaseButton-primary"]):hover:not(:disabled),
+.stFormSubmitButton > button:not([kind="primary"]):not([data-testid="stBaseButton-primary"]):hover:not(:disabled),
 .stButton > button[kind="secondary"]:hover:not(:disabled),
 .stButton > button[data-testid="stBaseButton-secondary"]:hover:not(:disabled),
 .stDownloadButton > button:hover:not(:disabled),
 .stFormSubmitButton > button[kind="secondary"]:hover:not(:disabled),
-.stFormSubmitButton > button[data-testid="stBaseButton-secondary"]:hover:not(:disabled) {
+.stFormSubmitButton > button[data-testid="stBaseButton-secondary"]:hover:not(:disabled),
+[data-testid="stLinkButton"] a:hover {
   background-color: var(--ds-btn-bg-hover) !important;
   border-color: var(--ds-btn-border-hover) !important;
   color: var(--ds-btn-text) !important;
@@ -572,7 +580,8 @@ section.main {
 
 .stButton > button:disabled,
 .stFormSubmitButton > button:disabled,
-.stDownloadButton > button:disabled {
+.stDownloadButton > button:disabled,
+[data-testid="stLinkButton"] a[aria-disabled="true"] {
   opacity: 0.55 !important;
 }
 

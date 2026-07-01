@@ -154,6 +154,14 @@ class DividendIncomeStore:
                 )
                 """
             )
+            columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(net_dividends)").fetchall()
+            }
+            if "gross_usd" not in columns:
+                try:
+                    connection.execute("ALTER TABLE net_dividends ADD COLUMN gross_usd REAL")
+                except Exception:
+                    pass
 
     def _seed_if_empty(self) -> None:
         with self._connect() as connection:
@@ -204,7 +212,7 @@ class DividendIncomeStore:
             if connection.is_postgres:
                 rows = connection.execute(
                     """
-                    SELECT year, month, net_usd
+                    SELECT year, month, net_usd, gross_usd
                     FROM net_dividends
                     WHERE user_id = ?
                     ORDER BY year, month
@@ -214,7 +222,7 @@ class DividendIncomeStore:
             else:
                 rows = connection.execute(
                     """
-                    SELECT year, month, net_usd
+                    SELECT year, month, net_usd, gross_usd
                     FROM net_dividends
                     ORDER BY year, month
                     """
@@ -226,7 +234,15 @@ class DividendIncomeStore:
             month = int(row["month"])
             net = float(row["net_usd"])
             rate = dividend_tax_rate(year)
-            gross = net_to_gross(net, year)
+            try:
+                stored_gross = row["gross_usd"]
+            except (KeyError, IndexError):
+                stored_gross = None
+            gross = (
+                round(float(stored_gross), 2)
+                if stored_gross is not None
+                else round(net_to_gross(net, year), 2)
+            )
             records.append(
                 MonthlyNetDividend(
                     period=date(year, month, 1),
@@ -235,8 +251,44 @@ class DividendIncomeStore:
                     month_label=MONTH_LABELS[month - 1],
                     net_usd=net,
                     tax_rate_pct=rate * 100,
-                    gross_usd=round(gross, 2),
+                    gross_usd=gross,
                     tax_withheld_usd=round(gross - net, 2),
                 )
             )
         return records
+
+    def upsert_monthly_total(
+        self,
+        year: int,
+        month: int,
+        *,
+        gross_usd: float,
+        net_usd: float,
+    ) -> None:
+        """Persist synced gross and net dividend cash for a calendar month."""
+        period_key = f"{year:04d}-{month:02d}"
+        gross = round(gross_usd, 2)
+        net = round(net_usd, 2)
+        with self._connect() as connection:
+            if connection.is_postgres:
+                connection.execute(
+                    """
+                    INSERT INTO net_dividends (user_id, period_key, year, month, net_usd, gross_usd)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (user_id, period_key) DO UPDATE SET
+                      net_usd = excluded.net_usd,
+                      gross_usd = excluded.gross_usd
+                    """,
+                    (connection.user_id, period_key, year, month, net, gross),
+                )
+            else:
+                connection.execute(
+                    """
+                    INSERT INTO net_dividends (period_key, year, month, net_usd, gross_usd)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(period_key) DO UPDATE SET
+                      net_usd = excluded.net_usd,
+                      gross_usd = excluded.gross_usd
+                    """,
+                    (period_key, year, month, net, gross),
+                )

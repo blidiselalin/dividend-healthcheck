@@ -5,10 +5,12 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
-from data_ingestion.portfolio_store import PortfolioHolding
+from data_ingestion.models import DividendRecord, StockDocument
+from data_ingestion.portfolio_store import PortfolioHolding, PortfolioStore
 from services.portfolio_dividend_calendar import (
     HoldingMonthDividend,
     MonthDividendExposure,
@@ -16,11 +18,13 @@ from services.portfolio_dividend_calendar import (
 )
 from services.portfolio_month_dividends import (
     CurrentMonthPaidDividends,
+    current_month_paid_dividends,
     gross_paid_in_calendar_month,
     month_label_for,
     net_paid_in_calendar_month,
     net_received_through,
 )
+from services.portfolio_dividend_sync_service import sync_received_dividends
 from ui.theme import PORTFOLIO_SECTION_LABELS, resolve_portfolio_section_label
 
 
@@ -161,8 +165,111 @@ def test_compute_month_received_uses_journal_shares_and_pay_date(
         {"KO": doc},
         reference_date=date(2026, 6, 19),
     )
-    assert count == 1
-    assert gross == round(0.485 * 10, 2)
+    assert count == 2
+    assert gross == pytest.approx(31.95, rel=0.01)
+
+
+def test_current_month_paid_prefers_synced_receipts_over_live_compute(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from data_ingestion.models import DividendRecord, StockDocument
+    from data_ingestion.portfolio_store import PortfolioHolding
+    from services.portfolio_month_dividends import current_month_paid_dividends
+
+    holding = PortfolioHolding(
+        symbol="KO",
+        shares=10.0,
+        avg_cost_per_share=50.0,
+        acquisition_value=500.0,
+        commission=0.0,
+        dividends_paid=0.0,
+        estimated_avg_price=50.0,
+        sort_order=0,
+    )
+    doc = StockDocument(
+        symbol="KO",
+        name="Coca-Cola",
+        dividend_history=[
+            DividendRecord(
+                ex_date=date(2026, 6, 10),
+                payment_date=date(2026, 6, 15),
+                amount=0.485,
+            ),
+        ],
+        payment_frequency=4,
+        annual_dividend=1.94,
+    )
+
+    monkeypatch.setattr(
+        "services.portfolio_month_dividends.PortfolioStore",
+        lambda: type("Store", (), {"list_holdings": lambda self: [holding]})(),
+    )
+    monkeypatch.setattr(
+        "services.portfolio_month_dividends.gross_paid_in_calendar_month",
+        lambda *args, **kwargs: (489.22, 12),
+    )
+    monkeypatch.setattr(
+        "services.portfolio_month_dividends.compute_month_received_from_holdings",
+        lambda *args, **kwargs: (316.0, 8),
+    )
+    monkeypatch.setattr(
+        "services.portfolio_month_dividends.net_paid_in_calendar_month",
+        lambda *args, **kwargs: 410.94,
+    )
+    monkeypatch.setattr(
+        "services.portfolio_month_dividends.gross_paid_in_synced_month",
+        lambda *args, **kwargs: 489.22,
+    )
+
+    snapshot = current_month_paid_dividends(
+        preload=type(
+            "Preload",
+            (),
+            {"vector_docs": {"KO": doc}, "stock_data": {}, "yield_channels": {}},
+        )(),
+        reference_date=date(2026, 6, 19),
+    )
+
+    assert snapshot is not None
+    assert snapshot.gross_usd == 489.22
+    assert snapshot.payer_count == 12
+    assert snapshot.net_usd == pytest.approx(410.94, rel=0.01)
+
+
+def test_sync_stores_gross_and_net_monthly_totals(tmp_path: Path) -> None:
+    def _doc_with_dividends() -> StockDocument:
+        return StockDocument(
+            symbol="KO",
+            name="Coca-Cola",
+            dividend_history=[
+                DividendRecord(
+                    ex_date=date(2024, 3, 14),
+                    payment_date=date(2024, 4, 1),
+                    amount=0.46,
+                ),
+            ],
+        )
+
+    db = tmp_path / "portfolio.db"
+    portfolio = PortfolioStore(db_path=db, seed=False)
+    from data_ingestion.purchase_journal_store import PurchaseJournalStore
+
+    journal = PurchaseJournalStore(db_path=db, seed=False)
+    portfolio.upsert_holding("KO", shares=10, avg_cost_per_share=50.0)
+    journal.add_purchase("KO", date(2024, 1, 1), 48.0)
+
+    with patch(
+        "services.portfolio_dividend_sync_service._load_documents",
+        return_value={"KO": _doc_with_dividends()},
+    ):
+        sync_received_dividends(db_path=db)
+
+    from data_ingestion.dividend_income_store import DividendIncomeStore
+
+    store = DividendIncomeStore(db, seed=False)
+    april = next(item for item in store.list_dividends() if item.year == 2024 and item.month == 4)
+    assert april.gross_usd == pytest.approx(4.79, rel=0.01)
+    assert april.net_usd == pytest.approx(4.31, rel=0.01)
 
 
 def test_current_month_paid_returns_zero_snapshot_for_rows(
@@ -183,6 +290,14 @@ def test_current_month_paid_returns_zero_snapshot_for_rows(
     monkeypatch.setattr(
         "services.portfolio_month_dividends.gross_paid_in_calendar_month",
         lambda *args, **kwargs: (0.0, 0),
+    )
+    monkeypatch.setattr(
+        "services.portfolio_month_dividends.net_paid_in_calendar_month",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "services.portfolio_month_dividends.gross_paid_in_synced_month",
+        lambda *args, **kwargs: None,
     )
 
     snapshot = current_month_paid_dividends(
