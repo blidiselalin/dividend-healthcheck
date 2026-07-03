@@ -70,7 +70,7 @@ def test_maybe_sync_skips_when_recent(tmp_path: Path, monkeypatch: pytest.Monkey
 
 
 def test_maybe_sync_runs_when_forced() -> None:
-    stats = DividendSyncStats(1, 0, 0, 0)
+    stats = DividendSyncStats(1, 0, 0, 1, 0)
     with (
         patch(
             "services.portfolio_dividend_sync_service.sync_received_dividends",

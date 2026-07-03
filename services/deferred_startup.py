@@ -510,10 +510,14 @@ def _apply_dividend_sync(result: Any) -> None:
         return
     import streamlit as st
 
+    receipts_updated = getattr(result, "receipts_updated", 0)
+    pay_fixes = getattr(result, "pay_dates_corrected", 0)
     logger.info(
-        "Background dividend sync: holdings=%s receipts=%s",
+        "Background dividend sync: holdings=%s receipts_added=%s receipts_updated=%s pay_date_fixes=%s",
         getattr(result, "holdings_scanned", "?"),
         getattr(result, "receipts_added", "?"),
+        receipts_updated,
+        pay_fixes,
     )
     for key in ("_month_paid_cache", "_month_paid_cache_day", "_month_paid_cache_fp"):
         st.session_state.pop(key, None)

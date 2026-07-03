@@ -5,7 +5,7 @@ Per-holding purchase and dividend cash history for the Holdings drill-down panel
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -15,6 +15,7 @@ from services.portfolio_purchase_journal_service import (
     EstimatedPurchaseLot,
     PortfolioPurchaseJournalService,
 )
+from services.dividend_payment_dates import payment_date_for_record
 from utils.dividend_amounts import normalize_payment_amount
 
 if TYPE_CHECKING:
@@ -22,9 +23,7 @@ if TYPE_CHECKING:
 
 
 def _cash_date(record: DividendRecord) -> date:
-    if record.payment_date:
-        return record.payment_date
-    return record.ex_date + timedelta(days=14)
+    return payment_date_for_record(record)
 
 
 def shares_as_of(

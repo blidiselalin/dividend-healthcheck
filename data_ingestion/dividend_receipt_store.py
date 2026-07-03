@@ -65,11 +65,18 @@ class DividendReceiptStore:
                 )
                 """
             )
-            columns = {
-                row[1] for row in connection.execute("PRAGMA table_info(holdings)").fetchall()
-            }
-            if "dividend_tracking_since" not in columns:
-                connection.execute("ALTER TABLE holdings ADD COLUMN dividend_tracking_since TEXT")
+            table_row = connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='holdings'"
+            ).fetchone()
+            if table_row:
+                columns = {
+                    row[1]
+                    for row in connection.execute("PRAGMA table_info(holdings)").fetchall()
+                }
+                if "dividend_tracking_since" not in columns:
+                    connection.execute(
+                        "ALTER TABLE holdings ADD COLUMN dividend_tracking_since TEXT"
+                    )
 
     def upsert_receipt(
         self,
@@ -82,6 +89,168 @@ class DividendReceiptStore:
         gross_usd: float,
     ) -> bool:
         """Insert a receipt if new. Returns True when a row was added."""
+        return self.sync_receipt(
+            symbol,
+            ex_date=ex_date,
+            pay_date=pay_date,
+            per_share_usd=per_share_usd,
+            shares_held=shares_held,
+            gross_usd=gross_usd,
+        ) == "added"
+
+    def sync_receipt(
+        self,
+        symbol: str,
+        *,
+        ex_date: date,
+        pay_date: date,
+        per_share_usd: float,
+        shares_held: float,
+        gross_usd: float,
+    ) -> str:
+        """
+        Insert or update a receipt keyed by (symbol, ex_date, per_share).
+
+        Returns ``added``, ``updated``, or ``unchanged``.
+        """
+        symbol = symbol.strip().upper()
+        existing = self._find_receipt(symbol, ex_date, per_share_usd)
+        if existing is None:
+            inserted = self._insert_receipt(
+                symbol,
+                ex_date=ex_date,
+                pay_date=pay_date,
+                per_share_usd=per_share_usd,
+                shares_held=shares_held,
+                gross_usd=gross_usd,
+            )
+            return "added" if inserted else "unchanged"
+
+        if (
+            existing.pay_date == pay_date
+            and existing.ex_date == ex_date
+            and existing.shares_held == shares_held
+            and existing.gross_usd == gross_usd
+        ):
+            return "unchanged"
+
+        if existing.id is not None and self.update_receipt(
+            existing.id,
+            ex_date=ex_date,
+            pay_date=pay_date,
+            per_share_usd=per_share_usd,
+            shares_held=shares_held,
+            gross_usd=gross_usd,
+        ):
+            return "updated"
+        return "unchanged"
+
+    def update_receipt(
+        self,
+        receipt_id: int | None,
+        *,
+        ex_date: date,
+        pay_date: date,
+        per_share_usd: float,
+        shares_held: float,
+        gross_usd: float,
+    ) -> bool:
+        """Update an existing receipt row. Returns True when a row was modified."""
+        if receipt_id is None:
+            return False
+        with self._connect() as connection:
+            if connection.is_postgres:
+                cursor = connection.execute(
+                    """
+                    UPDATE dividend_receipts
+                    SET ex_date = ?, pay_date = ?, per_share_usd = ?,
+                        shares_held = ?, gross_usd = ?
+                    WHERE user_id = ? AND id = ?
+                    """,
+                    (
+                        ex_date.isoformat(),
+                        pay_date.isoformat(),
+                        per_share_usd,
+                        shares_held,
+                        gross_usd,
+                        connection.user_id,
+                        receipt_id,
+                    ),
+                )
+            else:
+                cursor = connection.execute(
+                    """
+                    UPDATE dividend_receipts
+                    SET ex_date = ?, pay_date = ?, per_share_usd = ?,
+                        shares_held = ?, gross_usd = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        ex_date.isoformat(),
+                        pay_date.isoformat(),
+                        per_share_usd,
+                        shares_held,
+                        gross_usd,
+                        receipt_id,
+                    ),
+                )
+            return int(getattr(cursor, "rowcount", 0) or 0) > 0
+
+    def _find_receipt(
+        self,
+        symbol: str,
+        ex_date: date,
+        per_share_usd: float,
+    ) -> DividendReceipt | None:
+        symbol = symbol.strip().upper()
+        per = round(float(per_share_usd), 6)
+        with self._connect() as connection:
+            if connection.is_postgres:
+                row = connection.execute(
+                    """
+                    SELECT id, symbol, ex_date, pay_date, per_share_usd,
+                           shares_held, gross_usd
+                    FROM dividend_receipts
+                    WHERE user_id = ? AND symbol = ? AND ex_date = ?
+                      AND ABS(per_share_usd - ?) < 0.000001
+                    LIMIT 1
+                    """,
+                    (connection.user_id, symbol, ex_date.isoformat(), per),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    """
+                    SELECT id, symbol, ex_date, pay_date, per_share_usd,
+                           shares_held, gross_usd
+                    FROM dividend_receipts
+                    WHERE symbol = ? AND ex_date = ?
+                      AND ABS(per_share_usd - ?) < 0.000001
+                    LIMIT 1
+                    """,
+                    (symbol, ex_date.isoformat(), per),
+                ).fetchone()
+        if not row:
+            return None
+        return DividendReceipt(
+            id=int(row["id"]),
+            symbol=row["symbol"],
+            ex_date=parse_date(row["ex_date"]),
+            pay_date=parse_date(row["pay_date"]),
+            per_share_usd=float(row["per_share_usd"]),
+            shares_held=float(row["shares_held"]),
+            gross_usd=float(row["gross_usd"]),
+        )
+
+    def _insert_receipt(
+        self,
+        symbol: str,
+        *,
+        ex_date: date,
+        pay_date: date,
+        per_share_usd: float,
+        shares_held: float,
+        gross_usd: float,
+    ) -> bool:
         symbol = symbol.strip().upper()
         with self._connect() as connection:
             if connection.is_postgres:

@@ -20,8 +20,10 @@ logger = logging.getLogger(__name__)
 class DividendSyncStats:
     holdings_scanned: int
     receipts_added: int
+    receipts_updated: int
     symbols_updated: int
     monthly_periods: int
+    pay_dates_corrected: int = 0
 
 
 def _load_documents(symbols: list[str]) -> dict[str, StockDocument | None]:
@@ -65,67 +67,102 @@ def sync_received_dividends(
     *,
     db_path: Path | None = None,
     symbols: list[str] | None = None,
+    fetch_nasdaq: bool = True,
 ) -> DividendSyncStats:
     """
     Record paid dividends for current holdings and refresh lifetime/monthly totals.
 
-    Dividends are derived from the shared market library, share counts from the
-    purchase journal when present, otherwise from the add date forward only.
+    Dividends are derived from the shared market library (with Nasdaq payment
+    dates when available), share counts from the purchase journal when present.
+    Stored receipts are reconciled so pay/ex dates match Yahoo-style calendars.
     """
+    from services.dividend_payment_dates import (
+        clear_nasdaq_payment_cache,
+        enrich_document_payment_dates,
+        reconcile_receipt_dates,
+    )
+
     ctx = create_portfolio_context(db_path=db_path)
     holdings = ctx.portfolio.list_holdings()
     if symbols:
         wanted = {symbol.strip().upper() for symbol in symbols}
         holdings = [holding for holding in holdings if holding.symbol in wanted]
     if not holdings:
-        return DividendSyncStats(0, 0, 0, 0)
+        return DividendSyncStats(0, 0, 0, 0, 0)
 
+    clear_nasdaq_payment_cache()
     documents = _load_documents([holding.symbol for holding in holdings])
     today = date.today()
-    added = 0
-    updated_symbols = 0
 
     for holding in holdings:
-        document = documents.get(holding.symbol)
+        symbol = holding.symbol.strip().upper()
+        document = documents.get(symbol) or documents.get(holding.symbol)
+        documents[symbol] = enrich_document_payment_dates(
+            symbol,
+            document,
+            fetch_nasdaq=fetch_nasdaq,
+            reference_date=today,
+        )
+
+    reconcile_stats = reconcile_receipt_dates(
+        ctx,
+        holdings,
+        documents,
+        fetch_nasdaq=False,
+        reference_date=today,
+    )
+
+    added = 0
+    updated_symbols = 0
+    for holding in holdings:
+        symbol = holding.symbol.strip().upper()
+        document = documents.get(symbol)
         rows = ctx.detail.dividend_history(
-            holding.symbol,
+            symbol,
             document,
             current_shares=holding.shares,
             tracking_since=holding.dividend_tracking_since,
             prefer_stored=False,
         )
-        received = [row for row in rows if row.pay_date <= today]
         symbol_added = 0
-        for row in received:
-            if ctx.receipts.upsert_receipt(
-                holding.symbol,
+        for row in rows:
+            if row.pay_date > today:
+                continue
+            outcome = ctx.receipts.sync_receipt(
+                symbol,
                 ex_date=row.ex_date,
                 pay_date=row.pay_date,
                 per_share_usd=row.per_share_usd,
                 shares_held=row.shares_held,
                 gross_usd=row.cash_usd,
-            ):
+            )
+            if outcome == "added":
                 added += 1
                 symbol_added += 1
 
-        total = ctx.receipts.total_for_symbol(holding.symbol)
-        ctx.portfolio.set_dividends_paid(holding.symbol, total)
+        total = ctx.receipts.total_for_symbol(symbol)
+        ctx.portfolio.set_dividends_paid(symbol, total)
         if symbol_added or total > 0:
             updated_symbols += 1
 
     monthly_periods = _sync_monthly_net_from_receipts(ctx)
     logger.info(
-        "Dividend sync: holdings=%d receipts_added=%d symbols=%d months=%d",
+        "Dividend sync: holdings=%d receipts_added=%d receipts_updated=%d "
+        "pay_date_fixes=%d symbols=%d months=%d",
         len(holdings),
         added,
+        reconcile_stats.receipts_updated,
+        reconcile_stats.pay_dates_corrected,
         updated_symbols,
         monthly_periods,
     )
     return DividendSyncStats(
         holdings_scanned=len(holdings),
         receipts_added=added,
+        receipts_updated=reconcile_stats.receipts_updated,
         symbols_updated=updated_symbols,
         monthly_periods=monthly_periods,
+        pay_dates_corrected=reconcile_stats.pay_dates_corrected,
     )
 
 
