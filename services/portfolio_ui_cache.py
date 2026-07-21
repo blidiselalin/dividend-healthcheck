@@ -461,19 +461,12 @@ def compute_yield_preload_payload(
 ) -> dict[str, Any]:
     """Build yield-channel preload payload (safe to run off the UI thread)."""
     from services.portfolio_analysis_preload import preload_portfolio_analysis
-    from services.portfolio_details_service import PortfolioDetailsService
-
-    docs = dict(vector_docs)
-    statuses: dict[str, Any] = {}
-    if not docs and symbols:
-        docs, statuses = PortfolioDetailsService()._load_documents(symbols)
 
     preload = preload_portfolio_analysis(
         symbols,
         stock_cache,
-        docs,
+        dict(vector_docs),
         progress_callback=progress_callback,
-        dividend_statuses=statuses,
     )
     return {
         "yield_channels": preload.yield_channels,

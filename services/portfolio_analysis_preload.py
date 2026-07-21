@@ -64,8 +64,14 @@ def preload_portfolio_analysis(
 
     docs = dict(vector_docs)
     statuses = dict(dividend_statuses or {})
-    if not docs and symbols:
-        docs, statuses = PortfolioDetailsService()._load_documents(symbols)
+    if symbols:
+        missing_docs = not docs
+        missing_statuses = any(symbol not in statuses for symbol in symbols)
+        if missing_docs or missing_statuses:
+            loaded_docs, loaded_statuses = PortfolioDetailsService()._load_documents(symbols)
+            if missing_docs:
+                docs = loaded_docs
+            statuses.update(loaded_statuses)
 
     needs_backfill = [
         symbol

@@ -49,6 +49,30 @@ def test_preload_skips_failed_symbols(mock_fetch: Any) -> None:
     assert progress.call_count >= 2
 
 
+@patch("utils.stock_document_history.history_is_thin", return_value=False)
+@patch("services.stock_analysis_service.load_yield_channel_data", return_value=MagicMock())
+@patch("services.portfolio_details_service.PortfolioDetailsService._load_documents")
+def test_preload_loads_dividend_statuses_when_docs_cached(
+    mock_load_documents: Any,
+    mock_fetch: Any,
+    mock_history_is_thin: Any,
+) -> None:
+    doc = MagicMock()
+    status = MagicMock()
+    mock_load_documents.return_value = ({"KO": doc}, {"KO": status})
+
+    result = preload_portfolio_analysis(
+        ["KO"],
+        {},
+        {"KO": doc},
+        dividend_statuses={},
+    )
+
+    mock_load_documents.assert_called_once_with(["KO"])
+    assert result.dividend_statuses == {"KO": status}
+    assert result.vector_docs == {"KO": doc}
+
+
 @patch("services.stock_analysis_service.load_yield_channel_data", return_value=MagicMock())
 def test_preload_reports_progress(mock_fetch: Any) -> None:
     progress = MagicMock()

@@ -7,7 +7,7 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -15,6 +15,7 @@ from services.portfolio_details_service import PortfolioDetailRow
 from services.portfolio_ui_cache import (
     _row_to_dict,
     cache_is_stale,
+    compute_yield_preload_payload,
     ensure_portfolio_session_loaded,
     hydrate_session_from_disk,
 )
@@ -191,3 +192,22 @@ def test_hydrate_loads_fresh_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     with patch("services.portfolio_ui_cache.cache_is_stale", return_value=False):
         assert hydrate_session_from_disk() is True
     assert len(session.get("portfolio_details_rows") or []) == 1
+
+
+@patch("utils.stock_document_history.history_is_thin", return_value=False)
+@patch("services.stock_analysis_service.load_yield_channel_data", return_value=MagicMock())
+@patch("services.portfolio_details_service.PortfolioDetailsService._load_documents")
+def test_compute_yield_preload_payload_loads_statuses_with_cached_docs(
+    mock_load_documents: Any,
+    mock_fetch: Any,
+    mock_history_is_thin: Any,
+) -> None:
+    doc = MagicMock()
+    status = MagicMock()
+    mock_load_documents.return_value = ({"KO": doc}, {"KO": status})
+
+    payload = compute_yield_preload_payload(["KO"], {}, {"KO": doc})
+
+    mock_load_documents.assert_called_once_with(["KO"])
+    assert payload["dividend_statuses"] == {"KO": status}
+    assert payload["vector_docs"] == {"KO": doc}
