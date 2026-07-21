@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import requests
-import yfinance as yf
 
 from data_ingestion.models import StockDocument
 from models.stock import StockData
@@ -22,6 +21,7 @@ from services.yield_channel_chart import YieldChannelData
 from utils.converters import document_to_stock_data
 from utils.logging_config import get_logger
 from utils.stock_history_enrichment import enrich_stock_data_from_history
+from utils.yfinance_compat import YFinanceError
 
 logger = get_logger("dividendscope.stock_analysis")
 
@@ -52,7 +52,7 @@ def load_library_document(symbol: str) -> StockDocument | None:
         from services.shared_market_db import get_document
 
         return get_document((symbol or "").strip().upper())
-    except (requests.exceptions.RequestException, yf.exceptions.YFinanceError) as exc:
+    except (requests.exceptions.RequestException, YFinanceError) as exc:
         logger.debug("Library lookup failed for %s: %s", symbol, exc)
         return None
 
@@ -73,7 +73,7 @@ def load_stock_data(
             fetch_realtime_prices=fetch_realtime_prices,
         )
         return analysis.stock_data if analysis else None
-    except (requests.exceptions.RequestException, yf.exceptions.YFinanceError) as exc:
+    except (requests.exceptions.RequestException, YFinanceError) as exc:
         logger.debug("Stock data unavailable for %s: %s", symbol, exc)
         return None
 
@@ -90,14 +90,14 @@ def load_portfolio_statistics_stock(
         from services.enhanced_stock_service import EnhancedStockService
 
         return EnhancedStockService(fetch_realtime_prices=False).fetch(symbol)
-    except (requests.exceptions.RequestException, yf.exceptions.YFinanceError):  # noqa: S110
+    except (requests.exceptions.RequestException, YFinanceError):  # noqa: S110
         pass
 
     try:
         from services.stock_service import StockService
 
         return StockService.fetch(symbol)
-    except (requests.exceptions.RequestException, yf.exceptions.YFinanceError):
+    except (requests.exceptions.RequestException, YFinanceError):
         return None
 
 
@@ -289,7 +289,7 @@ def _fallback_stock_data(
     stock = None
     try:
         stock = StockService.fetch(symbol)
-    except (requests.exceptions.RequestException, yf.exceptions.YFinanceError):
+    except (requests.exceptions.RequestException, YFinanceError):
         stock = None
     if stock is None:
         return None

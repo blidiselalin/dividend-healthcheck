@@ -27,6 +27,7 @@ from utils.chart_theme import (
     outside_bar_text,
     style_figure,
 )
+from utils.yfinance_compat import YFinanceError
 
 try:
     from psycopg import Error as PostgresError
@@ -116,7 +117,7 @@ class PortfolioBenchmarkService:
                     progress=False,
                     auto_adjust=True,
                 )
-            except yf.exceptions.YFinanceError:  # noqa: S112
+            except YFinanceError:  # noqa: S112
                 continue
             if frame is None or frame.empty:
                 continue

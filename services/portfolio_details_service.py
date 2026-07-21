@@ -21,6 +21,7 @@ from services.portfolio_analysis_preload import PortfolioAnalysisPreload, preloa
 from services.scoring import ScoringService
 from services.stock_analysis_service import load_portfolio_statistics_stock
 from utils.logging_config import get_logger
+from utils.yfinance_compat import YFinanceError
 
 logger = get_logger("dividendscope.portfolio")
 
@@ -592,7 +593,7 @@ class PortfolioDetailsService:
     def _fetch_price_snapshot(symbol: str) -> PriceSnapshot:
         try:
             history = yf.Ticker(symbol).history(period="2y", auto_adjust=True)
-        except (yf.exceptions.YFinanceError, requests.exceptions.RequestException):  # noqa: BLE001
+        except (YFinanceError, requests.exceptions.RequestException):  # noqa: BLE001
             return PriceSnapshot(None, None, None, None, None)
 
         if history is None or history.empty or "Close" not in history.columns:
@@ -646,7 +647,7 @@ class PortfolioDetailsService:
     ) -> tuple[float | None, date | None, date | None]:
         try:
             info = yf.Ticker(symbol).info or {}
-        except (yf.exceptions.YFinanceError, requests.exceptions.RequestException):  # noqa: BLE001
+        except (YFinanceError, requests.exceptions.RequestException):  # noqa: BLE001
             return None, ex_date, ex_date
 
         price_to_fcf = info.get("priceToFreeCashFlows")

@@ -18,6 +18,7 @@ from data_ingestion.vector_store import VectorStore
 from models.stock import DividendHistory, StockData
 from services.stock_service import StockService
 from utils.converters import document_to_stock_data
+from utils.yfinance_compat import YFinanceError
 
 try:
     from psycopg import Error as PostgresError
@@ -262,7 +263,7 @@ class EnhancedStockService:
                 else:
                     data.data_sources = ["Vector DB", "Price: Live"]
 
-        except (yf.exceptions.YFinanceError, requests.exceptions.RequestException) as e:
+        except (YFinanceError, requests.exceptions.RequestException) as e:
             logger.debug(f"Could not update real-time price for {data.symbol}: {e}")
 
         return data

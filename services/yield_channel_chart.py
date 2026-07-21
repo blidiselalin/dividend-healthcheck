@@ -26,6 +26,8 @@ from typing import Any, ClassVar, cast
 import requests
 import yfinance as yf
 
+from utils.yfinance_compat import YFinanceError
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -215,7 +217,7 @@ class YieldChannelService:
                 try:
                     info = ticker.info
                     company_name = info.get("shortName") or info.get("longName") or symbol
-                except yf.exceptions.YFinanceError:  # noqa: S110
+                except YFinanceError:  # noqa: S110
                     pass
 
             # Get historical prices
@@ -310,7 +312,7 @@ class YieldChannelService:
             )
 
         except (
-            yf.exceptions.YFinanceError,
+            YFinanceError,
             requests.exceptions.RequestException,
             KeyError,
             ValueError,
