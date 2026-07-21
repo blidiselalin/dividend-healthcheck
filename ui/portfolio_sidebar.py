@@ -86,9 +86,11 @@ def render_portfolio_sidebar() -> None:
         st.sidebar.caption(f"{count} holdings · updated {when}")
     elif user_has_holdings_in_db():
         if st.session_state.get("portfolio_fast_loaded"):
-            st.sidebar.caption("Loading charts in background…")
+            st.sidebar.caption("Charts not loaded — open **Background tasks** to preload.")
         else:
-            st.sidebar.caption("Loading from library… use **Reload live data** for fresh prices.")
+            st.sidebar.caption(
+                "Holdings not loaded yet — open **Background tasks** → **Load portfolio**."
+            )
     else:
         st.sidebar.caption("No holdings yet — add a ticker under **Manage portfolio**.")
 
@@ -96,6 +98,10 @@ def render_portfolio_sidebar() -> None:
         _reload_live_data()
         st.toast("Refreshing live prices in the background…")
         st.rerun()
+
+    from ui.background_tasks_panel import render_background_tasks_panel
+
+    render_background_tasks_panel()
 
     if portfolio_data_ready() and st.sidebar.button(
         "Refresh watchlists",

@@ -167,6 +167,12 @@ def refresh_session_if_portfolio_db_changed(*, force: bool = False) -> bool:
 
     st.session_state[_PORTFOLIO_DB_REFRESHING_KEY] = True
     try:
+        from services.background_task_prefs import auto_background_tasks_enabled
+
+        if not auto_background_tasks_enabled():
+            st.session_state[_PORTFOLIO_DB_FINGERPRINT_KEY] = current
+            return False
+
         logger.info(
             "Portfolio DB changed (fingerprint %s -> %s); scheduling background reload",
             (previous or "")[:12],

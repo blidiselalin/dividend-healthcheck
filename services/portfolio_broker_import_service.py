@@ -37,6 +37,7 @@ class ImportPreview:
     dividend_count: int
     symbols: list[str]
     issues: list[ImportIssue]
+    forex_trades_skipped: int = 0
 
     @property
     def blocking(self) -> bool:
@@ -65,6 +66,7 @@ def preview_import(content: str | bytes) -> ImportPreview:
         dividend_count=len(statement.dividends),
         symbols=symbols,
         issues=issues,
+        forex_trades_skipped=statement.forex_trades_skipped,
     )
 
 
@@ -136,8 +138,6 @@ def apply_import(
         trades_imported += 1
 
     for dividend in statement.dividends:
-        if mode == ImportMode.MERGE and dividend.symbol not in symbols:
-            continue
         shares_held = (
             round(dividend.gross_usd / dividend.per_share_usd, 4)
             if dividend.per_share_usd > 0

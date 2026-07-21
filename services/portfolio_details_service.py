@@ -312,6 +312,11 @@ class PortfolioDetailsService:
         try:
             import streamlit as st
 
+            from services.background_task_prefs import auto_background_tasks_enabled
+
+            if not auto_background_tasks_enabled():
+                return
+
             if st.session_state.get("portfolio_fast_loaded"):
                 st.session_state["_stale_prices_pending"] = True
                 logger.debug(

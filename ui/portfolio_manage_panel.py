@@ -375,7 +375,7 @@ def render_portfolio_manage_sidebar() -> None:
 
 def _render_ibkr_import_tab() -> None:
     """Upload IBKR Activity Statement CSV and merge or replace portfolio data."""
-    from services.ibkr_activity_parser import ImportIssueLevel
+    from services.ibkr_activity_parser import ImportIssueLevel, has_blocking_errors
     from services.portfolio_broker_import_service import ImportMode, apply_import, preview_import
 
     if is_demo_session():
@@ -392,6 +392,14 @@ def _render_ibkr_import_tab() -> None:
         type=["csv"],
         key="pm_ibkr_file",
     )
+    if uploaded is not None:
+        st.session_state["pm_ibkr_file_content"] = uploaded.getvalue()
+        st.session_state["pm_ibkr_file_name"] = uploaded.name
+
+    content = st.session_state.get("pm_ibkr_file_content")
+    if not content:
+        return
+
     mode_label = st.radio(
         "Import mode",
         ["Merge with existing", "Full replace"],
@@ -412,18 +420,23 @@ def _render_ibkr_import_tab() -> None:
             key="pm_ibkr_replace_confirm",
         )
 
-    if uploaded is None:
-        return
+    file_name = st.session_state.get("pm_ibkr_file_name")
+    if file_name:
+        st.caption(f"Loaded file: **{file_name}**")
 
-    content = uploaded.getvalue()
     preview = preview_import(content)
     meta = preview.meta
     if meta.account or meta.period:
         st.markdown(f"**Account:** {meta.account or '—'} · **Period:** {meta.period or '—'}")
     st.markdown(
-        f"**{preview.position_count}** positions · **{preview.trade_count}** trades · "
+        f"**{preview.position_count}** positions · **{preview.trade_count}** stock trades · "
         f"**{preview.dividend_count}** dividends"
     )
+    if preview.forex_trades_skipped:
+        st.caption(
+            f"{preview.forex_trades_skipped} FX currency trades in the file were skipped "
+            "(only USD stock trades import)."
+        )
     if preview.symbols:
         st.caption("Symbols: " + ", ".join(preview.symbols))
 
@@ -440,13 +453,22 @@ def _render_ibkr_import_tab() -> None:
     )
     if st.button("Apply import", type="primary", key="pm_ibkr_apply", disabled=apply_disabled):
         mode = ImportMode.REPLACE if replace_mode else ImportMode.MERGE
-        result = apply_import(content, mode=mode)
-        if preview.blocking:
+        try:
+            result = apply_import(content, mode=mode)
+        except Exception as exc:
+            st.error(f"Import failed: {exc}")
+            return
+        if has_blocking_errors(result.issues):
             st.error("Import blocked by validation errors.")
             return
+        if result.holdings_upserted == 0:
+            st.error("Import did not write any holdings.")
+            return
+        st.session_state.pop("pm_ibkr_file_content", None)
+        st.session_state.pop("pm_ibkr_file_name", None)
         msg = (
             f"IBKR import ({result.mode.value}): {result.holdings_upserted} holdings, "
-            f"{result.trades_imported} trades, {result.dividends_imported} dividends."
+            f"{result.trades_imported} stock trades, {result.dividends_imported} dividends."
         )
         _after_change(msg, full_reload=True)
 

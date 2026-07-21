@@ -316,10 +316,10 @@ PRICE_REFRESH_INTERVAL_SECONDS: Final[int] = 300
 
 # Auto-trigger a thin-history backfill on portfolio load when holdings lack
 # enough price/dividend data for yield charts
-# (set DIVIDENDSCOPE_AUTO_BACKFILL_ON_LOAD=0 to disable).
+# (set DIVIDENDSCOPE_AUTO_BACKFILL_ON_LOAD=1 to enable).
 AUTO_BACKFILL_ON_LOAD: Final[bool] = os.environ.get(
-    "DIVIDENDSCOPE_AUTO_BACKFILL_ON_LOAD", "1"
-).strip().lower() not in ("0", "false", "no")
+    "DIVIDENDSCOPE_AUTO_BACKFILL_ON_LOAD", "0"
+).strip().lower() in ("1", "true", "yes")
 
 # How many hours between automatic thin-history backfill runs in the scheduler
 # daemon (DIVIDENDSCOPE_HISTORY_REFRESH_HOURS env var, default 6).
@@ -327,6 +327,12 @@ HISTORY_REFRESH_HOURS: Final[int] = max(
     1,
     int(os.environ.get("DIVIDENDSCOPE_HISTORY_REFRESH_HOURS", "6") or "6"),
 )
+
+# Background price/history daemon is off unless explicitly enabled
+# (DIVIDENDSCOPE_ENABLE_PRICE_SCHEDULER=1). Legacy disable flag still honored.
+PRICE_SCHEDULER_ENABLED: Final[bool] = os.environ.get(
+    "DIVIDENDSCOPE_ENABLE_PRICE_SCHEDULER", "0"
+).strip().lower() in ("1", "true", "yes")
 
 # Age threshold (minutes) above which a cached price is shown as stale in the
 # portfolio table until the background live-reload job updates it.

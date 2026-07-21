@@ -258,7 +258,7 @@ Your **holdings, journal, deposits, and receipts** are private to your account i
 3. **Reload live data** (recommended) — Sidebar → **Reload live data** for today's prices, yield charts, and watchlists (runs in background)
 4. **Explore** — Use section buttons on Home; click any ticker for full analysis
 
-Optional later: **Purchase** and **Monthly evolution** tabs under Manage portfolio; **Refresh watchlists** for a fast risk rescan without new prices.
+Optional later: **Purchase**, **Import IBKR**, and **Monthly evolution** tabs under Manage portfolio; **Background tasks** in the sidebar for on-demand dividend sync, yield charts, and library reloads (automatic tasks are off by default).
 
 ### Where to get help in the app
 
@@ -490,7 +490,10 @@ dividend-healthcheck/
 │   ├── stock_analysis_service.py   # Full per-symbol analysis pipeline
 │   ├── stock_history_backfill.py   # Backfill price/dividend history from Yahoo
 │   ├── portfolio_context.py        # Shared portfolio store factory
-│   ├── portfolio_service.py        # Core holdings/journal/deposits store
+│   ├── ibkr_activity_parser.py     # IBKR Activity Statement CSV parser
+│   ├── portfolio_broker_import_service.py  # IBKR merge/replace import
+│   ├── portfolio_clear_service.py  # Wipe portfolio tables (full replace)
+│   ├── background_task_prefs.py    # Opt-in automatic background tasks
 │   ├── portfolio_management_service.py   # Add/edit/remove holdings
 │   ├── portfolio_details_service.py      # Holdings enrichment with live prices
 │   ├── portfolio_holdings_summary.py     # Value/P&L strip
@@ -627,13 +630,14 @@ DIVIDENDSCOPE_CHATBOT_MODEL=facebook/blenderbot-400M-distill
 DIVIDENDSCOPE_DATA_DIR=/data      # Override default data root (default: /data in Docker)
 
 # Optional: Market library behaviour
-DIVIDENDSCOPE_HISTORY_REFRESH_HOURS=6     # Hours between automatic history refresh (default: 6)
-DIVIDENDSCOPE_AUTO_BACKFILL_ON_LOAD=1     # Backfill thin rows on container start (default: 1)
+DIVIDENDSCOPE_HISTORY_REFRESH_HOURS=6     # Hours between daemon history refresh (default: 6)
+DIVIDENDSCOPE_AUTO_BACKFILL_ON_LOAD=0     # Auto backfill thin rows when background tasks run (default: 0)
 DIVIDENDSCOPE_SKIP_LEGACY_IMPORT=0        # Skip one-time Chroma→Postgres import (default: 0)
 
-# Optional: Price refresh scheduler
-DIVIDENDSCOPE_DISABLE_PRICE_SCHEDULER=0  # Disable background price refresh (default: 0)
-DIVIDENDSCOPE_PRICE_REFRESH_SECONDS=3600 # Override price refresh interval in seconds
+# Optional: Price refresh scheduler (off by default — enable on VM if desired)
+DIVIDENDSCOPE_ENABLE_PRICE_SCHEDULER=0  # Start in-process price/history daemon (default: 0)
+DIVIDENDSCOPE_DISABLE_PRICE_SCHEDULER=1  # Legacy: force-disable even when ENABLE=1
+DIVIDENDSCOPE_PRICE_REFRESH_SECONDS=300  # Price refresh interval in seconds (default: 300)
 
 # Optional: Auth overrides (also configurable via .streamlit/secrets.toml)
 DIVIDENDSCOPE_AUTH_DISABLE=0             # Bypass auth for local dev (default: 0)

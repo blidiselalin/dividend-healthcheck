@@ -47,6 +47,8 @@ Short index. Read the linked doc for the area you are changing.
 - [ ] Unit tests pass without `DATABASE_URL`?
 - [ ] No new Chroma/SQLite runtime dependencies when `use_cloud_sql()`?
 - [ ] Portfolio UI uses `schedule_portfolio_reload()` / background jobs — not blocking rebuilds in render paths?
+- [ ] IBKR import uses `portfolio_broker_import_service` + migration 009 (`source`/`side` columns)?
+- [ ] Automatic background tasks respect `background_task_prefs.auto_background_tasks_enabled()` (off by default)?
 - [ ] Chatbot replies stay server-side with educational disclaimer?
 
 ## Commands

@@ -14,6 +14,24 @@ Do **not** block Streamlit reruns with synchronous portfolio rebuilds in `ui/*`.
 
 Fingerprint tables: `holdings`, `purchase_journal`, `monthly_deposits`, `dividend_receipts`, `net_dividends` (`utils/portfolio_db.py`).
 
+## Background tasks (opt-in)
+
+Automatic enrichment is **off by default** (`services/background_task_prefs.py`). Users enable via sidebar **Background tasks** or the session checkbox.
+
+| Manual control | Module |
+|----------------|--------|
+| Sidebar panel | `ui/background_tasks_panel.py` |
+| Startup scheduling gate | `services/deferred_startup.schedule_startup_tasks()` |
+| Price/history daemon | `services/price_refresh_scheduler.py` — off unless `DIVIDENDSCOPE_ENABLE_PRICE_SCHEDULER=1` |
+
+## IBKR Activity Statement import
+
+- Parser: `services/ibkr_activity_parser.py`
+- Apply: `services/portfolio_broker_import_service.py` (merge / full replace)
+- UI: `ui/portfolio_manage_panel.py` → **Import IBKR** tab
+- CLI: `scripts/import_ibkr_activity.py`
+- Schema: `migrations/009_broker_import_metadata.sql` (`source`, `side`)
+
 ## New-user onboarding
 
 - Steps: `services/portfolio_onboarding.py`

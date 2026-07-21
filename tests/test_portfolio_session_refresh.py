@@ -84,6 +84,7 @@ def test_refresh_schedules_background_when_fingerprint_differs(
                 type("Row", (), {"ticker": "KO", "profit_pct": 1.0})(),
             ],
             "_portfolio_db_fingerprint": "stale-fingerprint",
+            "background_tasks_auto_enabled": True,
         }
     )
     monkeypatch.setattr("streamlit.session_state", session, raising=False)
@@ -98,3 +99,43 @@ def test_refresh_schedules_background_when_fingerprint_differs(
     assert refresh_session_if_portfolio_db_changed() is False
     assert scheduled
     assert session.get("_portfolio_db_fingerprint") != "stale-fingerprint"
+
+
+def test_refresh_skips_when_auto_background_disabled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = tmp_path / "portfolio.db"
+    store = PortfolioStore(db_path=db, seed=False)
+    store.upsert_holding("KO", shares=5.0, avg_cost_per_share=50.0)
+
+    monkeypatch.setattr(
+        "services.portfolio_session.resolve_current_portfolio_db",
+        lambda: db,
+    )
+    monkeypatch.setattr("services.portfolio_session.is_demo_session", lambda: False)
+    monkeypatch.setattr("services.portfolio_session.user_has_holdings_in_db", lambda: True)
+    monkeypatch.setattr(
+        "services.portfolio_session._portfolio_refresh_job_running",
+        lambda: False,
+    )
+
+    session = _FakeSession(
+        {
+            "portfolio_details_rows": [
+                type("Row", (), {"ticker": "KO", "profit_pct": 1.0})(),
+            ],
+            "_portfolio_db_fingerprint": "stale-fingerprint",
+        }
+    )
+    monkeypatch.setattr("streamlit.session_state", session, raising=False)
+
+    scheduled: list[bool] = []
+
+    monkeypatch.setattr(
+        "services.deferred_startup.schedule_portfolio_refresh",
+        lambda **kwargs: scheduled.append(True) or "job1",
+    )
+
+    assert refresh_session_if_portfolio_db_changed() is False
+    assert not scheduled

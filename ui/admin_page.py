@@ -345,7 +345,7 @@ def _render_market_library_tab() -> None:
     else:
         st.caption(
             "Automatic price refresh is disabled in this process "
-            "(set `DIVIDENDSCOPE_DISABLE_PRICE_SCHEDULER=0` to enable)."
+            "(set `DIVIDENDSCOPE_ENABLE_PRICE_SCHEDULER=1` to enable)."
         )
 
     st.markdown(

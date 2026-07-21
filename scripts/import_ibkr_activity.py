@@ -57,9 +57,11 @@ def main() -> int:
     print(f"Account: {preview.meta.account or '—'}")
     print(f"Period: {preview.meta.period or '—'}")
     print(
-        f"Positions: {preview.position_count}  Trades: {preview.trade_count}  "
+        f"Positions: {preview.position_count}  Stock trades: {preview.trade_count}  "
         f"Dividends: {preview.dividend_count}"
     )
+    if preview.forex_trades_skipped:
+        print(f"FX trades skipped: {preview.forex_trades_skipped}")
     if preview.symbols:
         print("Symbols:", ", ".join(preview.symbols))
     for issue in preview.issues:

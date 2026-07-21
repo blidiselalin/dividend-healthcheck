@@ -104,7 +104,12 @@ def _startup_db_light() -> dict:
         from services.price_refresh_scheduler import start_price_refresh_scheduler
 
         if start_price_refresh_scheduler():
-            logger.info("Background price refresh scheduler started (5-minute interval)")
+            logger.info("Background price refresh scheduler started")
+        else:
+            logger.info(
+                "Background price refresh scheduler not started "
+                "(set DIVIDENDSCOPE_ENABLE_PRICE_SCHEDULER=1 to enable)"
+            )
     except Exception as exc:
         logger.warning("Price refresh scheduler not started: %s", exc)
     logger.info(
@@ -168,12 +173,14 @@ def _render_data_badge() -> None:
         cov = status.get("sp500_coverage") or {}
         if not cov and not status.get("_coverage_scheduled"):
             try:
+                from services.background_task_prefs import auto_background_tasks_enabled
                 from services.deferred_startup import schedule_coverage_badge_refresh
 
-                schedule_coverage_badge_refresh()
-                status = dict(status)
-                status["_coverage_scheduled"] = True
-                st.session_state["market_db_status"] = status
+                if auto_background_tasks_enabled():
+                    schedule_coverage_badge_refresh()
+                    status = dict(status)
+                    status["_coverage_scheduled"] = True
+                    st.session_state["market_db_status"] = status
             except Exception as exc:
                 logger.debug("Coverage badge refresh could not be scheduled: %s", exc)
         cov = status.get("sp500_coverage") or {}

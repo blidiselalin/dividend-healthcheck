@@ -31,8 +31,7 @@ def test_start_price_refresh_scheduler_is_idempotent(monkeypatch: pytest.MonkeyP
     import services.price_refresh_scheduler as mod
 
     monkeypatch.setattr(mod, "_started", False)
-    monkeypatch.delenv("DIVIDENDSCOPE_DISABLE_PRICE_SCHEDULER", raising=False)
-    monkeypatch.delenv("PYTEST_USE_SQLITE", raising=False)
+    monkeypatch.setattr(mod, "_scheduler_disabled", lambda: False)
     with patch.object(mod, "_refresh_loop"):
         assert mod.start_price_refresh_scheduler(interval_seconds=300) is True
         assert mod.start_price_refresh_scheduler(interval_seconds=300) is False

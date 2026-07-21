@@ -100,6 +100,11 @@ def _library_reload_needed() -> bool:
 
 def schedule_startup_tasks(*, is_demo: bool, has_holdings: bool) -> None:
     """Queue startup jobs that should not block the first UI paint."""
+    from services.background_task_prefs import auto_background_tasks_enabled
+
+    if not auto_background_tasks_enabled():
+        return
+
     if is_demo or not has_holdings:
         schedule_coverage_badge_refresh()
         return
@@ -210,6 +215,81 @@ def schedule_stale_price_refresh_if_needed() -> None:
         return payload
 
     start_job(JOB_LIVE_RELOAD, "Refreshing live prices", _worker)
+
+
+def trigger_portfolio_load() -> str | None:
+    """Manual: load or refresh portfolio rows from the shared library."""
+    return schedule_portfolio_refresh(live_prices=False)
+
+
+def trigger_yield_preload() -> None:
+    """Manual: preload yield charts regardless of automatic-task preference."""
+    import streamlit as st
+
+    rows = st.session_state.get("portfolio_details_rows") or []
+    if not rows:
+        return
+    if _job_running(JOB_YIELD_PRELOAD):
+        return
+
+    symbols = [row.ticker for row in rows]
+    stock_cache = dict(st.session_state.get("portfolio_stock_cache") or {})
+    vector_docs = dict(st.session_state.get("portfolio_vector_docs") or {})
+
+    def _worker(progress: ProgressCallback) -> dict[str, Any]:
+        from services.portfolio_ui_cache import compute_yield_preload_payload
+
+        return compute_yield_preload_payload(
+            symbols,
+            stock_cache,
+            vector_docs,
+            progress_callback=progress,
+        )
+
+    start_job(JOB_YIELD_PRELOAD, "Loading yield charts", _worker)
+
+
+def trigger_stale_price_refresh() -> None:
+    """Manual: refresh holdings whose quotes are stale."""
+    import streamlit as st
+
+    st.session_state["_stale_prices_pending"] = True
+    st.session_state.pop("_deferred_price_refresh_scheduled", None)
+    schedule_stale_price_refresh_if_needed()
+
+
+def trigger_portfolio_history_backfill() -> str | None:
+    """Manual: backfill thin price/dividend history for current holdings."""
+    import streamlit as st
+
+    if _job_running(JOB_HISTORY_BACKFILL):
+        return None
+    rows = st.session_state.get("portfolio_details_rows") or []
+    thin_symbols = [row.ticker for row in rows if getattr(row, "history_thin", False)]
+    if not thin_symbols:
+        thin_symbols = [row.ticker for row in rows]
+    if not thin_symbols:
+        return None
+
+    limit = min(5, len(thin_symbols))
+    symbols_to_backfill = thin_symbols[:limit]
+
+    def _worker(progress: ProgressCallback) -> dict[str, Any]:
+        from services.stock_history_backfill import backfill_thin_history
+
+        return backfill_thin_history(
+            limit=limit,
+            symbols=symbols_to_backfill,
+            progress_callback=progress,
+            prioritize_portfolio=True,
+        )
+
+    return start_job(
+        JOB_HISTORY_BACKFILL,
+        "Updating history for portfolio holdings",
+        _worker,
+        admin_only=False,
+    )
 
 
 def schedule_portfolio_warm_if_needed() -> None:
@@ -610,7 +690,10 @@ def _apply_portfolio_db_refresh(result: dict[str, Any]) -> None:
     except (SQLiteError, PostgresError, OSError) as exc:
         logger.debug("Could not store fingerprint after DB refresh: %s", exc)
     save_session_cache(force=True)
-    schedule_yield_preload_if_needed()
+    from services.background_task_prefs import auto_background_tasks_enabled
+
+    if auto_background_tasks_enabled():
+        schedule_yield_preload_if_needed()
     logger.info("Background portfolio DB refresh: %d holdings", len(rows))
 
 

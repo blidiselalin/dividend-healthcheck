@@ -28,10 +28,14 @@ _last_backfill_error: str | None = None
 
 
 def _scheduler_disabled() -> bool:
-    flag = os.environ.get("DIVIDENDSCOPE_DISABLE_PRICE_SCHEDULER", "").strip().lower()
-    if flag in ("1", "true", "yes"):
+    if os.environ.get("PYTEST_USE_SQLITE") == "1":
         return True
-    return os.environ.get("PYTEST_USE_SQLITE") == "1"
+    disable = os.environ.get("DIVIDENDSCOPE_DISABLE_PRICE_SCHEDULER", "").strip().lower()
+    if disable in ("1", "true", "yes"):
+        return True
+    from config import PRICE_SCHEDULER_ENABLED
+
+    return not PRICE_SCHEDULER_ENABLED
 
 
 def _resolve_interval_seconds(interval_seconds: int | None = None) -> int:

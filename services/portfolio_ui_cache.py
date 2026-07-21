@@ -295,8 +295,8 @@ def hydrate_session_from_disk() -> bool:  # noqa: C901
     cache_path = _cache_path()
     if not cache_path.exists():
         if user_has_holdings_in_db():
-            logger.info("No portfolio UI cache; loading holdings from DB/library.")
-            return warm_portfolio_session_from_db()
+            logger.info("No portfolio UI cache; use Background tasks to load holdings.")
+            _schedule_portfolio_warm_from_empty_cache()
         return False
 
     try:
@@ -310,15 +310,15 @@ def hydrate_session_from_disk() -> bool:  # noqa: C901
         except OSError:
             pass
         if user_has_holdings_in_db():
-            logger.info("Portfolio UI cache corrupted; loading holdings from DB/library.")
-            return warm_portfolio_session_from_db()
+            logger.info("Portfolio UI cache corrupted; use Background tasks to load holdings.")
+            _schedule_portfolio_warm_from_empty_cache()
         return False
 
     rows_payload = bundle.get("rows") or []
     if not rows_payload:
         if user_has_holdings_in_db():
-            logger.info("Portfolio UI cache empty; loading holdings from DB/library.")
-            return warm_portfolio_session_from_db()
+            logger.info("Portfolio UI cache empty; use Background tasks to load holdings.")
+            _schedule_portfolio_warm_from_empty_cache()
         return False
 
     fp_mismatch = False
@@ -329,16 +329,8 @@ def hydrate_session_from_disk() -> bool:  # noqa: C901
         bundle_fp = bundle.get("db_fingerprint")
         if bundle_fp and bundle_fp != current_fp:
             fp_mismatch = True
-            logger.info(
-                "Portfolio UI cache fingerprint mismatch; showing cached rows "
-                "and scheduling background refresh."
-            )
-            try:
-                from services.deferred_startup import schedule_portfolio_refresh
-
-                schedule_portfolio_refresh(live_prices=False)
-            except (ImportError, AttributeError) as exc:
-                logger.debug("Could not schedule portfolio refresh after mismatch: %s", exc)
+            logger.info("Portfolio UI cache fingerprint mismatch; showing cached rows.")
+            _schedule_hydrate_background_work(library_reload=False)
     except (SQLiteError, PostgresError, OSError) as exc:
         logger.debug("Portfolio DB fingerprint check skipped during hydrate: %s", exc)
 
@@ -351,14 +343,43 @@ def hydrate_session_from_disk() -> bool:  # noqa: C901
             )
         st.session_state["_portfolio_stale_cache_loaded"] = True
         if cache_is_stale(bundle) and not fp_mismatch:
-            try:
-                from services.deferred_startup import schedule_library_reload_if_needed
-
-                schedule_library_reload_if_needed()
-            except (ImportError, AttributeError) as exc:
-                logger.debug("Could not schedule library reload: %s", exc)
+            _schedule_hydrate_background_work(library_reload=True)
 
     return _apply_disk_bundle(bundle, cache_path=cache_path)
+
+
+def _schedule_hydrate_background_work(*, library_reload: bool = False) -> None:
+    """Queue portfolio warm/reload when automatic background tasks are enabled."""
+    from services.background_task_prefs import auto_background_tasks_enabled
+
+    if not auto_background_tasks_enabled():
+        return
+    try:
+        if library_reload:
+            from services.deferred_startup import schedule_library_reload_if_needed
+
+            schedule_library_reload_if_needed()
+        else:
+            from services.deferred_startup import schedule_portfolio_refresh
+
+            schedule_portfolio_refresh(live_prices=False)
+    except (ImportError, AttributeError) as exc:
+        logger.debug("Could not schedule hydrate background work: %s", exc)
+
+
+def _schedule_portfolio_warm_from_empty_cache() -> bool:
+    """Queue a background warm load instead of blocking the UI thread."""
+    from services.background_task_prefs import auto_background_tasks_enabled
+
+    if not auto_background_tasks_enabled():
+        return False
+    try:
+        from services.deferred_startup import schedule_portfolio_warm_if_needed
+
+        schedule_portfolio_warm_if_needed()
+    except (ImportError, AttributeError) as exc:
+        logger.debug("Could not schedule portfolio warm: %s", exc)
+    return False
 
 
 def _dividend_sync_meta_path() -> Path:

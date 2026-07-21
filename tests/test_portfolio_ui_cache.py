@@ -131,7 +131,7 @@ def test_hydrate_uses_stale_cache_as_fallback(
     assert session.get("_portfolio_stale_cache_loaded") is True
 
 
-def test_hydrate_sync_loads_from_db_when_no_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hydrate_does_not_sync_load_from_db_when_no_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeSession(dict):
         def get(self, key: str, default: Any = None) -> Any:
             return super().get(key, default)
@@ -147,13 +147,40 @@ def test_hydrate_sync_loads_from_db_when_no_cache(monkeypatch: pytest.MonkeyPatc
     )
     monkeypatch.setattr("services.portfolio_session.is_demo_session", lambda: False)
     monkeypatch.setattr("streamlit.session_state", session, raising=False)
+    warm = MagicMock(return_value=True)
+    monkeypatch.setattr("services.portfolio_ui_cache.warm_portfolio_session_from_db", warm)
+
+    assert hydrate_session_from_disk() is False
+    warm.assert_not_called()
+    assert session.get("portfolio_details_rows") is None
+
+
+def test_hydrate_schedules_warm_when_auto_tasks_enabled_and_no_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeSession(dict):
+        def get(self, key: str, default: Any = None) -> Any:
+            return super().get(key, default)
+
+    session = FakeSession({"background_tasks_auto_enabled": True})
+
     monkeypatch.setattr(
-        "services.portfolio_ui_cache.warm_portfolio_session_from_db",
-        lambda **kwargs: session.update({"portfolio_details_rows": [_detail_row()]}) or True,
+        "services.portfolio_ui_cache._cache_path", lambda: Path("/nonexistent/cache.json")
+    )
+    monkeypatch.setattr(
+        "services.portfolio_session.user_has_holdings_in_db",
+        lambda: True,
+    )
+    monkeypatch.setattr("services.portfolio_session.is_demo_session", lambda: False)
+    monkeypatch.setattr("streamlit.session_state", session, raising=False)
+    scheduled = MagicMock()
+    monkeypatch.setattr(
+        "services.deferred_startup.schedule_portfolio_warm_if_needed",
+        scheduled,
     )
 
-    assert hydrate_session_from_disk() is True
-    assert len(session.get("portfolio_details_rows") or []) == 1
+    assert hydrate_session_from_disk() is False
+    scheduled.assert_called_once()
 
 
 def test_ensure_portfolio_session_loaded_delegates_to_hydrate(

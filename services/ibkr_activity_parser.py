@@ -78,6 +78,7 @@ class IBKRActivityStatement:
     trades: list[IBKRTrade] = field(default_factory=list)
     dividends: list[IBKRDividend] = field(default_factory=list)
     issues: list[ImportIssue] = field(default_factory=list)
+    forex_trades_skipped: int = 0
 
 
 def _parse_float(value: str | None) -> float | None:
@@ -213,6 +214,8 @@ def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:
             )
         elif section == "Trades" and len(row) >= 12 and row[1] == "Data" and row[2] == "Order":
             if row[3] != "Stocks" or row[4] != "USD":
+                if row[3] == "Forex":
+                    statement.forex_trades_skipped += 1
                 continue
             symbol = _normalize_symbol(row[5])
             trade_date = _parse_trade_date(row[6])

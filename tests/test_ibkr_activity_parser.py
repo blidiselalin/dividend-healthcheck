@@ -70,3 +70,15 @@ def test_parse_dividend_with_spaced_symbol_and_ordinary_dividend_format() -> Non
     arcc = next(d for d in statement.dividends if d.symbol == "ARCC")
     assert arcc.per_share_usd == 0.48
     assert arcc.gross_usd == 9.60
+
+
+def test_parse_skips_forex_trades() -> None:
+    csv_text = (
+        "Statement,Data,Title,Activity Statement\n"
+        "Open Positions,Data,Summary,Stocks,USD,KO,10,60,60,600\n"
+        'Trades,Data,Order,Stocks,USD,KO,"2025-02-13, 09:30:00",10,60,600,USD,-1\n'
+        'Trades,Data,Order,Forex,USD,EUR.USD,"2025-01-13, 09:30:44",-446.15,1.01892,,454.59,0\n'
+    )
+    statement = parse_activity_statement_csv(csv_text)
+    assert len(statement.trades) == 1
+    assert statement.forex_trades_skipped == 1

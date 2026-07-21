@@ -149,8 +149,12 @@ def _resolve_holding_analysis(
 
 
 def _ensure_yield_preload_if_needed() -> None:
-    """Schedule yield-channel preload in the background after a fast library open."""
+    """Schedule yield-channel preload when automatic background tasks are enabled."""
     if not st.session_state.get("portfolio_fast_loaded"):
+        return
+    from services.background_task_prefs import auto_background_tasks_enabled
+
+    if not auto_background_tasks_enabled():
         return
     from services.deferred_startup import schedule_yield_preload_if_needed
 
