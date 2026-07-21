@@ -184,8 +184,8 @@ def render_portfolio_manage_sidebar() -> None:
                 "**Step 1:** Add ticker tab below — symbol, shares, average cost, then "
                 "**Add to portfolio**. Views refresh in the background automatically."
             )
-        tab_add, tab_edit, tab_buy, tab_evolution = st.tabs(
-            ["Add ticker", "Edit position", "Purchase", "Monthly evolution"]
+        tab_add, tab_edit, tab_buy, tab_evolution, tab_ibkr = st.tabs(
+            ["Add ticker", "Edit position", "Purchase", "Monthly evolution", "Import IBKR"]
         )
 
         with tab_add:
@@ -368,6 +368,87 @@ def render_portfolio_manage_sidebar() -> None:
                         st.error(str(exc))
                     except Exception as exc:
                         st.error(str(exc))
+
+        with tab_ibkr:
+            _render_ibkr_import_tab()
+
+
+def _render_ibkr_import_tab() -> None:
+    """Upload IBKR Activity Statement CSV and merge or replace portfolio data."""
+    from services.ibkr_activity_parser import ImportIssueLevel
+    from services.portfolio_broker_import_service import ImportMode, apply_import, preview_import
+
+    if is_demo_session():
+        st.info("IBKR import is disabled for the demo account.")
+        return
+
+    st.caption(
+        "Import an **Interactive Brokers Activity Statement** CSV (AS_Fv2). "
+        "Holdings, trades, and cash dividends are loaded from Open Positions, Trades, "
+        "and Dividends sections."
+    )
+    uploaded = st.file_uploader(
+        "Activity Statement CSV",
+        type=["csv"],
+        key="pm_ibkr_file",
+    )
+    mode_label = st.radio(
+        "Import mode",
+        ["Merge with existing", "Full replace"],
+        key="pm_ibkr_mode",
+        help=(
+            "**Merge** updates only symbols in the file (prior IBKR rows for those symbols are "
+            "replaced). **Full replace** deletes all portfolio data first."
+        ),
+    )
+    replace_mode = mode_label == "Full replace"
+    if replace_mode:
+        st.warning(
+            "Full replace permanently deletes all holdings, purchases, dividends, deposits, "
+            "and monthly totals before importing."
+        )
+        st.checkbox(
+            "I understand this deletes all portfolio data",
+            key="pm_ibkr_replace_confirm",
+        )
+
+    if uploaded is None:
+        return
+
+    content = uploaded.getvalue()
+    preview = preview_import(content)
+    meta = preview.meta
+    if meta.account or meta.period:
+        st.markdown(f"**Account:** {meta.account or '—'} · **Period:** {meta.period or '—'}")
+    st.markdown(
+        f"**{preview.position_count}** positions · **{preview.trade_count}** trades · "
+        f"**{preview.dividend_count}** dividends"
+    )
+    if preview.symbols:
+        st.caption("Symbols: " + ", ".join(preview.symbols))
+
+    for issue in preview.issues:
+        if issue.level == ImportIssueLevel.ERROR:
+            st.error(issue.message)
+        elif issue.level == ImportIssueLevel.WARNING:
+            st.warning(issue.message)
+        else:
+            st.info(issue.message)
+
+    apply_disabled = preview.blocking or (
+        replace_mode and not st.session_state.get("pm_ibkr_replace_confirm")
+    )
+    if st.button("Apply import", type="primary", key="pm_ibkr_apply", disabled=apply_disabled):
+        mode = ImportMode.REPLACE if replace_mode else ImportMode.MERGE
+        result = apply_import(content, mode=mode)
+        if preview.blocking:
+            st.error("Import blocked by validation errors.")
+            return
+        msg = (
+            f"IBKR import ({result.mode.value}): {result.holdings_upserted} holdings, "
+            f"{result.trades_imported} trades, {result.dividends_imported} dividends."
+        )
+        _after_change(msg, full_reload=True)
 
 
 def render_tab_refresh_button(

@@ -405,3 +405,14 @@ class PortfolioStore:
                     "UPDATE holdings SET dividends_paid = ? WHERE symbol = ?",
                     (round(dividends_paid, 2), symbol),
                 )
+
+    def delete_all(self) -> int:
+        with self._connect() as connection:
+            if connection.is_postgres:
+                cursor = connection.execute(
+                    "DELETE FROM holdings WHERE user_id = ?",
+                    (connection.user_id,),
+                )
+            else:
+                cursor = connection.execute("DELETE FROM holdings")
+            return int(cursor.rowcount or 0)

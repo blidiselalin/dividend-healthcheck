@@ -174,14 +174,17 @@ class PortfolioPurchaseJournalService:
             if all(lot.shares is not None and lot.shares > 0 for lot in lots_sorted):
                 for lot in lots_sorted:
                     shares = float(lot.shares or 0.0)
+                    signed = -shares if lot.side == "sell" else shares
                     value = shares * lot.price_usd + lot.commission_usd
+                    if lot.side == "sell":
+                        value = -value
                     estimates.append(
                         EstimatedPurchaseLot(
                             symbol=symbol,
                             purchase_date=lot.purchase_date,
                             label=lot.label,
                             price_usd=lot.price_usd,
-                            estimated_shares=round(shares, 4),
+                            estimated_shares=round(signed, 4),
                             estimated_value_usd=round(value, 2),
                         )
                     )

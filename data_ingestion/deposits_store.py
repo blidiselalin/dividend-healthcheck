@@ -328,3 +328,14 @@ class DepositsStore:
                     (period_key,),
                 )
             return bool(cursor.rowcount > 0)
+
+    def delete_all(self) -> int:
+        with self._connect() as connection:
+            if connection.is_postgres:
+                cursor = connection.execute(
+                    "DELETE FROM monthly_deposits WHERE user_id = ?",
+                    (connection.user_id,),
+                )
+            else:
+                cursor = connection.execute("DELETE FROM monthly_deposits")
+            return int(cursor.rowcount or 0)

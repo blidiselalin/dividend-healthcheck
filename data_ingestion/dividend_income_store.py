@@ -291,3 +291,14 @@ class DividendIncomeStore:
                     """,
                     (period_key, year, month, net, gross),
                 )
+
+    def delete_all(self) -> int:
+        with self._connect() as connection:
+            if connection.is_postgres:
+                cursor = connection.execute(
+                    "DELETE FROM net_dividends WHERE user_id = ?",
+                    (connection.user_id,),
+                )
+            else:
+                cursor = connection.execute("DELETE FROM net_dividends")
+            return int(cursor.rowcount or 0)

@@ -32,11 +32,11 @@ def shares_as_of(
     *,
     fallback_shares: float,
 ) -> float:
-    """Shares owned on or before the given date (from journal lots)."""
+    """Shares owned on or before the given date (from journal lots; sells reduce balance)."""
     if not lots:
         return fallback_shares
     owned = sum(lot.estimated_shares for lot in lots if lot.purchase_date <= as_of)
-    return owned if owned > 0 else 0.0
+    return max(owned, 0.0) if owned != 0 else 0.0
 
 
 @dataclass(frozen=True)

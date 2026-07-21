@@ -32,6 +32,7 @@ class DividendReceipt:
     shares_held: float
     gross_usd: float
     id: int | None = None
+    source: str = "computed"
 
 
 class DividendReceiptStore:
@@ -61,10 +62,20 @@ class DividendReceiptStore:
                   shares_held REAL NOT NULL,
                   gross_usd REAL NOT NULL,
                   recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+                  source TEXT NOT NULL DEFAULT 'computed',
                   UNIQUE(symbol, ex_date, per_share_usd)
                 )
                 """
             )
+            receipt_columns = {
+                row[1]
+                for row in connection.execute("PRAGMA table_info(dividend_receipts)").fetchall()
+            }
+            if "source" not in receipt_columns:
+                connection.execute(
+                    "ALTER TABLE dividend_receipts "
+                    "ADD COLUMN source TEXT NOT NULL DEFAULT 'computed'"
+                )
             table_row = connection.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='holdings'"
             ).fetchone()
@@ -86,6 +97,7 @@ class DividendReceiptStore:
         per_share_usd: float,
         shares_held: float,
         gross_usd: float,
+        source: str = "computed",
     ) -> bool:
         """Insert a receipt if new. Returns True when a row was added."""
         return (
@@ -96,6 +108,7 @@ class DividendReceiptStore:
                 per_share_usd=per_share_usd,
                 shares_held=shares_held,
                 gross_usd=gross_usd,
+                source=source,
             )
             == "added"
         )
@@ -109,6 +122,7 @@ class DividendReceiptStore:
         per_share_usd: float,
         shares_held: float,
         gross_usd: float,
+        source: str = "computed",
     ) -> str:
         """
         Insert or update a receipt keyed by (symbol, ex_date, per_share).
@@ -125,14 +139,19 @@ class DividendReceiptStore:
                 per_share_usd=per_share_usd,
                 shares_held=shares_held,
                 gross_usd=gross_usd,
+                source=source,
             )
             return "added" if inserted else "unchanged"
+
+        if existing.source == "ibkr" and source != "ibkr":
+            return "unchanged"
 
         if (
             existing.pay_date == pay_date
             and existing.ex_date == ex_date
             and existing.shares_held == shares_held
             and existing.gross_usd == gross_usd
+            and existing.source == source
         ):
             return "unchanged"
 
@@ -143,6 +162,7 @@ class DividendReceiptStore:
             per_share_usd=per_share_usd,
             shares_held=shares_held,
             gross_usd=gross_usd,
+            source=source,
         ):
             return "updated"
         return "unchanged"
@@ -156,6 +176,7 @@ class DividendReceiptStore:
         per_share_usd: float,
         shares_held: float,
         gross_usd: float,
+        source: str = "computed",
     ) -> bool:
         """Update an existing receipt row. Returns True when a row was modified."""
         if receipt_id is None:
@@ -166,7 +187,7 @@ class DividendReceiptStore:
                     """
                     UPDATE dividend_receipts
                     SET ex_date = ?, pay_date = ?, per_share_usd = ?,
-                        shares_held = ?, gross_usd = ?
+                        shares_held = ?, gross_usd = ?, source = ?
                     WHERE user_id = ? AND id = ?
                     """,
                     (
@@ -175,6 +196,7 @@ class DividendReceiptStore:
                         per_share_usd,
                         shares_held,
                         gross_usd,
+                        source,
                         connection.user_id,
                         receipt_id,
                     ),
@@ -184,7 +206,7 @@ class DividendReceiptStore:
                     """
                     UPDATE dividend_receipts
                     SET ex_date = ?, pay_date = ?, per_share_usd = ?,
-                        shares_held = ?, gross_usd = ?
+                        shares_held = ?, gross_usd = ?, source = ?
                     WHERE id = ?
                     """,
                     (
@@ -193,6 +215,7 @@ class DividendReceiptStore:
                         per_share_usd,
                         shares_held,
                         gross_usd,
+                        source,
                         receipt_id,
                     ),
                 )
@@ -211,7 +234,7 @@ class DividendReceiptStore:
                 row = connection.execute(
                     """
                     SELECT id, symbol, ex_date, pay_date, per_share_usd,
-                           shares_held, gross_usd
+                           shares_held, gross_usd, source
                     FROM dividend_receipts
                     WHERE user_id = ? AND symbol = ? AND ex_date = ?
                       AND ABS(per_share_usd - ?) < 0.000001
@@ -223,7 +246,7 @@ class DividendReceiptStore:
                 row = connection.execute(
                     """
                     SELECT id, symbol, ex_date, pay_date, per_share_usd,
-                           shares_held, gross_usd
+                           shares_held, gross_usd, source
                     FROM dividend_receipts
                     WHERE symbol = ? AND ex_date = ?
                       AND ABS(per_share_usd - ?) < 0.000001
@@ -241,6 +264,7 @@ class DividendReceiptStore:
             per_share_usd=float(row["per_share_usd"]),
             shares_held=float(row["shares_held"]),
             gross_usd=float(row["gross_usd"]),
+            source=str(row["source"] or "computed"),
         )
 
     def _insert_receipt(
@@ -252,6 +276,7 @@ class DividendReceiptStore:
         per_share_usd: float,
         shares_held: float,
         gross_usd: float,
+        source: str = "computed",
     ) -> bool:
         symbol = symbol.strip().upper()
         with self._connect() as connection:
@@ -260,8 +285,8 @@ class DividendReceiptStore:
                     """
                     INSERT INTO dividend_receipts (
                       user_id, symbol, ex_date, pay_date,
-                      per_share_usd, shares_held, gross_usd
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                      per_share_usd, shares_held, gross_usd, source
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT (user_id, symbol, ex_date, per_share_usd) DO NOTHING
                     RETURNING id
                     """,
@@ -273,6 +298,7 @@ class DividendReceiptStore:
                         per_share_usd,
                         shares_held,
                         gross_usd,
+                        source,
                     ),
                 ).fetchone()
                 return row is not None
@@ -280,8 +306,8 @@ class DividendReceiptStore:
             cursor = connection.execute(
                 """
                 INSERT OR IGNORE INTO dividend_receipts (
-                  symbol, ex_date, pay_date, per_share_usd, shares_held, gross_usd
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                  symbol, ex_date, pay_date, per_share_usd, shares_held, gross_usd, source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     symbol,
@@ -290,6 +316,7 @@ class DividendReceiptStore:
                     per_share_usd,
                     shares_held,
                     gross_usd,
+                    source,
                 ),
             )
             return int(getattr(cursor, "rowcount", 0) or 0) > 0
@@ -300,7 +327,8 @@ class DividendReceiptStore:
             if connection.is_postgres:
                 rows = connection.execute(
                     """
-                    SELECT id, symbol, ex_date, pay_date, per_share_usd, shares_held, gross_usd
+                    SELECT id, symbol, ex_date, pay_date, per_share_usd,
+                           shares_held, gross_usd, source
                     FROM dividend_receipts
                     WHERE user_id = ? AND symbol = ?
                     ORDER BY pay_date, ex_date
@@ -310,7 +338,8 @@ class DividendReceiptStore:
             else:
                 rows = connection.execute(
                     """
-                    SELECT id, symbol, ex_date, pay_date, per_share_usd, shares_held, gross_usd
+                    SELECT id, symbol, ex_date, pay_date, per_share_usd,
+                           shares_held, gross_usd, source
                     FROM dividend_receipts
                     WHERE symbol = ?
                     ORDER BY pay_date, ex_date
@@ -327,6 +356,7 @@ class DividendReceiptStore:
                 per_share_usd=float(row["per_share_usd"]),
                 shares_held=float(row["shares_held"]),
                 gross_usd=float(row["gross_usd"]),
+                source=str(row["source"] or "computed"),
             )
             for row in rows
         ]
@@ -389,17 +419,42 @@ class DividendReceiptStore:
             totals[(int(row["year"]), int(row["month"]))] = round(float(row["gross"]), 2)
         return totals
 
-    def delete_for_symbol(self, symbol: str) -> int:
+    def delete_for_symbol(self, symbol: str, *, source: str | None = None) -> int:
         symbol = symbol.strip().upper()
         with self._connect() as connection:
             if connection.is_postgres:
-                cursor = connection.execute(
-                    "DELETE FROM dividend_receipts WHERE user_id = ? AND symbol = ?",
-                    (connection.user_id, symbol),
-                )
-            else:
+                if source is None:
+                    cursor = connection.execute(
+                        "DELETE FROM dividend_receipts WHERE user_id = ? AND symbol = ?",
+                        (connection.user_id, symbol),
+                    )
+                else:
+                    cursor = connection.execute(
+                        """
+                        DELETE FROM dividend_receipts
+                        WHERE user_id = ? AND symbol = ? AND source = ?
+                        """,
+                        (connection.user_id, symbol, source),
+                    )
+            elif source is None:
                 cursor = connection.execute(
                     "DELETE FROM dividend_receipts WHERE symbol = ?",
                     (symbol,),
                 )
+            else:
+                cursor = connection.execute(
+                    "DELETE FROM dividend_receipts WHERE symbol = ? AND source = ?",
+                    (symbol, source),
+                )
+            return int(cursor.rowcount or 0)
+
+    def delete_all(self) -> int:
+        with self._connect() as connection:
+            if connection.is_postgres:
+                cursor = connection.execute(
+                    "DELETE FROM dividend_receipts WHERE user_id = ?",
+                    (connection.user_id,),
+                )
+            else:
+                cursor = connection.execute("DELETE FROM dividend_receipts")
             return int(cursor.rowcount or 0)

@@ -1,0 +1,11 @@
+Statement,Data,Title,Activity Statement
+Statement,Data,Period,"January 1, 2025 - December 31, 2025"
+Account Information,Data,Account,U15587745
+Account Information,Data,Base Currency,USD
+Open Positions,Data,Summary,Stocks,USD,AAPL,10,150,150,1500
+Open Positions,Data,Summary,Stocks,USD,MSFT,5,400,400,2000
+Trades,Data,Order,Stocks,USD,AAPL,"2025-02-13, 09:30:00",10,150,1500,USD,-1.25
+Trades,Data,Order,Stocks,USD,AAPL,"2025-06-01, 10:00:00",-3,160,480,USD,-1.00
+Trades,Data,Order,Stocks,USD,MSFT,"2025-03-01, 11:00:00",5,400,2000,USD,-1.50
+Dividends,Data,USD,2025-03-15,"AAPL(US0378331005) Cash Dividend USD 0.25 per Share",2.50
+Dividends,Data,USD,2025-06-15,"MSFT(US5949181045) Cash Dividend USD 0.75 per Share",3.75
