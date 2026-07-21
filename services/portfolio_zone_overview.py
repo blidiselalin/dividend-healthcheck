@@ -9,7 +9,7 @@ from typing import Any
 import pandas as pd
 
 from services.yield_channel_chart import YieldChannelData, YieldChannelService
-from utils.chart_theme import PALETTE, outside_bar_text, style_figure
+from utils.chart_theme import style_figure
 
 try:
     import plotly.graph_objects as go

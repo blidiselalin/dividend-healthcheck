@@ -11,11 +11,11 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 
 from data_ingestion.portfolio_store import PortfolioStore
+from services.dividend_payment_dates import payment_date_for_record
 from services.portfolio_purchase_journal_service import (
     EstimatedPurchaseLot,
     PortfolioPurchaseJournalService,
 )
-from services.dividend_payment_dates import payment_date_for_record
 from utils.dividend_amounts import normalize_payment_amount
 
 if TYPE_CHECKING:

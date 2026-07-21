@@ -17,11 +17,11 @@ PALETTE: dict[str, str] = {
     "plot_bg": "#f8fafc",
     "paper": "#ffffff",
     # Semantic aliases used across chart services
-    "income": "#2e7d32",       # dividend income / net cash — green
-    "deposit": "#1565c0",      # capital deposits — blue
-    "portfolio": "#2e7d32",    # portfolio value line — green
-    "benchmark": "#6a1b9a",    # benchmark series — purple
-    "warning": "#ef6c00",      # MoM change / caution — orange
+    "income": "#2e7d32",  # dividend income / net cash — green
+    "deposit": "#1565c0",  # capital deposits — blue
+    "portfolio": "#2e7d32",  # portfolio value line — green
+    "benchmark": "#6a1b9a",  # benchmark series — purple
+    "warning": "#ef6c00",  # MoM change / caution — orange
 }
 
 # Weiss yield zones (low → high yield / cheap → expensive price)

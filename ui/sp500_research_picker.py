@@ -4,31 +4,27 @@ Pick any S&P 500 symbol from the portfolio home page for full analysis.
 
 from __future__ import annotations
 
-from typing import List, Optional
-
 import streamlit as st
 
 from config import DELISTED_SYMBOLS
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
-def sp500_symbol_list() -> List[str]:
+def sp500_symbol_list() -> list[str]:
     """Cached S&P 500 tickers (shared library universe)."""
     from data_ingestion.sp500_universe import get_sp500_symbols
 
     return sorted(
-        symbol.upper()
-        for symbol in get_sp500_symbols()
-        if symbol.upper() not in DELISTED_SYMBOLS
+        symbol.upper() for symbol in get_sp500_symbols() if symbol.upper() not in DELISTED_SYMBOLS
     )
 
 
 def filter_sp500_symbols(
-    symbols: List[str],
+    symbols: list[str],
     query: str,
     *,
-    limit: Optional[int] = None,
-) -> List[str]:
+    limit: int | None = None,
+) -> list[str]:
     """
     Match ticker substring (case-insensitive).
 

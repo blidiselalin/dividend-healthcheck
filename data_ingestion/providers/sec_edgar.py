@@ -14,6 +14,8 @@ import os
 from functools import lru_cache
 from typing import Any
 
+import requests
+
 from data_ingestion.base import BaseFetcher
 from data_ingestion.models import DataSource
 from data_ingestion.providers._numeric import as_float
@@ -121,7 +123,7 @@ class SecEdgarProvider(BaseFetcher, StockDataProvider):
             from typing import cast
 
             return cast(dict[str, Any], response.json())
-        except Exception as exc:
+        except requests.exceptions.RequestException as exc:
             logger.debug("SEC EDGAR facts failed for CIK %s: %s", cik, exc)
             return None
 
@@ -141,7 +143,7 @@ class SecEdgarProvider(BaseFetcher, StockDataProvider):
             if not code:
                 return None
             return {"code": str(code), "description": data.get("sicDescription", "")}
-        except Exception:
+        except requests.exceptions.RequestException:
             return None
 
 
@@ -158,7 +160,7 @@ def _ticker_index() -> dict[str, int]:
         )
         response.raise_for_status()
         payload = response.json()
-    except Exception as exc:
+    except requests.exceptions.RequestException as exc:
         logger.warning("SEC ticker list unavailable: %s", exc)
         return {}
 

@@ -6,14 +6,13 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
-from typing import Any, Dict, Optional
+from typing import Any
 
 import streamlit as st
 
-logger = logging.getLogger(__name__)
-
 from auth.user_context import is_app_admin
 from db.connection import use_cloud_sql
+from services.db_admin_service import get_history_symbol_status
 from services.deferred_startup import (
     apply_background_results,
     schedule_ensure_sp500,
@@ -24,23 +23,23 @@ from services.deferred_startup import (
     schedule_price_refresh,
     visible_jobs,
 )
-from services.db_admin_service import get_history_symbol_status
-from ui.market_library_cache import cached_thin_history_summary, clear_thin_history_summary_cache
 from services.price_refresh_scheduler import scheduler_status
 from services.shared_market_db import shared_market_db_status
 from services.sp500_peers_service import coverage_stats, top_dividend_coverage_stats
 from ui.db_admin_panel import render_database_admin_tabs
+from ui.market_library_cache import cached_thin_history_summary, clear_thin_history_summary_cache
+from ui.session_keys import ADMIN_VIEW_KEY
 from ui.theme import render_notice
 
-_ADMIN_VIEW_KEY = "admin_console_active"
+logger = logging.getLogger(__name__)
 
 
 def is_admin_console_active() -> bool:
-    return bool(st.session_state.get(_ADMIN_VIEW_KEY))
+    return bool(st.session_state.get(ADMIN_VIEW_KEY))
 
 
 def set_admin_console_active(active: bool) -> None:
-    st.session_state[_ADMIN_VIEW_KEY] = active
+    st.session_state[ADMIN_VIEW_KEY] = active
 
 
 def render_admin_sidebar_entry() -> None:
@@ -90,9 +89,7 @@ def render_admin_page_if_active() -> bool:
             navigate_to_portfolio_home()
     with head_right:
         st.markdown("### Admin console")
-        st.caption(
-            "Shared market library, history pipelines, and database inspection"
-        )
+        st.caption("Shared market library, history pipelines, and database inspection")
     _render_status_metrics()
     _render_background_jobs_panel()
 
@@ -155,7 +152,7 @@ def _inject_admin_styles() -> None:
     )
 
 
-def _library_status() -> Dict[str, Any]:
+def _library_status() -> dict[str, Any]:
     status = dict(st.session_state.get("market_db_status") or {})
     if "document_count" not in status:
         try:
@@ -166,7 +163,7 @@ def _library_status() -> Dict[str, Any]:
     return status
 
 
-def _coverage_from_status(status: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, Any]]:
+def _coverage_from_status(status: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """Read coverage KPIs from session; avoid repeated DB counts on every paint."""
     sp_cov = status.get("sp500_coverage")
     top_cov = status.get("top_dividend_coverage")
@@ -228,7 +225,9 @@ def _render_status_metrics() -> None:
     )
     c4.metric("Yield-ready symbols", f"{yield_ready}/{total_symbols or '—'}")
     c5.metric("Need backfill", thin_count)
-    st.caption(f"Storage: **{storage}** · Jobs run in the background so the portfolio UI stays responsive.")
+    st.caption(
+        f"Storage: **{storage}** · Jobs run in the background so the portfolio UI stays responsive."
+    )
 
 
 @st.fragment(run_every=timedelta(seconds=2))
@@ -314,7 +313,7 @@ def _render_overview_tab() -> None:
         st.caption("Completed admin job summaries will appear here after the first run.")
 
 
-def _format_job_summary(payload: Dict[str, Any]) -> str:
+def _format_job_summary(payload: dict[str, Any]) -> str:
     if not payload:
         return "—"
     parts = []
@@ -324,9 +323,7 @@ def _format_job_summary(payload: Dict[str, Any]) -> str:
     coverage = payload.get("coverage")
     if isinstance(coverage, dict):
         if "analysed_sp500" in coverage:
-            parts.append(
-                f"sp500={coverage.get('analysed_sp500')}/{coverage.get('universe_total')}"
-            )
+            parts.append(f"sp500={coverage.get('analysed_sp500')}/{coverage.get('universe_total')}")
         if "analysed_top_dividend" in coverage:
             parts.append(
                 f"top_div={coverage.get('analysed_top_dividend')}/{coverage.get('universe_total')}"
@@ -354,8 +351,7 @@ def _render_market_library_tab() -> None:
     st.markdown(
         """
         <div class="ds-admin-card">
-            <h4>Shared analysed-stocks library</h4>
-            <p>Populate and refresh the shared S&P library used by every user for charts, peers, and portfolio analysis.</p>
+                <h4>Shared analysed-stocks library</h4><p>Populate and refresh the shared S&P library used by every user for charts, peers, and portfolio analysis.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -442,8 +438,7 @@ def _render_history_tab() -> None:
     st.markdown(
         """
         <div class="ds-admin-card">
-            <h4>Price &amp; dividend history</h4>
-            <p>Backfill thin JSONB history, then sync into normalized tables for database-first yield charts.</p>
+            <h4>Price &amp; dividend history</h4><p>Backfill thin JSONB history, then sync into normalized tables for database-first yield charts.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -548,7 +543,8 @@ def _render_backfill_queue_section() -> None:
         df_rows = []
         for r in rows:
             last_upd = r.get("last_updated")
-            from datetime import date as _date, datetime as _datetime
+            from datetime import date as _date
+            from datetime import datetime as _datetime
 
             if isinstance(last_upd, (_date, _datetime)):
                 last_upd_str = (
@@ -576,18 +572,14 @@ def _render_backfill_queue_section() -> None:
         )
 
 
-def _render_backfill_last_run_report(payload: Dict[str, Any]) -> None:
+def _render_backfill_last_run_report(payload: dict[str, Any]) -> None:
     """Collapsible structured report for the last backfill job."""
     processed = payload.get("symbols") or []
     failed = payload.get("failed_symbols") or []
     not_reached = payload.get("not_reached_symbols") or []
 
     has_detail = processed or failed or not_reached
-    label = (
-        f"Last backfill — {payload.get('enriched', 0)} enriched, "
-        f"{payload.get('errors', 0)} errors, "
-        f"{len(not_reached)} not reached"
-    )
+    label = f"Last backfill — {payload.get('enriched', 0)} enriched, {payload.get('errors', 0)} errors, {len(not_reached)} not reached"
     with st.expander(label, expanded=False):
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Candidates", payload.get("candidates", 0))

@@ -108,7 +108,7 @@ def preload_portfolio_analysis(
             symbol = futures[future]
             try:
                 channel = future.result()
-            except Exception:
+            except Exception:  # noqa: BLE001
                 channel = None
             if channel is not None:
                 yield_channels[symbol] = channel

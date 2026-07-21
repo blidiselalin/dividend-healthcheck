@@ -8,10 +8,9 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
 
 from config import DATA_DIR
-from db.connection import migrate_portfolio_user_id, open_app_db, use_cloud_sql
+from db.connection import open_app_db, use_cloud_sql
 
 USERS_DB_PATH = DATA_DIR / "users.db"
 
@@ -20,8 +19,8 @@ USERS_DB_PATH = DATA_DIR / "users.db"
 class AppUser:
     id: str
     email: str
-    name: Optional[str]
-    picture_url: Optional[str]
+    name: str | None
+    picture_url: str | None
     created_at: datetime
     last_login_at: datetime
     is_active: bool
@@ -53,7 +52,7 @@ def _bool_param(value: bool, *, is_postgres: bool):
 
 
 class UserStore:
-    def __init__(self, db_path: Optional[Path] = None) -> None:
+    def __init__(self, db_path: Path | None = None) -> None:
         self.db_path = Path(db_path or USERS_DB_PATH)
         if not use_cloud_sql():
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -94,7 +93,7 @@ class UserStore:
             is_admin=bool(row["is_admin"]),
         )
 
-    def get_by_email(self, email: str) -> Optional[AppUser]:
+    def get_by_email(self, email: str) -> AppUser | None:
         normalized = email.strip().lower()
         if not normalized:
             return None
@@ -109,12 +108,10 @@ class UserStore:
         *,
         user_id: str,
         email: str,
-        name: Optional[str],
-        picture_url: Optional[str],
+        name: str | None,
+        picture_url: str | None,
         is_admin: bool = False,
     ) -> AppUser:
-        from db.connection import migrate_portfolio_user_id
-
         now = _utc_now().isoformat()
         normalized_email = email.strip().lower()
 
@@ -150,7 +147,9 @@ class UserStore:
             elif by_email:
                 old_id = str(by_email["id"])
                 if old_id != user_id:
-                    migrate_portfolio_user_id(old_id, user_id)
+                    from auth.migration import migrate_user_data_dir
+
+                    migrate_user_data_dir(old_id, user_id)
                     admin_expr = _admin_update_expr(is_postgres=connection.is_postgres)
                     connection.execute(
                         f"""
@@ -166,23 +165,6 @@ class UserStore:
                             now,
                             _bool_param(is_admin, is_postgres=connection.is_postgres),
                             normalized_email,
-                        ),
-                    )
-                else:
-                    admin_expr = _admin_update_expr(is_postgres=connection.is_postgres)
-                    connection.execute(
-                        f"""
-                        UPDATE users
-                        SET name = ?, picture_url = ?, last_login_at = ?,
-                            is_admin = {admin_expr}
-                        WHERE id = ?
-                        """,
-                        (
-                            name,
-                            picture_url,
-                            now,
-                            _bool_param(is_admin, is_postgres=connection.is_postgres),
-                            user_id,
                         ),
                     )
             else:
@@ -220,18 +202,14 @@ class UserStore:
             raise RuntimeError("Failed to persist user after login")
         return user
 
-    def get_by_id(self, user_id: str) -> Optional[AppUser]:
+    def get_by_id(self, user_id: str) -> AppUser | None:
         with self._connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM users WHERE id = ?", (user_id,)
-            ).fetchone()
+            row = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         return self._row_to_user(row) if row else None
 
-    def list_users(self) -> List[AppUser]:
+    def list_users(self) -> list[AppUser]:
         with self._connect() as connection:
-            rows = connection.execute(
-                "SELECT * FROM users ORDER BY last_login_at DESC"
-            ).fetchall()
+            rows = connection.execute("SELECT * FROM users ORDER BY last_login_at DESC").fetchall()
         return [self._row_to_user(row) for row in rows]
 
     def set_active(self, user_id: str, *, active: bool) -> bool:

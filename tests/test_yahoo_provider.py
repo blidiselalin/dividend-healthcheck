@@ -36,7 +36,9 @@ class _FakeTicker:
             "sharesOutstanding": 4_300_000_000,
             "exDividendDate": 1713225600,  # 2024-04-16 UTC
         }
-        self.fast_info = SimpleNamespace(last_price=60.0, market_cap=123, year_high=70.0, year_low=50.0)
+        self.fast_info = SimpleNamespace(
+            last_price=60.0, market_cap=123, year_high=70.0, year_low=50.0
+        )
 
     def history(self, period: str, auto_adjust: bool):
         assert period == "10y"

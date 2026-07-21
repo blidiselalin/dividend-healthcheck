@@ -30,7 +30,7 @@ def render_beta_pricing_placeholder(*, expanded: bool = False) -> None:
             """
             **No credit card required.**
 
-            **Planned Pro pricing after launch:**  
+            **Planned Pro pricing after launch:**
             $5/month or $40/year.
             """
         )

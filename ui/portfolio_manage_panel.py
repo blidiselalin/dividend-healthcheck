@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from calendar import month_name
 from datetime import date
-from typing import Callable, Optional
+from typing import Callable
 
 import streamlit as st
 
@@ -19,7 +19,7 @@ def _after_change(
     message: str,
     *,
     full_reload: bool = True,
-    sections: Optional[list[str]] = None,
+    sections: list[str] | None = None,
 ) -> None:
     from services.portfolio_session import invalidate_holdings_cache
 
@@ -101,40 +101,40 @@ def _render_monthly_evolution_tab(service: PortfolioManagementService) -> None:
             st.session_state[f"pm_evo_port_{form_key}"] = suggested_eur
             st.rerun()
 
-    dep_year = st.number_input(
+    st.number_input(
         "Year",
         min_value=2000,
         max_value=2100,
         value=default_year,
         key=f"pm_evo_year_{form_key}",
     )
-    dep_month = st.number_input(
+    st.number_input(
         "Month",
         min_value=1,
         max_value=12,
         value=default_month,
         key=f"pm_evo_month_{form_key}",
     )
-    dep_label = st.text_input(
+    st.text_input(
         "Label",
         value=default_label,
         key=f"pm_evo_label_{form_key}",
     )
-    dep_eur = st.number_input(
+    st.number_input(
         "Deposit €",
         min_value=0.0,
         value=default_eur,
         step=1.0,
         key=f"pm_evo_eur_{form_key}",
     )
-    dep_usd = st.number_input(
+    st.number_input(
         "Deposit $",
         min_value=0.0,
         value=default_usd,
         step=1.0,
         key=f"pm_evo_usd_{form_key}",
     )
-    dep_port = st.number_input(
+    st.number_input(
         "Portfolio € (end of month)",
         min_value=0.0,
         value=default_port,
@@ -145,14 +145,18 @@ def _render_monthly_evolution_tab(service: PortfolioManagementService) -> None:
 
     if st.button("Save month", key=f"pm_evo_save_{form_key}"):
         try:
-            label = dep_label.strip() or _month_label(int(dep_year), int(dep_month))
+            year_val = int(st.session_state[f"pm_evo_year_{form_key}"])
+            month_val = int(st.session_state[f"pm_evo_month_{form_key}"])
+            label = st.session_state[f"pm_evo_label_{form_key}"].strip() or _month_label(
+                year_val, month_val
+            )
             saved = service.add_deposit(
-                year=int(dep_year),
-                month=int(dep_month),
+                year=year_val,
+                month=month_val,
                 label=label,
-                deposit_eur=dep_eur,
-                deposit_usd=dep_usd,
-                portfolio_eur=dep_port,
+                deposit_eur=st.session_state[f"pm_evo_eur_{form_key}"],
+                deposit_usd=st.session_state[f"pm_evo_usd_{form_key}"],
+                portfolio_eur=st.session_state[f"pm_evo_port_{form_key}"],
             )
             msg = f"Saved {saved.label}."
             if saved.portfolio_eur <= 0:
@@ -172,53 +176,58 @@ def render_portfolio_manage_sidebar() -> None:
 
     expand_manage = is_demo_session() or not user_has_holdings_in_db()
     with st.sidebar.expander("Manage portfolio", expanded=expand_manage):
-        if st.session_state.get("portfolio_onboarding_show_manage_tip") and not user_has_holdings_in_db():
+        if (
+            st.session_state.get("portfolio_onboarding_show_manage_tip")
+            and not user_has_holdings_in_db()
+        ):
             st.info(
-                "**Step 1:** Add ticker tab below — symbol, shares, average cost, then **Add to portfolio**. "
-                "Views refresh in the background automatically."
+                "**Step 1:** Add ticker tab below — symbol, shares, average cost, then "
+                "**Add to portfolio**. Views refresh in the background automatically."
             )
         tab_add, tab_edit, tab_buy, tab_evolution = st.tabs(
             ["Add ticker", "Edit position", "Purchase", "Monthly evolution"]
         )
 
         with tab_add:
-            st.caption("Adds a holding to your portfolio and fetches market data into the shared library.")
-            symbol = st.text_input("Ticker", key="pm_add_symbol", placeholder="e.g. VZ")
-            shares = st.number_input("Shares", min_value=0.0, value=10.0, step=1.0, key="pm_add_shares")
-            avg_cost = st.number_input(
+            st.caption(
+                "Adds a holding to your portfolio and fetches market data into the shared library."
+            )
+            st.text_input("Ticker", key="pm_add_symbol", placeholder="e.g. VZ")
+            st.number_input("Shares", min_value=0.0, value=10.0, step=1.0, key="pm_add_shares")
+            st.number_input(
                 "Avg cost / share (USD)",
                 min_value=0.0,
                 value=0.0,
                 step=0.01,
                 key="pm_add_avg",
             )
-            commission = st.number_input(
+            st.number_input(
                 "Commission (USD)",
                 min_value=0.0,
                 value=0.0,
                 step=0.01,
                 key="pm_add_comm",
             )
-            company = st.text_input(
+            st.text_input(
                 "Company name (optional)",
                 key="pm_add_company",
                 help="Filled from Yahoo Finance if left blank.",
             )
-            skip_check = st.checkbox("Skip Yahoo validation", key="pm_add_skip")
+            st.checkbox("Skip Yahoo validation", key="pm_add_skip")
             if st.button("Add to portfolio", type="primary", key="pm_add_btn"):
                 try:
-                    if shares <= 0:
+                    if st.session_state.pm_add_shares <= 0:
                         st.error("Shares must be greater than zero.")
-                    elif avg_cost <= 0 and not skip_check:
+                    elif st.session_state.pm_add_avg <= 0 and not st.session_state.pm_add_skip:
                         st.error("Enter average cost per share.")
                     else:
                         result = service.add_ticker(
-                            symbol,
-                            shares=shares,
-                            avg_cost_per_share=avg_cost or 0.01,
-                            commission=commission,
-                            company_name=company.strip() or None,
-                            skip_validation=skip_check,
+                            st.session_state.pm_add_symbol,
+                            shares=st.session_state.pm_add_shares,
+                            avg_cost_per_share=st.session_state.pm_add_avg or 0.01,
+                            commission=st.session_state.pm_add_comm,
+                            company_name=(st.session_state.pm_add_company.strip() or None),
+                            skip_validation=st.session_state.pm_add_skip,
                         )
                         sync = result.get("vector_sync") or {}
                         created = sync.get("created", 0)
@@ -305,9 +314,9 @@ def render_portfolio_manage_sidebar() -> None:
             if not symbols:
                 st.info("Add a holding before logging purchases.")
             else:
-                buy_symbol = st.selectbox("Ticker", symbols, key="pm_buy_symbol")
-                buy_date = st.date_input("Purchase date", value=date.today(), key="pm_buy_date")
-                buy_price = st.number_input(
+                st.selectbox("Ticker", symbols, key="pm_buy_symbol")
+                st.date_input("Purchase date", value=date.today(), key="pm_buy_date")
+                st.number_input(
                     "Price (USD)",
                     min_value=0.0,
                     value=0.0,
@@ -316,9 +325,13 @@ def render_portfolio_manage_sidebar() -> None:
                 )
                 if st.button("Log purchase", key="pm_buy_btn"):
                     try:
-                        service.add_purchase(buy_symbol, buy_date, buy_price)
+                        service.add_purchase(
+                            st.session_state.pm_buy_symbol,
+                            st.session_state.pm_buy_date,
+                            st.session_state.pm_buy_price,
+                        )
                         _after_change(
-                            f"Logged purchase for {buy_symbol}.",
+                            f"Logged purchase for {st.session_state.pm_buy_symbol}.",
                             full_reload=False,
                             sections=["journal"],
                         )
@@ -331,11 +344,13 @@ def render_portfolio_manage_sidebar() -> None:
 def render_tab_refresh_button(
     section: str,
     *,
-    on_refresh: Optional[Callable[[], None]] = None,
+    on_refresh: Callable[[], None] | None = None,
 ) -> None:
     """Small Update control aligned with tab headers."""
     from services.portfolio_refresh import make_section_refresher
 
     callback = on_refresh or make_section_refresher(section)
-    if st.button("Update", key=f"portfolio_refresh_{section}", help="Reload this tab with latest data"):
+    if st.button(
+        "Update", key=f"portfolio_refresh_{section}", help="Reload this tab with latest data"
+    ):
         callback()

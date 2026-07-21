@@ -82,7 +82,9 @@ def render_onboarding_checklist(*, expanded: bool = True) -> None:
             "shared S&P library. Heavy work runs in **Background tasks** so the UI stays responsive."
         )
         _render_workspace_overview()
-        st.progress(done_count / total if total else 0.0, text=f"{done_count} of {total} steps done")
+        st.progress(
+            done_count / total if total else 0.0, text=f"{done_count} of {total} steps done"
+        )
 
         for step, complete in progress:
             icon = "✅" if complete else "⬜"
@@ -132,7 +134,9 @@ def render_demo_onboarding_checklist(*, expanded: bool = True) -> None:
         return
 
     with st.expander("Test mode — quick tour", expanded=expanded):
-        st.progress(done_count / total if total else 0.0, text=f"{done_count} of {total} steps done")
+        st.progress(
+            done_count / total if total else 0.0, text=f"{done_count} of {total} steps done"
+        )
         for step, complete in progress:
             icon = "✅" if complete else "⬜"
             st.markdown(f"{icon} **{step.title}**")
@@ -188,11 +192,15 @@ def render_onboarding_banner_if_needed() -> None:
         session=st.session_state,
         is_demo=False,
     )
-    remaining = [step.title for step, done in step_progress(
-        has_holdings=user_has_holdings_in_db(),
-        session=st.session_state,
-        is_demo=False,
-    ) if not done]
+    remaining = [
+        step.title
+        for step, done in step_progress(
+            has_holdings=user_has_holdings_in_db(),
+            session=st.session_state,
+            is_demo=False,
+        )
+        if not done
+    ]
     if not remaining:
         return
 

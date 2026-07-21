@@ -9,7 +9,13 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from sqlite3 import Error as SQLiteError
 from typing import TYPE_CHECKING, Any
+
+try:
+    from psycopg import Error as PostgresError
+except ImportError:
+    PostgresError = type("PostgresError", (Exception,), {})
 
 if TYPE_CHECKING:
     from data_ingestion.models import StockDocument
@@ -58,7 +64,7 @@ def document_count() -> int:
     try:
         store = get_shared_vector_store()
         return int(store.count()) if store else 0
-    except Exception:
+    except (SQLiteError, PostgresError, OSError):
         return 0
 
 
@@ -80,7 +86,7 @@ def shared_market_db_status(*, include_coverage: bool = True) -> dict[str, Any]:
             from services.sp500_peers_service import coverage_stats
 
             status["sp500_coverage"] = coverage_stats()
-        except Exception as exc:
+        except (SQLiteError, PostgresError, OSError) as exc:
             logger.debug("S&P coverage stats unavailable: %s", exc)
     return status
 
@@ -89,7 +95,7 @@ def get_document(symbol: str) -> StockDocument | None:
     """Lookup one symbol in the shared library (any user)."""
     try:
         return get_shared_vector_store().get_by_symbol(symbol.upper())  # type: ignore[no-any-return]
-    except Exception:
+    except (SQLiteError, PostgresError, OSError):
         return None
 
 

@@ -48,7 +48,10 @@ def _render_auth_controls() -> None:
     if auth_disabled():
         st.warning("Authentication is disabled. Enable Google OAuth in Streamlit secrets.")
         dev_email = st.text_input("Dev email (local bypass)", placeholder="you@gmail.com")
-        if st.button("Continue in dev mode", type="primary", use_container_width=True) and dev_email.strip():
+        if (
+            st.button("Continue in dev mode", type="primary", use_container_width=True)
+            and dev_email.strip()
+        ):
             st.session_state["dev_login_email"] = dev_email.strip().lower()
             st.rerun()
     elif not auth_configured():
@@ -57,7 +60,10 @@ def _render_auth_controls() -> None:
             "`.streamlit/secrets.toml` and add your OAuth client credentials."
         )
         dev_email = st.text_input("Dev email (local bypass)", placeholder="you@gmail.com")
-        if st.button("Continue in dev mode", type="primary", use_container_width=True) and dev_email.strip():
+        if (
+            st.button("Continue in dev mode", type="primary", use_container_width=True)
+            and dev_email.strip()
+        ):
             st.session_state["dev_login_email"] = dev_email.strip().lower()
             st.rerun()
     else:
@@ -83,7 +89,8 @@ def _render_google_auth_block() -> None:
                 st.caption("Invited: " + ", ".join(allowed))
         else:
             st.caption(
-                "One-click Google sign-up — your try-list holdings copy into your account automatically."
+                "One-click Google sign-up — your try-list holdings copy into your "
+                "account automatically."
             )
         st.button(
             "Create portfolio — Sign up with Google",

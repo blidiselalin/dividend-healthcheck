@@ -14,10 +14,18 @@ import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from sqlite3 import Error as SQLiteError
 from typing import TYPE_CHECKING, Any
+
+import requests
 
 from data_ingestion.models import DividendRecord, StockDocument
 from utils.dividend_amounts import normalize_payment_amount
+
+try:
+    from psycopg import Error as PostgresError
+except ImportError:
+    PostgresError = type("PostgresError", (Exception,), {})
 
 if TYPE_CHECKING:
     from services.portfolio_holding_detail_service import HoldingDividendRow
@@ -145,10 +153,7 @@ def _lookup_from_rows(
             continue
 
         ex = _parse_csv_date(
-            row.get("ex_date")
-            or row.get("Ex-Date")
-            or row.get("ExDate")
-            or row.get("Ex/EFF DATE")
+            row.get("ex_date") or row.get("Ex-Date") or row.get("ExDate") or row.get("Ex/EFF DATE")
         )
         pay = _parse_csv_date(
             row.get("payment_date")
@@ -249,7 +254,7 @@ def _nasdaq_api_payment_lookup(symbol: str) -> PaymentDateLookup:
         partial = _lookup_from_rows(rows, symbol_filter=symbol)
         if partial.by_ex_amount or partial.by_ex:
             lookup.merge(partial, source="nasdaq_api")
-    except Exception as exc:
+    except (ImportError, requests.exceptions.RequestException) as exc:
         logger.debug("Nasdaq dividend calendar unavailable for %s: %s", symbol, exc)
     return lookup
 
@@ -279,7 +284,7 @@ def _yahoo_payment_lookup(symbol: str) -> PaymentDateLookup:
             lookup.by_ex.setdefault(ex, pay)
             lookup.ex_to_pay_lags.append((pay - ex).days)
             lookup.sources.add("yahoo_info")
-    except Exception as exc:
+    except (ImportError, yf.exceptions.YFinanceError) as exc:
         logger.debug("Yahoo dividend calendar unavailable for %s: %s", symbol, exc)
 
     return lookup
@@ -389,7 +394,7 @@ def enrich_document_payment_dates(
             from db.postgres_market_history_store import PostgresMarketHistoryStore
 
             document = PostgresMarketHistoryStore().attach_history_to_document(document)
-    except Exception as exc:
+    except (ImportError, SQLiteError, PostgresError, OSError) as exc:
         logger.debug("Could not attach Postgres dividend history for %s: %s", symbol, exc)
 
     records = list(document.dividend_history)
@@ -510,9 +515,7 @@ def reconcile_receipt_dates(
             nasdaq_lookups=stats.nasdaq_lookups + (1 if fetch_nasdaq else 0),
         )
 
-        by_key = {
-            (row.ex_date, round(row.per_share_usd, 6)): row for row in expected_paid
-        }
+        by_key = {(row.ex_date, round(row.per_share_usd, 6)): row for row in expected_paid}
         stored = ctx.receipts.list_for_symbol(symbol)
 
         for receipt in stored:
@@ -572,9 +575,7 @@ def reconcile_receipt_dates(
             stats.symbols_checked,
             stats.receipts_updated,
             stats.pay_dates_corrected,
-            ", ".join(
-                f"{item.symbol} {item.old_pay_date}→{item.new_pay_date}" for item in sample
-            ),
+            ", ".join(f"{item.symbol} {item.old_pay_date}→{item.new_pay_date}" for item in sample),
         )
 
     return stats

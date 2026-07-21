@@ -306,8 +306,9 @@ def test_table_row_counts_postgres(monkeypatch: pytest.MonkeyPatch) -> None:
         {"table_name": "stock_documents"},
     ]
 
-    def execute_side_effect(sql: str, params: Any = ()) -> Any:
-        if "information_schema" in sql.lower():
+    def execute_side_effect(sql: Any, params: Any = ()) -> Any:
+        text = str(sql).lower()
+        if "information_schema" in text:
             return MagicMock(fetchall=lambda: table_rows)
         return MagicMock(fetchone=lambda: {"count": 3})
 

@@ -62,8 +62,7 @@ class ScoringService:
     def calculate_score(data: StockData) -> int:
         """Calculate strategic investment score (0-100)."""
         total = sum(
-            component.points
-            for component in ScoringService.calculate_score_breakdown(data)
+            component.points for component in ScoringService.calculate_score_breakdown(data)
         )
         return min(total, 100)
 

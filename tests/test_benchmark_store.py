@@ -9,10 +9,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-import pytest
-
 from db.benchmark_store import BENCHMARK_ETF_SEED, BenchmarkPriceStore
-
 
 # ---------------------------------------------------------------------------
 # Helpers

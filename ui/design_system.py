@@ -212,8 +212,7 @@ section.main {
 }
 .ds-metric-card.ds-highlight {
   background: linear-gradient(145deg, rgba(45, 212, 191, 0.14) 0%, var(--ds-surface-elevated) 55%);
-  border-color: var(--ds-highlight-border);
-  box-shadow: var(--ds-highlight-glow);
+  border-color: var(--ds-highlight-border); box-shadow: var(--ds-highlight-glow);
 }
 .ds-metric-card.ds-highlight .ds-metric-label {
   color: var(--ds-primary-light);
@@ -222,12 +221,7 @@ section.main {
   color: #f0fdfa;
 }
 .ds-metric-label {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ds-muted);
-  margin: 0 0 0.25rem 0;
+  font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ds-muted); margin: 0 0 0.25rem 0;
 }
 .ds-metric-value {
   font-size: 1.15rem;
@@ -687,11 +681,8 @@ div[data-testid="stMetric"].ds-metric-dividend-highlight label p {
 }
 .ds-yield-channel-meta {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.55rem 1rem;
-  margin: 0.15rem 0 0;
-  padding-left: 0.85rem;
+  flex-wrap: wrap; align-items: center;
+  gap: 0.55rem 1rem; margin: 0.15rem 0 0; padding-left: 0.85rem;
   border-left: 4px solid var(--ds-primary);
 }
 .ds-yield-zone-chip {
@@ -861,10 +852,7 @@ div[data-testid="stMetric"].ds-metric-dividend-highlight label p {
 
 /* Page divider */
 .ds-page-divider {
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--ds-border), transparent);
-  margin: 1.75rem 0;
-  border: none;
+  height: 1px; background: linear-gradient(90deg, transparent, var(--ds-border), transparent); margin: 1.75rem 0; border: none;
 }
 
 /* Section label overline */
@@ -1080,10 +1068,10 @@ def inject_design_system(*, theme: str | None = None) -> None:
     render_html(f"<style>{get_design_system_css(theme=theme)}</style>")
 
 
-def render_logo(*, show_name: bool = True, tagline: str = "Dividend research", sidebar: bool = False) -> None:
-    beta_inline = (
-        '<span class="ds-beta-badge" style="margin:0 0 0 0.35rem;vertical-align:middle;font-size:0.65rem">Beta</span>'
-    )
+def render_logo(
+    *, show_name: bool = True, tagline: str = "Dividend research", sidebar: bool = False
+) -> None:
+    beta_inline = '<span class="ds-beta-badge" style="margin:0 0 0 0.35rem;vertical-align:middle;font-size:0.65rem">Beta</span>'
     name_html = (
         f'<div class="ds-brand-text">'
         f'<span class="ds-brand-name">{html.escape(PRODUCT_NAME)}{beta_inline}</span>'
@@ -1219,5 +1207,7 @@ def sparkline_bars(values: list[float], *, max_height: int = 44) -> str:
     bars = []
     for value in values:
         height = max(4, int((value / peak) * max_height))
-        bars.append(f'<div class="cc-spark-bar" style="height:{height}px" title="${value:,.0f}"></div>')
+        bars.append(
+            f'<div class="cc-spark-bar" style="height:{height}px" title="${value:,.0f}"></div>'
+        )
     return f'<div class="cc-sparkline" aria-hidden="true">{"".join(bars)}</div>'

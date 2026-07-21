@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta
 from functools import lru_cache
 from typing import Any
 
+import requests
 import yfinance as yf
 
 from data_ingestion.models import StockDocument
@@ -144,20 +145,20 @@ class PortfolioDetailsService:
                 symbol = stats_futures[future]
                 try:
                     stats_cache[symbol] = future.result()
-                except Exception:
+                except Exception:  # noqa: BLE001
                     stats_cache[symbol] = None
             if use_live_prices:
                 for future in as_completed(price_futures):
                     symbol = price_futures[future]
                     try:
                         live_prices[symbol] = future.result()
-                    except Exception:
+                    except Exception:  # noqa: BLE001
                         live_prices[symbol] = None
                 for future in as_completed(previous_close_futures):
                     symbol = previous_close_futures[future]
                     try:
                         previous_closes[symbol] = future.result()
-                    except Exception:
+                    except Exception:  # noqa: BLE001
                         previous_closes[symbol] = None
 
         if not use_live_prices:
@@ -313,7 +314,7 @@ class PortfolioDetailsService:
 
             st.session_state["_stale_prices_pending"] = True
             schedule_stale_price_refresh_if_needed()
-        except Exception as exc:
+        except (ImportError, AttributeError) as exc:
             logger.debug("Could not schedule deferred live reload: %s", exc)
 
     @staticmethod
@@ -591,7 +592,7 @@ class PortfolioDetailsService:
     def _fetch_price_snapshot(symbol: str) -> PriceSnapshot:
         try:
             history = yf.Ticker(symbol).history(period="2y", auto_adjust=True)
-        except Exception:
+        except (yf.exceptions.YFinanceError, requests.exceptions.RequestException):  # noqa: BLE001
             return PriceSnapshot(None, None, None, None, None)
 
         if history is None or history.empty or "Close" not in history.columns:
@@ -645,7 +646,7 @@ class PortfolioDetailsService:
     ) -> tuple[float | None, date | None, date | None]:
         try:
             info = yf.Ticker(symbol).info or {}
-        except Exception:
+        except (yf.exceptions.YFinanceError, requests.exceptions.RequestException):  # noqa: BLE001
             return None, ex_date, ex_date
 
         price_to_fcf = info.get("priceToFreeCashFlows")

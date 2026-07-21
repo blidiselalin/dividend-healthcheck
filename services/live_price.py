@@ -66,7 +66,7 @@ def fetch_latest_market_price(symbol: str) -> float | None:
                 if not closes.empty:
                     return float(closes.iloc[-1])
     except Exception as exc:
-        logger.debug("Live price fetch failed for %s: %s", symbol, exc)
+        logger.debug("Live price fetch failed for %s: %s", symbol, exc)  # noqa: BLE001
     return None
 
 

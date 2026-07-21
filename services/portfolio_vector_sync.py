@@ -9,6 +9,8 @@ from collections import Counter
 from datetime import datetime
 from typing import Any, cast
 
+import requests
+
 from config import DELISTED_SYMBOLS
 from data_ingestion.models import DataSource, StockDocument
 from services.portfolio_context import PortfolioContext, create_portfolio_context
@@ -97,7 +99,7 @@ def _fetch_or_create_document(
         if document is not None:
             return cast(StockDocument, document)
     except Exception as exc:
-        logger.warning("Market data enrich failed for %s: %s", symbol, exc)
+        logger.warning("Market data enrich failed for %s: %s", symbol, exc)  # noqa: BLE001
 
     return StockDocument(
         symbol=symbol,
@@ -168,7 +170,7 @@ def sync_portfolio_to_vector_db(
             )
             to_store.append(document)
             stats["linked"] += 1
-        except Exception as exc:
+        except requests.exceptions.RequestException as exc:
             logger.error("Portfolio vector sync failed for %s: %s", symbol, exc)
             stats["errors"] += 1
 

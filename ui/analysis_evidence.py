@@ -4,8 +4,9 @@ Show clear evidence of data sources and history intervals used in analysis.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Any, Optional, Sequence
+from typing import Any
 
 from config import MAX_HISTORY_YEARS
 from services.analysis_evidence import (
@@ -50,7 +51,7 @@ def render_analysis_evidence(
     data: Any = None,
     vector_doc: Any = None,
     yield_channel_data: Any = None,
-    portfolio_prices_at: Optional[datetime] = None,
+    portfolio_prices_at: datetime | None = None,
     expanded: bool = True,
 ) -> None:
     """Per-ticker panel: sources, intervals, and reload timestamps."""
@@ -73,7 +74,7 @@ def render_analysis_evidence(
 
 def render_portfolio_session_evidence(
     *,
-    loaded_at: Optional[datetime] = None,
+    loaded_at: datetime | None = None,
     holding_count: int = 0,
     charts_ready: int = 0,
     library_ready: int = 0,

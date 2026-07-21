@@ -64,7 +64,8 @@ BENCHMARK_ETF_SEED: dict[str, dict[str, Any]] = {
             "• Natural benchmark for dividend-growth investors: combines yield with quality.\n"
             "• Requires ≥10 consecutive years of dividend payments — high cut-risk filter.\n"
             "• Rebalances quarterly; turnover is low (~15 % p.a.) for a factor ETF.\n"
-            "• Complements growth-heavy S&P 500 exposure; underweights tech, overweights financials.\n"
+            "• Complements growth-heavy S&P 500 exposure; underweights tech, "
+            "overweights financials.\n"
             "• Expense ratio 0.06 % — one of the cheapest dividend ETFs available."
         ),
     },
@@ -73,7 +74,8 @@ BENCHMARK_ETF_SEED: dict[str, dict[str, Any]] = {
         "full_name": "Dow Jones Industrial Average",
         "description": (
             "Price-weighted index of 30 large, blue-chip US companies.  One of the oldest "
-            "equity benchmarks; less diversified and more price-distorted than cap-weighted indexes."
+            "equity benchmarks; less diversified and more price-distorted than "
+            "cap-weighted indexes."
         ),
         "expense_ratio_pct": None,
         "category": "US Large Cap Blend",
@@ -123,8 +125,7 @@ class BenchmarkPriceStore:
     @contextmanager
     def _connect(self) -> Any:
         if use_cloud_sql():
-            from db.connection import ensure_schema, get_connection
-            from db.connection import DbConnection
+            from db.connection import DbConnection, ensure_schema, get_connection
 
             ensure_schema()
             with get_connection() as conn:
@@ -231,9 +232,7 @@ class BenchmarkPriceStore:
     def covered_symbols(self) -> set[str]:
         """Return the set of symbols that have at least one stored price row."""
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT DISTINCT symbol FROM benchmark_price_history"
-            ).fetchall()
+            rows = conn.execute("SELECT DISTINCT symbol FROM benchmark_price_history").fetchall()
         return {row["symbol"] for row in rows}
 
     def latest_date(self, symbol: str) -> date | None:

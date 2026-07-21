@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import streamlit as st
 
@@ -35,7 +35,7 @@ def render_dividend_timing_dataframe(
         column_config["Received"] = st.column_config.NumberColumn(format="$%.2f")
 
     kwargs = {
-        "width": "stretch",
+        "use_container_width": True,
         "hide_index": True,
         "key": table_key,
     }

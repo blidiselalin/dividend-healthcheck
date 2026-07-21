@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+import requests
+
 from config import DELISTED_SYMBOLS
 from data_ingestion.deposits_store import DepositsStore, MonthlyDeposit
 from data_ingestion.portfolio_store import PortfolioHolding, PortfolioStore
@@ -109,7 +111,7 @@ class PortfolioManagementService:
                 "OK",
                 company_name=document.name,
             )
-        except Exception as exc:
+        except requests.exceptions.RequestException as exc:
             logger.warning("Symbol validation failed for %s: %s", normalized, exc)
             return SymbolValidation(
                 normalized,
@@ -160,7 +162,7 @@ class PortfolioManagementService:
             from services.portfolio_session import invalidate_holdings_cache
 
             invalidate_holdings_cache()
-        except Exception:  # noqa: S110
+        except ImportError:  # noqa: S110
             pass
         return {
             "holding": holding,
@@ -238,7 +240,7 @@ class PortfolioManagementService:
                 from services.portfolio_session import invalidate_holdings_cache
 
                 invalidate_holdings_cache()
-            except Exception:  # noqa: S110
+            except ImportError:  # noqa: S110
                 pass
 
         return holding
@@ -252,7 +254,7 @@ class PortfolioManagementService:
                 from services.portfolio_session import invalidate_holdings_cache
 
                 invalidate_holdings_cache()
-            except Exception:  # noqa: S110
+            except ImportError:  # noqa: S110
                 pass
         return removed
 
@@ -272,7 +274,7 @@ class PortfolioManagementService:
             from services.portfolio_session import invalidate_holdings_cache
 
             invalidate_holdings_cache()
-        except Exception:  # noqa: S110
+        except ImportError:  # noqa: S110
             pass
         return record
 
@@ -298,7 +300,7 @@ class PortfolioManagementService:
             from services.portfolio_session import invalidate_holdings_cache
 
             invalidate_holdings_cache()
-        except Exception:  # noqa: S110
+        except ImportError:  # noqa: S110
             pass
         return deposit
 

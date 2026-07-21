@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 from services.portfolio_holdings_summary import sort_positions_worst_first
 from services.portfolio_position_table import build_home_positions_dataframe, risk_hints_by_ticker
-from ui.design_system import render_section_header, wrap_table_container, close_table_container
+from ui.design_system import close_table_container, render_section_header, wrap_table_container
 
 
 def _load_risk_hints() -> dict[str, str]:
@@ -54,7 +54,7 @@ def render_positions_table(
 
     selection = st.dataframe(
         df,
-        width="stretch",
+        use_container_width=True,
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",

@@ -73,7 +73,7 @@ def _render_admin_users() -> None:
                 "Last login": item.last_login_at.strftime("%Y-%m-%d %H:%M"),
             }
         )
-    st.sidebar.dataframe(rows, width="stretch", hide_index=True)
+    st.sidebar.dataframe(rows, use_container_width=True, hide_index=True)
 
     with st.sidebar.expander("Manage access", expanded=False):
         pick = st.selectbox(

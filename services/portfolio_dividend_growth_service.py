@@ -7,12 +7,18 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
+from sqlite3 import Error as SQLiteError
 from typing import Any
 
 import pandas as pd
 
 from data_ingestion.portfolio_store import PortfolioStore
 from utils.chart_theme import PALETTE, bottom_legend, outside_bar_text, style_figure
+
+try:
+    from psycopg import Error as PostgresError
+except ImportError:
+    PostgresError = type("PostgresError", (Exception,), {})
 
 try:
     import plotly.graph_objects as go
@@ -73,7 +79,7 @@ class PortfolioDividendGrowthService:
                 year = purchase.purchase_date.year
                 if purchase.symbol not in result or year < result[purchase.symbol]:
                     result[purchase.symbol] = year
-        except Exception as exc:  # noqa: BLE001
+        except (SQLiteError, PostgresError, OSError) as exc:
             import logging
 
             logging.getLogger(__name__).debug(
@@ -352,8 +358,7 @@ class PortfolioDividendGrowthService:
         )
         fig.update_layout(
             title=(
-                "Estimated portfolio dividends received "
-                f"(DPS x shares owned, since {SINCE_YEAR})"
+                f"Estimated portfolio dividends received (DPS x shares owned, since {SINCE_YEAR})"
             ),
             yaxis_title="Estimated Income (USD / year)",
             height=380,

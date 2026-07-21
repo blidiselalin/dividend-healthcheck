@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import TYPE_CHECKING, Any
 
-from utils.chart_theme import PALETTE, outside_bar_text, style_figure
+from utils.chart_theme import outside_bar_text, style_figure
 from utils.dividend_amounts import (
     expected_payment_months,
     normalize_payment_amount,

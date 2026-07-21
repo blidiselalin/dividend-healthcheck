@@ -188,8 +188,7 @@ def _render_data_badge() -> None:
 
     if use_cloud_sql():
         st.sidebar.caption(
-            "Shared S&P library empty — run: "
-            "./scripts/update_cloud_docker.sh --ingest"
+            "Shared S&P library empty — run: ./scripts/update_cloud_docker.sh --ingest"
         )
         return
 

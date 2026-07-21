@@ -73,9 +73,8 @@ def _render_hero() -> None:
         render_logo(tagline="Free during beta · dividend research")
         render_beta_badge()
         render_html(
-            '<h1 class="cc-hero-title">'
-            'Track <span class="ds-accent">dividend yield history</span> and future income in one place.'
-            "</h1>"
+            '<h1 class="cc-hero-title">Track <span class="ds-accent">dividend yield history</span> '
+            "and future income in one place.</h1>"
             '<p class="cc-hero-sub">'
             "Try up to three dividend stocks with no account — then sign up free to save your portfolio."
             "</p>"
@@ -102,7 +101,8 @@ def _render_demo_quick_picks() -> None:
 def _render_search_and_playground() -> GuestDashboard:
     render_section_header(
         "Try dividend stocks",
-        f"Add up to {GUEST_MAX_HOLDINGS} tickers — session only until you sign up. Starts with KO, JNJ, O.",
+        f"Add up to {GUEST_MAX_HOLDINGS} tickers — session only until you sign up. Starts with "
+        "KO, JNJ, O.",
     )
 
     _render_demo_quick_picks()
@@ -124,7 +124,9 @@ def _render_search_and_playground() -> GuestDashboard:
             label_visibility="collapsed",
         )
     with col_add:
-        add_clicked = st.button("Add", type="primary", use_container_width=True, key="cc_add_symbol")
+        add_clicked = st.button(
+            "Add", type="primary", use_container_width=True, key="cc_add_symbol"
+        )
 
     if add_clicked and symbol.strip():
         _, err = add_guest_holding(
@@ -176,6 +178,7 @@ def _render_monthly_income_chart(dashboard: GuestDashboard) -> None:
     )
     try:
         import plotly.graph_objects as go
+
         from utils.chart_theme import chart_palette, style_yield_channel_figure
 
         palette = chart_palette()
@@ -197,7 +200,7 @@ def _render_monthly_income_chart(dashboard: GuestDashboard) -> None:
         st.plotly_chart(fig, use_container_width=True)
     except Exception:
         st.bar_chart(
-            {label: amount for label, amount in dashboard.monthly_forecast},
+            dict(dashboard.monthly_forecast),
             height=300,
         )
 
@@ -253,12 +256,23 @@ def _render_demo_dashboard(dashboard: GuestDashboard) -> None:
 
 
 def _render_feature_cards() -> None:
-    render_section_header(f"What you get with {PRODUCT_NAME}", "Free during beta — full dividend workspace after sign-up.")
+    render_section_header(
+        f"What you get with {PRODUCT_NAME}",
+        "Free during beta — full dividend workspace after sign-up.",
+    )
     render_feature_cards(
         [
             ("💵", "Track income", "Calendar, cash received, and a 12-month dividend forecast."),
-            ("🛡️", "Yield channels", "See if today's yield is high or low vs a stock's own history."),
-            ("📈", "Portfolio view", "Holdings, growth, journal, and benchmarks after you create an account."),
+            (
+                "🛡️",
+                "Yield channels",
+                "See if today's yield is high or low vs a stock's own history.",
+            ),
+            (
+                "📈",
+                "Portfolio view",
+                "Holdings, growth, journal, and benchmarks after you create an account.",
+            ),
         ]
     )
 

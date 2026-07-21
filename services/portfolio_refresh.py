@@ -5,13 +5,22 @@ Invalidate Streamlit caches and reload portfolio session state after data change
 from __future__ import annotations
 
 from collections.abc import Iterable
+from sqlite3 import Error as SQLiteError
 from typing import Callable
+
+try:
+    from psycopg import Error as PostgresError
+except ImportError:
+    PostgresError = type("PostgresError", (Exception,), {})
 
 import streamlit as st
 
+from services.deferred_startup import (
+    schedule_forced_dividend_sync,
+    schedule_portfolio_refresh,
+)
 from services.portfolio_analysis_preload import PortfolioAnalysisPreload
 from services.portfolio_details_service import PortfolioDetailsService
-from services.portfolio_dividend_sync_service import maybe_sync_received_dividends
 from services.portfolio_management_service import SECTION_KEYS
 from services.portfolio_ui_cache import clear_session_cache
 from ui.portfolio_risk_panel import refresh_portfolio_risks, store_portfolio_payload
@@ -50,8 +59,6 @@ def schedule_portfolio_reload(
     else:
         invalidate_section_caches(["all"])
 
-    from services.deferred_startup import schedule_portfolio_refresh
-
     schedule_portfolio_refresh(live_prices=live_prices)
 
 
@@ -72,7 +79,7 @@ def reload_portfolio_session(
 
     logger.info("Portfolio reload started (refresh_risks=%s)", refresh_risks)
     clear_session_cache()
-    maybe_sync_received_dividends(force=True)
+    schedule_forced_dividend_sync()
     rows, preload = PortfolioDetailsService().build_rows_with_cache(
         use_live_prices=True,
         preload_analysis=True,
@@ -84,7 +91,7 @@ def reload_portfolio_session(
         st.session_state["_portfolio_db_fingerprint"] = compute_portfolio_db_fingerprint(
             use_cache=False
         )
-    except Exception as exc:
+    except (SQLiteError, PostgresError, OSError) as exc:
         logger.debug("Could not store portfolio DB fingerprint after reload: %s", exc)
     logger.info("Portfolio reload finished (%d holdings)", len(rows))
     if refresh_risks:

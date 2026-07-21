@@ -60,7 +60,9 @@ def render_access_denied_panel() -> None:
         _render_request_form(identity, store, allow_resubmit=False)
 
     st.divider()
-    if st.button("Use a different Google account", use_container_width=True, key="access_try_other_google"):
+    if st.button(
+        "Use a different Google account", use_container_width=True, key="access_try_other_google"
+    ):
         st.logout()
 
 
@@ -124,17 +126,19 @@ def render_admin_access_requests() -> None:
 
             user = current_user()
             admin_email = user.email if user else ""
-        except Exception as exc:
+        except ImportError as exc:
             logger.debug("Could not resolve admin email for access approval: %s", exc)
         with col_a:
-            if st.button("Approve", key=approve_key, use_container_width=True, type="primary"):
-                if store.approve(item.email, reviewer_email=admin_email):
-                    st.session_state.pop("access_request_just_sent", None)
-                    st.success(f"Approved {item.email}")
-                    st.rerun()
+            if st.button(
+                "Approve", key=approve_key, use_container_width=True, type="primary"
+            ) and store.approve(item.email, reviewer_email=admin_email):
+                st.session_state.pop("access_request_just_sent", None)
+                st.success(f"Approved {item.email}")
+                st.rerun()
         with col_b:
-            if st.button("Reject", key=reject_key, use_container_width=True):
-                if store.reject(item.email, reviewer_email=admin_email):
-                    st.warning(f"Rejected {item.email}")
-                    st.rerun()
+            if st.button("Reject", key=reject_key, use_container_width=True) and store.reject(
+                item.email, reviewer_email=admin_email
+            ):
+                st.warning(f"Rejected {item.email}")
+                st.rerun()
         st.sidebar.divider()

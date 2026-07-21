@@ -4,7 +4,7 @@ Simplified portfolio home — welcome, quick actions, and try-it examples.
 
 from __future__ import annotations
 
-from typing import List, Optional, Sequence
+from collections.abc import Sequence
 
 import streamlit as st
 
@@ -14,6 +14,7 @@ from auth.user_context import clear_portfolio_session_state, current_user, resol
 from services.portfolio_details_service import PortfolioDetailRow
 from services.portfolio_session import is_demo_session
 from ui.app_about import render_app_about
+from ui.session_keys import ADMIN_VIEW_KEY
 from ui.theme import (
     PORTFOLIO_LABEL_BY_KEY,
     portfolio_data_ready,
@@ -55,16 +56,14 @@ HOME_EXAMPLES: Sequence[dict] = (
 
 def navigate_to_portfolio_home() -> None:
     """Leave admin, holding drill-down, or research and return to portfolio home."""
-    from ui.admin_page import set_admin_console_active
-
-    set_admin_console_active(False)
+    st.session_state[ADMIN_VIEW_KEY] = False
     st.session_state["portfolio_view_mode"] = PORTFOLIO_VIEW_OVERVIEW
     st.session_state.pop("portfolio_research_mode", None)
     st.session_state["portfolio_section_label"] = "Home"
     st.rerun()
 
 
-def set_holding_selection(symbol: str, nav_tickers: Optional[List[str]] = None) -> None:
+def set_holding_selection(symbol: str, nav_tickers: list[str] | None = None) -> None:
     st.session_state["portfolio_selected_symbol"] = symbol.strip().upper()
     st.session_state["portfolio_view_mode"] = PORTFOLIO_VIEW_HOLDING
     st.session_state["portfolio_analysis_ready"] = True
@@ -77,7 +76,7 @@ def set_holding_selection(symbol: str, nav_tickers: Optional[List[str]] = None) 
 def set_sp500_research_selection(
     symbol: str,
     *,
-    nav_symbols: Optional[List[str]] = None,
+    nav_symbols: list[str] | None = None,
 ) -> None:
     """Open full analysis for an S&P name (may not be in the user's portfolio)."""
     symbol = symbol.strip().upper()
@@ -208,14 +207,14 @@ def render_empty_home() -> None:
     render_real_user_getting_started()
 
 
-def render_stocks_overview(rows: List[PortfolioDetailRow]) -> None:
+def render_stocks_overview(rows: list[PortfolioDetailRow]) -> None:
     """Compact positions table — worst performers first, row click opens analysis."""
     from ui.portfolio_positions_table import render_positions_table
 
     render_positions_table(rows)
 
 
-def render_compact_summary(rows: List[PortfolioDetailRow]) -> None:
+def render_compact_summary(rows: list[PortfolioDetailRow]) -> None:
     from services.portfolio_analysis_preload import PortfolioAnalysisPreload
     from services.portfolio_month_dividends import cached_current_month_paid_dividends
     from ui.portfolio_summary import render_holdings_summary
@@ -246,7 +245,7 @@ def render_compact_summary(rows: List[PortfolioDetailRow]) -> None:
 
 
 def render_portfolio_home_header(
-    rows: Optional[List[PortfolioDetailRow]],
+    rows: list[PortfolioDetailRow] | None,
 ) -> bool:
     render_app_about(expanded=False)
     render_test_user_banner()

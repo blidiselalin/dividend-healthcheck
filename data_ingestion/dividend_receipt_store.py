@@ -70,8 +70,7 @@ class DividendReceiptStore:
             ).fetchone()
             if table_row:
                 columns = {
-                    row[1]
-                    for row in connection.execute("PRAGMA table_info(holdings)").fetchall()
+                    row[1] for row in connection.execute("PRAGMA table_info(holdings)").fetchall()
                 }
                 if "dividend_tracking_since" not in columns:
                     connection.execute(
@@ -89,14 +88,17 @@ class DividendReceiptStore:
         gross_usd: float,
     ) -> bool:
         """Insert a receipt if new. Returns True when a row was added."""
-        return self.sync_receipt(
-            symbol,
-            ex_date=ex_date,
-            pay_date=pay_date,
-            per_share_usd=per_share_usd,
-            shares_held=shares_held,
-            gross_usd=gross_usd,
-        ) == "added"
+        return (
+            self.sync_receipt(
+                symbol,
+                ex_date=ex_date,
+                pay_date=pay_date,
+                per_share_usd=per_share_usd,
+                shares_held=shares_held,
+                gross_usd=gross_usd,
+            )
+            == "added"
+        )
 
     def sync_receipt(
         self,

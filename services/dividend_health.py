@@ -53,10 +53,15 @@ def assess_dividend_health(data: StockData) -> DividendHealthResult:
 
     if payout is not None and payout > PAYOUT_WATCH:
         risky = True
-        reasons.append(f"Payout ratio {payout:.0f}% is above the watch threshold ({PAYOUT_WATCH:.0f}%).")
+        reasons.append(
+            f"Payout ratio {payout:.0f}% is above the watch threshold ({PAYOUT_WATCH:.0f}%)."
+        )
     elif payout is not None and payout > PAYOUT_SAFE:
         watch = True
-        reasons.append(f"Payout ratio {payout:.0f}% leaves less room for raises (watch above {PAYOUT_SAFE:.0f}%).")
+        reasons.append(
+            f"Payout ratio {payout:.0f}% leaves less room for raises "
+            f"(watch above {PAYOUT_SAFE:.0f}%)."
+        )
 
     if safety is not None and safety < 50:
         risky = True
@@ -91,7 +96,9 @@ def assess_dividend_health(data: StockData) -> DividendHealthResult:
     elif has_yield or has_history or has_payout or has_safety:
         label = HEALTH_HEALTHY
         if not reasons:
-            reasons.append("Payout, growth, and safety metrics are within normal ranges for available data.")
+            reasons.append(
+                "Payout, growth, and safety metrics are within normal ranges for available data."
+            )
     else:
         label = HEALTH_UNKNOWN
         reasons.append("Not enough dividend metrics to assess health.")

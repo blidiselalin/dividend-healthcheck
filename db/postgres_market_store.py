@@ -85,9 +85,7 @@ class PostgresMarketStore:
         sym = symbol.upper()
         with get_connection() as conn:
             query = (
-                "SELECT " + _STOCK_DOCUMENT_COLUMNS + "\n"
-                "FROM stock_documents\n"
-                "WHERE symbol = %s"
+                "SELECT " + _STOCK_DOCUMENT_COLUMNS + "\nFROM stock_documents\nWHERE symbol = %s"
             )
             row = conn.execute(query, (sym,)).fetchone()
 
@@ -110,22 +108,14 @@ class PostgresMarketStore:
                 "WHERE symbol = ANY(%s)"
             )
             rows = conn.execute(query, (targets,)).fetchall()
-            return {
-                row["symbol"]: _document_from_row(row, conn=conn)
-                for row in rows
-                if row
-            }
+            return {row["symbol"]: _document_from_row(row, conn=conn) for row in rows if row}
 
     def get_all_documents(self) -> list[Any]:
         from db.connection import ensure_schema, get_connection
 
         ensure_schema()
         with get_connection() as conn:
-            query = (
-                "SELECT " + _STOCK_DOCUMENT_COLUMNS + "\n"
-                "FROM stock_documents\n"
-                "ORDER BY symbol"
-            )
+            query = "SELECT " + _STOCK_DOCUMENT_COLUMNS + "\nFROM stock_documents\nORDER BY symbol"
             rows = conn.execute(query).fetchall()
 
         return [_document_from_row(row) for row in rows if row]

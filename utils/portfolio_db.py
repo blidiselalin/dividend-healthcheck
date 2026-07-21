@@ -68,7 +68,7 @@ def _fingerprint_cache_key(db_path: Path) -> str:
 
 def _row_tuple(row: Any) -> tuple[Any, ...]:
     if hasattr(row, "keys"):
-        return tuple(row[key] for key in row.keys())
+        return tuple(row[key] for key in row.keys())  # noqa: SIM118
     return tuple(row)
 
 

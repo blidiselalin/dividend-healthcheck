@@ -33,12 +33,12 @@ def _holdings_cache_key() -> str:
         # so test fixtures with different tmp paths don't share the same cache entry.
         if uid and uid != "local":
             return str(uid)
-    except Exception:
+    except (ImportError, AttributeError):
         pass
     # Unauthenticated / local mode: key on the actual DB path.
     try:
         return str(resolve_current_portfolio_db())
-    except Exception:
+    except ImportError:
         return "local"
 
 
@@ -57,7 +57,7 @@ def is_demo_session() -> bool:
 
         user = current_user()
         return bool(user and test_user_session_active() and is_test_user(user))
-    except Exception:
+    except (ImportError, AttributeError):
         return False
 
 
@@ -88,7 +88,7 @@ def _clear_stale_session_when_empty() -> None:
 
     try:
         import streamlit as st
-    except Exception:
+    except ImportError:
         return
 
     from auth.user_context import clear_portfolio_session_state
@@ -126,7 +126,7 @@ def refresh_session_if_portfolio_db_changed(*, force: bool = False) -> bool:
 
     try:
         import streamlit as st
-    except Exception:
+    except ImportError:
         return False
 
     if not user_has_holdings_in_db():
@@ -150,8 +150,7 @@ def refresh_session_if_portfolio_db_changed(*, force: bool = False) -> bool:
         store = PortfolioStore(db_path=resolve_current_portfolio_db(), seed=False)
         db_symbols = {holding.symbol for holding in store.list_holdings()}
         session_symbols = {
-            getattr(row, "ticker", None)
-            for row in st.session_state["portfolio_details_rows"]
+            getattr(row, "ticker", None) for row in st.session_state["portfolio_details_rows"]
         }
         session_symbols.discard(None)
         if db_symbols == session_symbols:

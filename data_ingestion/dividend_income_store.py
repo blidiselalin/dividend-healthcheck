@@ -4,6 +4,7 @@ SQLite storage for net dividend cash received (after withholding tax).
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 from dataclasses import dataclass
 from datetime import date
@@ -158,10 +159,8 @@ class DividendIncomeStore:
                 row[1] for row in connection.execute("PRAGMA table_info(net_dividends)").fetchall()
             }
             if "gross_usd" not in columns:
-                try:
+                with contextlib.suppress(Exception):
                     connection.execute("ALTER TABLE net_dividends ADD COLUMN gross_usd REAL")
-                except Exception:
-                    pass
 
     def _seed_if_empty(self) -> None:
         with self._connect() as connection:

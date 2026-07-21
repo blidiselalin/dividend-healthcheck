@@ -431,8 +431,7 @@ class PortfolioAttentionService:
             score += 18
             categories.add("Estimates")
             reasons.append(
-                f"Consensus target implies {stock.target_upside_pct:+.1f}% "
-                "downside while at a loss"
+                f"Consensus target implies {stock.target_upside_pct:+.1f}% downside while at a loss"
             )
 
         if (
@@ -605,6 +604,6 @@ class PortfolioAttentionService:
                 symbol = futures[future]
                 try:
                     results[symbol] = future.result()
-                except Exception:  # noqa: S112
+                except Exception:  # noqa: BLE001, S112
                     continue
         return results

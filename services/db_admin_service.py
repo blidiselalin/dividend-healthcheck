@@ -8,6 +8,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from sqlite3 import Error as SQLiteError
 from typing import Any
 
 from psycopg import sql as pg_sql
@@ -19,6 +20,11 @@ from db.connection import (
     open_portfolio_db,
     use_cloud_sql,
 )
+
+try:
+    from psycopg import Error as PostgresError
+except ImportError:
+    PostgresError = type("PostgresError", (Exception,), {})
 
 MANAGED_TABLES: tuple[str, ...] = (
     "users",
@@ -200,33 +206,33 @@ def table_row_counts(tables: Sequence[str] | None = None) -> dict[str, int]:  # 
                 if not safe:
                     continue
                 try:
-                    query = f"SELECT COUNT(*) FROM {safe}"  # noqa: S608
+                    query = pg_sql.SQL("SELECT COUNT(*) FROM {}").format(pg_sql.Identifier(safe))
                     counts[table] = int(_fetch_scalar(conn, query))
-                except Exception:
+                except (PostgresError, OSError):
                     counts[table] = -1
         return counts
 
     with open_app_db() as conn:
         for table in names:
-            safe = _safe_table_name(table, names)
+            safe = _safe_table_name(table, _SQLITE_APP_TABLES)
             if not safe:
                 continue
             try:
-                query = f"SELECT COUNT(*) FROM {safe}"  # noqa: S608
+                query = f"SELECT COUNT(*) FROM {safe}"
                 counts[table] = int(_fetch_scalar(conn, query))
-            except Exception:  # noqa: S110
+            except SQLiteError:  # noqa: S110
                 pass
     with open_portfolio_db() as conn:
         for table in names:
             if table in counts:
                 continue
-            safe = _safe_table_name(table, names)
+            safe = _safe_table_name(table, _SQLITE_PORTFOLIO_TABLES)
             if not safe:
                 continue
             try:
-                query = f"SELECT COUNT(*) FROM {safe}"  # noqa: S608
+                query = f"SELECT COUNT(*) FROM {safe}"
                 counts[table] = int(_fetch_scalar(conn, query))
-            except Exception:  # noqa: S110
+            except SQLiteError:  # noqa: S110
                 pass
     return counts
 
@@ -388,7 +394,7 @@ def _collect_table_checks(conn: Any, tables: Sequence[str]) -> list[TableCheck]:
             continue
         try:
             checks.append(validator(conn))
-        except Exception as exc:
+        except (SQLiteError, PostgresError, OSError) as exc:
             checks.append(
                 TableCheck(
                     name=table,
@@ -425,7 +431,7 @@ def validate_all_tables() -> list[TableCheck]:
                 details={"storage": "chromadb"},
             )
         )
-    except Exception as exc:
+    except (ImportError, AttributeError, OSError) as exc:
         checks.append(
             TableCheck(
                 name="stock_documents (Chroma)",
@@ -464,7 +470,7 @@ def inspect_stock_symbol(symbol: str) -> dict[str, Any]:
                 "sector": doc.sector,
                 "last_updated": getattr(doc, "last_updated", None),
             }
-        except Exception as exc:
+        except (SQLiteError, PostgresError, OSError) as exc:
             return {"ok": False, "symbol": sym, "message": str(exc)}
 
     ensure_schema()
@@ -729,7 +735,7 @@ def run_readonly_query(  # noqa: C901
                     columns = []
         else:
             return _run_sqlite_select(limited_sql, auto_limit, limit)
-    except Exception as exc:
+    except (PostgresError, OSError) as exc:
         return QueryResult(ok=False, columns=[], rows=[], message=str(exc))
 
     dict_rows = _rows_to_dicts(columns, rows)
@@ -776,7 +782,7 @@ def _run_sqlite_select(sql: str, auto_limit: bool, row_limit: int) -> QueryResul
                     message=msg,
                     truncated=auto_limit and len(dict_rows) >= row_limit,
                 )
-        except Exception as exc:
+        except SQLiteError as exc:
             last_error = str(exc)
     return QueryResult(ok=False, columns=[], rows=[], message=last_error or "Query failed")
 

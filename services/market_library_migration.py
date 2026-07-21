@@ -12,7 +12,13 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from sqlite3 import Error as SQLiteError
 from typing import Any
+
+try:
+    from psycopg import Error as PostgresError
+except ImportError:
+    PostgresError = type("PostgresError", (Exception,), {})
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +125,7 @@ def diagnose_legacy_import(data_dir: Path) -> LegacyImportDiagnostics:  # noqa: 
             diag.postgres_document_count = store.count()
             coverage = store.history_coverage_summary()
             diag.postgres_ready_for_yield = coverage["yield_ready"]
-    except Exception as exc:
+    except (SQLiteError, PostgresError, OSError) as exc:
         logger.debug("Postgres diagnostics unavailable: %s", exc)
 
     if not diag.vectordb_exists:
@@ -367,6 +373,4 @@ def should_auto_import(data_dir: Path) -> bool:
         return False
     if diag.postgres_document_count == 0:
         return True
-    if diag.postgres_ready_for_yield < max(1, diag.legacy_document_count // 2):
-        return True
-    return False
+    return diag.postgres_ready_for_yield < max(1, diag.legacy_document_count // 2)

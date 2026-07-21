@@ -6,7 +6,10 @@ from pathlib import Path
 
 from data_ingestion.portfolio_store import PortfolioStore
 from data_ingestion.purchase_journal_store import PurchaseJournalStore
-from utils.portfolio_db import compute_portfolio_db_fingerprint, invalidate_portfolio_db_fingerprint_cache
+from utils.portfolio_db import (
+    compute_portfolio_db_fingerprint,
+    invalidate_portfolio_db_fingerprint_cache,
+)
 
 
 def test_fingerprint_changes_when_holding_updated(tmp_path: Path) -> None:

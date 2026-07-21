@@ -6,9 +6,16 @@ Users can explore up to three dividend stocks; holdings migrate to their account
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Mapping, Sequence
+from sqlite3 import Error as SQLiteError
+from typing import Any
+
+try:
+    from psycopg import Error as PostgresError
+except ImportError:
+    PostgresError = type("PostgresError", (Exception,), {})
 
 from data_ingestion.portfolio_store import PortfolioHolding
 
@@ -105,7 +112,9 @@ def guest_holdings_from_session(session: Mapping[str, Any]) -> list[GuestHolding
                 symbol=symbol,
                 company_name=str(item.get("company_name") or item.get("company") or symbol),
                 shares=float(item.get("shares") or 10.0),
-                avg_cost_per_share=float(item.get("avg_cost_per_share") or item.get("avg_cost") or 0.0),
+                avg_cost_per_share=float(
+                    item.get("avg_cost_per_share") or item.get("avg_cost") or 0.0
+                ),
             )
         )
     return holdings[:GUEST_MAX_HOLDINGS] or default_guest_holdings()
@@ -138,7 +147,10 @@ def add_guest_holding(
 
     current = guest_holdings_from_session(session)
     if not any(h.symbol == symbol for h in current) and len(current) >= GUEST_MAX_HOLDINGS:
-        return current, f"Try up to {GUEST_MAX_HOLDINGS} stocks before sign-up — remove one to add another."
+        return (
+            current,
+            f"Try up to {GUEST_MAX_HOLDINGS} stocks before sign-up — remove one to add another.",
+        )
 
     updated = [h for h in current if h.symbol != symbol]
     updated.append(
@@ -318,8 +330,8 @@ def build_guest_dashboard(guest: Sequence[GuestHolding]) -> GuestDashboard:
             stock_data=stock_data,
         )
         dashboard.safety_alerts = _safety_alerts_from_rows(rows)
-    except Exception:
-        pass
+    except (ImportError, AttributeError, SQLiteError, PostgresError, OSError):  # noqa: BLE001
+        pass  # Best effort; return partial dashboard on error
     return dashboard
 
 
@@ -331,7 +343,7 @@ def migrate_guest_holdings_to_portfolio(db_path: Any) -> int:
     """
     try:
         import streamlit as st
-    except Exception:
+    except ImportError:
         return 0
 
     raw = st.session_state.pop(GUEST_SESSION_KEY, None)
@@ -353,11 +365,14 @@ def migrate_guest_holdings_to_portfolio(db_path: Any) -> int:
         symbol = _normalize_symbol(str(item.get("symbol", "")))
         if not symbol:
             continue
-        ctx.portfolio.upsert_holding(
-            symbol,
-            shares=float(item.get("shares") or 10.0),
-            avg_cost_per_share=float(item.get("avg_cost_per_share") or 0.0),
-            company_name=str(item.get("company_name") or item.get("company") or "") or None,
-        )
-        migrated += 1
+        try:
+            ctx.portfolio.upsert_holding(
+                symbol,
+                shares=float(item.get("shares") or 10.0),
+                avg_cost_per_share=float(item.get("avg_cost_per_share") or 0.0),
+                company_name=str(item.get("company_name") or item.get("company") or "") or None,
+            )
+            migrated += 1
+        except (SQLiteError, PostgresError, OSError):
+            pass
     return migrated

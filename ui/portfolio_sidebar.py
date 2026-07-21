@@ -5,15 +5,17 @@ Unified portfolio sidebar — reload actions and portfolio edits.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 import streamlit as st
 
-from ui.portfolio_manage_panel import render_portfolio_manage_sidebar
-from ui.portfolio_onboarding import mark_onboarding_live_reload_requested, render_onboarding_sidebar_hint
-from ui.portfolio_risk_panel import _rebuild_attention_from_session
 from services.portfolio_session import user_has_holdings_in_db
 from ui.design_system import render_logo
+from ui.portfolio_manage_panel import render_portfolio_manage_sidebar
+from ui.portfolio_onboarding import (
+    mark_onboarding_live_reload_requested,
+    render_onboarding_sidebar_hint,
+)
+from ui.portfolio_risk_panel import _rebuild_attention_from_session
 from ui.theme import portfolio_data_ready, sidebar_heading
 
 
@@ -78,7 +80,7 @@ def render_portfolio_sidebar() -> None:
         navigate_to_portfolio_home()
 
     if portfolio_data_ready():
-        loaded_at: Optional[datetime] = st.session_state.get("portfolio_details_time")
+        loaded_at: datetime | None = st.session_state.get("portfolio_details_time")
         count = len(st.session_state.get("portfolio_details_rows") or [])
         when = loaded_at.strftime("%d %b %H:%M") if loaded_at else "cached"
         st.sidebar.caption(f"{count} holdings · updated {when}")

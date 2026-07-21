@@ -9,12 +9,20 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
+from sqlite3 import Error as SQLiteError
 from typing import Any
+
+import requests
 
 from data_ingestion.vector_store import VectorStore
 from models.stock import DividendHistory, StockData
 from services.stock_service import StockService
 from utils.converters import document_to_stock_data
+
+try:
+    from psycopg import Error as PostgresError
+except ImportError:
+    PostgresError = type("PostgresError", (Exception,), {})
 
 # Import config for default paths
 try:
@@ -83,7 +91,7 @@ class EnhancedStockService:
                 logger.info(f"Vector DB initialized: {count} documents (primary source)")
             else:
                 logger.warning("Vector DB empty - will use API as primary source")
-        except Exception as e:
+        except (ImportError, OSError, SQLiteError) as e:
             logger.warning(f"Vector store not available: {e}")
             self._vector_db_available = False
 
@@ -254,7 +262,7 @@ class EnhancedStockService:
                 else:
                     data.data_sources = ["Vector DB", "Price: Live"]
 
-        except Exception as e:
+        except (yf.exceptions.YFinanceError, requests.exceptions.RequestException) as e:
             logger.debug(f"Could not update real-time price for {data.symbol}: {e}")
 
         return data
@@ -330,8 +338,8 @@ class EnhancedStockService:
             # Get all documents
             results = self._vector_store.search("dividend stock", n_results=1000)
             return [document_to_stock_data(r.document) for r in results]
-        except Exception as e:
-            logger.error(f"Error getting all from DB: {e}")
+        except (SQLiteError, PostgresError, OSError, AttributeError) as e:
+            logger.error(f"Error getting all from DB: {e}", exc_info=True)
             return []
 
     def get_dividend_kings_from_db(self) -> list[StockData]:

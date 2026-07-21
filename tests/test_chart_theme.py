@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from utils.chart_theme import (
     DARK_PALETTE,
-    bottom_legend,
     evolution_chart_margins,
     monthly_category_axis,
     style_yield_channel_figure,

@@ -6,7 +6,15 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from sqlite3 import Error as SQLiteError
 from typing import TYPE_CHECKING, Any, Callable
+
+import requests
+
+try:
+    from psycopg import Error as PostgresError
+except ImportError:
+    PostgresError = type("PostgresError", (Exception,), {})
 
 from config import MIN_YIELD_DIVIDEND_PAYMENTS, MIN_YIELD_PRICE_POINTS
 from utils.stock_document_history import history_is_thin, yield_channel_ready
@@ -25,7 +33,7 @@ def portfolio_backfill_symbols() -> set[str]:
         from services.portfolio_vector_sync import collect_portfolio_symbols
 
         return collect_portfolio_symbols()
-    except Exception:
+    except (ImportError, AttributeError):
         return set()
 
 
@@ -108,7 +116,7 @@ def _fetch_document_for_backfill(symbol: str) -> StockDocument | None:
         from data_ingestion.stock_enricher import create_stock_enricher
 
         return create_stock_enricher(request_delay=0.35).fetch_document(symbol)
-    except Exception as exc:
+    except requests.exceptions.RequestException as exc:
         logger.debug("Could not fetch library document for %s: %s", symbol, exc)
         return None
 
@@ -137,7 +145,7 @@ def backfill_thin_history(
     )
 
     batch = candidates[: max(0, limit)]
-    not_reached = [doc.symbol.upper() for doc in candidates[max(0, limit):]]
+    not_reached = [doc.symbol.upper() for doc in candidates[max(0, limit) :]]
     stats: dict[str, Any] = {
         "candidates": len(candidates),
         "processed": 0,
@@ -172,7 +180,7 @@ def backfill_thin_history(
             stats["symbols"].append(symbol)
             if yield_channel_ready(updated):
                 stats["ready_after"] += 1
-        except Exception as exc:
+        except requests.exceptions.RequestException as exc:
             logger.warning("History backfill failed for %s: %s", symbol, exc)
             stats["errors"] += 1
             stats["failed_symbols"].append(symbol)
@@ -188,7 +196,7 @@ def backfill_thin_history(
                 PostgresMarketHistoryStore().sync_pending_from_jsonb(
                     limit=max(len(enriched), 10),
                 )
-        except Exception as exc:
+        except (SQLiteError, PostgresError, OSError) as exc:
             logger.debug("History table sync after backfill skipped: %s", exc)
         logger.info(
             "History backfill stored %d documents (%d yield-ready)",
@@ -236,7 +244,7 @@ def thin_history_summary(documents: list[StockDocument] | None = None) -> dict[s
                 from db.postgres_market_store import PostgresMarketStore
 
                 return PostgresMarketStore().history_coverage_summary()
-        except Exception:  # noqa: S110
+        except (ImportError, AttributeError, SQLiteError, PostgresError, OSError):  # noqa: S110
             pass
         from services.shared_market_db import get_shared_vector_store
 

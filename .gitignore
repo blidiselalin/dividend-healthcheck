@@ -38,6 +38,8 @@ data/.legacy_portfolio_migrated
 # Reports and docs (generated)
 reports/
 docs/
+!.cursor/docs/
+!.cursor/docs/**
 
 # Claude/Cursor
 .claude/

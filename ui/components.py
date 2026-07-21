@@ -6,8 +6,9 @@ This module provides display components optimized for dividend investor decision
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pandas as pd
 import streamlit as st
@@ -25,6 +26,8 @@ from config import (
 )
 from models.stock import StockData
 from services.scoring import Recommendation, ScoringService
+from services.yield_channel_chart import YieldChannelData
+from services.yield_channel_chart import is_available as yield_chart_available
 from utils.formatting import (
     format_currency,
     format_large_number,
@@ -34,10 +37,8 @@ from utils.formatting import (
 )
 
 try:
-    from services.yield_channel_chart import (
-        YieldChannelService,
-        is_available as yield_chart_available,
-    )
+    from services.yield_channel_chart import YieldChannelService  # noqa: F401
+
     YIELD_CHART_AVAILABLE = yield_chart_available()
 except ImportError:
     YIELD_CHART_AVAILABLE = False
@@ -45,22 +46,24 @@ except ImportError:
 try:
     from services.news_service import (
         NewsService,
-        NewsSummary,
-        is_available as news_available,
+        NewsSummary,  # noqa: F401
     )
+    from services.news_service import is_available as news_available
+
     NEWS_AVAILABLE = news_available()
 except ImportError:
     NEWS_AVAILABLE = False
 
 try:
-    from data_ingestion.vector_store import VectorStore
     from data_ingestion.models import StockDocument
+    from data_ingestion.vector_store import VectorStore
+
     VECTOR_DB_AVAILABLE = True
 except ImportError:
     VECTOR_DB_AVAILABLE = False
 
 # Standard column configuration for comparison tables
-COMPARISON_TABLE_CONFIG: Dict[str, Any] = {
+COMPARISON_TABLE_CONFIG: dict[str, Any] = {
     "Score": st.column_config.ProgressColumn(min_value=0, max_value=100),
     "Streak": st.column_config.NumberColumn(format="%d yrs"),
     "Yield %": st.column_config.NumberColumn(format="%.2f%%"),
@@ -70,7 +73,7 @@ COMPARISON_TABLE_CONFIG: Dict[str, Any] = {
 }
 
 # Tier badge mapping
-TIER_BADGES: Dict[str, str] = {
+TIER_BADGES: dict[str, str] = {
     "King": "👑",
     "Aristocrat": "🏆",
     "Achiever": "⭐",
@@ -81,19 +84,19 @@ TIER_BADGES: Dict[str, str] = {
 
 class UIComponents:
     """Reusable UI display components for dividend analysis."""
-    
+
     # Re-export formatting functions as static methods for backward compatibility
     format_currency = staticmethod(format_currency)
     format_percent = staticmethod(format_percent)
     format_number = staticmethod(format_number)
     format_large_number = staticmethod(format_large_number)
     format_years = staticmethod(format_years)
-    
+
     @staticmethod
     def get_tier_badge(tier: str) -> str:
         """Get badge emoji for dividend tier."""
         return TIER_BADGES.get(tier, "")
-    
+
     # === KEY HIGHLIGHTS (Front Page) ===
 
     @staticmethod
@@ -201,12 +204,12 @@ class UIComponents:
     @staticmethod
     def display_prime_metrics(data: StockData, score: int) -> None:
         """Display the 6 most important metrics for dividend investors.
-        
+
         This is the key decision-making view shown prominently.
         """
         # Row 1: Dividend Streak & Yield (The Core)
         col1, col2, col3 = st.columns(3)
-        
+
         with col1:
             streak = data.dividend_history.consecutive_years if data.dividend_history else 0
             tier = data.dividend_tier
@@ -216,7 +219,7 @@ class UIComponents:
                 UIComponents.format_years(streak),
                 tier,
             )
-        
+
         with col2:
             delta = None
             if data.dividend_yield_pct:
@@ -229,7 +232,7 @@ class UIComponents:
                 UIComponents.format_percent(data.dividend_yield_pct),
                 delta,
             )
-        
+
         with col3:
             cagr = data.dividend_history.cagr_5y if data.dividend_history else None
             delta = None
@@ -243,10 +246,10 @@ class UIComponents:
                 UIComponents.format_percent(cagr),
                 delta,
             )
-        
+
         # Row 2: Safety, Value, Income
         col4, col5, col6 = st.columns(3)
-        
+
         with col4:
             safety = data.dividend_safety_score
             if safety is not None:
@@ -263,13 +266,13 @@ class UIComponents:
                 f"{safety:.0f}/100" if safety else "N/A",
                 delta,
             )
-        
+
         with col5:
             st.metric(
                 "📊 Payout Ratio",
                 UIComponents.format_percent(data.payout_ratio_pct, 0),
             )
-        
+
         with col6:
             # Annual income per $10K invested
             if data.dividend_yield_pct:
@@ -280,12 +283,12 @@ class UIComponents:
                 )
             else:
                 st.metric("💵 Income/$10K", "N/A")
-    
+
     @staticmethod
     def display_quick_stats(data: StockData) -> None:
         """Display quick stats bar for at-a-glance view."""
         col1, col2, col3, col4, col5 = st.columns(5)
-        
+
         with col1:
             st.metric("Price", UIComponents.format_currency(data.price))
         with col2:
@@ -296,47 +299,47 @@ class UIComponents:
             st.metric("D/E", UIComponents.format_number(data.debt_to_equity, 2))
         with col5:
             st.metric("ROE", UIComponents.format_percent(data.roe_pct))
-    
+
     # === INVESTMENT THESIS ===
-    
+
     @staticmethod
-    def display_investment_thesis(pros: List[str], cons: List[str]) -> None:
+    def display_investment_thesis(pros: list[str], cons: list[str]) -> None:
         """Display investment thesis with strengths and concerns."""
         col1, col2 = st.columns(2)
-        
+
         with col1:
             if pros:
                 st.success("**✓ Strengths**\n" + "\n".join(f"• {p}" for p in pros))
             else:
                 st.info("No notable strengths identified")
-        
+
         with col2:
             if cons:
                 st.warning("**⚠ Concerns**\n" + "\n".join(f"• {c}" for c in cons))
             else:
                 st.info("No major concerns identified")
-    
+
     @staticmethod
     def display_recommendation(rec_label: str, score: int, confidence: float = 100) -> None:
         """Display final recommendation with score and confidence."""
         confidence_note = f" (Data: {confidence:.0f}%)" if confidence < 100 else ""
         message = f"**{rec_label}** — Score: {score}/100{confidence_note}"
-        
+
         if score >= 65:
             st.success(message)
         elif score >= 50:
             st.warning(message)
         else:
             st.error(message)
-    
+
     # === DETAILED SECTIONS ===
-    
+
     @staticmethod
     def display_dividend_details(data: StockData) -> None:
         """Display comprehensive dividend information."""
         # Primary dividend metrics
         col1, col2, col3, col4 = st.columns(4)
-        
+
         with col1:
             streak = data.dividend_history.consecutive_years if data.dividend_history else None
             streak_label = UIComponents.format_years(streak) if streak else "N/A"
@@ -347,7 +350,7 @@ class UIComponents:
             st.metric("Annual Dividend", UIComponents.format_currency(data.dividend_rate))
         with col4:
             st.metric("Payout Ratio", UIComponents.format_percent(data.payout_ratio_pct, 0))
-        
+
         # Growth metrics
         if data.dividend_history:
             st.markdown("**Dividend Growth History**")
@@ -355,13 +358,15 @@ class UIComponents:
             with col1:
                 st.metric("5-Year CAGR", UIComponents.format_percent(data.dividend_history.cagr_5y))
             with col2:
-                st.metric("10-Year CAGR", UIComponents.format_percent(data.dividend_history.cagr_10y))
+                st.metric(
+                    "10-Year CAGR", UIComponents.format_percent(data.dividend_history.cagr_10y)
+                )
             with col3:
                 st.metric("Data Years", f"{data.dividend_history.total_years} years")
-            
+
             if data.dividend_history.ex_dividend_date:
                 st.caption(f"Next Ex-Dividend: {data.dividend_history.ex_dividend_date}")
-        
+
         # Safety indicators
         st.markdown("**Dividend Safety**")
         col1, col2 = st.columns(2)
@@ -392,7 +397,7 @@ class UIComponents:
         data: StockData,
         *,
         symbol: str | None = None,
-        vector_doc=None,
+        vector_doc: StockDocument | None = None,
     ) -> None:
         """Prominent dividend block for stock detail — health, metrics, payout history."""
         from services.dividend_health import assess_dividend_health
@@ -469,7 +474,7 @@ class UIComponents:
                     "See portfolio calendar when held",
                     False,
                 ),
-            ]
+            ],
         )
         st.caption(health.disclaimer)
 
@@ -492,7 +497,7 @@ class UIComponents:
     def display_valuation_metrics(data: StockData) -> None:
         """Display valuation metrics."""
         col1, col2, col3 = st.columns(3)
-        
+
         with col1:
             st.metric("P/E (TTM)", UIComponents.format_number(data.trailing_pe, 1))
             st.metric("PEG Ratio", UIComponents.format_number(data.peg_ratio, 2))
@@ -502,22 +507,24 @@ class UIComponents:
         with col3:
             st.metric("EV/EBITDA", UIComponents.format_number(data.ev_ebitda, 1))
             st.metric("Market Cap", UIComponents.format_large_number(data.market_cap))
-        
+
         # Price context
         if data.fifty_two_week_low and data.fifty_two_week_high:
-            st.markdown(f"**52W Range:** ${data.fifty_two_week_low:.2f} - ${data.fifty_two_week_high:.2f}")
+            st.markdown(
+                f"**52W Range:** ${data.fifty_two_week_low:.2f} - ${data.fifty_two_week_high:.2f}"
+            )
             if data.price_to_52w_high_pct:
                 pct = data.price_to_52w_high_pct
                 if pct <= -15:
                     st.success(f"📉 {abs(pct):.1f}% below 52-week high — potential value")
                 elif pct >= -5:
                     st.info(f"Near 52-week high ({pct:.1f}%)")
-    
+
     @staticmethod
     def display_financial_health(data: StockData) -> None:
         """Display financial health metrics with status indicators."""
         col1, col2, col3 = st.columns(3)
-        
+
         with col1:
             if data.debt_to_equity is None:
                 st.metric("Debt/Equity", "N/A")
@@ -529,7 +536,7 @@ class UIComponents:
                     st.caption("○ Moderate debt")
                 else:
                     st.caption("⚠ High debt")
-        
+
         with col2:
             if data.current_ratio is None:
                 st.metric("Current Ratio", "N/A")
@@ -541,7 +548,7 @@ class UIComponents:
                     st.caption("○ Adequate")
                 else:
                     st.caption("⚠ Low liquidity")
-        
+
         with col3:
             if data.interest_coverage:
                 st.metric("Interest Coverage", f"{data.interest_coverage:.1f}x")
@@ -553,32 +560,31 @@ class UIComponents:
                     st.caption("⚠ Tight")
             else:
                 st.metric("Quick Ratio", UIComponents.format_number(data.quick_ratio, 2))
-    
+
     @staticmethod
     def display_profitability(data: StockData) -> None:
         """Display profitability metrics."""
         col1, col2 = st.columns(2)
-        
+
         with col1:
             st.metric("Return on Equity", UIComponents.format_percent(data.roe_pct))
             st.metric("Return on Assets", UIComponents.format_percent(data.roa_pct))
         with col2:
             st.metric("Profit Margin", UIComponents.format_percent(data.profit_margin_pct))
             st.metric("Operating Margin", UIComponents.format_percent(data.operating_margin_pct))
-    
+
     @staticmethod
     def display_performance(data: StockData) -> None:
         """Display price performance and analyst data."""
         col1, col2, col3 = st.columns(3)
-        
+
         with col1:
             st.metric("Current Price", UIComponents.format_currency(data.price))
             if data.price_return_1y is not None:
-                delta_color = "normal" if data.price_return_1y >= 0 else "inverse"
                 st.metric("1Y Price Return", f"{data.price_return_1y:+.1f}%")
             if data.total_return_1y is not None:
                 st.metric("1Y Total Return", f"{data.total_return_1y:+.1f}%")
-        
+
         with col2:
             if data.target_price and data.price:
                 st.metric(
@@ -590,25 +596,25 @@ class UIComponents:
                 st.metric("Analyst Target", "N/A")
             if data.analyst_rating:
                 st.markdown(f"**Consensus:** {data.analyst_rating.upper()}")
-        
+
         with col3:
             st.metric("Beta", UIComponents.format_number(data.beta, 2))
             if data.num_analysts:
                 st.markdown(f"**# Analysts:** {data.num_analysts}")
-    
+
     # === COMPARISON TABLES ===
-    
+
     @staticmethod
-    def _build_comparison_row(peer: Dict[str, Any], is_current: bool = False) -> Dict[str, Any]:
+    def _build_comparison_row(peer: dict[str, Any], is_current: bool = False) -> dict[str, Any]:
         """Build a row for comparison tables."""
         symbol = peer["symbol"]
         tier_badge = UIComponents.get_tier_badge(peer.get("dividend_tier", ""))
-        
+
         if is_current:
             symbol = f"**{symbol}** ←"
         elif tier_badge:
             symbol = f"{tier_badge} {symbol}"
-        
+
         return {
             "Symbol": symbol,
             "Company": (peer.get("name") or peer["symbol"])[:18],
@@ -619,33 +625,33 @@ class UIComponents:
             "Payout %": peer.get("payout_ratio_pct"),
             "P/E": peer.get("trailing_pe"),
         }
-    
+
     @staticmethod
-    def _display_comparison_table(data: List[Dict[str, Any]]) -> None:
+    def _display_comparison_table(data: list[dict[str, Any]]) -> None:
         """Display comparison DataFrame with standard configuration."""
         if not data:
             return
         df = pd.DataFrame(data)
         st.dataframe(
             df,
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
             column_config=COMPARISON_TABLE_CONFIG,
         )
-    
+
     @staticmethod
     def display_sector_comparison(
         current_stock: StockData,
         current_score: int,
-        sector_peers: List[Dict[str, Any]],
-        external_competitors: Optional[List[Dict[str, Any]]] = None,
+        sector_peers: list[dict[str, Any]],
+        external_competitors: list[dict[str, Any]] | None = None,
         *,
-        yield_channels: Optional[Dict[str, Any]] = None,
-        vector_docs: Optional[Dict[str, Any]] = None,
+        yield_channels: dict[str, Any] | None = None,
+        vector_docs: dict[str, Any] | None = None,
     ) -> None:
         """
         Display sector comparison with ranked peers.
-        
+
         Implements "Dividends Don't Lie" philosophy:
         - Prioritizes dividend history and consistency
         - Shows yield channel analysis for top comparisons
@@ -655,39 +661,39 @@ class UIComponents:
         external_competitors = external_competitors or []
         yield_channels = yield_channels or {}
         vector_docs = vector_docs or {}
-        
+
         if not sector_peers and not external_competitors:
             st.info(f"No stocks found in {sector} for comparison")
             return
-        
+
         st.subheader(f"🏭 {sector} Sector Comparison")
-        
+
         # Philosophy note
         st.caption(
             "📖 *\"Dividends Don't Lie\"* — A company's dividend policy is a more "
             "honest indicator of financial health than reported earnings. (G. Weiss, 1988)"
         )
-        
+
         # Determine ranking
         current_rank = next(
             (i + 1 for i, p in enumerate(sector_peers) if p["symbol"] == current_stock.symbol),
             len(sector_peers) + 1,
         )
         total = len(sector_peers)
-        
+
         # Display ranking
         if total > 0 and current_rank <= total:
             medals = {1: "🥇", 2: "🥈", 3: "🥉"}
             medal = medals.get(current_rank, "")
             message = f"{medal} **{current_stock.symbol}** ranks **#{current_rank}** of {total} dividend stocks in sector"
-            
+
             if current_rank == 1:
                 st.success(message)
             elif current_rank <= 3:
                 st.info(message)
             else:
                 st.warning(message)
-        
+
         # Sector peers table
         st.markdown("**📊 Dividend Stocks in Sector:**")
         rows = [
@@ -698,7 +704,7 @@ class UIComponents:
             UIComponents._display_comparison_table(rows)
         else:
             st.caption("No other dividend stocks in this sector")
-        
+
         # External reference stocks (top public dividend payers NOT in config)
         if external_competitors:
             st.markdown("---")
@@ -709,7 +715,7 @@ class UIComponents:
             )
             ext_rows = [UIComponents._build_comparison_row(c) for c in external_competitors]
             UIComponents._display_comparison_table(ext_rows)
-            
+
             # Show yield channel comparison for top reference stock
             if YIELD_CHART_AVAILABLE and external_competitors:
                 top_ref = external_competitors[0]
@@ -725,13 +731,13 @@ class UIComponents:
                         logger.debug("Could not fetch reference document for %s: %s", ref_sym, exc)
                 with st.expander(
                     f"📈 Yield Channel: {top_ref['symbol']} vs {current_stock.symbol}",
-                    expanded=False
+                    expanded=False,
                 ):
                     st.markdown(
-                        f"Compare dividend yield history to see which stock offers "
-                        f"better value based on historical yield ranges."
+                        "Compare dividend yield history to see which stock offers "
+                        "better value based on historical yield ranges."
                     )
-                    
+
                     col1, col2 = st.columns(2)
                     with col1:
                         st.markdown(f"**{current_stock.symbol}** (Your Stock)")
@@ -748,19 +754,21 @@ class UIComponents:
                             channel_data=yield_channels.get(ref_sym),
                             vector_doc=vector_docs.get(ref_sym),
                         )
-        
+
         # Insights
         UIComponents._display_comparison_insights(
-            current_stock, current_score, sector_peers, external_competitors
+            current_stock,
+            current_score,
+            sector_peers + external_competitors,
         )
-    
+
     @staticmethod
     def _resolve_mini_yield_channel(
         symbol: str,
         *,
-        channel_data=None,
-        vector_doc=None,
-    ):
+        channel_data: YieldChannelData | None = None,
+        vector_doc: StockDocument | None = None,
+    ) -> YieldChannelData | None:
         if channel_data is not None:
             return channel_data
 
@@ -780,14 +788,14 @@ class UIComponents:
     def _display_mini_yield_chart(
         symbol: str,
         *,
-        channel_data=None,
-        vector_doc=None,
+        channel_data: YieldChannelData | None = None,
+        vector_doc: StockDocument | None = None,
     ) -> None:
         """Display a compact yield channel summary for comparison."""
         if not YIELD_CHART_AVAILABLE:
             st.caption("Yield chart unavailable")
             return
-        
+
         try:
             from services.yield_channel_chart import _default_yield_channel_service
 
@@ -810,15 +818,17 @@ class UIComponents:
                         doc = None
                 yearly = yearly_dividend_per_share_table(doc) if doc is not None else None
                 if yearly is not None and not yearly.empty:
-                    st.caption(f"Yield channel building for {symbol} — annual dividends from library:")
+                    st.caption(
+                        f"Yield channel building for {symbol} — annual dividends from library:"
+                    )
                     st.dataframe(yearly.tail(6), hide_index=True, width="stretch")
                     return
                 st.caption(f"Insufficient data for {symbol}")
                 return
-            
+
             analysis = service.format_analysis_summary(data)
             zone_emoji = analysis["zone_emoji"]
-            
+
             # Compact grid
             col1, col2 = st.columns(2)
             with col1:
@@ -828,15 +838,14 @@ class UIComponents:
                 st.metric("Zone", f"{zone_emoji} {data.zone}")
                 gap = analysis["gap_to_fair_pct"]
                 st.metric(
-                    "vs Fair Value", 
-                    f"{gap:+.1f}%",
-                    delta_color="normal" if gap > 0 else "inverse"
+                    "vs Fair Value", f"{gap:+.1f}%", delta_color="normal" if gap > 0 else "inverse"
                 )
-            
+
             # Percentile bar
             pct = data.percentile
             bar_color = analysis["zone_color"]
-            st.markdown(f"""
+            st.markdown(
+                f"""
             <div style="margin: 8px 0;">
                 <div style="font-size: 0.8em; color: #666;">Yield Percentile</div>
                 <div style="background: #e0e0e0; border-radius: 4px; height: 8px; margin-top: 4px;">
@@ -844,8 +853,10 @@ class UIComponents:
                 </div>
                 <div style="font-size: 0.75em; color: #888; text-align: right;">{pct:.0f}th percentile</div>
             </div>
-            """, unsafe_allow_html=True)
-            
+            """,
+                unsafe_allow_html=True,
+            )
+
             # Quick assessment
             if data.zone in ["Deep Value", "Value"]:
                 st.success(f"**{analysis['action']}** — Yield above historical norm")
@@ -853,25 +864,22 @@ class UIComponents:
                 st.warning(f"**{analysis['action']}** — Yield below historical norm")
             else:
                 st.info(f"**{analysis['action']}** — Near fair value")
-                
+
         except Exception as e:
             st.caption(f"Could not load yield data: {e}")
-    
+
     @staticmethod
     def _display_comparison_insights(
-        current: StockData,
-        current_score: int,
-        peers: List[Dict[str, Any]],
-        externals: List[Dict[str, Any]],
+        current: StockData, current_score: int, peers: list[dict[str, Any]]
     ) -> None:
         """Display comparison insights."""
-        insights: List[str] = []
-        warnings: List[str] = []
-        
+        insights: list[str] = []
+        warnings: list[str] = []
+
         if peers:
             yields = [p["dividend_yield_pct"] for p in peers if p["dividend_yield_pct"]]
             streaks = [p["div_streak"] for p in peers if p["div_streak"]]
-            
+
             if yields and current.dividend_yield_pct:
                 avg_yield = sum(yields) / len(yields)
                 diff = current.dividend_yield_pct - avg_yield
@@ -879,15 +887,15 @@ class UIComponents:
                     insights.append(f"Yield {diff:.1f}pp above sector avg")
                 elif diff < -0.5:
                     warnings.append(f"Yield {abs(diff):.1f}pp below sector avg")
-            
+
             if streaks and current.dividend_history:
                 avg_streak = sum(streaks) / len(streaks)
                 my_streak = current.dividend_history.consecutive_years
                 if my_streak > avg_streak + 5:
-                    insights.append(f"Longer dividend streak than peers")
+                    insights.append("Longer dividend streak than peers")
                 elif my_streak < avg_streak - 5:
-                    warnings.append(f"Shorter streak than sector avg")
-        
+                    warnings.append("Shorter streak than sector avg")
+
         if insights or warnings:
             st.markdown("**Insights:**")
             col1, col2 = st.columns(2)
@@ -897,11 +905,11 @@ class UIComponents:
             with col2:
                 for w in warnings:
                     st.markdown(f"⚠ {w}")
-    
+
     # === DIVIDEND YIELD CHANNELS CHART ===
 
     @staticmethod
-    def _symbol_in_current_portfolio(symbol: str, vector_doc=None) -> bool:
+    def _symbol_in_current_portfolio(symbol: str, vector_doc: StockDocument | None = None) -> bool:
         sym = (symbol or "").strip().upper()
         if not sym:
             return False
@@ -913,35 +921,37 @@ class UIComponents:
             return sym in portfolio_backfill_symbols()
         except Exception:
             return False
-    
+
     @staticmethod
     def display_yield_channel_chart(
         symbol: str,
         years: int = 10,
         *,
-        channel_data=None,
-        vector_doc=None,
+        channel_data: YieldChannelData | None = None,
+        vector_doc: StockDocument | None = None,
         show_header: bool = True,
     ) -> bool:
         """
         Display enhanced Dividend Yield Channels chart with Geraldine Weiss methodology.
-        
+
         Implements the "Dividends Don't Lie" strategy:
         - Buy when yield is ABOVE historical average (price is depressed)
         - Avoid/sell when yield is BELOW historical average (price is elevated)
         - Use percentile-based zones for more robust analysis
-        
+
         Args:
             symbol: Stock ticker symbol
             years: Years of historical data to analyze
-            
+
         Returns:
             True if chart was displayed, False otherwise
         """
         if not YIELD_CHART_AVAILABLE:
-            st.info("📊 Yield channel charts require `plotly` package. Install with: `pip install plotly`")
+            st.info(
+                "📊 Yield channel charts require `plotly` package. Install with: `pip install plotly`"
+            )
             return False
-        
+
         from services.stock_analysis_service import ensure_yield_channel_data
         from services.yield_channel_chart import _default_yield_channel_service
         from utils.library_document import resolve_library_document
@@ -1010,13 +1020,11 @@ class UIComponents:
                 )
                 return False
 
-            st.warning(
-                f"Insufficient dividend history for **{symbol}** in the market library."
-            )
+            st.warning(f"Insufficient dividend history for **{symbol}** in the market library.")
             st.markdown(format_history_coverage_summary(readiness))
             st.info(format_history_reload_guidance(readiness))
             return False
-        
+
         from ui.charts import show_chart
         from utils.chart_theme import YIELD_ZONE_COLORS
 
@@ -1070,11 +1078,11 @@ class UIComponents:
         with st.expander("How to read this chart", expanded=False):
             st.markdown(
                 """
-                **Top — price**  
+                **Top — price**
                 Green → red bands are *fixed* levels implied by today’s dividend at historical yields
                 (not wavy lines). The teal line is the actual share price.
 
-                **Bottom — yield**  
+                **Bottom — yield**
                 Orange = trailing dividend yield. Dashed lines = 10Y percentiles.
                 **Higher yield usually means a cheaper price** vs this stock’s past.
 
@@ -1143,99 +1151,96 @@ class UIComponents:
         with st.expander("📖 Understanding the Dividends Don't Lie Strategy", expanded=False):
             st.markdown("""
             ### The Geraldine Weiss Methodology
-            
+
             > *"Dividends don't lie. A company can fudge earnings, but it cannot fake a cash dividend."*
             > — **Geraldine Weiss**, Investment Quality Trends (1966)
-            
-            Geraldine Weiss revolutionized dividend investing with her book **"Dividends Don't Lie"** (1988). 
+
+            Geraldine Weiss revolutionized dividend investing with her book **"Dividends Don't Lie"** (1988).
             Her core insight: **a stock's dividend yield is the most honest indicator of its value**.
-            
+
             #### 🎯 The Core Principle
-            
+
             | When Yield Is... | The Stock Is... | Action |
             |------------------|-----------------|--------|
             | **High** (above historical avg) | **Undervalued** | Consider buying |
             | **Average** (near historical norm) | **Fairly priced** | Hold or accumulate |
             | **Low** (below historical avg) | **Overvalued** | Avoid or take profits |
-            
+
             #### 📊 How This Chart Works
-            
+
             1. **Historical Yield Analysis**: We analyze 10 years of dividend yield data
             2. **Percentile Zones**: Yields are ranked into percentiles (not arbitrary cutoffs)
             3. **Price Targets**: Based on current dividend, we calculate prices at each yield level
             4. **Actionable Signals**: Clear zones indicate when to buy, hold, or wait
-            
+
             #### 🏆 Best Practices from Top Investors
-            
+
             **Warren Buffett** on dividends:
             > *"If you aren't willing to own a stock for ten years, don't even think about owning it for ten minutes."*
-            
+
             **Benjamin Graham** on value:
             > *"The margin of safety is always dependent on the price paid."*
-            
+
             #### ✅ When to Use This Strategy
-            
+
             - Blue-chip dividend growth stocks with 10+ year dividend histories
             - Companies with consistent, growing dividends
             - Stable, mature businesses (utilities, consumer staples, healthcare)
-            
+
             #### ❌ When NOT to Use This Strategy
-            
+
             - New dividend payers (insufficient history)
             - Cyclical companies (dividends fluctuate)
             - High-growth stocks (dividends not relevant to value)
             - Companies with declining dividends
-            
+
             #### 📈 The Power of Mean Reversion
-            
+
             Yield channels work because yields tend to revert to historical averages. When:
             - Yield is HIGH → Price is LOW → Likely to rise → **BUY opportunity**
             - Yield is LOW → Price is HIGH → May correct → **WAIT for better entry**
-            
+
             This creates a disciplined, emotion-free framework for timing dividend stock purchases.
             """)
-        
+
         return True
-    
+
     # === NEWS SUMMARY ===
-    
+
     @staticmethod
     def display_news_summary(symbol: str, days: int = 7) -> bool:
         """
         Display financial news summary for a stock.
-        
+
         Fetches news from top public financial sources:
         - Yahoo Finance
         - Google News
-        
+
         Provides sentiment analysis and key highlights for dividend investors.
-        
+
         Args:
             symbol: Stock ticker symbol
             days: Number of days to look back (default: 7)
-            
+
         Returns:
             True if news was displayed, False otherwise
         """
         if not NEWS_AVAILABLE:
-            st.info(
-                "📰 News summary requires `yfinance`. "
-                "Install with: `pip install yfinance`"
-            )
+            st.info("📰 News summary requires `yfinance`. Install with: `pip install yfinance`")
             return False
-        
+
         service = NewsService()
-        
+
         with st.spinner(f"Fetching latest news for {symbol}..."):
             summary = service.fetch_news_summary(symbol, days=days)
-        
+
         if not summary.articles:
             st.caption(f"No recent news found for {symbol} in the past {days} days")
             return False
-        
+
         # Format for display
         display = service.format_summary_for_display(summary)
-        
+
         # Header with sentiment indicator
         st.markdown("### 📰 Latest News & Sentiment")
 
@@ -1307,11 +1312,13 @@ class UIComponents:
                         st.markdown(f"- ⚠️ {r}")
 
         grouped = display.get("articles_by_sentiment") or {}
-        tab_positive, tab_neutral, tab_negative = st.tabs([
-            f"🟢 Positive ({display['positive_count']})",
-            f"⚪ Neutral ({display.get('neutral_count', 0)})",
-            f"🔴 Negative ({display['negative_count']})",
-        ])
+        tab_positive, tab_neutral, tab_negative = st.tabs(
+            [
+                f"🟢 Positive ({display['positive_count']})",
+                f"⚪ Neutral ({display.get('neutral_count', 0)})",
+                f"🔴 Negative ({display['negative_count']})",
+            ]
+        )
 
         UIComponents._render_news_sentiment_group(
             tab_positive,
@@ -1336,7 +1343,9 @@ class UIComponents:
         return True
 
     @staticmethod
-    def _render_news_sentiment_group(container, articles: list, *, empty_text: str) -> None:
+    def _render_news_sentiment_group(
+        container: Any, articles: list[dict[str, Any]], *, empty_text: str
+    ) -> None:
         """Render one sentiment bucket with categorized article cards."""
         with container:
             if not articles:
@@ -1346,7 +1355,7 @@ class UIComponents:
                 UIComponents._render_news_article_card(article)
 
     @staticmethod
-    def _render_news_article_card(article: dict) -> None:
+    def _render_news_article_card(article: dict[str, Any]) -> None:
         sentiment = article.get("sentiment") or "neutral"
         if sentiment == "positive":
             border = "#4caf50"
@@ -1412,30 +1421,31 @@ class UIComponents:
             st.markdown(f"[Read more]({url})")
 
         st.markdown("---")
-    
+
     @staticmethod
-    def display_news_sentiment_badge(symbol: str) -> Optional[str]:
+    def display_news_sentiment_badge(symbol: str) -> str | None:
         """
         Display a compact news sentiment badge.
-        
+
         Returns the sentiment label or None if unavailable.
         """
         if not NEWS_AVAILABLE:
             return None
-        
+
         try:
             service = NewsService()
             summary = service.fetch_news_summary(symbol, days=3, max_articles=5)
-            
+
             if not summary.articles:
                 return None
-            
+
             display = service.format_summary_for_display(summary)
             emoji = display["sentiment_emoji"]
-            sentiment = display["sentiment"].title()
-            
+            sentiment = str(display["sentiment"].title())
+
             color = display["sentiment_color"]
-            st.markdown(f"""
+            st.markdown(
+                f"""
             <span style="
                 background: {color}22;
                 color: {color};
@@ -1446,40 +1456,39 @@ class UIComponents:
             ">
                 {emoji} {sentiment} ({summary.article_count} articles)
             </span>
-            """, unsafe_allow_html=True)
-            
+            """,
+                unsafe_allow_html=True,
+            )
+
             return sentiment
-            
+
         except Exception:
             return None
-    
+
     # === VECTOR DATABASE DATA DISPLAY ===
-    
+
     @staticmethod
-    def display_vector_db_data(symbol: str, *, document=None) -> bool:
+    def display_vector_db_data(symbol: str, *, document: StockDocument | None = None) -> bool:
         """
         Display all data stored in the vector database for a given ticker.
-        
+
         Shows data in a clean, readable table format with sections for:
         - Basic Info
         - Dividend Metrics
         - Price Data
         - Historical Data Summary
         - Metadata
-        
+
         Args:
             symbol: Stock ticker symbol
-            
+
         Returns:
             True if data was displayed, False if no data found
         """
         if not VECTOR_DB_AVAILABLE:
-            st.warning(
-                "📦 Vector database not available. "
-                "Install with: `pip install chromadb`"
-            )
+            st.warning("📦 Vector database not available. Install with: `pip install chromadb`")
             return False
-        
+
         try:
             doc = document
             if doc is None:
@@ -1511,7 +1520,7 @@ class UIComponents:
                     f"`python ingest_data.py --enrich-existing` or "
                     f"`./scripts/update_cloud_docker.sh --ingest`"
                 )
-            
+
             # Header
             st.markdown(f"### 📦 Vector Database: {doc.symbol}")
             st.caption(
@@ -1519,7 +1528,7 @@ class UIComponents:
                 f"Last Updated: {doc.last_updated.strftime('%Y-%m-%d %H:%M') if doc.last_updated else 'N/A'} • "
                 f"Quality: {doc.data_quality:.0f}%"
             )
-            
+
             # === BASIC INFO ===
             st.markdown("#### 📋 Basic Information")
             basic_info = [
@@ -1529,24 +1538,30 @@ class UIComponents:
                 ("Industry", doc.industry),
                 ("Exchange", doc.exchange),
             ]
-            
+
             basic_df = pd.DataFrame(basic_info, columns=["Field", "Value"])
             st.dataframe(
                 basic_df,
                 hide_index=True,
-                width="stretch",
+                use_container_width=True,
             )
-            
+
             # === DIVIDEND METRICS ===
             st.markdown("#### 💰 Dividend Metrics")
-            
+
             dividend_info = [
                 ("Dividend Yield", f"{doc.dividend_yield:.2f}%" if doc.dividend_yield else "N/A"),
-                ("Annual Dividend", f"${doc.annual_dividend:.2f}" if doc.annual_dividend else "N/A"),
-                ("Dividend Streak", f"{doc.dividend_streak_years} years" if doc.dividend_streak_years else "N/A"),
+                (
+                    "Annual Dividend",
+                    f"${doc.annual_dividend:.2f}" if doc.annual_dividend else "N/A",
+                ),
+                (
+                    "Dividend Streak",
+                    f"{doc.dividend_streak_years} years" if doc.dividend_streak_years else "N/A",
+                ),
                 ("Payout Ratio", f"{doc.payout_ratio:.1f}%" if doc.payout_ratio else "N/A"),
             ]
-            
+
             # Determine tier
             tier = "N/A"
             tier_badge = ""
@@ -1566,55 +1581,59 @@ class UIComponents:
                 else:
                     tier = "Dividend Starter"
                     tier_badge = "🌱"
-            
+
             dividend_info.append(("Dividend Tier", f"{tier_badge} {tier}"))
-            
+
             div_df = pd.DataFrame(dividend_info, columns=["Metric", "Value"])
             st.dataframe(
                 div_df,
                 hide_index=True,
-                width="stretch",
+                use_container_width=True,
             )
-            
+
             # === PRICE DATA ===
             st.markdown("#### 📈 Price Data")
-            
+
             price_info = [
                 ("Current Price", f"${doc.current_price:.2f}" if doc.current_price else "N/A"),
-                ("Market Cap", UIComponents.format_large_number(doc.market_cap) if doc.market_cap else "N/A"),
+                (
+                    "Market Cap",
+                    UIComponents.format_large_number(doc.market_cap) if doc.market_cap else "N/A",
+                ),
                 ("P/E Ratio", f"{doc.pe_ratio:.2f}" if doc.pe_ratio else "N/A"),
             ]
-            
+
             price_df = pd.DataFrame(price_info, columns=["Metric", "Value"])
             st.dataframe(
                 price_df,
                 hide_index=True,
-                width="stretch",
+                use_container_width=True,
             )
-            
+
             # === HISTORICAL DATA SUMMARY ===
             st.markdown("#### 📊 Historical Data")
-            
+
             hist_info = [
                 ("Price History Records", f"{price_hist_count:,} days"),
                 ("Dividend History Records", f"{div_hist_count:,} payments"),
             ]
-            
+
             # Add date ranges if available
             if doc.price_history and len(doc.price_history) > 0:
                 sorted_prices = sorted(doc.price_history, key=lambda x: x.date)
-                hist_info.append((
-                    "Price History Range",
-                    f"{sorted_prices[0].date} to {sorted_prices[-1].date}"
-                ))
-            
+                hist_info.append(
+                    ("Price History Range", f"{sorted_prices[0].date} to {sorted_prices[-1].date}")
+                )
+
             if doc.dividend_history and len(doc.dividend_history) > 0:
                 sorted_divs = sorted(doc.dividend_history, key=lambda x: x.ex_date)
-                hist_info.append((
-                    "Dividend History Range",
-                    f"{sorted_divs[0].ex_date} to {sorted_divs[-1].ex_date}"
-                ))
-                
+                hist_info.append(
+                    (
+                        "Dividend History Range",
+                        f"{sorted_divs[0].ex_date} to {sorted_divs[-1].ex_date}",
+                    )
+                )
+
                 # Calculate annual dividend from history
                 annual_total = sum(d.amount for d in doc.dividend_history[-4:])
                 hist_info.append(("Last 4 Dividends Total", f"${annual_total:.2f}"))
@@ -1627,94 +1646,118 @@ class UIComponents:
                     st.dataframe(
                         yearly_div[["Year", "Dividend / share $"]],
                         hide_index=True,
-                        width="stretch",
+                        use_container_width=True,
                         column_config={
                             "Dividend / share $": st.column_config.NumberColumn(format="$%.4f"),
                         },
                     )
-            
+
             hist_df = pd.DataFrame(hist_info, columns=["Data", "Value"])
             st.dataframe(
                 hist_df,
                 hide_index=True,
-                width="stretch",
+                use_container_width=True,
             )
-            
+
             # === DIVIDEND HISTORY TABLE (if available) ===
             if doc.dividend_history and len(doc.dividend_history) > 0:
-                with st.expander(f"📅 Dividend Payment History ({div_hist_count} records)", expanded=False):
+                with st.expander(
+                    f"📅 Dividend Payment History ({div_hist_count} records)", expanded=False
+                ):
                     # Show most recent dividends
-                    recent_divs = sorted(doc.dividend_history, key=lambda x: x.ex_date, reverse=True)[:20]
-                    
+                    recent_divs = sorted(
+                        doc.dividend_history, key=lambda x: x.ex_date, reverse=True
+                    )[:20]
+
                     div_table = []
                     for d in recent_divs:
-                        div_table.append({
-                            "Ex-Date": d.ex_date.strftime("%Y-%m-%d"),
-                            "Payment Date": d.payment_date.strftime("%Y-%m-%d") if d.payment_date else "N/A",
-                            "Amount": f"${d.amount:.4f}",
-                            "Frequency": d.frequency.title(),
-                        })
-                    
+                        div_table.append(
+                            {
+                                "Ex-Date": d.ex_date.strftime("%Y-%m-%d"),
+                                "Payment Date": d.payment_date.strftime("%Y-%m-%d")
+                                if d.payment_date
+                                else "N/A",
+                                "Amount": f"${d.amount:.4f}",
+                                "Frequency": d.frequency.title(),
+                            }
+                        )
+
                     div_history_df = pd.DataFrame(div_table)
                     st.dataframe(
                         div_history_df,
                         hide_index=True,
-                        width="stretch",
+                        use_container_width=True,
                     )
-                    
+
                     if len(doc.dividend_history) > 20:
                         st.caption(f"Showing most recent 20 of {len(doc.dividend_history)} records")
-            
+
             # === PRICE HISTORY TABLE (if available) ===
             if doc.price_history and len(doc.price_history) > 0:
                 with st.expander(f"📈 Price History ({price_hist_count} records)", expanded=False):
                     # Show most recent prices
-                    recent_prices = sorted(doc.price_history, key=lambda x: x.date, reverse=True)[:20]
-                    
+                    recent_prices = sorted(doc.price_history, key=lambda x: x.date, reverse=True)[
+                        :20
+                    ]
+
                     price_table = []
                     for p in recent_prices:
-                        price_table.append({
-                            "Date": p.date.strftime("%Y-%m-%d"),
-                            "Open": f"${p.open:.2f}",
-                            "High": f"${p.high:.2f}",
-                            "Low": f"${p.low:.2f}",
-                            "Close": f"${p.close:.2f}",
-                            "Volume": f"{p.volume:,}",
-                        })
-                    
+                        price_table.append(
+                            {
+                                "Date": p.date.strftime("%Y-%m-%d"),
+                                "Open": f"${p.open:.2f}",
+                                "High": f"${p.high:.2f}",
+                                "Low": f"${p.low:.2f}",
+                                "Close": f"${p.close:.2f}",
+                                "Volume": f"{p.volume:,}",
+                            }
+                        )
+
                     price_history_df = pd.DataFrame(price_table)
                     st.dataframe(
                         price_history_df,
                         hide_index=True,
-                        width="stretch",
+                        use_container_width=True,
                     )
-                    
+
                     if len(doc.price_history) > 20:
                         st.caption(f"Showing most recent 20 of {len(doc.price_history)} records")
-            
+
             # === METADATA ===
             st.markdown("#### ℹ️ Metadata")
-            
+
             meta_info = [
                 ("Document ID", doc.document_id),
                 ("Data Source", doc.source.value),
-                ("Last Updated", doc.last_updated.strftime("%Y-%m-%d %H:%M:%S") if doc.last_updated else "N/A"),
+                (
+                    "Last Updated",
+                    doc.last_updated.strftime("%Y-%m-%d %H:%M:%S") if doc.last_updated else "N/A",
+                ),
                 ("Data Quality Score", f"{doc.data_quality:.0f}/100"),
             ]
-            
+
             if doc.description:
-                meta_info.append(("Description", doc.description[:100] + "..." if len(doc.description) > 100 else doc.description))
-            
+                meta_info.append(
+                    (
+                        "Description",
+                        doc.description[:100] + "..."
+                        if len(doc.description) > 100
+                        else doc.description,
+                    )
+                )
+
             if doc.notes:
-                meta_info.append(("Notes", doc.notes[:100] + "..." if len(doc.notes) > 100 else doc.notes))
-            
+                meta_info.append(
+                    ("Notes", doc.notes[:100] + "..." if len(doc.notes) > 100 else doc.notes)
+                )
+
             meta_df = pd.DataFrame(meta_info, columns=["Field", "Value"])
             st.dataframe(
                 meta_df,
                 hide_index=True,
-                width="stretch",
+                use_container_width=True,
             )
-            
+
             # === RAW JSON EXPORT ===
             with st.expander("🔧 Raw Data (JSON)", expanded=False):
                 raw_data = {
@@ -1734,63 +1777,58 @@ class UIComponents:
                     "last_updated": doc.last_updated.isoformat() if doc.last_updated else None,
                     "data_quality": doc.data_quality,
                     "price_history_count": len(doc.price_history) if doc.price_history else 0,
-                    "dividend_history_count": len(doc.dividend_history) if doc.dividend_history else 0,
+                    "dividend_history_count": len(doc.dividend_history)
+                    if doc.dividend_history
+                    else 0,
                     "description": doc.description,
                     "notes": doc.notes,
                 }
-                
-                import json
+
                 st.code(json.dumps(raw_data, indent=2), language="json")
-            
+
             return True
-            
+
         except Exception as e:
             st.error(f"Error loading vector database data: {e}")
             return False
-    
+
     @staticmethod
     def display_vector_db_stats() -> bool:
-        """
-        Display overall vector database statistics.
-        
-        Returns:
-            True if stats were displayed, False otherwise
-        """
+        """Display overall vector database statistics."""
         if not VECTOR_DB_AVAILABLE:
             st.warning("Vector database not available.")
             return False
-        
+
         try:
             store = VectorStore()
             stats = store.get_stats()
-            
+
             st.markdown("### 📊 Vector Database Statistics")
-            
+
             col1, col2, col3, col4 = st.columns(4)
-            
+
             with col1:
                 st.metric("Total Documents", stats.get("total_documents", 0))
-            
+
             with col2:
                 st.metric("Dividend Kings", stats.get("dividend_kings", 0))
-            
+
             with col3:
                 st.metric("Aristocrats", stats.get("dividend_aristocrats", 0))
-            
+
             with col4:
                 st.metric("Unique Symbols", stats.get("unique_symbols", 0))
-            
+
             # Sectors breakdown
             if stats.get("sectors"):
                 st.markdown("#### Sectors")
-                sector_df = pd.DataFrame([
-                    {"Sector": k, "Count": v} 
-                    for k, v in stats["sectors"].items()
-                ])
+                sector_df = pd.DataFrame(
+                    [{"Sector": k, "Count": v} for k, v in stats["sectors"].items()]
+                )
                 st.dataframe(sector_df, hide_index=True, width="stretch")
-            
+
             return True
-            
+
         except Exception as e:
             st.error(f"Error loading database stats: {e}")
             return False

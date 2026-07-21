@@ -20,7 +20,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import date, datetime
+from sqlite3 import Error as SQLiteError
 from typing import Any, ClassVar, cast
+
+import requests
+import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
@@ -35,13 +39,17 @@ except ImportError:
 try:
     import numpy as np
     import pandas as pd
-    import yfinance as yf
 
     DEPS_AVAILABLE = True
 except ImportError:
     DEPS_AVAILABLE = False
 
 # Try to import vector store for DB-first data
+try:
+    from psycopg import Error as PostgresError
+except ImportError:
+    PostgresError = type("PostgresError", (Exception,), {})
+
 try:
     from data_ingestion.vector_store import VectorStore
 
@@ -193,7 +201,7 @@ class YieldChannelService:
                     db_dividend_history = doc_to_use.dividend_history
                     db_streak = doc_to_use.dividend_streak_years
                     logger.debug(f"{symbol}: Found {len(db_dividend_history)} dividends in DB")
-            except Exception as e:
+            except (SQLiteError, PostgresError, OSError) as e:
                 logger.debug(f"Vector DB lookup failed for {symbol}: {e}")
 
         try:
@@ -207,7 +215,7 @@ class YieldChannelService:
                 try:
                     info = ticker.info
                     company_name = info.get("shortName") or info.get("longName") or symbol
-                except Exception:  # noqa: S110
+                except yf.exceptions.YFinanceError:  # noqa: S110
                     pass
 
             # Get historical prices
@@ -301,7 +309,12 @@ class YieldChannelService:
                 dividend_streak=db_streak,
             )
 
-        except Exception as e:
+        except (
+            yf.exceptions.YFinanceError,
+            requests.exceptions.RequestException,
+            KeyError,
+            ValueError,
+        ) as e:
             logger.error(f"Error fetching yield channel data for {symbol}: {e}")
             return None
 
@@ -330,7 +343,7 @@ class YieldChannelService:
                 hist["Dividends"] = hist["DB_Dividends"]
 
             return hist
-        except Exception:
+        except (AttributeError, TypeError):
             return hist
 
     def _calculate_ttm_dividend(self, hist: pd.DataFrame) -> pd.DataFrame | None:
@@ -357,7 +370,7 @@ class YieldChannelService:
             hist = hist.dropna(subset=["Div_TTM", "Close"])
 
             return hist if len(hist) >= 100 else None
-        except Exception:
+        except (KeyError, TypeError):
             return None
 
     def _calculate_yield_statistics(self, yields: pd.Series[Any]) -> dict[str, float]:
@@ -432,7 +445,7 @@ class YieldChannelService:
                 if start_10 > 0 and current > 0:
                     result["cagr_10y"] = round(((current / start_10) ** (1 / 10) - 1) * 100, 1)
 
-        except Exception:  # noqa: S110
+        except (KeyError, TypeError):  # noqa: S110
             pass
 
         return result
@@ -700,8 +713,18 @@ class YieldChannelService:
         # Add price target annotations on the right
         if show_annotations:
             annotations = [
-                (data.expensive_price, f"${data.expensive_price:.0f}", YIELD_ZONE_COLORS["Expensive"], "Expensive"),
-                (data.fair_value_price, f"${data.fair_value_price:.0f}", YIELD_ZONE_COLORS["Fair Value"], "Fair value"),
+                (
+                    data.expensive_price,
+                    f"${data.expensive_price:.0f}",
+                    YIELD_ZONE_COLORS["Expensive"],
+                    "Expensive",
+                ),
+                (
+                    data.fair_value_price,
+                    f"${data.fair_value_price:.0f}",
+                    YIELD_ZONE_COLORS["Fair Value"],
+                    "Fair value",
+                ),
                 (data.value_price, f"${data.value_price:.0f}", YIELD_ZONE_COLORS["Value"], "Value"),
             ]
 

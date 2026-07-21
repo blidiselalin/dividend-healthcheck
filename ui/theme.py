@@ -4,8 +4,6 @@ Shared Streamlit theme — layout, navigation labels, and portfolio section map.
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
-
 import streamlit as st
 
 # Top-level app views (portfolio is home).
@@ -21,13 +19,17 @@ _LEGACY_NAV_MAP = {
 }
 
 # Portfolio workspace sections: (sidebar label, internal key, one-line description).
-PORTFOLIO_NAV: List[Tuple[str, str, str]] = [
+PORTFOLIO_NAV: list[tuple[str, str, str]] = [
     ("Home", "dashboard", "Snapshot, watchlists, and dividends paid this month"),
     ("Holdings", "holdings", "All positions — filter, explore, and compare"),
     ("Dividend income", "dividends", "Monthly calendar and net cash received after tax"),
     ("Dividend growth", "dividend_growth", "Dividend per share and year-over-year growth"),
     ("Purchase journal", "journal", "Buy dates, lots, and share counts"),
-    ("Deposits & benchmarks", "deposits", "Monthly deposits, portfolio value, and index comparison"),
+    (
+        "Deposits & benchmarks",
+        "deposits",
+        "Monthly deposits, portfolio value, and index comparison",
+    ),
 ]
 
 _LEGACY_PORTFOLIO_SECTION_LABELS = {
@@ -45,9 +47,7 @@ PORTFOLIO_LABEL_BY_KEY = {item[1]: item[0] for item in PORTFOLIO_NAV}
 
 # Backward compatibility for older imports.
 PORTFOLIO_SECTIONS = PORTFOLIO_SECTION_LABELS
-PORTFOLIO_TAB_SCOPES = {
-    key: (label, hint) for label, key, hint in PORTFOLIO_NAV
-}
+PORTFOLIO_TAB_SCOPES = {key: (label, hint) for label, key, hint in PORTFOLIO_NAV}
 
 
 def normalize_nav_choice(value: str | None) -> str:
@@ -381,9 +381,7 @@ def current_portfolio_section_key() -> str:
 
 def render_portfolio_section_nav() -> str:
     """Visible section picker — full list with descriptions. Returns internal section key."""
-    active_label = resolve_portfolio_section_label(
-        st.session_state.get("portfolio_section_label")
-    )
+    active_label = resolve_portfolio_section_label(st.session_state.get("portfolio_section_label"))
     st.session_state["portfolio_section_label"] = active_label
 
     from ui.design_system import render_html

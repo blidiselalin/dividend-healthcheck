@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List, Optional
+import contextlib
+from typing import TYPE_CHECKING
 
 import streamlit as st
 
@@ -16,8 +17,10 @@ from ui.design_system import (
 if TYPE_CHECKING:
     from services.portfolio_month_dividends import CurrentMonthPaidDividends
 
+from services.portfolio_details_service import PortfolioDetailsService
 
-def _format_delta(value: Optional[float], pct: Optional[float]) -> Optional[str]:
+
+def _format_delta(value: float | None, pct: float | None) -> str | None:
     if value is None:
         return None
     if pct is not None:
@@ -39,9 +42,9 @@ def _metric_columns(count: int) -> list:
 
 
 def render_dividend_focus_block(
-    rows: List[PortfolioDetailRow],
+    rows: list[PortfolioDetailRow],
     *,
-    month_paid: Optional["CurrentMonthPaidDividends"] = None,
+    month_paid: CurrentMonthPaidDividends | None = None,
 ) -> None:
     """Top-of-page strip highlighting dividend income metrics investors care about most."""
     if not rows and month_paid is None:
@@ -49,7 +52,9 @@ def render_dividend_focus_block(
 
     total_annual = sum(row.annual_income or 0.0 for row in rows)
     total_value = sum(row.current_value or 0.0 for row in rows)
-    portfolio_yield = (total_annual / total_value * 100) if total_value > 0 and total_annual > 0 else None
+    portfolio_yield = (
+        (total_annual / total_value * 100) if total_value > 0 and total_annual > 0 else None
+    )
 
     metrics: list[tuple[str, str, str, bool]] = []
     if month_paid is not None:
@@ -112,23 +117,19 @@ def render_dividend_focus_block(
 
 
 def render_holdings_summary(
-    rows: List[PortfolioDetailRow],
+    rows: list[PortfolioDetailRow],
     *,
-    summary: Optional[HoldingsSummary] = None,
+    summary: HoldingsSummary | None = None,
     show_positions: bool = False,
-    month_paid: Optional["CurrentMonthPaidDividends"] = None,
+    month_paid: CurrentMonthPaidDividends | None = None,
     show_month_received: bool = False,
 ) -> HoldingsSummary:
     """Render broker-style holdings summary metrics (price / P&L focus)."""
     render_section_header("Portfolio snapshot", "Live value, day change, and unrealized gain/loss.")
     if summary is None and rows and any(row.previous_close is None for row in rows):
-        from services.portfolio_details_service import PortfolioDetailsService
-
         rows = PortfolioDetailsService().enrich_rows_previous_close(rows)
-        try:
+        with contextlib.suppress(Exception):
             st.session_state["portfolio_details_rows"] = rows
-        except Exception:  # noqa: S110
-            pass
 
     metrics = summary or compute_holdings_summary(rows)
     include_received = show_month_received and month_paid is not None
@@ -192,6 +193,6 @@ def render_holdings_summary(
     return metrics
 
 
-def render_portfolio_dividend_income_strip(rows: List[PortfolioDetailRow]) -> None:
+def render_portfolio_dividend_income_strip(rows: list[PortfolioDetailRow]) -> None:
     """Legacy wrapper — dividend focus block is preferred on Home."""
     render_dividend_focus_block(rows)

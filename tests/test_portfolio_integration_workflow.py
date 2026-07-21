@@ -44,7 +44,9 @@ def test_portfolio_workflow_services_share_state(temp_db) -> None:
         portfolio_eur=9800.0,
     )
 
-    journal_service = PortfolioPurchaseJournalService(journal_store=journal, portfolio_store=portfolio)
+    journal_service = PortfolioPurchaseJournalService(
+        journal_store=journal, portfolio_store=portfolio
+    )
     deposits_service = PortfolioDepositsService(store=deposits)
 
     purchases = journal_service.list_purchases()

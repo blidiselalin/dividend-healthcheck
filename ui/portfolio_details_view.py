@@ -5,14 +5,38 @@ Portfolio details page for the Streamlit application.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pandas as pd
 import streamlit as st
 
+from data_ingestion.deposits_store import MonthlyDeposit
+from data_ingestion.portfolio_store import PortfolioStore
+from data_ingestion.sp500_universe import sectors_match
 from models.stock import StockData
+from services.dividend_timing import classify_dividend_timing
+from services.portfolio_allocation_service import PortfolioAllocationService
 from services.portfolio_analysis_preload import PortfolioAnalysisPreload
-from services.portfolio_details_service import PortfolioDetailRow, PortfolioDetailsService
+from services.portfolio_attention_service import (
+    PortfolioAttentionService,
+    normalize_attention_summary,
+)
+from services.portfolio_benchmark_service import PortfolioBenchmarkService
+from services.portfolio_dashboard_service import PortfolioDashboardService
+from services.portfolio_deposits_service import PortfolioDepositsService
+from services.portfolio_details_service import PortfolioDetailRow
+from services.portfolio_dividend_calendar import (
+    build_portfolio_dividend_calendar,
+    create_month_comparison_chart,
+    create_month_payers_chart,
+)
+from services.portfolio_dividend_growth_service import (
+    SINCE_YEAR,
+    PortfolioDividendGrowthService,
+)
+from services.portfolio_dividend_income_service import PortfolioDividendIncomeService
+from services.portfolio_holding_detail_service import PortfolioHoldingDetailService
+from services.portfolio_purchase_journal_service import PortfolioPurchaseJournalService
 from services.portfolio_zone_overview import (
     ZONE_CATEGORY_META,
     build_zone_dataframe,
@@ -21,54 +45,30 @@ from services.portfolio_zone_overview import (
     summarize_categories,
     tickers_missing_zones,
 )
-from services.portfolio_dividend_calendar import (
-    build_portfolio_dividend_calendar,
-    create_month_comparison_chart,
-    create_month_payers_chart,
-)
-from data_ingestion.portfolio_store import PortfolioStore
-from services.portfolio_deposits_service import PortfolioDepositsService
-from services.portfolio_dashboard_service import PortfolioDashboardService
-from services.portfolio_allocation_service import PortfolioAllocationService
-from data_ingestion.deposits_store import MonthlyDeposit
-from services.portfolio_benchmark_service import PortfolioBenchmarkService
-from services.portfolio_dividend_income_service import PortfolioDividendIncomeService
-from services.portfolio_purchase_journal_service import PortfolioPurchaseJournalService
-from services.portfolio_dividend_growth_service import (
-    SINCE_YEAR,
-    PortfolioDividendGrowthService,
-)
-from services.portfolio_attention_service import (
-    PortfolioAttentionService,
-    normalize_attention_summary,
-)
+from services.scoring import ScoringService
+from ui.charts import show_chart
+from ui.components import UIComponents
 from ui.dividend_timing_display import dividend_timing_legend, render_dividend_timing_dataframe
 from ui.portfolio_manage_panel import render_tab_refresh_button
-from services.dividend_timing import classify_dividend_timing
 from ui.portfolio_risk_panel import (
     SESSION_SUMMARY_KEY,
     get_cached_attention_summary,
     refresh_portfolio_risks,
 )
-from services.portfolio_holding_detail_service import PortfolioHoldingDetailService
-from data_ingestion.sp500_universe import sectors_match
-from services.scoring import ScoringService
-from ui.views import SingleStockView
-from ui.components import UIComponents
-from utils.formatting import format_large_number
-from ui.charts import show_chart
 from ui.theme import (
     PORTFOLIO_TAB_SCOPES,
     current_portfolio_section_key,
     portfolio_data_ready,
     render_portfolio_status_line,
 )
+from ui.views import SingleStockView
+from utils.formatting import format_large_number
 
 PORTFOLIO_VIEW_OVERVIEW = "overview"
 PORTFOLIO_VIEW_HOLDING = "holding"
 
 
-def _row_status_badge(row: "PortfolioDetailRow") -> str:
+def _row_status_badge(row: PortfolioDetailRow) -> str:
     """Build a compact status badge string for display in the holdings table.
 
     ⏳ = price is stale (background refresh in progress)
@@ -82,7 +82,7 @@ def _row_status_badge(row: "PortfolioDetailRow") -> str:
     return " ".join(parts) if parts else "✓"
 
 
-def _set_holding_selection(symbol: str, nav_tickers: Optional[List[str]] = None) -> None:
+def _set_holding_selection(symbol: str, nav_tickers: list[str] | None = None) -> None:
     """Switch to full-page holding analysis for the chosen symbol."""
     from ui.portfolio_home import set_holding_selection
 
@@ -110,7 +110,7 @@ def _preload_from_session() -> PortfolioAnalysisPreload:
 def _resolve_holding_analysis(
     symbol: str,
     preload: PortfolioAnalysisPreload,
-) -> tuple[Optional[StockData], Optional[Any], Optional[Any]]:
+) -> tuple[StockData | None, Any | None, Any | None]:
     """
     Resolve stock data, library document, and yield channel for one holding.
 
@@ -122,19 +122,14 @@ def _resolve_holding_analysis(
     from services.stock_analysis_service import load_independent_stock_analysis
 
     sym = symbol.upper()
-    vector_doc: Optional[StockDocument] = preload.vector_docs.get(sym) or get_document(sym)
+    vector_doc: StockDocument | None = preload.vector_docs.get(sym) or get_document(sym)
     stock_data = preload.stock_data.get(sym)
     yield_channel = preload.yield_channels.get(sym)
 
-    if stock_data is not None and yield_channel is not None and vector_doc is not None:
-        if vector_doc.dividend_history or vector_doc.price_history:
-            return stock_data, vector_doc, yield_channel
+    if stock_data is not None and yield_channel is not None:
+        return stock_data, vector_doc, yield_channel
 
-    analysis = load_independent_stock_analysis(
-        sym,
-        document=vector_doc,
-        include_yield_channel=True,
-    )
+    analysis = load_independent_stock_analysis(sym, document=vector_doc, include_yield_channel=True)
     if analysis is None:
         return stock_data, vector_doc, yield_channel
 
@@ -171,8 +166,7 @@ class PortfolioDetailsView:
 
     @staticmethod
     def _rows_to_dataframe(
-        rows: List[PortfolioDetailRow],
-        preload: Optional[PortfolioAnalysisPreload] = None,
+        rows: list[PortfolioDetailRow], preload: PortfolioAnalysisPreload | None = None
     ) -> pd.DataFrame:
         yield_channels = preload.yield_channels if preload else {}
 
@@ -234,14 +228,14 @@ class PortfolioDetailsView:
         )
 
     @classmethod
-    def _render_portfolio_hero(cls, rows: List[PortfolioDetailRow]) -> None:
+    def _render_portfolio_hero(cls, rows: list[PortfolioDetailRow]) -> None:
         """Compact KPI strip shown above all portfolio sections."""
         from ui.portfolio_summary import render_holdings_summary
 
         render_holdings_summary(rows, show_positions=True)
 
     @classmethod
-    def _render_quick_holdings(cls, rows: List[PortfolioDetailRow]) -> None:
+    def _render_quick_holdings(cls, rows: list[PortfolioDetailRow]) -> None:
         """Top holdings as one-click shortcuts into full analysis."""
         ranked = sorted(
             rows,
@@ -274,7 +268,7 @@ class PortfolioDetailsView:
                     )
 
     @staticmethod
-    def _render_summary(rows: List[PortfolioDetailRow]) -> None:
+    def _render_summary(rows: list[PortfolioDetailRow]) -> None:
         total_value = sum(row.current_value or 0.0 for row in rows)
         total_acquisition = sum(row.acquisition_value for row in rows)
         total_profit = total_value - total_acquisition
@@ -312,9 +306,7 @@ class PortfolioDetailsView:
         with col3:
             search = st.text_input("Search company or ticker")
 
-        filtered = df[
-            df["Sector"].isin(selected_sectors) & df["Ticker"].isin(selected_tickers)
-        ]
+        filtered = df[df["Sector"].isin(selected_sectors) & df["Ticker"].isin(selected_tickers)]
         if search:
             needle = search.strip().lower()
             filtered = filtered[
@@ -324,7 +316,7 @@ class PortfolioDetailsView:
         return filtered
 
     @staticmethod
-    def _label_for_symbol(rows: List[PortfolioDetailRow], symbol: str) -> str:
+    def _label_for_symbol(rows: list[PortfolioDetailRow], symbol: str) -> str:
         for row in rows:
             if row.ticker == symbol:
                 return f"{row.ticker} — {row.company}"
@@ -333,7 +325,7 @@ class PortfolioDetailsView:
     @classmethod
     def _render_monthly_dividend_exposure(
         cls,
-        rows: List[PortfolioDetailRow],
+        rows: list[PortfolioDetailRow],
         preload: PortfolioAnalysisPreload,
     ) -> None:
         """Monthly dividend cash forecast and payer chart with drill-down."""
@@ -341,10 +333,7 @@ class PortfolioDetailsView:
         if not holdings:
             return
 
-        row_dates = {
-            row.ticker: (row.ex_dividend_date, row.dividend_pay_date)
-            for row in rows
-        }
+        row_dates = {row.ticker: (row.ex_dividend_date, row.dividend_pay_date) for row in rows}
         calendar = build_portfolio_dividend_calendar(
             holdings,
             vector_docs=preload.vector_docs,
@@ -360,7 +349,6 @@ class PortfolioDetailsView:
             "This month shows **received + scheduled** payments; projections are listed separately in the table."
         )
 
-        delta_vs_last = current.confirmed_cash - last.total_cash
         delta_vs_next = next_month.confirmed_cash - current.confirmed_cash
         this_month_display = current.confirmed_cash or current.total_cash
 
@@ -518,9 +506,9 @@ class PortfolioDetailsView:
     @classmethod
     def _render_zone_overview(
         cls,
-        rows: List[PortfolioDetailRow],
+        rows: list[PortfolioDetailRow],
         preload: PortfolioAnalysisPreload,
-        filtered_tickers: List[str],
+        filtered_tickers: list[str],
     ) -> None:
         """Green / yellow / red yield-zone chart with drill-down into holding analysis."""
         if not st.session_state.get("portfolio_analysis_ready"):
@@ -528,11 +516,7 @@ class PortfolioDetailsView:
 
         visible = [row for row in rows if row.ticker in filtered_tickers]
         labels = {row.ticker: row.company for row in visible}
-        weights = {
-            row.ticker: row.weight_pct
-            for row in visible
-            if row.weight_pct is not None
-        }
+        weights = {row.ticker: row.weight_pct for row in visible if row.weight_pct is not None}
         channels = {
             ticker: preload.yield_channels[ticker]
             for ticker in filtered_tickers
@@ -553,8 +537,7 @@ class PortfolioDetailsView:
             missing = tickers_missing_zones(filtered_tickers, preload.yield_channels)
             st.warning(
                 "No yield-channel data for the current selection. "
-                f"Missing: {', '.join(missing[:12])}"
-                + ("…" if len(missing) > 12 else "")
+                f"Missing: {', '.join(missing[:12])}" + ("…" if len(missing) > 12 else "")
             )
             return
 
@@ -589,8 +572,7 @@ class PortfolioDetailsView:
         selected_categories = st.multiselect(
             "Filter by zone color",
             category_options,
-            default=[c for c in default_categories if c in category_options]
-            or category_options,
+            default=[c for c in default_categories if c in category_options] or category_options,
             key="portfolio_zone_filter_select",
         )
         st.session_state["portfolio_zone_filter"] = selected_categories
@@ -647,7 +629,7 @@ class PortfolioDetailsView:
 
         zone_selection = st.dataframe(
             zone_table,
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
             on_select="rerun",
             selection_mode="single-row",
@@ -670,7 +652,11 @@ class PortfolioDetailsView:
         if not points:
             return
         point = points[0]
-        custom = point.get("customdata") if isinstance(point, dict) else getattr(point, "customdata", None)
+        custom = (
+            point.get("customdata")
+            if isinstance(point, dict)
+            else getattr(point, "customdata", None)
+        )
         nav = zone_df["Ticker"].tolist()
         if custom is not None and len(custom) > 0:
             _set_holding_selection(str(custom[0]), nav_tickers=nav)
@@ -684,13 +670,11 @@ class PortfolioDetailsView:
 
     @classmethod
     def _render_holding_focus(
-        cls,
-        rows: List[PortfolioDetailRow],
-        preload: PortfolioAnalysisPreload,
+        cls, rows: list[PortfolioDetailRow], preload: PortfolioAnalysisPreload
     ) -> None:
         """Full-page dividend analysis for one holding or S&P research pick."""
         research_mode = bool(st.session_state.get("portfolio_research_mode"))
-        nav_tickers: List[str] = st.session_state.get("portfolio_nav_tickers") or [
+        nav_tickers: list[str] = st.session_state.get("portfolio_nav_tickers") or [
             row.ticker for row in rows
         ]
         if not nav_tickers:
@@ -787,9 +771,9 @@ class PortfolioDetailsView:
         preload: PortfolioAnalysisPreload,
     ) -> None:
         """Load and display analysis for a symbol chosen from the S&P list (not necessarily held)."""
+        from data_ingestion.portfolio_store import PortfolioStore
         from services.shared_market_db import get_document
         from services.sp500_peers_service import find_sector_peers
-        from data_ingestion.portfolio_store import PortfolioStore
 
         symbol = symbol.upper()
         with st.spinner(f"Loading analysis for {symbol}…"):
@@ -826,11 +810,12 @@ class PortfolioDetailsView:
         )
 
         portfolio_symbols = {
-            holding.symbol.upper()
-            for holding in PortfolioStore(seed=False).list_holdings()
+            holding.symbol.upper() for holding in PortfolioStore(seed=False).list_holdings()
         }
         if symbol in portfolio_symbols:
-            st.info(f"{symbol} is already in your portfolio — use **Holdings** for position context.")
+            st.info(
+                f"{symbol} is already in your portfolio — use **Holdings** for position context."
+            )
 
         peers = find_sector_peers(
             sector=data.sector or "",
@@ -859,11 +844,9 @@ class PortfolioDetailsView:
             render_sp500_research_picker(key_prefix="research_inline")
 
     @staticmethod
-    def _peer_dict_from_stock(data: StockData) -> Dict[str, Any]:
+    def _peer_dict_from_stock(data: StockData) -> dict[str, Any]:
         peer_score = ScoringService.calculate_score(data)
-        div_streak = (
-            data.dividend_history.consecutive_years if data.dividend_history else None
-        )
+        div_streak = data.dividend_history.consecutive_years if data.dividend_history else None
         div_cagr = data.dividend_history.cagr_5y if data.dividend_history else None
         return {
             "symbol": data.symbol,
@@ -884,9 +867,9 @@ class PortfolioDetailsView:
         cls,
         symbol: str,
         row: PortfolioDetailRow,
-        rows: List[PortfolioDetailRow],
+        rows: list[PortfolioDetailRow],
         preload: PortfolioAnalysisPreload,
-        nav_tickers: List[str],
+        nav_tickers: list[str],
     ) -> None:
         """Compare the active holding with other positions in the same sector."""
         sector = row.sector
@@ -894,7 +877,7 @@ class PortfolioDetailsView:
             return
 
         current_data = preload.stock_data.get(symbol)
-        peers: List[Dict[str, Any]] = []
+        peers: list[dict[str, Any]] = []
         for other in rows:
             if other.ticker.upper() == symbol.upper():
                 continue
@@ -914,7 +897,7 @@ class PortfolioDetailsView:
             return
 
         peers.sort(key=lambda item: item["score"], reverse=True)
-        ranked: List[Dict[str, Any]] = []
+        ranked: list[dict[str, Any]] = []
         if current_data:
             ranked.append(cls._peer_dict_from_stock(current_data))
         ranked.extend(peers)
@@ -941,11 +924,7 @@ class PortfolioDetailsView:
 
     @classmethod
     def _render_dividend_timing_table(
-        cls,
-        rows: List[PortfolioDetailRow],
-        timing_df: pd.DataFrame,
-        *,
-        table_key: str,
+        cls, rows: list[PortfolioDetailRow], timing_df: pd.DataFrame, *, table_key: str
     ) -> None:
         if timing_df.empty:
             return
@@ -961,11 +940,7 @@ class PortfolioDetailsView:
 
     @classmethod
     def _render_attention_table(
-        cls,
-        rows: List[PortfolioDetailRow],
-        watch_df: pd.DataFrame,
-        *,
-        table_key: str,
+        cls, rows: list[PortfolioDetailRow], watch_df: pd.DataFrame, *, table_key: str
     ) -> None:
         if watch_df.empty:
             return
@@ -989,9 +964,7 @@ class PortfolioDetailsView:
 
     @classmethod
     def _render_attention_watchlist(
-        cls,
-        rows: List[PortfolioDetailRow],
-        preload: PortfolioAnalysisPreload,
+        cls, rows: list[PortfolioDetailRow], preload: PortfolioAnalysisPreload
     ) -> None:
         """Dividend timing list + risk watchlist (negative signals only)."""
         service = PortfolioAttentionService()
@@ -1015,8 +988,8 @@ class PortfolioDetailsView:
             summary = service.build_summary(rows, preload)
             from services.portfolio_risk_monitor_service import PortfolioRiskMonitorService
 
-            st.session_state[SESSION_SUMMARY_KEY] = (
-                PortfolioRiskMonitorService.summary_to_store(summary)
+            st.session_state[SESSION_SUMMARY_KEY] = PortfolioRiskMonitorService.summary_to_store(
+                summary
             )
         else:
             summary = summary or service.build_summary(rows, preload)
@@ -1055,9 +1028,7 @@ class PortfolioDetailsView:
             o1, o2 = st.columns(2)
             o1.metric("Opportunities", summary.opportunity_total)
             o2.metric("High priority", summary.high_count)
-            cls._render_attention_table(
-                rows, opp_df, table_key="portfolio_opportunity_table"
-            )
+            cls._render_attention_table(rows, opp_df, table_key="portfolio_opportunity_table")
 
         st.divider()
         st.markdown("##### High-risk watchlist")
@@ -1076,9 +1047,7 @@ class PortfolioDetailsView:
             c2.metric("Exposure", by_cat.get("Exposure", 0))
             c3.metric("Estimates", by_cat.get("Estimates", 0))
             c4.metric("News", by_cat.get("News", 0))
-            cls._render_attention_table(
-                rows, risk_df, table_key="portfolio_attention_table"
-            )
+            cls._render_attention_table(rows, risk_df, table_key="portfolio_attention_table")
 
         with st.expander("What triggers each list?"):
             st.markdown(
@@ -1097,7 +1066,7 @@ class PortfolioDetailsView:
     @classmethod
     def _render_allocations(
         cls,
-        rows: List[PortfolioDetailRow],
+        rows: list[PortfolioDetailRow],
         *,
         key_prefix: str = "portfolio",
     ) -> None:
@@ -1147,7 +1116,7 @@ class PortfolioDetailsView:
             st.markdown("**Sectors**")
             st.dataframe(
                 sector_df,
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
                 column_config={
                     "Value USD": st.column_config.NumberColumn(format="$%.2f"),
@@ -1159,7 +1128,7 @@ class PortfolioDetailsView:
             display_cap = cap_df.drop(columns=["Bucket"], errors="ignore")
             st.dataframe(
                 display_cap,
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
                 column_config={
                     "Value USD": st.column_config.NumberColumn(format="$%.2f"),
@@ -1171,7 +1140,7 @@ class PortfolioDetailsView:
             detail = allocation.holdings_by_bucket(rows)
             st.dataframe(
                 detail,
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
                 column_config={
                     "Market cap (B)": st.column_config.NumberColumn(format="%.2f"),
@@ -1183,8 +1152,8 @@ class PortfolioDetailsView:
     @classmethod
     def _render_dashboard_page(
         cls,
-        rows: Optional[List[PortfolioDetailRow]] = None,
-        preload: Optional[PortfolioAnalysisPreload] = None,
+        rows: list[PortfolioDetailRow] | None = None,
+        preload: PortfolioAnalysisPreload | None = None,
         *,
         compact: bool = False,
     ) -> None:
@@ -1236,9 +1205,7 @@ class PortfolioDetailsView:
 
         service = PortfolioDashboardService()
         deposits = service.list_deposits()
-        holdings_snapshot = (
-            PortfolioDashboardService.holdings_from_rows(rows) if rows else None
-        )
+        holdings_snapshot = PortfolioDashboardService.holdings_from_rows(rows) if rows else None
         metrics = service.build_metrics(deposits, holdings=holdings_snapshot)
         summary = metrics.deposits
         evolution = service.evolution_dataframe(deposits)
@@ -1386,7 +1353,7 @@ class PortfolioDetailsView:
             )
 
     @classmethod
-    def _render_benchmark_comparison(cls, deposits: List[MonthlyDeposit]) -> None:
+    def _render_benchmark_comparison(cls, deposits: list[MonthlyDeposit]) -> None:
         """Compare actual portfolio to index/ETF DCA using recorded monthly share buys."""
         st.markdown("##### Benchmark comparison (S&P 500 & SCHD)")
         st.caption(
@@ -1421,8 +1388,7 @@ class PortfolioDetailsView:
 
         eur_cols = ["Portfolio €", "S&P 500 €", "SCHD €"]
         if not any(
-            col in comparison_df.columns and comparison_df[col].notna().any()
-            for col in eur_cols
+            col in comparison_df.columns and comparison_df[col].notna().any() for col in eur_cols
         ):
             st.warning(
                 "Benchmark values could not be priced (check internet / Yahoo Finance). "
@@ -1495,7 +1461,7 @@ class PortfolioDetailsView:
 
             st.dataframe(
                 yearly_df,
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
                 column_config={
                     "Deposits €": st.column_config.NumberColumn(format="€%.2f"),
@@ -1529,11 +1495,11 @@ class PortfolioDetailsView:
             show = [column for column in display_cols if column in comparison_df.columns]
             st.dataframe(
                 comparison_df[show],
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
             )
             st.caption("Full detail (including cumulative shares and USD)")
-            st.dataframe(comparison_df, width="stretch", hide_index=True)
+            st.dataframe(comparison_df, use_container_width=True, hide_index=True)
 
         st.download_button(
             "Download monthly comparison CSV",
@@ -1628,16 +1594,13 @@ class PortfolioDetailsView:
 
         missing = service.symbols_without_journal()
         if missing:
-            st.info(
-                "No journal data (but in portfolio): "
-                + ", ".join(missing)
-            )
+            st.info("No journal data (but in portfolio): " + ", ".join(missing))
 
         st.markdown("##### Purchase tables")
         by_symbol = service.by_symbol_dataframe(records)
         st.dataframe(
             by_symbol,
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
             column_config={
                 "Shares": st.column_config.NumberColumn(format="%.0f"),
@@ -1648,7 +1611,7 @@ class PortfolioDetailsView:
         chrono = service.chronological_dataframe(records)
         st.dataframe(
             chrono,
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
             column_config={"Price $": st.column_config.NumberColumn(format="$%.2f")},
         )
@@ -1702,7 +1665,7 @@ class PortfolioDetailsView:
 
             st.dataframe(
                 split_df,
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
                 column_config={
                     "Shares": st.column_config.NumberColumn(format="%.0f"),
@@ -1716,7 +1679,7 @@ class PortfolioDetailsView:
             with st.expander("Per-transaction detail (estimated shares & value)"):
                 st.dataframe(
                     service.lot_estimates_dataframe(records),
-                    width="stretch",
+                    use_container_width=True,
                     hide_index=True,
                 )
 
@@ -1761,9 +1724,7 @@ class PortfolioDetailsView:
 
         with_growth = sum(1 for item in growth_data if item.growth_years > 0)
         avg_cagr = [
-            item.cagr_since_start
-            for item in growth_data
-            if item.cagr_since_start is not None
+            item.cagr_since_start for item in growth_data if item.cagr_since_start is not None
         ]
         m1, m2, m3, m4 = st.columns(4)
         with m1:
@@ -1778,11 +1739,12 @@ class PortfolioDetailsView:
         with m4:
             cash_latest = service.portfolio_cash_by_year(growth_data)
             latest_cash = (
-                float(cash_latest.iloc[-1]["Est. dividends $"])
-                if not cash_latest.empty
-                else 0
+                float(cash_latest.iloc[-1]["Est. dividends $"]) if not cash_latest.empty else 0
             )
-            st.metric(f"Cash {cash_latest.iloc[-1]['Year'] if not cash_latest.empty else '—'}", f"${latest_cash:,.0f}")
+            st.metric(
+                f"Cash {cash_latest.iloc[-1]['Year'] if not cash_latest.empty else '—'}",
+                f"${latest_cash:,.0f}",
+            )
 
         portfolio_cash = service.create_portfolio_cash_chart(growth_data)
         if portfolio_cash:
@@ -1834,7 +1796,7 @@ class PortfolioDetailsView:
         ]
         st.dataframe(
             matrix,
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
             column_config={
                 **{year: st.column_config.NumberColumn(format="$%.4f") for year in year_cols},
@@ -1845,7 +1807,7 @@ class PortfolioDetailsView:
         with st.expander("YoY growth (%) — by ticker"):
             st.dataframe(
                 service.yoy_growth_matrix(growth_data),
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
             )
 
@@ -1860,8 +1822,8 @@ class PortfolioDetailsView:
     @classmethod
     def _render_dividends_tab(
         cls,
-        rows: Optional[List[PortfolioDetailRow]] = None,
-        preload: Optional[PortfolioAnalysisPreload] = None,
+        rows: list[PortfolioDetailRow] | None = None,
+        preload: PortfolioAnalysisPreload | None = None,
     ) -> None:
         """Monthly dividend calendar plus net cash received (after tax)."""
         from ui.beta_disclaimer import render_research_disclaimer
@@ -1880,9 +1842,7 @@ class PortfolioDetailsView:
             )
             cls._render_monthly_dividend_exposure(rows, preload)
         else:
-            st.info(
-                "Load portfolio details in the sidebar to show the monthly dividend calendar."
-            )
+            st.info("Load portfolio details in the sidebar to show the monthly dividend calendar.")
 
         st.divider()
         st.markdown("##### 2. Net dividends received")
@@ -1962,18 +1922,15 @@ class PortfolioDetailsView:
         year_cols = [column for column in pivot.columns if column != "Month"]
         st.dataframe(
             pivot,
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
-            column_config={
-                col: st.column_config.NumberColumn(format="$%.2f")
-                for col in year_cols
-            },
+            column_config={col: st.column_config.NumberColumn(format="$%.2f") for col in year_cols},
         )
 
         st.markdown("#### Yearly summary")
         st.dataframe(
             yearly,
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
             column_config={
                 "Net $": st.column_config.NumberColumn(format="$%.2f"),
@@ -1986,7 +1943,7 @@ class PortfolioDetailsView:
         with st.expander("Monthly detail (net, gross, tax)"):
             st.dataframe(
                 detail,
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
                 column_config={
                     "Net $": st.column_config.NumberColumn(format="$%.2f"),
@@ -2046,7 +2003,7 @@ class PortfolioDetailsView:
         st.markdown("##### Monthly detail table")
         st.dataframe(
             df,
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
             column_config={
                 "Deposit €": st.column_config.NumberColumn(format="€%.2f"),
@@ -2071,17 +2028,15 @@ class PortfolioDetailsView:
         cls,
         symbol: str,
         row: PortfolioDetailRow,
-        rows: List[PortfolioDetailRow],
+        rows: list[PortfolioDetailRow],
         preload: PortfolioAnalysisPreload,
-        nav_tickers: List[str],
+        nav_tickers: list[str],
     ) -> None:
         """Inline purchase journal and dividend cash history for one holding."""
         detail_svc = PortfolioHoldingDetailService()
         document = preload.vector_docs.get(symbol)
         holding = detail_svc.portfolio.get_holding(symbol)
-        tracking_since = (
-            holding.dividend_tracking_since if holding is not None else None
-        )
+        tracking_since = holding.dividend_tracking_since if holding is not None else None
         summary = detail_svc.summarize(
             symbol,
             document,
@@ -2136,7 +2091,7 @@ class PortfolioDetailsView:
             else:
                 st.dataframe(
                     purchases_df,
-                    width="stretch",
+                    use_container_width=True,
                     hide_index=True,
                     column_config={
                         "Price $": st.column_config.NumberColumn(format="$%.2f"),
@@ -2153,7 +2108,7 @@ class PortfolioDetailsView:
             else:
                 st.dataframe(
                     dividends_df,
-                    width="stretch",
+                    use_container_width=True,
                     hide_index=True,
                     column_config={
                         "$/share": st.column_config.NumberColumn(format="$%.4f"),
@@ -2164,9 +2119,7 @@ class PortfolioDetailsView:
                     },
                 )
 
-        cls._render_portfolio_holding_comparison(
-            symbol, row, rows, preload, nav_tickers
-        )
+        cls._render_portfolio_holding_comparison(symbol, row, rows, preload, nav_tickers)
 
         action_left, action_right = st.columns([1, 3])
         with action_left:
@@ -2181,7 +2134,7 @@ class PortfolioDetailsView:
     @classmethod
     def _render_holdings_overview(
         cls,
-        rows: List[PortfolioDetailRow],
+        rows: list[PortfolioDetailRow],
         preload: PortfolioAnalysisPreload,
         loaded_at: datetime,
     ) -> None:
@@ -2191,8 +2144,7 @@ class PortfolioDetailsView:
         chart_count = len(preload.yield_channels)
         st.caption(
             f"Loaded {loaded_at.strftime('%Y-%m-%d %H:%M')} · "
-            f"{chart_count} yield channels"
-            + (" · ready" if ready else "")
+            f"{chart_count} yield channels" + (" · ready" if ready else "")
         )
 
         from ui.analysis_evidence import render_portfolio_session_evidence
@@ -2208,9 +2160,7 @@ class PortfolioDetailsView:
         df = cls._rows_to_dataframe(rows, preload)
         from services.portfolio_holdings_summary import sort_positions_worst_first
 
-        order = {
-            row.ticker: index for index, row in enumerate(sort_positions_worst_first(rows))
-        }
+        order = {row.ticker: index for index, row in enumerate(sort_positions_worst_first(rows))}
         df["_sort"] = df["Ticker"].map(lambda ticker: order.get(ticker, 999))
         df = df.sort_values("_sort").drop(columns=["_sort"])
 
@@ -2244,7 +2194,7 @@ class PortfolioDetailsView:
         )
         table_selection = st.dataframe(
             filtered,
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
             on_select="rerun",
             selection_mode="single-row",
@@ -2291,15 +2241,12 @@ class PortfolioDetailsView:
 
         selected_rows = getattr(getattr(table_selection, "selection", None), "rows", None)
         if selected_rows:
-            st.session_state["portfolio_holdings_drill_ticker"] = filtered.iloc[
-                selected_rows[0]
-            ]["Ticker"]
+            st.session_state["portfolio_holdings_drill_ticker"] = filtered.iloc[selected_rows[0]][
+                "Ticker"
+            ]
 
         if filtered_tickers:
-            if (
-                st.session_state.get("portfolio_holdings_drill_ticker")
-                not in filtered_tickers
-            ):
+            if st.session_state.get("portfolio_holdings_drill_ticker") not in filtered_tickers:
                 st.session_state["portfolio_holdings_drill_ticker"] = filtered_tickers[0]
 
             drill_ticker = st.selectbox(
@@ -2312,9 +2259,7 @@ class PortfolioDetailsView:
             drill_row = next(row for row in rows if row.ticker == drill_ticker)
             st.divider()
             st.markdown("##### Holding detail")
-            cls._render_holding_drilldown(
-                drill_ticker, drill_row, rows, preload, filtered_tickers
-            )
+            cls._render_holding_drilldown(drill_ticker, drill_row, rows, preload, filtered_tickers)
 
         st.caption(f"Showing {len(filtered)} of {len(df)} positions")
 
@@ -2336,11 +2281,7 @@ class PortfolioDetailsView:
     def _render_portfolio_section(cls, section: str) -> None:
         """Render one portfolio workspace section."""
         rows_loaded = st.session_state.get("portfolio_details_rows")
-        portfolio_preload = (
-            _preload_from_session()
-            if rows_loaded
-            else None
-        )
+        portfolio_preload = _preload_from_session() if rows_loaded else None
 
         if section == "dashboard":
             cls._render_dashboard_page(
@@ -2353,7 +2294,9 @@ class PortfolioDetailsView:
                 from services.portfolio_session import user_has_holdings_in_db
 
                 if user_has_holdings_in_db():
-                    st.info("Loading positions from your portfolio… refresh the page if this persists.")
+                    st.info(
+                        "Loading positions from your portfolio… refresh the page if this persists."
+                    )
                 else:
                     st.info("Add holdings under **Manage portfolio** to see positions here.")
                 return

@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import FrozenSet, List, Optional
 
 _AUTH_SECTION = "auth"
 
@@ -38,9 +37,7 @@ def _valid_oauth_value(value: object) -> bool:
     upper = text.upper()
     if upper.startswith("YOUR_") or upper.startswith("REPLACE_"):
         return False
-    if "xxxx" in text.lower() or text == "YOUR_CLIENT_SECRET":
-        return False
-    return True
+    return not ("xxxx" in text.lower() or text == "YOUR_CLIENT_SECRET")
 
 
 def auth_configured() -> bool:
@@ -52,11 +49,10 @@ def auth_configured() -> bool:
         section.get("client_secret")
     ):
         return True
-    if _valid_oauth_value(os.environ.get("GOOGLE_OAUTH_CLIENT_ID")) and _valid_oauth_value(
-        os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET")
-    ):
-        return True
-    return False
+    return bool(
+        _valid_oauth_value(os.environ.get("GOOGLE_OAUTH_CLIENT_ID"))
+        and _valid_oauth_value(os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET"))
+    )
 
 
 def auth_required() -> bool:
@@ -69,7 +65,7 @@ def auth_required() -> bool:
     return auth_configured()
 
 
-def dev_bypass_email() -> Optional[str]:
+def dev_bypass_email() -> str | None:
     """Local-only sign-in without Google (secrets auth.dev_email)."""
     if auth_configured() and not auth_disabled():
         return None
@@ -96,23 +92,20 @@ def redirect_uri() -> str:
     )
 
 
-def _split_emails(value: object) -> List[str]:
+def _split_emails(value: object) -> list[str]:
     if value is None:
         return []
-    if isinstance(value, (list, tuple)):
-        items = value
-    else:
-        items = str(value).replace(";", ",").split(",")
+    items = value if isinstance(value, (list, tuple)) else str(value).replace(";", ",").split(",")
     return [item.strip().lower() for item in items if str(item).strip()]
 
 
-def allowed_emails() -> FrozenSet[str]:
+def allowed_emails() -> frozenset[str]:
     section = _auth_section()
     raw = section.get("allowed_emails") or os.environ.get("DIVIDENDSCOPE_ALLOWED_EMAILS")
     return frozenset(_split_emails(raw))
 
 
-def admin_emails() -> FrozenSet[str]:
+def admin_emails() -> frozenset[str]:
     section = _auth_section()
     raw = section.get("admin_emails") or os.environ.get("DIVIDENDSCOPE_ADMIN_EMAILS")
     return frozenset(_split_emails(raw))
@@ -148,9 +141,7 @@ def google_signup_enabled() -> bool:
     if auth_disabled() or not auth_configured():
         return False
     section = _auth_section()
-    if section.get("allow_signup") is False:
-        return False
-    return True
+    return section.get("allow_signup") is not False
 
 
 def is_admin_email(email: str) -> bool:

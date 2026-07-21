@@ -76,7 +76,7 @@ class PortfolioDividendIncomeService:
 
         years = sorted({item.year for item in items})
         matrix: dict[str, dict[int, float | None]] = {
-            label: {year: None for year in years} for label in MONTH_LABELS
+            label: dict.fromkeys(years) for label in MONTH_LABELS
         }
         for item in items:
             matrix[item.month_label][item.year] = item.net_usd
@@ -256,7 +256,7 @@ class PortfolioDividendIncomeService:
                 y=timeline["cumulative_net_usd"],
                 mode="lines+markers",
                 fill="tozeroy",
-                fillcolor=f"rgba(21, 101, 192, 0.12)",
+                fillcolor="rgba(21, 101, 192, 0.12)",
                 line={"color": PALETTE["deposit"], "width": 2.5},
                 marker={"size": 5},
                 hovertemplate="%{x}<br>Cumulative $%{y:,.2f}<extra></extra>",

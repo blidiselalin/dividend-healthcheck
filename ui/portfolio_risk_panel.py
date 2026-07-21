@@ -5,7 +5,6 @@ Sidebar portfolio risk monitor — uses cached session data; refresh on demand o
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional, Tuple
 
 import streamlit as st
 
@@ -25,7 +24,7 @@ SESSION_REFRESHING_KEY = "portfolio_risk_refresh_in_progress"
 
 
 def store_portfolio_payload(
-    rows: List[PortfolioDetailRow],
+    rows: list[PortfolioDetailRow],
     preload: PortfolioAnalysisPreload,
     *,
     analysis_ready: bool = True,
@@ -41,9 +40,9 @@ def store_portfolio_payload(
     save_session_cache()
 
 
-def _session_rows_and_preload() -> Tuple[
-    Optional[List[PortfolioDetailRow]], Optional[PortfolioAnalysisPreload]
-]:
+def _session_rows_and_preload() -> (
+    tuple[list[PortfolioDetailRow] | None, PortfolioAnalysisPreload | None]
+):
     rows = st.session_state.get("portfolio_details_rows")
     if not rows:
         return None, None
@@ -55,11 +54,9 @@ def _session_rows_and_preload() -> Tuple[
     return rows, preload
 
 
-def get_cached_attention_summary() -> Optional[AttentionSummary]:
+def get_cached_attention_summary() -> AttentionSummary | None:
     return normalize_attention_summary(
-        PortfolioRiskMonitorService.summary_from_store(
-            st.session_state.get(SESSION_SUMMARY_KEY)
-        )
+        PortfolioRiskMonitorService.summary_from_store(st.session_state.get(SESSION_SUMMARY_KEY))
     )
 
 
@@ -67,9 +64,9 @@ def refresh_portfolio_risks(
     *,
     force: bool = False,
     include_news: bool = False,
-    rows: Optional[List[PortfolioDetailRow]] = None,
-    preload: Optional[PortfolioAnalysisPreload] = None,
-) -> Optional[AttentionSummary]:
+    rows: list[PortfolioDetailRow] | None = None,
+    preload: PortfolioAnalysisPreload | None = None,
+) -> AttentionSummary | None:
     """
     Evaluate holdings for risk/opportunity watchlists.
 
@@ -123,7 +120,7 @@ def refresh_portfolio_risks(
         st.session_state[SESSION_REFRESHING_KEY] = False
 
 
-def _rebuild_attention_from_session() -> Optional[AttentionSummary]:
+def _rebuild_attention_from_session() -> AttentionSummary | None:
     """Recompute risk/opportunity lists from cached rows (no network)."""
     rows = st.session_state.get("portfolio_details_rows")
     if not rows:
@@ -157,7 +154,7 @@ def render_portfolio_risk_monitor() -> None:
         _portfolio_risk_sidebar_fragment()
 
 
-def _render_risk_sidebar_content(summary: Optional[AttentionSummary] = None) -> None:
+def _render_risk_sidebar_content(summary: AttentionSummary | None = None) -> None:
     """Render inside `with st.sidebar` (use st.*, not st.sidebar.*)."""
     st.markdown("### Portfolio risks")
     if st.session_state.get(SESSION_REFRESHING_KEY):
@@ -165,16 +162,14 @@ def _render_risk_sidebar_content(summary: Optional[AttentionSummary] = None) -> 
         return
 
     summary = normalize_attention_summary(summary or get_cached_attention_summary())
-    checked_at: Optional[datetime] = st.session_state.get(SESSION_CHECKED_AT_KEY)
+    checked_at: datetime | None = st.session_state.get(SESSION_CHECKED_AT_KEY)
 
     if checked_at:
         st.caption(f"Last full reload: {checked_at.strftime('%Y-%m-%d %H:%M')}")
 
     if summary is None:
         if st.session_state.get("portfolio_details_rows"):
-            st.caption(
-                "Risk watchlists appear once yield charts finish loading in the background."
-            )
+            st.caption("Risk watchlists appear once yield charts finish loading in the background.")
         else:
             st.info(
                 "No portfolio snapshot yet. Add a holding under **Manage portfolio** — "

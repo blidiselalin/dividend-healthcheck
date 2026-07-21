@@ -16,6 +16,11 @@ from typing import Any
 from models.stock import StockData
 from utils.converters import document_to_stock_data
 
+try:
+    from psycopg import Error as PostgresError
+except ImportError:
+    PostgresError = type("PostgresError", (Exception,), {})
+
 logger = logging.getLogger(__name__)
 
 # Import config for default paths
@@ -59,7 +64,7 @@ class VectorDBService:
             try:
                 self._store = VectorStore(persist_directory=self._db_path)
                 logger.info(f"VectorDBService initialized with {self._store.count()} documents")
-            except Exception as e:
+            except (ImportError, OSError) as e:
                 logger.error(f"Failed to initialize VectorStore: {e}")
 
     @property
@@ -207,10 +212,7 @@ class VectorDBService:
             return False
 
         # Should have some valuation
-        if data.trailing_pe is None and data.forward_pe is None:
-            return False
-
-        return True
+        return not (data.trailing_pe is None and data.forward_pe is None)
 
 
 # Singleton instance for convenience

@@ -31,9 +31,7 @@ def _scheduler_disabled() -> bool:
     flag = os.environ.get("DIVIDENDSCOPE_DISABLE_PRICE_SCHEDULER", "").strip().lower()
     if flag in ("1", "true", "yes"):
         return True
-    if os.environ.get("PYTEST_USE_SQLITE") == "1":
-        return True
-    return False
+    return os.environ.get("PYTEST_USE_SQLITE") == "1"
 
 
 def _resolve_interval_seconds(interval_seconds: int | None = None) -> int:
@@ -56,13 +54,12 @@ def _history_backfill_once() -> dict[str, Any]:
         return {"skipped": True, "reason": "already_running"}
 
     try:
-        from config import HISTORY_REFRESH_HOURS
+        from services.shared_market_db import get_shared_vector_store
         from services.stock_history_backfill import (
             backfill_thin_history,
+            documents_needing_history_backfill,
             portfolio_backfill_symbols,
         )
-        from services.shared_market_db import get_shared_vector_store
-        from services.stock_history_backfill import documents_needing_history_backfill
 
         store = get_shared_vector_store()
         portfolio = portfolio_backfill_symbols()
@@ -86,7 +83,7 @@ def _history_backfill_once() -> dict[str, Any]:
             stats.get("errors"),
         )
         return stats
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         _last_backfill_error = str(exc)
         logger.exception("Scheduled history backfill failed")
         raise
@@ -110,7 +107,7 @@ def _backfill_loop(interval_seconds: int) -> None:
     while True:
         import contextlib
 
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(Exception):  # noqa: BLE001
             _history_backfill_once()
         time.sleep(interval_seconds)
 
@@ -138,7 +135,7 @@ def run_price_refresh_once() -> dict[str, Any]:
             stats.get("total"),
         )
         return stats
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         _last_error = str(exc)
         logger.exception("Price refresh failed")
         raise
@@ -155,7 +152,7 @@ def _refresh_loop(interval_seconds: int) -> None:
     while True:
         import contextlib
 
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(Exception):  # noqa: BLE001
             run_price_refresh_once()
         time.sleep(interval_seconds)
 

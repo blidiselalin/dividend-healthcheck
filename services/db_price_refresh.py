@@ -9,6 +9,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from typing import Any
 
+import requests
+
 logger = logging.getLogger(__name__)
 
 
@@ -79,7 +81,7 @@ def _collect_symbols() -> list[str]:
         for document in store.get_all_documents():
             if document.symbol:
                 symbols.add(document.symbol.upper())
-    except Exception as exc:
+    except ImportError as exc:
         logger.warning("Could not load market library symbols: %s", exc)
 
     try:
@@ -87,7 +89,7 @@ def _collect_symbols() -> list[str]:
 
         for holding in create_portfolio_context().portfolio.list_holdings():
             symbols.add(holding.symbol.upper())
-    except Exception:  # noqa: S110
+    except ImportError:  # noqa: S110
         pass
 
     return sorted(symbol for symbol in symbols if symbol not in DELISTED_SYMBOLS)
@@ -136,7 +138,7 @@ def refresh_market_library_prices(
             symbol = futures[future]
             try:
                 price = future.result()
-            except Exception:
+            except requests.exceptions.RequestException:  # noqa: BLE001
                 stats["errors"] += 1
                 continue
             if price is None or price <= 0:

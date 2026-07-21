@@ -6,8 +6,9 @@ Logic only (no Streamlit imports) so step completion is unit-testable.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 ONBOARDING_DISMISSED_KEY = "portfolio_onboarding_dismissed"
 ONBOARDING_LIVE_RELOAD_KEY = "portfolio_onboarding_live_reload"
@@ -56,10 +57,13 @@ REAL_USER_ONBOARDING_STEPS: tuple[OnboardingStep, ...] = (
         title="Explore your workspace",
         detail=(
             "On **Home**, review the positions table (click a ticker for full analysis). "
-            "Use the section buttons for **Holdings**, **Dividend income**, and **Deposits & benchmarks**. "
+            "Use the section buttons for **Holdings**, **Dividend income**, and "
+            "**Deposits & benchmarks**. "
             "You can research any S&P 500 name above the table before adding it."
         ),
-        sidebar_hint="Use the section buttons on Home — start with **Holdings** or **Dividend income**.",
+        sidebar_hint=(
+            "Use the section buttons on Home — start with **Holdings** or **Dividend income**."
+        ),
     ),
 )
 
@@ -79,7 +83,10 @@ DEMO_ONBOARDING_STEPS: tuple[OnboardingStep, ...] = (
     OnboardingStep(
         id="live_reload",
         title="Reload live data",
-        detail="Use **Reload live data** in the sidebar to refresh prices and charts in the background.",
+        detail=(
+            "Use **Reload live data** in the sidebar to refresh prices and charts "
+            "in the background."
+        ),
         sidebar_hint="Click **Reload live data** in the sidebar.",
     ),
 )
@@ -97,7 +104,7 @@ def is_step_complete(
     *,
     has_holdings: bool,
     session: Mapping[str, Any],
-    is_demo: bool = False,
+    is_demo: bool = False,  # noqa: ARG001
 ) -> bool:
     """Return True when an onboarding step is satisfied."""
     if step_id == "add_holding":

@@ -389,7 +389,7 @@ class NewsService:
                 if len(articles) >= max_results:
                     break
 
-        except Exception as e:
+        except requests.exceptions.RequestException as e:
             logger.debug(f"Yahoo Finance news fetch error for {symbol}: {e}")
 
         return articles
@@ -447,7 +447,7 @@ class NewsService:
                     if len(articles) >= max_results:
                         break
 
-                except Exception:  # noqa: S112
+                except requests.exceptions.RequestException:  # noqa: S112
                     continue
 
         except Exception as e:

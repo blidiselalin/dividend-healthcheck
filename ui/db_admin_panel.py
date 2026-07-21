@@ -69,13 +69,13 @@ def _render_overview_tab() -> None:
                 "Summary": check.message,
             }
         )
-    st.dataframe(rows, width="stretch", hide_index=True)
+    st.dataframe(rows, use_container_width=True, hide_index=True)
 
     issues = sample_stock_documents_issues(limit=25)
     if issues:
         st.subheader("Thin library symbols (sample)")
         st.caption("Tickers with fewer than 252 price points or fewer than 4 dividend payments.")
-        st.dataframe(issues, width="stretch", hide_index=True)
+        st.dataframe(issues, use_container_width=True, hide_index=True)
 
 
 def _render_tables_tab() -> None:
@@ -86,7 +86,7 @@ def _render_tables_tab() -> None:
 
     counts = table_row_counts(tables)
     rows = [{"Table": name, "Rows": counts.get(name, "—")} for name in tables]
-    st.dataframe(rows, width="stretch", hide_index=True)
+    st.dataframe(rows, use_container_width=True, hide_index=True)
 
     pick = st.selectbox("Inspect table", options=tables, key="admin_db_table_pick")
     if st.button(f"Sample rows from {pick}", key="admin_db_table_sample"):
@@ -97,7 +97,7 @@ def _render_tables_tab() -> None:
     last = st.session_state.get("admin_db_last_result")
     if last and last.ok and last.rows:
         st.caption(st.session_state.get("admin_db_last_sql", ""))
-        st.dataframe(last.rows, width="stretch", hide_index=True)
+        st.dataframe(last.rows, use_container_width=True, hide_index=True)
     elif last and not last.ok:
         st.error(last.message)
 
@@ -151,7 +151,9 @@ def _render_sql_tab() -> None:
         key="admin_db_sql_input",
         placeholder="SELECT symbol, last_updated FROM stock_documents LIMIT 10",
     )
-    row_limit = st.slider("Max rows", min_value=10, max_value=500, value=200, key="admin_db_row_limit")
+    row_limit = st.slider(
+        "Max rows", min_value=10, max_value=500, value=200, key="admin_db_row_limit"
+    )
 
     if st.button("Run query", key="admin_db_sql_run", type="primary"):
         st.session_state["admin_db_sql_draft"] = sql
@@ -159,7 +161,9 @@ def _render_sql_tab() -> None:
 
     result = st.session_state.get("admin_db_sql_result")
     if result is None:
-        render_notice("Only read-only SELECT queries are allowed. Destructive SQL is blocked.", kind="info")
+        render_notice(
+            "Only read-only SELECT queries are allowed. Destructive SQL is blocked.", kind="info"
+        )
         return
 
     if not result.ok:
@@ -168,6 +172,6 @@ def _render_sql_tab() -> None:
 
     st.caption(result.message + (" — results truncated" if result.truncated else ""))
     if result.rows:
-        st.dataframe(result.rows, width="stretch", hide_index=True)
+        st.dataframe(result.rows, use_container_width=True, hide_index=True)
     else:
         st.info("Query returned no rows.")

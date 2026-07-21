@@ -7,9 +7,11 @@ with key metrics prominently displayed on the first page.
 
 from __future__ import annotations
 
+import csv
+import io
+import json
 import logging
 from datetime import datetime
-from typing import Optional
 
 import streamlit as st
 
@@ -17,28 +19,27 @@ logger = logging.getLogger(__name__)
 
 from config import DATA_SOURCES
 from models.stock import StockData
-from services.stock_service import StockService
-from services.scoring import ScoringService, Recommendation
-from services.sector_service import SectorService
-from ui.components import UIComponents
-
-# Try to import Analysed-stocks-first service (primary data source)
-try:
-    from services.vectordb_service import VectorDBService, get_vectordb_service
-    VECTORDB_SERVICE_AVAILABLE = True
-except ImportError:
-    VECTORDB_SERVICE_AVAILABLE = False
 
 # Try to import enhanced service (fallback with API calls)
+from services.enhanced_stock_service import EnhancedStockService
+from services.scoring import Recommendation, ScoringService
+from services.sector_service import SectorService
+from services.stock_service import StockService
+
+# Try to import Analysed-stocks-first service (primary data source)
+from services.vectordb_service import get_vectordb_service
+from ui.components import UIComponents
+
+# Check for optional chromadb dependency for enhanced service features
 try:
-    from services.enhanced_stock_service import get_enhanced_stock_service
+    import chromadb  # noqa: F401
 
-    ENHANCED_SERVICE_AVAILABLE = True
+    USE_ENHANCED_SERVICE = True
 except ImportError:
-    ENHANCED_SERVICE_AVAILABLE = False
+    USE_ENHANCED_SERVICE = False
 
 
-def get_stock_data(symbol: str) -> Optional[StockData]:
+def get_stock_data(symbol: str) -> StockData | None:
     """
     Load stock data for single-stock analysis.
 
@@ -54,14 +55,11 @@ def get_stock_data(symbol: str) -> Optional[StockData]:
     if data is not None:
         return data
 
-    if ENHANCED_SERVICE_AVAILABLE:
-        from services.live_price import apply_live_price
-
-        data = get_enhanced_stock_service(fetch_realtime_prices=True).fetch(symbol)
-        if data:
-            return apply_live_price(data)
-
     from services.live_price import apply_live_price
+
+    data = EnhancedStockService(fetch_realtime_prices=True).fetch(symbol)
+    if data:
+        return apply_live_price(data)
 
     data = StockService.fetch(symbol)
     return apply_live_price(data) if data else None
@@ -92,7 +90,7 @@ def get_service_status() -> dict:
     except Exception as exc:
         logger.debug("Shared market db status unavailable: %s", exc)
 
-    if VECTORDB_SERVICE_AVAILABLE:
+    if USE_ENHANCED_SERVICE:
         try:
             vdb_service = get_vectordb_service()
             if vdb_service.is_available:
@@ -104,6 +102,7 @@ def get_service_status() -> dict:
                 status["document_count"] = doc_count
                 try:
                     from services.sp500_peers_service import coverage_stats
+
                     cov = coverage_stats()
                     status["sp500_coverage"] = cov
                 except Exception as exc:
@@ -112,18 +111,17 @@ def get_service_status() -> dict:
                 status["dividend_kings"] = stats.get("dividend_kings", 0)
         except Exception as exc:
             logger.debug("VectorDB service unavailable: %s", exc)
-    
-    if ENHANCED_SERVICE_AVAILABLE and status["mode"] == "API-only":
-        status["mode"] = "Enhanced (API + DB)"
-    
+
     return status
 
 
-USE_ENHANCED_SERVICE = ENHANCED_SERVICE_AVAILABLE or VECTORDB_SERVICE_AVAILABLE
-
 # Try to import PDF report generator
 try:
-    from services.report_generator import ReportGenerator, generate_stock_report
+    from services.report_generator import (
+        ReportGenerator,  # noqa: F401
+        generate_stock_report,
+    )
+
     REPORTLAB_AVAILABLE = True
 except ImportError:
     REPORTLAB_AVAILABLE = False
@@ -140,17 +138,16 @@ class SingleStockView:
         streak = data.dividend_history.consecutive_years if data.dividend_history else 0
         st.header(f"{tier_badge} {data.name}")
         st.caption(
-            f"**{data.symbol}** · {data.sector} · "
-            f"{streak} years of consecutive dividend growth"
+            f"**{data.symbol}** · {data.sector} · {streak} years of consecutive dividend growth"
         )
-    
+
     @classmethod
     def render_analysis_for_symbol(
         cls,
         symbol: str,
         *,
         show_sector: bool = True,
-        data: Optional[StockData] = None,
+        data: StockData | None = None,
         yield_channel_data=None,
         vector_doc=None,
     ) -> None:
@@ -252,9 +249,7 @@ class SingleStockView:
 
         render_research_disclaimer(compact=True)
         render_beta_feedback(page=f"Stock detail · {symbol}", key_suffix=f"stock_{symbol}")
-        cls._render_data_source_footer(
-            data, confidence, symbol=symbol, vector_doc=vector_doc
-        )
+        cls._render_data_source_footer(data, confidence, symbol=symbol, vector_doc=vector_doc)
 
     @classmethod
     def _render_report_section(
@@ -272,9 +267,7 @@ class SingleStockView:
         sector_txt = data.sector if data.sector and data.sector != "N/A" else "—"
         streak = data.dividend_history.consecutive_years if data.dividend_history else 0
         yield_txt = (
-            f"{data.dividend_yield_pct:.2f}%"
-            if data.dividend_yield_pct is not None
-            else "—"
+            f"{data.dividend_yield_pct:.2f}%" if data.dividend_yield_pct is not None else "—"
         )
         payout_txt = (
             f"{data.payout_ratio_pct:.0f}% of earnings"
@@ -286,22 +279,21 @@ class SingleStockView:
         with st.container():
             st.markdown(
                 f"""
-                <div style="border: 1px solid #ddd; border-radius: 8px; padding: 16px; 
-                            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);">
+                <div style="border: 1px solid #ddd; border-radius: 8px; padding: 16px; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);">
                     <h4 style="margin: 0 0 8px 0; color: #1a237e;">
                         📊 {data.name} ({symbol}) - Research Report
                     </h4>
                     <p style="color: #666; margin: 0 0 12px 0;">
-                        {data.dividend_tier} | {sector_txt} | Generated {datetime.now().strftime('%B %d, %Y')}
+                        {data.dividend_tier} | {sector_txt} | Generated {datetime.now().strftime("%B %d, %Y")}
                     </p>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
-        
+
         # Report contents preview
         col1, col2 = st.columns(2)
-        
+
         with col1:
             st.markdown("**Report Contents:**")
             st.markdown("""
@@ -311,7 +303,7 @@ class SingleStockView:
             - Investment Thesis (Pros/Cons)
             - Financial Strength Ratings
             """)
-        
+
         with col2:
             st.markdown("**Key Highlights:**")
             st.markdown(f"""
@@ -320,13 +312,13 @@ class SingleStockView:
             - **Streak:** {streak} years
             - **Payout:** {payout_txt}
             """)
-        
+
         st.markdown("")
-        
+
         # Export buttons
         st.markdown("**Export Options:**")
         export_cols = st.columns([1, 1, 1, 2])
-        
+
         with export_cols[0]:
             if REPORTLAB_AVAILABLE:
                 # Generate PDF immediately for download
@@ -351,7 +343,7 @@ class SingleStockView:
             else:
                 st.button("📥 PDF Report", disabled=True, width="stretch")
                 st.caption("Install: `pip install reportlab`")
-        
+
         with export_cols[1]:
             # CSV export of key metrics
             csv_data = cls._generate_csv_report(data, score, rec, pros, cons)
@@ -362,7 +354,7 @@ class SingleStockView:
                 mime="text/csv",
                 width="stretch",
             )
-        
+
         with export_cols[2]:
             # JSON export
             json_data = cls._generate_json_report(data, score, rec, pros, cons)
@@ -373,11 +365,11 @@ class SingleStockView:
                 mime="application/json",
                 width="stretch",
             )
-        
+
         with export_cols[3]:
             if not REPORTLAB_AVAILABLE:
                 st.info("💡 Install `reportlab` for PDF reports")
-    
+
     @staticmethod
     def _generate_csv_report(
         data: StockData,
@@ -387,16 +379,13 @@ class SingleStockView:
         cons: list,
     ) -> str:
         """Generate CSV report data."""
-        import csv
-        import io
-        
         output = io.StringIO()
         writer = csv.writer(output)
-        
+
         # Header
         writer.writerow(["Metric", "Value"])
         writer.writerow([])
-        
+
         # Basic Info
         writer.writerow(["=== COMPANY INFO ===", ""])
         writer.writerow(["Symbol", data.symbol])
@@ -404,59 +393,91 @@ class SingleStockView:
         writer.writerow(["Sector", data.sector])
         writer.writerow(["Industry", data.industry])
         writer.writerow([])
-        
+
         # Score
         writer.writerow(["=== ANALYSIS ===", ""])
         writer.writerow(["Score", f"{score}/100"])
         writer.writerow(["Recommendation", rec.label])
         writer.writerow(["Dividend Tier", data.dividend_tier])
         writer.writerow([])
-        
+
         # Key Metrics
         writer.writerow(["=== KEY METRICS ===", ""])
         writer.writerow(["Current Price", f"${data.price:.2f}" if data.price else "N/A"])
-        writer.writerow(["Dividend Yield", f"{data.dividend_yield_pct:.2f}%" if data.dividend_yield_pct else "N/A"])
-        writer.writerow(["Annual Dividend", f"${data.dividend_rate:.2f}" if data.dividend_rate else "N/A"])
-        
+        writer.writerow(
+            [
+                "Dividend Yield",
+                f"{data.dividend_yield_pct:.2f}%" if data.dividend_yield_pct else "N/A",
+            ]
+        )
+        writer.writerow(
+            ["Annual Dividend", f"${data.dividend_rate:.2f}" if data.dividend_rate else "N/A"]
+        )
+
         dh = data.dividend_history
         writer.writerow(["Consecutive Years", dh.consecutive_years if dh else "N/A"])
         writer.writerow(["5Y Div CAGR", f"{dh.cagr_5y:.2f}%" if dh and dh.cagr_5y else "N/A"])
         writer.writerow(["10Y Div CAGR", f"{dh.cagr_10y:.2f}%" if dh and dh.cagr_10y else "N/A"])
         writer.writerow([])
-        
+
         # Safety
         writer.writerow(["=== DIVIDEND SAFETY ===", ""])
-        writer.writerow(["Payout Ratio", f"{data.payout_ratio_pct:.1f}%" if data.payout_ratio_pct else "N/A"])
-        writer.writerow(["FCF Payout", f"{data.fcf_payout_ratio_pct:.1f}%" if data.fcf_payout_ratio_pct else "N/A"])
-        writer.writerow(["Dividend Coverage", f"{data.dividend_coverage:.2f}x" if data.dividend_coverage else "N/A"])
+        writer.writerow(
+            ["Payout Ratio", f"{data.payout_ratio_pct:.1f}%" if data.payout_ratio_pct else "N/A"]
+        )
+        writer.writerow(
+            [
+                "FCF Payout",
+                f"{data.fcf_payout_ratio_pct:.1f}%" if data.fcf_payout_ratio_pct else "N/A",
+            ]
+        )
+        writer.writerow(
+            [
+                "Dividend Coverage",
+                f"{data.dividend_coverage:.2f}x" if data.dividend_coverage else "N/A",
+            ]
+        )
         writer.writerow([])
-        
+
         # Valuation
         writer.writerow(["=== VALUATION ===", ""])
         writer.writerow(["P/E Ratio", f"{data.trailing_pe:.2f}" if data.trailing_pe else "N/A"])
         writer.writerow(["Forward P/E", f"{data.forward_pe:.2f}" if data.forward_pe else "N/A"])
-        writer.writerow(["Price/Book", f"{data.price_to_book:.2f}" if data.price_to_book else "N/A"])
-        writer.writerow(["Market Cap", f"${data.market_cap/1e9:.2f}B" if data.market_cap else "N/A"])
+        writer.writerow(
+            ["Price/Book", f"{data.price_to_book:.2f}" if data.price_to_book else "N/A"]
+        )
+        writer.writerow(
+            ["Market Cap", f"${data.market_cap / 1e9:.2f}B" if data.market_cap else "N/A"]
+        )
         writer.writerow([])
-        
+
         # Financial Health
         writer.writerow(["=== FINANCIAL HEALTH ===", ""])
-        writer.writerow(["Debt/Equity", f"{data.debt_to_equity:.2f}" if data.debt_to_equity else "N/A"])
-        writer.writerow(["Current Ratio", f"{data.current_ratio:.2f}" if data.current_ratio else "N/A"])
+        writer.writerow(
+            ["Debt/Equity", f"{data.debt_to_equity:.2f}" if data.debt_to_equity else "N/A"]
+        )
+        writer.writerow(
+            ["Current Ratio", f"{data.current_ratio:.2f}" if data.current_ratio else "N/A"]
+        )
         writer.writerow(["ROE", f"{data.roe_pct:.2f}%" if data.roe_pct else "N/A"])
-        writer.writerow(["Operating Margin", f"{data.operating_margin_pct:.2f}%" if data.operating_margin_pct else "N/A"])
+        writer.writerow(
+            [
+                "Operating Margin",
+                f"{data.operating_margin_pct:.2f}%" if data.operating_margin_pct else "N/A",
+            ]
+        )
         writer.writerow([])
-        
+
         # Thesis
         writer.writerow(["=== INVESTMENT THESIS ===", ""])
         writer.writerow(["Strengths", "; ".join(pros[:5])])
         writer.writerow(["Concerns", "; ".join(cons[:5])])
         writer.writerow([])
-        
+
         writer.writerow(["Generated", datetime.now().strftime("%Y-%m-%d %H:%M")])
-        
+
         return output.getvalue()
-    
+
     @staticmethod
     def _generate_json_report(
         data: StockData,
@@ -466,10 +487,8 @@ class SingleStockView:
         cons: list,
     ) -> str:
         """Generate JSON report data."""
-        import json
-        
         dh = data.dividend_history
-        
+
         report = {
             "report_info": {
                 "generated_at": datetime.now().isoformat(),
@@ -519,13 +538,13 @@ class SingleStockView:
                 "concerns": cons[:5],
             },
         }
-        
+
         return json.dumps(report, indent=2, default=str)
-    
+
     @staticmethod
     def _render_data_source_footer(
         data: StockData,
-        confidence: float,
+        _confidence: float,
         *,
         symbol: str = "",
         vector_doc=None,

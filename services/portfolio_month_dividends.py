@@ -282,9 +282,7 @@ def current_month_paid_dividends(
         gross, payer_count = computed_gross, computed_count
         net = net_received_through(gross, year=today.year)
     elif rows and preload and holdings:
-        row_dates = {
-            row.ticker: (row.ex_dividend_date, row.dividend_pay_date) for row in rows
-        }
+        row_dates = {row.ticker: (row.ex_dividend_date, row.dividend_pay_date) for row in rows}
         calendar = build_portfolio_dividend_calendar(
             holdings,
             vector_docs=preload.vector_docs,
@@ -329,7 +327,7 @@ def cached_current_month_paid_dividends(
     """
     try:
         import streamlit as st
-    except Exception:
+    except (ImportError, AttributeError):
         return current_month_paid_dividends(
             rows=rows,
             preload=preload,

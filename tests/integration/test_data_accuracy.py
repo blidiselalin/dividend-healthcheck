@@ -188,7 +188,8 @@ def test_stock_data_accuracy(store: Any) -> None:  # noqa: C901
             pe = f"{doc.pe_ratio:.1f}" if doc.pe_ratio else "N/A"
             payout = f"{doc.payout_ratio:.1f}%" if doc.payout_ratio else "N/A"
             print(
-                f"✓ {symbol} ({doc.name}): streak={streak}yrs, yield={yld}, P/E={pe}, payout={payout}"  # noqa: E501
+                f"✓ {symbol} ({doc.name}): streak={streak}yrs, yield={yld}, "
+                f"P/E={pe}, payout={payout}"
             )
             passed += 1
 

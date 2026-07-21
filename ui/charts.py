@@ -4,7 +4,7 @@ Streamlit helpers for Plotly charts (uses utils.chart_theme).
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import streamlit as st
 
@@ -27,17 +27,19 @@ PLOTLY_CONFIG: dict = {
 def show_chart(
     fig: Any,
     *,
-    key: Optional[str] = None,
-    height: Optional[int] = None,
-    title: Optional[str] = None,
-    subtitle: Optional[str] = None,
+    key: str | None = None,
+    height: int | None = None,
+    title: str | None = None,
+    subtitle: str | None = None,
     **kwargs: Any,
 ) -> Any:
     """Render a styled Plotly figure full width (passes through Streamlit plotly_chart kwargs)."""
     if fig is None:
         from ui.design_system import render_empty_state
 
-        render_empty_state("No chart data", "Reload live data or check the shared library.", icon="📉")
+        render_empty_state(
+            "No chart data", "Reload live data or check the shared library.", icon="📉"
+        )
         return None
     if title:
         from ui.design_system import render_chart_card_header

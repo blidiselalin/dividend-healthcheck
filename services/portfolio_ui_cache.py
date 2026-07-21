@@ -12,10 +12,16 @@ import time
 from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from sqlite3 import Error as SQLiteError
 from typing import Any
 
 from services.background_jobs import ProgressCallback
 from utils.logging_config import get_logger
+
+try:
+    from psycopg import Error as PostgresError
+except ImportError:
+    PostgresError = type("PostgresError", (Exception,), {})
 
 logger = get_logger("dividendscope.portfolio")
 
@@ -35,7 +41,7 @@ def _cache_path() -> Path:
         from auth.user_context import resolve_user_session_cache_path
 
         return resolve_user_session_cache_path()
-    except Exception:  # noqa: S110
+    except (ImportError, AttributeError):  # noqa: S110
         pass
     try:
         from config import DATA_DIR
@@ -89,7 +95,10 @@ def market_library_latest_update() -> datetime | None:
     global _library_update_cache
 
     now = time.monotonic()
-    if _library_update_cache is not None and (now - _library_update_cache[1]) < _LIBRARY_UPDATE_CACHE_TTL:
+    if (
+        _library_update_cache is not None
+        and (now - _library_update_cache[1]) < _LIBRARY_UPDATE_CACHE_TTL
+    ):
         return _library_update_cache[0]
 
     result = _fetch_market_library_latest_update()
@@ -110,7 +119,7 @@ def _fetch_market_library_latest_update() -> datetime | None:
         if not row or not row.get("latest"):
             return None
         return _coerce_datetime(row["latest"])
-    except Exception as exc:
+    except (SQLiteError, PostgresError, OSError) as exc:
         logger.debug("Market library latest update unavailable: %s", exc)
         return None
 
@@ -132,10 +141,7 @@ def cache_is_stale(bundle: dict[str, Any]) -> bool:
         return True
 
     library_at = market_library_latest_update()
-    if library_at and library_at > saved_at + timedelta(seconds=30):
-        return True
-
-    return False
+    return bool(library_at and library_at > saved_at + timedelta(seconds=30))
 
 
 _PENDING_CACHE_SAVE_KEY = "_portfolio_cache_save_pending"
@@ -181,7 +187,9 @@ def _write_session_cache() -> None:
         "saved_at": datetime.now().isoformat(timespec="seconds"),
         "rows": [_row_to_dict(row) for row in rows],
         "attention_summary": st.session_state.get(SESSION_SUMMARY_KEY),
-        "risk_checked_at": risk_checked_at.isoformat() if isinstance(risk_checked_at, datetime) else risk_checked_at,
+        "risk_checked_at": risk_checked_at.isoformat()
+        if isinstance(risk_checked_at, datetime)
+        else risk_checked_at,
         "portfolio_details_time": st.session_state.get("portfolio_details_time"),
         # Analysis caches are intentionally omitted; flag is forced False so the
         # UI knows to trigger a background reload after hydration.
@@ -191,7 +199,7 @@ def _write_session_cache() -> None:
         from utils.portfolio_db import compute_portfolio_db_fingerprint
 
         bundle["db_fingerprint"] = compute_portfolio_db_fingerprint(use_cache=False)
-    except Exception as exc:
+    except (SQLiteError, PostgresError, OSError) as exc:
         logger.debug("Could not compute portfolio DB fingerprint for cache: %s", exc)
     try:
         cache_path = _cache_path()
@@ -203,7 +211,7 @@ def _write_session_cache() -> None:
             cache_path,
             len(bundle.get("rows") or []),
         )
-    except Exception as exc:
+    except (OSError, TypeError) as exc:
         logger.warning("Could not save portfolio UI cache: %s", exc)
 
 
@@ -219,7 +227,7 @@ def _rebuild_risk_summary_if_needed() -> None:
         return
     try:
         _rebuild_attention_from_session()
-    except Exception as exc:
+    except (ImportError, AttributeError, KeyError) as exc:
         logger.debug("Risk watchlist rebuild skipped: %s", exc)
 
 
@@ -252,10 +260,10 @@ def _apply_disk_bundle(bundle: dict[str, Any], *, cache_path: Path) -> bool:
     try:
         from utils.portfolio_db import compute_portfolio_db_fingerprint
 
-        st.session_state["_portfolio_db_fingerprint"] = bundle.get("db_fingerprint") or compute_portfolio_db_fingerprint(
-            use_cache=True
-        )
-    except Exception as exc:
+        st.session_state["_portfolio_db_fingerprint"] = bundle.get(
+            "db_fingerprint"
+        ) or compute_portfolio_db_fingerprint(use_cache=True)
+    except (SQLiteError, PostgresError, OSError) as exc:
         logger.debug("Could not store portfolio DB fingerprint after hydrate: %s", exc)
     logger.info(
         "Portfolio UI cache loaded path=%s holdings=%d saved_at=%s",
@@ -294,7 +302,7 @@ def hydrate_session_from_disk() -> bool:  # noqa: C901
     try:
         with cache_path.open("r", encoding="utf-8") as handle:
             bundle = json.load(handle)
-    except Exception as exc:
+    except (json.JSONDecodeError, OSError) as exc:
         logger.warning("Could not load portfolio UI cache: %s", exc)
         try:
             cache_path.unlink(missing_ok=True)
@@ -329,9 +337,9 @@ def hydrate_session_from_disk() -> bool:  # noqa: C901
                 from services.deferred_startup import schedule_portfolio_refresh
 
                 schedule_portfolio_refresh(live_prices=False)
-            except Exception as exc:
+            except (ImportError, AttributeError) as exc:
                 logger.debug("Could not schedule portfolio refresh after mismatch: %s", exc)
-    except Exception as exc:
+    except (SQLiteError, PostgresError, OSError) as exc:
         logger.debug("Portfolio DB fingerprint check skipped during hydrate: %s", exc)
 
     if cache_is_stale(bundle) or fp_mismatch:
@@ -347,7 +355,7 @@ def hydrate_session_from_disk() -> bool:  # noqa: C901
                 from services.deferred_startup import schedule_library_reload_if_needed
 
                 schedule_library_reload_if_needed()
-            except Exception as exc:
+            except (ImportError, AttributeError) as exc:
                 logger.debug("Could not schedule library reload: %s", exc)
 
     return _apply_disk_bundle(bundle, cache_path=cache_path)
@@ -364,7 +372,7 @@ def should_sync_dividends_on_startup() -> bool:
         return True
     try:
         saved = datetime.fromisoformat(path.read_text(encoding="utf-8").strip())
-    except (TypeError, ValueError, OSError):
+    except (ValueError, TypeError, OSError):
         return True
     return datetime.now() - saved > DIVIDEND_SYNC_INTERVAL
 
@@ -404,7 +412,7 @@ def warm_portfolio_session_from_db(*, preload_charts: bool = False, force: bool 
             use_live_prices=False,
             preload_analysis=preload_charts,
         )
-    except Exception as exc:
+    except (SQLiteError, PostgresError, OSError, AttributeError) as exc:
         logger.warning("Fast portfolio load failed: %s", exc)
         return False
 
@@ -423,7 +431,7 @@ def warm_portfolio_session_from_db(*, preload_charts: bool = False, force: bool 
         st.session_state["_portfolio_db_fingerprint"] = compute_portfolio_db_fingerprint(
             use_cache=False
         )
-    except Exception as exc:
+    except (SQLiteError, PostgresError, OSError) as exc:
         logger.debug("Could not store portfolio DB fingerprint after warm load: %s", exc)
     logger.info("Portfolio fast-loaded from library (%d holdings)", len(rows))
     _rebuild_risk_summary_if_needed()
@@ -608,7 +616,7 @@ def refresh_portfolio_after_library_update() -> bool:
                 bundle = json.load(handle)
             if not cache_is_stale(bundle):
                 return False
-        except Exception as exc:
+        except (json.JSONDecodeError, OSError) as exc:
             logger.debug("Could not read portfolio UI cache for staleness check: %s", exc)
             clear_session_cache()
 
@@ -619,6 +627,6 @@ def refresh_portfolio_after_library_update() -> bool:
         _reload_live_data()
         st.session_state["_portfolio_library_sync_done"] = True
         return True
-    except Exception as exc:
+    except (ImportError, AttributeError) as exc:
         logger.warning("Auto portfolio reload failed: %s", exc)
         return False

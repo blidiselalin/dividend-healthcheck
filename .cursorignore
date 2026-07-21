@@ -1,0 +1,30 @@
+# Python / tooling caches (not useful for agents)
+.venv/
+.test-venv/
+venv/
+venv3.12/
+ENV/
+**/__pycache__/
+**/*.pyc
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Local runtime data
+data/users/
+data/users.db
+data/.legacy_portfolio_migrated
+reports/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Secrets
+.env
+.env.local
+deploy.env
+.streamlit/secrets.toml

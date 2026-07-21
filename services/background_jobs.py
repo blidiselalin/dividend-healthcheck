@@ -49,7 +49,7 @@ def session_scope() -> str:
         user = current_user()
         if user and user.id:
             return str(user.id)
-    except Exception:  # noqa: S110
+    except ImportError:  # noqa: S110
         pass
     return "local"
 
@@ -157,7 +157,7 @@ def start_job(  # noqa: C901
                     stored.message = stored.message or "Complete"
                     stored.finished_at = datetime.now()
             logger.info("Background job done kind=%s id=%s", kind, job_id)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning("Background job failed kind=%s id=%s: %s", kind, job_id, exc)
             with _STORE_LOCK:
                 stored = _JOB_STORE.get(scope_key, {}).get(job_id)
@@ -199,7 +199,7 @@ def apply_completed_jobs(
             handler(job.result)
             job.applied = True
             applied_kinds.append(job.kind)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning("Could not apply background job %s: %s", job.id, exc)
             job.status = "error"
             job.error = str(exc)

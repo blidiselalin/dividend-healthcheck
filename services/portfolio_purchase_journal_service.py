@@ -13,7 +13,7 @@ import pandas as pd
 
 from data_ingestion.portfolio_store import PortfolioStore
 from data_ingestion.purchase_journal_store import PurchaseJournalStore, PurchaseRecord
-from utils.chart_theme import PALETTE, bottom_legend, outside_bar_text, style_figure
+from utils.chart_theme import PALETTE, bottom_legend, style_figure
 
 try:
     import plotly.graph_objects as go

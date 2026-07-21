@@ -11,7 +11,8 @@ repos:
     hooks:
       - id: mypy
         name: mypy (strict type check)
-        args: [--strict]
+        pass_filenames: false
+        args: [--strict, --config-file=pyproject.toml, .]
 
   - repo: https://github.com/jendrikseipp/vulture
     rev: 'v2.11'

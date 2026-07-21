@@ -1,0 +1,36 @@
+---
+description: Keep agent changes small, safe, and verified
+alwaysApply: true
+---
+
+# Agent discipline
+
+- Fix the reported issue only. Do not reformat or refactor unrelated files.
+- Prefer editing **1–5 files**. If you need **10+**, stop and explain why before continuing.
+- Never run broad search-and-replace across `ui/`, `services/`, or `tests/` without a scoped plan.
+- Read `AGENTS.md` before storage, migrations, portfolio session, or test changes.
+- Read the scoped rule for the area you touch (`.cursor/rules/*.mdc`).
+- Run before finishing:
+  - `pre-commit run --all-files`
+  - `pytest -m "not integration"`
+- Do **not** commit unless the user explicitly asks.
+- Resolve merge conflicts fully — never leave `<<<<<<<` markers in files.
+
+## Hard rules (common agent mistakes)
+
+- Streamlit: only `with st.sidebar:` is a context manager — **never** `with st:`.
+- Postgres rows: use `db.parsing.parse_date` — **never** `date.fromisoformat(row[...])`.
+- Portfolio UI: use `schedule_portfolio_reload()` — **never** block reruns with sync rebuilds in `ui/*`.
+- Production storage: PostgreSQL when `DATABASE_URL` is set — no runtime Chroma/SQLite writes.
+
+## Deep dives (read when relevant)
+
+- Storage & migrations: `.cursor/docs/agents/storage.md`
+- Portfolio UI session: `.cursor/docs/agents/portfolio-ui.md`
+- Market library pipeline: `.cursor/docs/agents/market-library.md`
+
+## Task playbooks
+
+- Fix a test: `.cursor/docs/agent-tasks/fix-test.md`
+- Add a migration: `.cursor/docs/agent-tasks/add-migration.md`
+- Portfolio UI change: `.cursor/docs/agent-tasks/portfolio-ui-change.md`

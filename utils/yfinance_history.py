@@ -137,9 +137,7 @@ def library_prices_trustworthy(document: Any, *, min_unique: int = 52) -> bool:
     unique = unique_price_dates(document)
     if unique < min_unique:
         return False
-    if raw >= 100 and unique < max(min_unique, raw // 4):
-        return False
-    return True
+    return not (raw >= 100 and unique < max(min_unique, raw // 4))
 
 
 def history_dataframe_from_document(

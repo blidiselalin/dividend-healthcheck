@@ -257,16 +257,16 @@ PAYOUT_MODERATE: Final[float] = 75.0
 PAYOUT_ELEVATED: Final[float] = 90.0
 
 # Dividend yield context thresholds (shared between UI display and scoring)
-YIELD_OPTIMAL_MIN: Final[float] = 2.5   # lower bound of optimal income range
-YIELD_OPTIMAL_MAX: Final[float] = 4.5   # upper bound of optimal income range
-YIELD_CAUTION_MIN: Final[float] = 8.0   # above this → potential dividend trap
+YIELD_OPTIMAL_MIN: Final[float] = 2.5  # lower bound of optimal income range
+YIELD_OPTIMAL_MAX: Final[float] = 4.5  # upper bound of optimal income range
+YIELD_CAUTION_MIN: Final[float] = 8.0  # above this → potential dividend trap
 
 # Dividend growth context thresholds (shared between UI display and scoring)
-GROWTH_STRONG_MIN: Final[float] = 6.0   # ≥ 6 % CAGR → strong growth
+GROWTH_STRONG_MIN: Final[float] = 6.0  # ≥ 6 % CAGR → strong growth
 GROWTH_MODERATE_MIN: Final[float] = 3.0  # ≥ 3 % CAGR → moderate growth
 
 # Payout watch threshold for UI context (complements PAYOUT_SAFE = 60)
-PAYOUT_WATCH: Final[float] = 80.0       # 60 < payout ≤ 80 → watch zone
+PAYOUT_WATCH: Final[float] = 80.0  # 60 < payout ≤ 80 → watch zone
 
 
 # =============================================================================
@@ -306,6 +306,8 @@ def is_cloud_runtime() -> bool:
     from db.connection import use_cloud_sql
 
     return use_cloud_sql()
+
+
 DEFAULT_STALENESS_DAYS: Final[int] = 7
 PORTFOLIO_RISK_REFRESH_SECONDS: Final[int] = 3600
 MIN_YIELD_PRICE_POINTS: Final[int] = 252
@@ -313,11 +315,11 @@ MIN_YIELD_DIVIDEND_PAYMENTS: Final[int] = 4
 PRICE_REFRESH_INTERVAL_SECONDS: Final[int] = 300
 
 # Auto-trigger a thin-history backfill on portfolio load when holdings lack
-# enough price/dividend data for yield charts (set DIVIDENDSCOPE_AUTO_BACKFILL_ON_LOAD=0 to disable).
-AUTO_BACKFILL_ON_LOAD: Final[bool] = (
-    os.environ.get("DIVIDENDSCOPE_AUTO_BACKFILL_ON_LOAD", "1").strip().lower()
-    not in ("0", "false", "no")
-)
+# enough price/dividend data for yield charts
+# (set DIVIDENDSCOPE_AUTO_BACKFILL_ON_LOAD=0 to disable).
+AUTO_BACKFILL_ON_LOAD: Final[bool] = os.environ.get(
+    "DIVIDENDSCOPE_AUTO_BACKFILL_ON_LOAD", "1"
+).strip().lower() not in ("0", "false", "no")
 
 # How many hours between automatic thin-history backfill runs in the scheduler
 # daemon (DIVIDENDSCOPE_HISTORY_REFRESH_HOURS env var, default 6).

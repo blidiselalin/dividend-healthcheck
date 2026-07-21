@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 from datetime import date
-from types import SimpleNamespace
 
 from data_ingestion.models import PriceHistory, StockDocument
 from services import db_price_refresh

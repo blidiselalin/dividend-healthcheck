@@ -75,7 +75,9 @@ def test_fetch_falls_back_to_api_when_db_incomplete(monkeypatch) -> None:
         "services.enhanced_stock_service.document_to_stock_data",
         lambda doc: db_data,
     )
-    monkeypatch.setattr("services.enhanced_stock_service.StockService.fetch", lambda _symbol: api_data)
+    monkeypatch.setattr(
+        "services.enhanced_stock_service.StockService.fetch", lambda _symbol: api_data
+    )
 
     service = EnhancedStockService(fetch_realtime_prices=False)
     result = service.fetch("KO")

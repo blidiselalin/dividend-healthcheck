@@ -6,18 +6,17 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import List, Tuple
 
 logger = logging.getLogger(__name__)
 
 # symbol, company, shares, avg_cost_usd
-DEMO_HOLDINGS: List[Tuple[str, str, float, float]] = [
+DEMO_HOLDINGS: list[tuple[str, str, float, float]] = [
     ("KO", "Coca-Cola Co", 25.0, 58.0),
     ("JNJ", "Johnson & Johnson", 10.0, 155.0),
     ("O", "Realty Income Corp", 30.0, 52.0),
 ]
 
-DEMO_DEPOSITS: List[Tuple[int, int, str, float, float, float]] = [
+DEMO_DEPOSITS: list[tuple[int, int, str, float, float, float]] = [
     (2024, 1, "January 2024", 1000.0, 1080.0, 4200.0),
     (2024, 6, "June 2024", 1500.0, 1620.0, 5100.0),
     (2024, 12, "December 2024", 2000.0, 2160.0, 5800.0),
@@ -109,9 +108,7 @@ def load_demo_ui_snapshot() -> bool:
         return True
 
     try:
-        rows, preload = PortfolioDetailsService().build_rows_with_cache(
-            use_live_prices=False
-        )
+        rows, preload = PortfolioDetailsService().build_rows_with_cache(use_live_prices=False)
     except Exception as exc:
         logger.warning("Demo UI snapshot failed: %s", exc)
         return False

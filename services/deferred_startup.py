@@ -4,7 +4,13 @@ Defer heavy startup work to background threads so the UI paints immediately.
 
 from __future__ import annotations
 
+from sqlite3 import Error as SQLiteError
 from typing import Any
+
+try:
+    from psycopg import Error as PostgresError
+except ImportError:
+    PostgresError = type("PostgresError", (Exception,), {})
 
 from services.background_jobs import (
     ProgressCallback,
@@ -87,7 +93,7 @@ def _library_reload_needed() -> bool:
         with cache_path.open("r", encoding="utf-8") as handle:
             bundle = json.load(handle)
         return cache_is_stale(bundle)
-    except Exception:
+    except (json.JSONDecodeError, OSError):
         clear_session_cache()
         return False
 
@@ -122,6 +128,22 @@ def schedule_dividend_sync_if_needed() -> None:
         )
 
         stats = maybe_sync_received_dividends()
+        progress(1.0, "Dividend sync complete")
+        return stats
+
+    start_job(JOB_DIVIDEND_SYNC, "Syncing received dividends", _worker)
+
+
+def schedule_forced_dividend_sync() -> None:
+    """Queue a non-skippable dividend sync."""
+
+    def _worker(progress: ProgressCallback) -> Any:
+        progress(0.05, "Scanning holdings…")
+        from services.portfolio_dividend_sync_service import (
+            maybe_sync_received_dividends,
+        )
+
+        stats = maybe_sync_received_dividends(force=True)
         progress(1.0, "Dividend sync complete")
         return stats
 
@@ -513,7 +535,10 @@ def _apply_dividend_sync(result: Any) -> None:
     receipts_updated = getattr(result, "receipts_updated", 0)
     pay_fixes = getattr(result, "pay_dates_corrected", 0)
     logger.info(
-        "Background dividend sync: holdings=%s receipts_added=%s receipts_updated=%s pay_date_fixes=%s",
+        (
+            "Background dividend sync: holdings=%s, receipts_added=%s, "
+            "receipts_updated=%s, pay_date_fixes=%s"
+        ),
         getattr(result, "holdings_scanned", "?"),
         getattr(result, "receipts_added", "?"),
         receipts_updated,
@@ -531,7 +556,7 @@ def _apply_dividend_sync(result: Any) -> None:
         st.session_state["_portfolio_db_fingerprint"] = compute_portfolio_db_fingerprint(
             use_cache=False
         )
-    except Exception as exc:
+    except (SQLiteError, PostgresError, OSError) as exc:
         logger.debug("Could not refresh portfolio fingerprint after dividend sync: %s", exc)
 
 
@@ -550,7 +575,7 @@ def _apply_yield_preload(result: dict[str, Any]) -> None:
         from ui.portfolio_risk_panel import _rebuild_attention_from_session
 
         _rebuild_attention_from_session()
-    except Exception as exc:
+    except (ImportError, AttributeError, KeyError) as exc:
         logger.debug("Risk watchlist rebuild after yield preload skipped: %s", exc)
 
 
@@ -581,7 +606,7 @@ def _apply_portfolio_db_refresh(result: dict[str, Any]) -> None:
         st.session_state["_portfolio_db_fingerprint"] = compute_portfolio_db_fingerprint(
             use_cache=False
         )
-    except Exception as exc:
+    except (SQLiteError, PostgresError, OSError) as exc:
         logger.debug("Could not store fingerprint after DB refresh: %s", exc)
     save_session_cache(force=True)
     schedule_yield_preload_if_needed()
@@ -657,7 +682,7 @@ def _apply_live_reload(result: dict[str, Any]) -> None:
         st.session_state["_portfolio_db_fingerprint"] = compute_portfolio_db_fingerprint(
             use_cache=False
         )
-    except Exception as exc:
+    except (SQLiteError, PostgresError, OSError) as exc:
         logger.debug("Could not store fingerprint after live reload: %s", exc)
     save_session_cache(force=True)
     logger.info("Background live reload: %d holdings", len(rows))
@@ -679,7 +704,7 @@ def _apply_history_table_sync(result: dict[str, Any]) -> None:
         from ui.market_library_cache import clear_thin_history_summary_cache
 
         clear_thin_history_summary_cache()
-    except Exception:  # noqa: S110
+    except (ImportError, AttributeError):  # noqa: S110
         pass
     logger.info(
         "Background history table sync: synced=%s pending=%s",
@@ -696,13 +721,13 @@ def _apply_history_backfill(result: dict[str, Any]) -> None:
         from ui.portfolio_details_view import _load_dividend_growth
 
         _load_dividend_growth.clear()
-    except Exception:  # noqa: S110
+    except (ImportError, AttributeError):  # noqa: S110
         pass
     try:
         from ui.market_library_cache import clear_thin_history_summary_cache
 
         clear_thin_history_summary_cache()
-    except Exception:  # noqa: S110
+    except (ImportError, AttributeError):  # noqa: S110
         pass
     logger.info(
         "Background history backfill: enriched=%s ready=%s",

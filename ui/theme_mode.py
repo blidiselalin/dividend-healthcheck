@@ -110,17 +110,20 @@ def build_theme_root_css(mode: str) -> str:
 
 def render_theme_toggle(*, sidebar: bool = False) -> None:
     """Segmented control to switch light / dark appearance."""
-    ui = st.sidebar if sidebar else st
     current = get_theme_mode()
-    with ui:
-        choice = st.segmented_control(
-            "Theme",
-            options=list(THEME_LABELS),
-            default=theme_label(current),
-            key=f"ds_theme_toggle_{'sidebar' if sidebar else 'main'}",
-            label_visibility="collapsed",
-            help="Switch between dark and light appearance",
-        )
+    control_kwargs = {
+        "label": "Theme",
+        "options": list(THEME_LABELS),
+        "default": theme_label(current),
+        "key": f"ds_theme_toggle_{'sidebar' if sidebar else 'main'}",
+        "label_visibility": "collapsed",
+        "help": "Switch between dark and light appearance",
+    }
+    if sidebar:
+        with st.sidebar:
+            choice = st.segmented_control(**control_kwargs)
+    else:
+        choice = st.segmented_control(**control_kwargs)
     selected = normalize_theme(str(choice).lower() if choice else current)
     if selected != current:
         set_theme_mode(selected)

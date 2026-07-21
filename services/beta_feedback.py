@@ -8,11 +8,9 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from config import DATA_DIR
 from db.connection import open_app_db, use_cloud_sql
-
 
 FEEDBACK_DB_PATH = DATA_DIR / "users.db"
 
@@ -35,15 +33,15 @@ class BetaFeedbackRecord:
     rating: int
     message: str
     page: str
-    email: Optional[str]
-    user_id: Optional[str]
+    email: str | None
+    user_id: str | None
     created_at: datetime
 
 
 class BetaFeedbackStore:
     """SQLite / Postgres store for beta feedback."""
 
-    def __init__(self, db_path: Optional[Path] = None) -> None:
+    def __init__(self, db_path: Path | None = None) -> None:
         self.db_path = Path(db_path or FEEDBACK_DB_PATH)
         if not use_cloud_sql():
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -94,8 +92,8 @@ class BetaFeedbackStore:
         rating: int,
         message: str,
         page: str,
-        email: Optional[str] = None,
-        user_id: Optional[str] = None,
+        email: str | None = None,
+        user_id: str | None = None,
     ) -> BetaFeedbackRecord:
         rating = max(1, min(5, int(rating)))
         text = (message or "").strip()

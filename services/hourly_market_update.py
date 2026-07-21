@@ -83,7 +83,7 @@ def enrich_stale_documents(
             enriched.append(enricher.enrich_document(document))
             stats["enriched"] += 1
             stats["symbols"].append(document.symbol.upper())
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning("Hourly enrich failed for %s: %s", document.symbol, exc)
             stats["errors"] += 1
 

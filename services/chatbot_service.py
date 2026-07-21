@@ -19,14 +19,15 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 WELCOME_MESSAGE = (
-    "Hi! I'm the **DividendScope assistant**. New here? On Home, open **Getting started — step-by-step guide**. "
-    "Ask how to use the app, name a ticker (e.g. **ABBV**), or try: *reload live data*, *yield channels*, "
-    "*my portfolio*. I explain features and concepts — not personalized buy/sell advice."
+    "Hi! I'm the **DividendScope assistant**. New here? On Home, open "
+    "**Getting started — step-by-step guide**. Ask how to use the app, name a ticker "
+    "(e.g. **ABBV**), or try: *reload live data*, *yield channels*, *my portfolio*. "
+    "I explain features and concepts — not personalized buy/sell advice."
 )
 
 DISCLAIMER = (
-    "_Educational only — not financial advice. Verify data with official filings "
-    "and your own research._"
+    "_Educational only — not financial advice. Verify data with official "
+    "filings and your own research._"
 )
 
 HF_MODEL_DEFAULT = "facebook/blenderbot-400M-distill"
@@ -99,7 +100,8 @@ _APP_FAQ: Sequence[tuple[tuple[str, ...], str]] = (
         ("dashboard", "overview", "performance", "home"),
         "**Home** shows value, P/L, month dividends received, and a positions table. "
         "**Deposits & benchmarks** tracks capital deposited and index comparison. "
-        "If numbers are empty, finish **Getting started** on Home or wait for **Background tasks**.",
+        "If numbers are empty, finish **Getting started** on Home or wait for "
+        "**Background tasks**.",
     ),
 )
 
@@ -138,7 +140,7 @@ def _huggingface_model() -> str:
 def _session_portfolio_snapshot() -> SessionPortfolioSnapshot | None:
     try:
         import streamlit as st
-    except Exception:
+    except (ImportError, AttributeError):
         return None
 
     rows = st.session_state.get("portfolio_details_rows") or []

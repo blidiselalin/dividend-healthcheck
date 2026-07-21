@@ -11,8 +11,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import requests
+import yfinance as yf
+
 from data_ingestion.models import StockDocument
 from models.stock import StockData
+from services.live_price import apply_live_price as get_live_price
+from services.stock_service import StockService
 from services.yield_channel_chart import YieldChannelData
 from utils.converters import document_to_stock_data
 from utils.logging_config import get_logger
@@ -47,7 +52,7 @@ def load_library_document(symbol: str) -> StockDocument | None:
         from services.shared_market_db import get_document
 
         return get_document((symbol or "").strip().upper())
-    except Exception as exc:
+    except (requests.exceptions.RequestException, yf.exceptions.YFinanceError) as exc:
         logger.debug("Library lookup failed for %s: %s", symbol, exc)
         return None
 
@@ -68,7 +73,7 @@ def load_stock_data(
             fetch_realtime_prices=fetch_realtime_prices,
         )
         return analysis.stock_data if analysis else None
-    except Exception as exc:
+    except (requests.exceptions.RequestException, yf.exceptions.YFinanceError) as exc:
         logger.debug("Stock data unavailable for %s: %s", symbol, exc)
         return None
 
@@ -85,14 +90,14 @@ def load_portfolio_statistics_stock(
         from services.enhanced_stock_service import EnhancedStockService
 
         return EnhancedStockService(fetch_realtime_prices=False).fetch(symbol)
-    except Exception:  # noqa: S110
+    except (requests.exceptions.RequestException, yf.exceptions.YFinanceError):  # noqa: S110
         pass
 
     try:
         from services.stock_service import StockService
 
         return StockService.fetch(symbol)
-    except Exception:
+    except (requests.exceptions.RequestException, yf.exceptions.YFinanceError):
         return None
 
 
@@ -106,8 +111,6 @@ def stock_data_from_document(
     stock, yield_source = enrich_stock_data_from_history(stock, document)
 
     if apply_live_price:
-        from services.live_price import apply_live_price as get_live_price
-
         stock = get_live_price(stock)
         stock, yield_source = enrich_stock_data_from_history(stock, document)
 
@@ -158,7 +161,7 @@ def load_yield_channel_data(
                 return channel
         return None
     except Exception as exc:
-        logger.debug("Yield channel unavailable for %s: %s", sym, exc)
+        logger.debug("Yield channel unavailable for %s: %s", sym, exc)  # noqa: BLE001
         return None
 
 
@@ -197,11 +200,11 @@ def ensure_yield_channel_data(
         return None
 
     try:
-        from services.stock_history_backfill import backfill_thin_history
+        from services.stock_history_backfill import backfill_thin_history  # noqa: BLE001
 
         backfill_thin_history(symbols=[sym], limit=1, prioritize_portfolio=True)
         doc = resolve_library_document(sym, None) or doc
-    except Exception as exc:
+    except requests.exceptions.RequestException as exc:
         logger.debug("On-demand history backfill failed for %s: %s", sym, exc)
 
     return load_yield_channel_data(
@@ -280,29 +283,16 @@ def _fallback_stock_data(
     symbol: str,
     *,
     apply_live_price: bool,
-    fetch_realtime_prices: bool = False,
+    fetch_realtime_prices: bool = False,  # noqa: ARG001
 ) -> StockData | None:
     """API fallback when the symbol is not in stock_documents."""
     stock = None
     try:
-        from services.enhanced_stock_service import EnhancedStockService
-
-        stock = EnhancedStockService(
-            fetch_realtime_prices=fetch_realtime_prices,
-        ).fetch(symbol)
-    except Exception:
+        stock = StockService.fetch(symbol)
+    except (requests.exceptions.RequestException, yf.exceptions.YFinanceError):
         stock = None
-    if stock is None:
-        try:
-            from services.stock_service import StockService
-
-            stock = StockService.fetch(symbol)
-        except Exception:
-            stock = None
     if stock is None:
         return None
     if apply_live_price:
-        from services.live_price import apply_live_price as get_live_price
-
         stock = get_live_price(stock)
     return stock

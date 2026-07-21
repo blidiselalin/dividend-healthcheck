@@ -79,7 +79,7 @@ class StockService:
                         hist = stock.history(period="10y")
                         if "Dividends" in hist.columns:
                             dividends = hist["Dividends"][hist["Dividends"] > 0]
-                    except Exception:
+                    except yf.exceptions.YFinanceError:
                         return None
 
             if dividends is None or dividends.empty:
@@ -198,14 +198,14 @@ class StockService:
                     start_price = hist_1y["Close"].iloc[0]
                     end_price = hist_1y["Close"].iloc[-1]
                     returns["1y_total"] = ((end_price + total_div) / start_price - 1) * 100
-        except Exception:  # noqa: S110
+        except yf.exceptions.YFinanceError:  # noqa: S110
             pass
 
         try:
             hist_5y = stock.history(period="5y")
             if len(hist_5y) >= 1000:
                 returns["5y"] = ((hist_5y["Close"].iloc[-1] / hist_5y["Close"].iloc[0]) - 1) * 100
-        except Exception:  # noqa: S110
+        except yf.exceptions.YFinanceError:  # noqa: S110
             pass
 
         return returns
@@ -320,7 +320,7 @@ class StockService:
                         "fiftyTwoWeekHigh": getattr(fast, "year_high", None),
                         "fiftyTwoWeekLow": getattr(fast, "year_low", None),
                     }
-                except Exception:
+                except yf.exceptions.YFinanceError:
                     return None
 
             if not info or info.get("regularMarketPrice") is None:
@@ -392,7 +392,7 @@ class StockService:
 
             return data
 
-        except Exception:
+        except yf.exceptions.YFinanceError:
             return None
         finally:
             # Restore yfinance logger level

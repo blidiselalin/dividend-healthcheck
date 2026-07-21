@@ -89,13 +89,11 @@ def _render_how_it_helps() -> None:
     st.markdown(
         f"""
         | Goal | What the app does |
-        |------|-------------------|
-        | **Identify** candidates | Yield **channels** (fair / expensive zones), dividend **safety** and growth scores, and **buy opportunity** flags when price and fundamentals align |
-        | **Compare** stocks | Side-by-side scores for **other holdings in the same sector**; holding vs analysed history on one screen |
-        | **Clear statistics** | Up to **{MAX_HISTORY_YEARS} years** of dividend and price context from the analysed library; portfolio KPIs, CAGR, allocation, and monthly income charts |
+        |---|---| | **Identify** | Yield **channels**, dividend **safety** and growth scores, and **buy opportunity** flags. |
+        | **Compare** | Side-by-side scores for **other holdings in the same sector**; holding vs history. | | **Statistics** | Up to **{MAX_HISTORY_YEARS} years** of history; portfolio KPIs, CAGR, allocation, and income charts. |
 
         Each holding can be opened for a full report: yield zone chart, key ratios,
-        analyst context where available, and how that name fits your portfolio weight.
+        analyst context, and how that name fits your portfolio weight.
         Use **Data & history behind this analysis** on any holding to see exact
         date ranges, reload times, and sources used for scores and charts.
         """
@@ -109,13 +107,11 @@ def _render_data_sources() -> None:
         Statistics are built from **public, competitive market sources**, combined in a
         local **analysed stocks** database for fast repeat lookups:
 
-        - **{DATA_SOURCES['primary']}** — live prices and market fields when you reload
-        - **{DATA_SOURCES['fundamentals']}** — payout, earnings, and balance-sheet style inputs
-        - **{DATA_SOURCES['analyst']}** — consensus views where published
-        - **{DATA_SOURCES['historical']}** — dividend and price history for trends and growth
+        - **{DATA_SOURCES["primary"]}**: live prices and market fields when you reload - **{DATA_SOURCES["fundamentals"]}**: payout, earnings, and balance-sheet style inputs
+        - **{DATA_SOURCES["analyst"]}**: consensus views where published - **{DATA_SOURCES["historical"]}**: dividend and price history for trends and growth
 
         Your portfolio amounts (shares, deposits, purchases) stay **in your account only**.
-        The **S&P historical library** lives in **PostgreSQL** (`stock_documents`) and is **shared by every user**.
+        The **S&P historical library** lives in **PostgreSQL** and is **shared by every user**.
         After you add holdings, the app loads from that library in the **background**; use **Reload live data**
         in the sidebar when you want today's prices and full yield charts.
         """
@@ -129,9 +125,7 @@ def _render_data_sources() -> None:
         **Next step** until you dismiss the guide. Ask the **Assistant** for quick how-to answers.
         """
     )
-    st.caption(
-        "Educational tool only — not investment advice. Always verify data before acting."
-    )
+    st.caption("Educational tool only — not investment advice. Always verify data before acting.")
     from ui.beta_disclaimer import render_beta_pricing_placeholder
 
     render_beta_pricing_placeholder()

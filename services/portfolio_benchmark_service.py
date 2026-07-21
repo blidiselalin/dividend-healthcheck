@@ -8,6 +8,7 @@ import calendar
 import logging
 from dataclasses import dataclass
 from datetime import date, timedelta
+from sqlite3 import Error as SQLiteError
 from typing import Any
 
 import pandas as pd
@@ -26,6 +27,11 @@ from utils.chart_theme import (
     outside_bar_text,
     style_figure,
 )
+
+try:
+    from psycopg import Error as PostgresError
+except ImportError:
+    PostgresError = type("PostgresError", (Exception,), {})
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +116,7 @@ class PortfolioBenchmarkService:
                     progress=False,
                     auto_adjust=True,
                 )
-            except Exception:  # noqa: S112
+            except yf.exceptions.YFinanceError:  # noqa: S112
                 continue
             if frame is None or frame.empty:
                 continue
@@ -143,7 +149,7 @@ class PortfolioBenchmarkService:
         # Seed ETF metadata once (no-op if already present)
         try:
             price_store.seed_etf_info_if_empty()
-        except Exception as exc:  # pragma: no cover
+        except (SQLiteError, PostgresError, OSError) as exc:  # pragma: no cover
             logger.debug("ETF metadata seed failed (non-fatal): %s", exc)
         closes: dict[str, pd.Series] = {}
         for benchmark in BENCHMARKS:
@@ -166,7 +172,7 @@ class PortfolioBenchmarkService:
                                 if val is not None
                             },
                         )
-                    except Exception as exc:  # pragma: no cover
+                    except (SQLiteError, PostgresError, OSError) as exc:  # pragma: no cover
                         logger.debug("Could not persist benchmark prices for %s: %s", sym, exc)
 
             # Load the full range from the store (combines persisted + newly fetched).
@@ -228,7 +234,7 @@ class PortfolioBenchmarkService:
                     },
                 )
                 results[sym] = written
-            except Exception as exc:
+            except (SQLiteError, PostgresError, OSError) as exc:
                 logger.warning("Could not persist prices for %s: %s", sym, exc)
                 results[sym] = 0
 
@@ -364,7 +370,7 @@ class PortfolioBenchmarkService:
 
         years = sorted(comparison_df["Year"].unique())
         rows: list[dict[str, Any]] = []
-        prior_ends: dict[str, float | None] = {name: None for name in FOCUS_LABELS}
+        prior_ends: dict[str, float | None] = dict.fromkeys(FOCUS_LABELS)
 
         for year in years:
             year_df = comparison_df[comparison_df["Year"] == year]

@@ -7,8 +7,6 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from data_ingestion.dividend_receipt_store import DividendReceiptStore
 from data_ingestion.models import DividendRecord, StockDocument
 from data_ingestion.portfolio_store import PortfolioStore
@@ -34,8 +32,7 @@ def test_payment_date_for_record_uses_payment_date_when_set() -> None:
 def test_enrich_document_applies_local_csv_payment_dates(tmp_path: Path) -> None:
     csv_path = tmp_path / "KO_dividends.csv"
     csv_path.write_text(
-        "ex_date,payment_date,amount\n"
-        "2026-06-10,2026-06-27,0.485\n",
+        "ex_date,payment_date,amount\n2026-06-10,2026-06-27,0.485\n",
         encoding="utf-8",
     )
     doc = StockDocument(

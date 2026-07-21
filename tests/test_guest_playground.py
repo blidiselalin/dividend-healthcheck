@@ -57,7 +57,9 @@ def test_remove_guest_falls_back_to_defaults_when_empty() -> None:
 
 
 def test_to_portfolio_holdings_builds_acquisition_value() -> None:
-    guest = [GuestHolding(symbol="KO", shares=10.0, avg_cost_per_share=50.0, company_name="Coca-Cola")]
+    guest = [
+        GuestHolding(symbol="KO", shares=10.0, avg_cost_per_share=50.0, company_name="Coca-Cola")
+    ]
     rows = to_portfolio_holdings(guest)
     assert len(rows) == 1
     assert rows[0].acquisition_value == 500.0

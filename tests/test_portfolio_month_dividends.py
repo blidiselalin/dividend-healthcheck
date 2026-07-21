@@ -16,6 +16,7 @@ from services.portfolio_dividend_calendar import (
     MonthDividendExposure,
     month_start,
 )
+from services.portfolio_dividend_sync_service import sync_received_dividends
 from services.portfolio_month_dividends import (
     CurrentMonthPaidDividends,
     current_month_paid_dividends,
@@ -24,7 +25,6 @@ from services.portfolio_month_dividends import (
     net_paid_in_calendar_month,
     net_received_through,
 )
-from services.portfolio_dividend_sync_service import sync_received_dividends
 from ui.theme import PORTFOLIO_SECTION_LABELS, resolve_portfolio_section_label
 
 
@@ -174,7 +174,6 @@ def test_current_month_paid_prefers_synced_receipts_over_live_compute(
 ) -> None:
     from data_ingestion.models import DividendRecord, StockDocument
     from data_ingestion.portfolio_store import PortfolioHolding
-    from services.portfolio_month_dividends import current_month_paid_dividends
 
     holding = PortfolioHolding(
         symbol="KO",
@@ -276,8 +275,6 @@ def test_current_month_paid_returns_zero_snapshot_for_rows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from types import SimpleNamespace
-
-    from services.portfolio_month_dividends import current_month_paid_dividends
 
     monkeypatch.setattr(
         "services.portfolio_month_dividends.PortfolioStore",

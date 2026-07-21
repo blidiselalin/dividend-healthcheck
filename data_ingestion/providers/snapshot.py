@@ -220,9 +220,7 @@ def missing_field_groups(doc: StockDocument) -> list[str]:
             return True
         if isinstance(value, str) and (not value or value == "Unknown"):
             return True
-        if isinstance(value, list) and len(value) == 0:
-            return True
-        return False
+        return bool(isinstance(value, list) and len(value) == 0)
 
     checks = {
         "identity": _empty(doc.name) or doc.name == doc.symbol or doc.sector == "Unknown",

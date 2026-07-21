@@ -99,7 +99,9 @@ def test_cache_is_fresh_when_recent_and_library_unchanged(monkeypatch: pytest.Mo
     assert cache_is_stale(bundle) is False
 
 
-def test_hydrate_uses_stale_cache_as_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hydrate_uses_stale_cache_as_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     cache_path = tmp_path / "portfolio_ui_session.json"
     bundle = _sample_bundle(saved_at=datetime.now() - timedelta(days=10))
     cache_path.write_text(json.dumps(bundle), encoding="utf-8")
@@ -135,7 +137,9 @@ def test_hydrate_sync_loads_from_db_when_no_cache(monkeypatch: pytest.MonkeyPatc
 
     session = FakeSession()
 
-    monkeypatch.setattr("services.portfolio_ui_cache._cache_path", lambda: Path("/nonexistent/cache.json"))
+    monkeypatch.setattr(
+        "services.portfolio_ui_cache._cache_path", lambda: Path("/nonexistent/cache.json")
+    )
     monkeypatch.setattr(
         "services.portfolio_session.user_has_holdings_in_db",
         lambda: True,
@@ -151,7 +155,9 @@ def test_hydrate_sync_loads_from_db_when_no_cache(monkeypatch: pytest.MonkeyPatc
     assert len(session.get("portfolio_details_rows") or []) == 1
 
 
-def test_ensure_portfolio_session_loaded_delegates_to_hydrate(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ensure_portfolio_session_loaded_delegates_to_hydrate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[str] = []
 
     def _hydrate() -> bool:
