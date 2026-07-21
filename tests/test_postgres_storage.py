@@ -26,7 +26,10 @@ def test_hourly_enrich_uses_shared_store(postgres_env: Any) -> None:
     mock_store = MagicMock()
     mock_store.get_all_documents.return_value = []
 
-    with patch("services.shared_market_db.get_shared_vector_store", return_value=mock_store):
+    with (
+        patch("services.shared_market_db.get_shared_vector_store", return_value=mock_store),
+        patch("services.stock_history_backfill.portfolio_backfill_symbols", return_value=set()),
+    ):
         stats = enrich_stale_documents(limit=5)
 
     assert stats["candidates"] == 0
