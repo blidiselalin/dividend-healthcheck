@@ -73,12 +73,19 @@ def _row_status_badge(row: PortfolioDetailRow) -> str:
 
     ⏳ = price is stale (background refresh in progress)
     📉 = insufficient price/dividend history for yield charts
+    ⚠️ = no dividend history in exposed sources
+    ℹ️ = income uses metadata estimate (no payment history)
     """
     parts: list[str] = []
     if getattr(row, "price_stale", False):
         parts.append("⏳")
     if getattr(row, "history_thin", False):
         parts.append("📉")
+    dividend_status = getattr(row, "dividend_data_status", None) or ""
+    if "No dividend history found" in dividend_status:
+        parts.append("⚠️")
+    elif "annual dividend estimate" in dividend_status.lower():
+        parts.append("ℹ️")
     return " ".join(parts) if parts else "✓"
 
 
@@ -104,6 +111,7 @@ def _preload_from_session() -> PortfolioAnalysisPreload:
         st.session_state.get("portfolio_stock_cache", {}),
         st.session_state.get("portfolio_yield_cache", {}),
         st.session_state.get("portfolio_vector_docs", {}),
+        st.session_state.get("portfolio_dividend_statuses", {}),
     )
 
 
@@ -323,6 +331,45 @@ class PortfolioDetailsView:
         return symbol
 
     @classmethod
+    def _render_missing_dividend_sources(
+        cls,
+        rows: list[PortfolioDetailRow],
+        preload: PortfolioAnalysisPreload,
+    ) -> None:
+        """Warn when holdings lack dividend history from exposed data sources."""
+        not_found: list[tuple[str, str]] = []
+        metadata_only: list[tuple[str, str]] = []
+        for row in rows:
+            message = row.dividend_data_status
+            if not message:
+                status = (preload.dividend_statuses or {}).get(row.ticker)
+                message = getattr(status, "missing_message", None) if status else None
+            if not message:
+                continue
+            if "annual dividend estimate" in message.lower():
+                metadata_only.append((row.ticker, message))
+            elif "No dividend history found" in message or "No dividend payment history" in message:
+                not_found.append((row.ticker, message))
+
+        if not_found:
+            tickers = ", ".join(ticker for ticker, _ in not_found[:8])
+            suffix = "…" if len(not_found) > 8 else ""
+            st.warning(
+                f"**{tickers}{suffix}** — no dividend payment history found in exposed sources "
+                "(market library, Postgres history, local CSV, Nasdaq, Yahoo Finance). "
+                "Monthly exposure and income projections may be incomplete.",
+                icon="⚠️",
+            )
+        if metadata_only:
+            tickers = ", ".join(ticker for ticker, _ in metadata_only[:8])
+            suffix = "…" if len(metadata_only) > 8 else ""
+            st.info(
+                f"**{tickers}{suffix}** — no payment history in exposed sources; "
+                "annual dividend estimates come from stock metadata only.",
+                icon="ℹ️",
+            )
+
+    @classmethod
     def _render_monthly_dividend_exposure(
         cls,
         rows: list[PortfolioDetailRow],
@@ -340,6 +387,7 @@ class PortfolioDetailsView:
             stock_data=preload.stock_data,
             row_dates=row_dates,
         )
+        cls._render_missing_dividend_sources(rows, preload)
         current = calendar.current_month
         last = calendar.last_month
         next_month = calendar.next_month
@@ -2095,8 +2143,8 @@ class PortfolioDetailsView:
                     hide_index=True,
                     column_config={
                         "Price $": st.column_config.NumberColumn(format="$%.2f"),
-                        "Est. shares": st.column_config.NumberColumn(format="%.4f"),
-                        "Est. cost $": st.column_config.NumberColumn(format="$%.2f"),
+                        "Shares": st.column_config.NumberColumn(format="%.4f"),
+                        "Cost $": st.column_config.NumberColumn(format="$%.2f"),
                         "Cumulative shares": st.column_config.NumberColumn(format="%.4f"),
                     },
                 )
@@ -2104,7 +2152,16 @@ class PortfolioDetailsView:
         with div_col:
             st.markdown("**Dividends received (from analysed stocks history)**")
             if dividends_df.empty:
-                st.info("No dividend payment history in the database for this ticker.")
+                status_msg = row.dividend_data_status
+                if not status_msg:
+                    status = (preload.dividend_statuses or {}).get(symbol)
+                    status_msg = getattr(status, "missing_message", None) if status else None
+                if status_msg and "annual dividend estimate" in status_msg.lower():
+                    st.info(status_msg, icon="ℹ️")
+                elif status_msg:
+                    st.warning(status_msg, icon="⚠️")
+                else:
+                    st.info("No dividend payment history in the database for this ticker.")
             else:
                 st.dataframe(
                     dividends_df,
@@ -2167,6 +2224,17 @@ class PortfolioDetailsView:
         # Show a stale-price notice if any holdings are pending a live-price refresh.
         stale_tickers = [row.ticker for row in rows if getattr(row, "price_stale", False)]
         thin_tickers = [row.ticker for row in rows if getattr(row, "history_thin", False)]
+        missing_div_tickers = [
+            row.ticker
+            for row in rows
+            if row.dividend_data_status and "No dividend history found" in row.dividend_data_status
+        ]
+        metadata_div_tickers = [
+            row.ticker
+            for row in rows
+            if row.dividend_data_status
+            and "annual dividend estimate" in row.dividend_data_status.lower()
+        ]
         if stale_tickers:
             st.info(
                 f"⏳ Prices for **{', '.join(stale_tickers[:6])}"
@@ -2181,6 +2249,21 @@ class PortfolioDetailsView:
                 + "** lack sufficient price/dividend history for yield charts. "
                 "A backfill job has been scheduled.",
                 icon="📉",
+            )
+        if missing_div_tickers:
+            st.warning(
+                f"⚠️ **{', '.join(missing_div_tickers[:6])}"
+                + ("…" if len(missing_div_tickers) > 6 else "")
+                + "** have no dividend history in exposed sources "
+                "(market library, Postgres, CSV, Nasdaq, Yahoo).",
+                icon="⚠️",
+            )
+        if metadata_div_tickers:
+            st.info(
+                f"ℹ️ **{', '.join(metadata_div_tickers[:6])}"
+                + ("…" if len(metadata_div_tickers) > 6 else "")
+                + "** use metadata-only dividend estimates (no payment history).",
+                icon="ℹ️",
             )
 
         filtered = cls._render_filters(df)

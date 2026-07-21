@@ -222,8 +222,11 @@ def render_compact_summary(rows: list[PortfolioDetailRow]) -> None:
     stock_cache = st.session_state.get("portfolio_stock_cache") or {}
     yield_cache = st.session_state.get("portfolio_yield_cache") or {}
     vector_docs = st.session_state.get("portfolio_vector_docs") or {}
+    dividend_statuses = st.session_state.get("portfolio_dividend_statuses") or {}
     preload = (
-        PortfolioAnalysisPreload.from_caches(stock_cache, yield_cache, vector_docs)
+        PortfolioAnalysisPreload.from_caches(
+            stock_cache, yield_cache, vector_docs, dividend_statuses
+        )
         if stock_cache or yield_cache or vector_docs
         else None
     )

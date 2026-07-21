@@ -464,19 +464,22 @@ def compute_yield_preload_payload(
     from services.portfolio_details_service import PortfolioDetailsService
 
     docs = dict(vector_docs)
+    statuses: dict[str, Any] = {}
     if not docs and symbols:
-        docs = PortfolioDetailsService()._load_documents(symbols)
+        docs, statuses = PortfolioDetailsService()._load_documents(symbols)
 
     preload = preload_portfolio_analysis(
         symbols,
         stock_cache,
         docs,
         progress_callback=progress_callback,
+        dividend_statuses=statuses,
     )
     return {
         "yield_channels": preload.yield_channels,
         "stock_data": preload.stock_data,
         "vector_docs": preload.vector_docs,
+        "dividend_statuses": preload.dividend_statuses or {},
     }
 
 
@@ -568,6 +571,7 @@ def ensure_portfolio_yield_preload() -> bool:
     st.session_state["portfolio_yield_cache"] = payload["yield_channels"]
     st.session_state["portfolio_stock_cache"] = payload["stock_data"]
     st.session_state["portfolio_vector_docs"] = payload["vector_docs"]
+    st.session_state["portfolio_dividend_statuses"] = payload.get("dividend_statuses") or {}
     st.session_state["portfolio_analysis_ready"] = True
     st.session_state.pop("portfolio_fast_loaded", None)
     save_session_cache(force=True)

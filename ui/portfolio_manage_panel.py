@@ -314,27 +314,56 @@ def render_portfolio_manage_sidebar() -> None:
             if not symbols:
                 st.info("Add a holding before logging purchases.")
             else:
+                st.caption(
+                    "Log a buy with share count and commission. "
+                    "Your position totals update automatically."
+                )
                 st.selectbox("Ticker", symbols, key="pm_buy_symbol")
                 st.date_input("Purchase date", value=date.today(), key="pm_buy_date")
                 st.number_input(
-                    "Price (USD)",
+                    "Shares",
+                    min_value=0.0,
+                    value=0.0,
+                    step=1.0,
+                    key="pm_buy_shares",
+                )
+                st.number_input(
+                    "Price per share (USD)",
                     min_value=0.0,
                     value=0.0,
                     step=0.01,
                     key="pm_buy_price",
                 )
+                st.number_input(
+                    "Commission (USD)",
+                    min_value=0.0,
+                    value=0.0,
+                    step=0.01,
+                    key="pm_buy_commission",
+                    help="Broker fee for this purchase, separate from the share price.",
+                )
                 if st.button("Log purchase", key="pm_buy_btn"):
                     try:
-                        service.add_purchase(
-                            st.session_state.pm_buy_symbol,
-                            st.session_state.pm_buy_date,
-                            st.session_state.pm_buy_price,
-                        )
-                        _after_change(
-                            f"Logged purchase for {st.session_state.pm_buy_symbol}.",
-                            full_reload=False,
-                            sections=["journal"],
-                        )
+                        shares = float(st.session_state.pm_buy_shares)
+                        price = float(st.session_state.pm_buy_price)
+                        commission = float(st.session_state.pm_buy_commission)
+                        if shares <= 0:
+                            st.error("Shares must be greater than zero.")
+                        elif price <= 0:
+                            st.error("Price per share must be greater than zero.")
+                        else:
+                            service.add_purchase(
+                                st.session_state.pm_buy_symbol,
+                                st.session_state.pm_buy_date,
+                                price,
+                                shares=shares,
+                                commission_usd=commission,
+                            )
+                            _after_change(
+                                f"Logged purchase for {st.session_state.pm_buy_symbol} "
+                                f"({shares:g} shares).",
+                                full_reload=True,
+                            )
                     except ValueError as exc:
                         st.error(str(exc))
                     except Exception as exc:

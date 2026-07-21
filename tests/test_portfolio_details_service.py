@@ -47,7 +47,7 @@ def test_build_rows_without_live_prices_has_no_previous_close_without_history(
     service = PortfolioDetailsService(store=portfolio_store)
 
     with (
-        patch.object(service, "_load_documents", return_value={}),
+        patch.object(service, "_load_documents", return_value=({}, {})),
         patch(
             "services.portfolio_details_service.load_portfolio_statistics_stock",
             return_value=_stats(),
@@ -104,7 +104,7 @@ def test_build_rows_without_live_prices_uses_history_previous_close(
     )
 
     with (
-        patch.object(service, "_load_documents", return_value={"KO": document}),
+        patch.object(service, "_load_documents", return_value=({"KO": document}, {})),
         patch(
             "services.portfolio_details_service.load_portfolio_statistics_stock",
             return_value=_stats(),
@@ -161,7 +161,7 @@ def test_build_rows_with_live_prices_falls_back_to_history_previous_close(
     )
 
     with (
-        patch.object(service, "_load_documents", return_value={"KO": document}),
+        patch.object(service, "_load_documents", return_value=({"KO": document}, {})),
         patch(
             "services.portfolio_details_service.load_portfolio_statistics_stock",
             return_value=_stats(),
@@ -196,7 +196,7 @@ def test_build_rows_with_live_prices_sets_previous_close(portfolio_store: Portfo
     service = PortfolioDetailsService(store=portfolio_store)
 
     with (
-        patch.object(service, "_load_documents", return_value={}),
+        patch.object(service, "_load_documents", return_value=({}, {})),
         patch(
             "services.portfolio_details_service.load_portfolio_statistics_stock",
             return_value=_stats(),
@@ -228,7 +228,7 @@ def test_build_rows_preloads_analysis_when_enabled(portfolio_store: PortfolioSto
     preload = PortfolioAnalysisPreload(stock_data={}, yield_channels={}, vector_docs={})
 
     with (
-        patch.object(service, "_load_documents", return_value={}),
+        patch.object(service, "_load_documents", return_value=({}, {})),
         patch(
             "services.portfolio_details_service.load_portfolio_statistics_stock",
             return_value=_stats(),

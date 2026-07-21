@@ -94,9 +94,15 @@ def test_add_purchase_requires_holding(
         skip_validation=True,
         enrich_vector=False,
     )
-    record = service.add_purchase("AAA", date(2024, 1, 15), 10.5)
+    record = service.add_purchase("AAA", date(2024, 1, 15), 10.5, shares=5.0, commission_usd=1.0)
     assert record.symbol == "AAA"
     assert record.price_usd == 10.5
+    assert record.shares == 5.0
+    assert record.commission_usd == 1.0
+    holding = portfolio_store.get_holding("AAA")
+    assert holding is not None
+    assert holding.shares == 6.0
+    assert holding.commission == 1.0
 
 
 def test_add_deposit(

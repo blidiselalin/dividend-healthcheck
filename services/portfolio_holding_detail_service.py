@@ -209,8 +209,8 @@ class PortfolioHoldingDetailService:
                 columns=[
                     "Date",
                     "Price $",
-                    "Est. shares",
-                    "Est. cost $",
+                    "Shares",
+                    "Cost $",
                     "Cumulative shares",
                 ]
             )
@@ -219,8 +219,8 @@ class PortfolioHoldingDetailService:
                 {
                     "Date": row.label,
                     "Price $": row.price_usd,
-                    "Est. shares": row.estimated_shares,
-                    "Est. cost $": row.estimated_cost_usd,
+                    "Shares": row.estimated_shares,
+                    "Cost $": row.estimated_cost_usd,
                     "Cumulative shares": row.cumulative_shares,
                 }
                 for row in rows

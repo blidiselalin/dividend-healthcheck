@@ -568,6 +568,7 @@ def _apply_yield_preload(result: dict[str, Any]) -> None:
     st.session_state["portfolio_yield_cache"] = result.get("yield_channels") or {}
     st.session_state["portfolio_stock_cache"] = result.get("stock_data") or {}
     st.session_state["portfolio_vector_docs"] = result.get("vector_docs") or {}
+    st.session_state["portfolio_dividend_statuses"] = result.get("dividend_statuses") or {}
     st.session_state["portfolio_analysis_ready"] = True
     st.session_state.pop("portfolio_fast_loaded", None)
     save_session_cache(force=True)
@@ -656,10 +657,15 @@ def _apply_live_reload(result: dict[str, Any]) -> None:
             },
             yield_channels=existing_yield,
             vector_docs={**existing_docs, **preload.vector_docs},
+            dividend_statuses={
+                **dict(st.session_state.get("portfolio_dividend_statuses") or {}),
+                **dict(preload.dividend_statuses or {}),
+            },
         )
         st.session_state["portfolio_details_rows"] = rows
         st.session_state["portfolio_stock_cache"] = merged_preload.stock_data
         st.session_state["portfolio_vector_docs"] = merged_preload.vector_docs
+        st.session_state["portfolio_dividend_statuses"] = merged_preload.dividend_statuses or {}
         st.session_state["portfolio_details_time"] = datetime.now()
         refresh_portfolio_risks(force=False, rows=rows, preload=merged_preload)
         save_session_cache(force=True)

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 ProgressCallback = Callable[[float, str], None]
 
@@ -23,6 +23,7 @@ class PortfolioAnalysisPreload:
     stock_data: dict[str, StockData]
     yield_channels: dict[str, YieldChannelData]
     vector_docs: dict[str, StockDocument]
+    dividend_statuses: dict[str, Any] | None = None
 
     @classmethod
     def from_caches(
@@ -30,11 +31,13 @@ class PortfolioAnalysisPreload:
         stock_data: dict[str, StockData] | None = None,
         yield_channels: dict[str, YieldChannelData] | None = None,
         vector_docs: dict[str, StockDocument] | None = None,
+        dividend_statuses: dict[str, Any] | None = None,
     ) -> PortfolioAnalysisPreload:
         return cls(
             stock_data=dict(stock_data or {}),
             yield_channels=dict(yield_channels or {}),
             vector_docs=dict(vector_docs or {}),
+            dividend_statuses=dict(dividend_statuses or {}),
         )
 
 
@@ -46,6 +49,7 @@ def preload_portfolio_analysis(
     years: int = 10,
     max_workers: int = 6,
     progress_callback: ProgressCallback | None = None,
+    dividend_statuses: dict[str, Any] | None = None,
 ) -> PortfolioAnalysisPreload:
     """
     Fetch yield-channel series and retain vector documents for every holding.
@@ -59,8 +63,9 @@ def preload_portfolio_analysis(
     from utils.stock_document_history import history_is_thin
 
     docs = dict(vector_docs)
+    statuses = dict(dividend_statuses or {})
     if not docs and symbols:
-        docs = PortfolioDetailsService()._load_documents(symbols)
+        docs, statuses = PortfolioDetailsService()._load_documents(symbols)
 
     needs_backfill = [
         symbol
@@ -78,7 +83,7 @@ def preload_portfolio_analysis(
                 else None
             ),
         )
-        docs = PortfolioDetailsService()._load_documents(symbols)
+        docs, statuses = PortfolioDetailsService()._load_documents(symbols)
 
     yield_channels: dict[str, YieldChannelData] = {}
     if not symbols:
@@ -86,6 +91,7 @@ def preload_portfolio_analysis(
             stock_data=dict(stock_data),
             yield_channels=yield_channels,
             vector_docs=dict(docs),
+            dividend_statuses=statuses,
         )
 
     total = len(symbols)
@@ -123,4 +129,5 @@ def preload_portfolio_analysis(
         stock_data=dict(stock_data),
         yield_channels=yield_channels,
         vector_docs=dict(docs),
+        dividend_statuses=statuses,
     )

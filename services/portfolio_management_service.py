@@ -263,11 +263,33 @@ class PortfolioManagementService:
         symbol: str,
         purchase_date: date,
         price_usd: float,
+        *,
+        shares: float | None = None,
+        commission_usd: float = 0.0,
     ) -> PurchaseRecord:
         normalized = self.normalize_symbol(symbol)
         if not self.portfolio.holding_exists(normalized):
             raise ValueError(f"Add {normalized} to holdings before logging purchases.")
-        record = self.journal.add_purchase(normalized, purchase_date, price_usd)
+        record = self.journal.add_purchase(
+            normalized,
+            purchase_date,
+            price_usd,
+            shares=shares,
+            commission_usd=commission_usd,
+        )
+        if shares is not None and shares > 0:
+            holding = self.portfolio.get_holding(normalized)
+            if holding is not None:
+                lot_cost = shares * price_usd + commission_usd
+                new_shares = holding.shares + shares
+                new_acquisition = holding.acquisition_value + lot_cost
+                new_avg = new_acquisition / new_shares if new_shares else holding.avg_cost_per_share
+                self.portfolio.update_holding(
+                    normalized,
+                    shares=new_shares,
+                    avg_cost_per_share=round(new_avg, 4),
+                    commission=holding.commission + commission_usd,
+                )
         sync_portfolio_to_vector_db(enrich_missing=False, symbols=[normalized])
         sync_received_dividends(db_path=self.portfolio.db_path, symbols=[normalized])
         try:

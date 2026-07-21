@@ -98,7 +98,10 @@ class PortfolioPurchaseJournalService:
                 {
                     "Date": item.label,
                     "Ticker": item.symbol,
+                    "Shares": item.shares,
                     "Price $": item.price_usd,
+                    "Commission $": item.commission_usd,
+                    "Cost $": item.lot_cost_usd,
                 }
                 for item in items
             ]
@@ -168,6 +171,22 @@ class PortfolioPurchaseJournalService:
             if not holding or not lots:
                 continue
             lots_sorted = sorted(lots, key=lambda lot: lot.purchase_date)
+            if all(lot.shares is not None and lot.shares > 0 for lot in lots_sorted):
+                for lot in lots_sorted:
+                    shares = float(lot.shares or 0.0)
+                    value = shares * lot.price_usd + lot.commission_usd
+                    estimates.append(
+                        EstimatedPurchaseLot(
+                            symbol=symbol,
+                            purchase_date=lot.purchase_date,
+                            label=lot.label,
+                            price_usd=lot.price_usd,
+                            estimated_shares=round(shares, 4),
+                            estimated_value_usd=round(value, 2),
+                        )
+                    )
+                continue
+
             shares_per_lot = holding.shares / len(lots_sorted)
             raw_values = [shares_per_lot * lot.price_usd for lot in lots_sorted]
             raw_total = sum(raw_values)
@@ -255,8 +274,8 @@ class PortfolioPurchaseJournalService:
                 {
                     "Date": lot.label,
                     "Ticker": lot.symbol,
+                    "Shares": lot.estimated_shares,
                     "Price $": lot.price_usd,
-                    "Est. shares": lot.estimated_shares,
                     "Est. value $": lot.estimated_value_usd,
                 }
                 for lot in estimates

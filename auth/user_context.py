@@ -207,6 +207,7 @@ def clear_portfolio_session_state() -> None:
         "portfolio_stock_cache",
         "portfolio_yield_cache",
         "portfolio_vector_docs",
+        "portfolio_dividend_statuses",
         "portfolio_attention_summary",
         "portfolio_risk_checked_at",
         "portfolio_risk_refresh_in_progress",

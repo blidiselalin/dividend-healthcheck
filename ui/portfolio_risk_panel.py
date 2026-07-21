@@ -34,6 +34,7 @@ def store_portfolio_payload(
     st.session_state["portfolio_stock_cache"] = preload.stock_data
     st.session_state["portfolio_yield_cache"] = preload.yield_channels
     st.session_state["portfolio_vector_docs"] = preload.vector_docs
+    st.session_state["portfolio_dividend_statuses"] = preload.dividend_statuses or {}
     st.session_state["portfolio_details_time"] = datetime.now()
     st.session_state["portfolio_analysis_ready"] = analysis_ready
     st.session_state["portfolio_show_analysis"] = True
@@ -50,6 +51,7 @@ def _session_rows_and_preload() -> (
         st.session_state.get("portfolio_stock_cache") or {},
         st.session_state.get("portfolio_yield_cache") or {},
         st.session_state.get("portfolio_vector_docs") or {},
+        st.session_state.get("portfolio_dividend_statuses") or {},
     )
     return rows, preload
 
@@ -131,6 +133,7 @@ def _rebuild_attention_from_session() -> AttentionSummary | None:
         st.session_state.get("portfolio_stock_cache", {}),
         st.session_state.get("portfolio_yield_cache", {}),
         st.session_state.get("portfolio_vector_docs", {}),
+        st.session_state.get("portfolio_dividend_statuses", {}),
     )
     monitor = PortfolioRiskMonitorService()
     summary = monitor.build_summary(rows, preload)

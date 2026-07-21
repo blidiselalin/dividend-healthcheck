@@ -45,10 +45,18 @@ class PurchaseRecord:
     purchase_date: date
     price_usd: float
     id: int | None = None
+    shares: float | None = None
+    commission_usd: float = 0.0
 
     @property
     def label(self) -> str:
         return self.purchase_date.strftime("%d %b %Y")
+
+    @property
+    def lot_cost_usd(self) -> float | None:
+        if self.shares is None or self.shares <= 0:
+            return None
+        return round(self.shares * self.price_usd + self.commission_usd, 2)
 
 
 class PurchaseJournalStore:
@@ -81,10 +89,21 @@ class PurchaseJournalStore:
                   symbol TEXT NOT NULL,
                   purchase_date TEXT NOT NULL,
                   price_usd REAL NOT NULL,
+                  shares REAL,
+                  commission_usd REAL NOT NULL DEFAULT 0,
                   UNIQUE(symbol, purchase_date, price_usd)
                 )
                 """
             )
+            column_rows = connection.execute("PRAGMA table_info(purchase_journal)").fetchall()
+            columns = {row[1] for row in column_rows}
+            if "shares" not in columns:
+                connection.execute("ALTER TABLE purchase_journal ADD COLUMN shares REAL")
+            if "commission_usd" not in columns:
+                connection.execute(
+                    "ALTER TABLE purchase_journal "
+                    "ADD COLUMN commission_usd REAL NOT NULL DEFAULT 0"
+                )
 
     def _seed_if_empty(self) -> None:
         with self._connect() as connection:
@@ -133,7 +152,7 @@ class PurchaseJournalStore:
             if connection.is_postgres:
                 rows = connection.execute(
                     """
-                    SELECT id, symbol, purchase_date, price_usd
+                    SELECT id, symbol, purchase_date, price_usd, shares, commission_usd
                     FROM purchase_journal
                     WHERE user_id = ?
                       AND purchase_date IS NOT NULL
@@ -145,7 +164,7 @@ class PurchaseJournalStore:
             else:
                 rows = connection.execute(
                     """
-                    SELECT id, symbol, purchase_date, price_usd
+                    SELECT id, symbol, purchase_date, price_usd, shares, commission_usd
                     FROM purchase_journal
                     WHERE purchase_date IS NOT NULL
                       AND TRIM(purchase_date) <> ''
@@ -178,6 +197,8 @@ class PurchaseJournalStore:
                     symbol=symbol,
                     purchase_date=purchase_date,
                     price_usd=price_usd,
+                    shares=float(row["shares"]) if row["shares"] is not None else None,
+                    commission_usd=float(row["commission_usd"] or 0.0),
                 )
             )
         return records
@@ -187,28 +208,47 @@ class PurchaseJournalStore:
         symbol: str,
         purchase_date: date,
         price_usd: float,
+        *,
+        shares: float | None = None,
+        commission_usd: float = 0.0,
     ) -> PurchaseRecord:
         symbol = symbol.strip().upper()
         if not symbol:
             raise ValueError("Symbol is required")
         if price_usd <= 0:
             raise ValueError("Price must be positive")
+        if shares is not None and shares <= 0:
+            raise ValueError("Shares must be positive")
+        if commission_usd < 0:
+            raise ValueError("Commission cannot be negative")
+
+        share_value = shares
+        commission_value = commission_usd
 
         with self._connect() as connection:
             if connection.is_postgres:
                 row = connection.execute(
                     """
-                    INSERT INTO purchase_journal (user_id, symbol, purchase_date, price_usd)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO purchase_journal (
+                      user_id, symbol, purchase_date, price_usd, shares, commission_usd
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
                     ON CONFLICT (user_id, symbol, purchase_date, price_usd) DO NOTHING
-                    RETURNING id, symbol, purchase_date, price_usd
+                    RETURNING id, symbol, purchase_date, price_usd, shares, commission_usd
                     """,
-                    (connection.user_id, symbol, purchase_date.isoformat(), price_usd),
+                    (
+                        connection.user_id,
+                        symbol,
+                        purchase_date.isoformat(),
+                        price_usd,
+                        share_value,
+                        commission_value,
+                    ),
                 ).fetchone()
                 if row is None:
                     row = connection.execute(
                         """
-                        SELECT id, symbol, purchase_date, price_usd
+                        SELECT id, symbol, purchase_date, price_usd, shares, commission_usd
                         FROM purchase_journal
                         WHERE user_id = ? AND symbol = ? AND purchase_date = ? AND price_usd = ?
                         """,
@@ -222,16 +262,24 @@ class PurchaseJournalStore:
             else:
                 cursor = connection.execute(
                     """
-                    INSERT INTO purchase_journal (symbol, purchase_date, price_usd)
-                    VALUES (?, ?, ?)
+                    INSERT INTO purchase_journal (
+                      symbol, purchase_date, price_usd, shares, commission_usd
+                    )
+                    VALUES (?, ?, ?, ?, ?)
                     ON CONFLICT(symbol, purchase_date, price_usd) DO NOTHING
                     """,
-                    (symbol, purchase_date.isoformat(), price_usd),
+                    (
+                        symbol,
+                        purchase_date.isoformat(),
+                        price_usd,
+                        share_value,
+                        commission_value,
+                    ),
                 )
                 if cursor.rowcount == 0:
                     row = connection.execute(
                         """
-                        SELECT id, symbol, purchase_date, price_usd
+                        SELECT id, symbol, purchase_date, price_usd, shares, commission_usd
                         FROM purchase_journal
                         WHERE symbol = ? AND purchase_date = ? AND price_usd = ?
                         """,
@@ -240,7 +288,7 @@ class PurchaseJournalStore:
                 else:
                     row = connection.execute(
                         """
-                        SELECT id, symbol, purchase_date, price_usd
+                        SELECT id, symbol, purchase_date, price_usd, shares, commission_usd
                         FROM purchase_journal WHERE id = ?
                         """,
                         (cursor.lastrowid,),
@@ -254,6 +302,8 @@ class PurchaseJournalStore:
             symbol=row["symbol"],
             purchase_date=parse_date(row["purchase_date"]),
             price_usd=float(row["price_usd"]),
+            shares=float(row["shares"]) if row["shares"] is not None else None,
+            commission_usd=float(row["commission_usd"] or 0.0),
         )
 
     def delete_purchase(self, purchase_id: int) -> bool:

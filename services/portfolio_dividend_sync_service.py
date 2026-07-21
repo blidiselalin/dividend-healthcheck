@@ -27,10 +27,10 @@ class DividendSyncStats:
 
 
 def _load_documents(symbols: list[str]) -> dict[str, StockDocument | None]:
-    from services.shared_market_db import load_documents
+    from services.portfolio_dividend_resolve import load_resolved_portfolio_documents
 
-    found = load_documents(symbols)
-    return {symbol: found.get(symbol.upper()) for symbol in symbols}
+    docs, _statuses = load_resolved_portfolio_documents(symbols, fetch_remote=True)
+    return docs
 
 
 def maybe_sync_received_dividends(
@@ -72,7 +72,7 @@ def sync_received_dividends(
     *,
     db_path: Path | None = None,
     symbols: list[str] | None = None,
-    fetch_nasdaq: bool = True,
+    fetch_nasdaq: bool = True,  # noqa: ARG001 — kept for callers; resolve uses remote fetch
 ) -> DividendSyncStats:
     """
     Record paid dividends for current holdings and refresh lifetime/monthly totals.
@@ -83,7 +83,6 @@ def sync_received_dividends(
     """
     from services.dividend_payment_dates import (
         clear_nasdaq_payment_cache,
-        enrich_document_payment_dates,
         reconcile_receipt_dates,
     )
 
@@ -102,12 +101,8 @@ def sync_received_dividends(
     for holding in holdings:
         symbol = holding.symbol.strip().upper()
         document = documents.get(symbol) or documents.get(holding.symbol)
-        documents[symbol] = enrich_document_payment_dates(
-            symbol,
-            document,
-            fetch_nasdaq=fetch_nasdaq,
-            reference_date=today,
-        )
+        if document is not None:
+            documents[symbol] = document
 
     reconcile_stats = reconcile_receipt_dates(
         ctx,

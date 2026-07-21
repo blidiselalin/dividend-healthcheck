@@ -307,7 +307,7 @@ def build_guest_dashboard(guest: Sequence[GuestHolding]) -> GuestDashboard:
         )
 
         symbols = [h.symbol for h in guest]
-        vector_docs = service._load_documents(symbols)
+        vector_docs, _dividend_statuses = service._load_documents(symbols)
         from services.stock_analysis_service import load_portfolio_statistics_stock
 
         stock_data: dict[str, Any] = {}

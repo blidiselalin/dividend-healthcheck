@@ -82,6 +82,8 @@ class PortfolioDetailRow:
     ex_dividend_date: date | None
     dividend_pay_date: date | None
     data_source: str
+    dividend_data_status: str | None = None
+    dividend_sources: str | None = None
     previous_close: float | None = None
     # True when the cached price is older than PRICE_STALE_MINUTES; a background
     # live-reload job will update it without blocking the first render.
@@ -117,7 +119,7 @@ class PortfolioDetailsService:
             )
         elif not symbols:
             logger.info("Portfolio empty (no holdings in database)")
-        documents = self._load_documents(symbols)
+        documents, dividend_statuses = self._load_documents(symbols)
         stats_cache: dict[str, StockData | None] = {}
         live_prices: dict[str, float | None] = {}
         previous_closes: dict[str, float | None] = {}
@@ -249,6 +251,7 @@ class PortfolioDetailsService:
                 resolved_stock_cache[holding.symbol] = stats
             prices = price_cache[holding.symbol]
             pfcf, pay_date, ex_date_override = market_cache[holding.symbol]
+            status = dividend_statuses.get(holding.symbol)
             rows.append(
                 self._build_row(
                     holding=holding,
@@ -267,6 +270,7 @@ class PortfolioDetailsService:
                     previous_close=previous_closes.get(holding.symbol),
                     price_stale=holding.symbol in price_stale_set,
                     history_thin=holding.symbol in history_thin_set,
+                    dividend_status=status,
                 )
             )
 
@@ -275,12 +279,14 @@ class PortfolioDetailsService:
                 symbols,
                 resolved_stock_cache,
                 documents,
+                dividend_statuses=dividend_statuses,
             )
         else:
             preload = PortfolioAnalysisPreload(
                 stock_data=dict(resolved_stock_cache),
                 yield_channels={},
                 vector_docs=dict(documents),
+                dividend_statuses=dict(dividend_statuses),
             )
 
         # Pass 2 (deferred): if any prices are stale, kick off a background
@@ -290,10 +296,13 @@ class PortfolioDetailsService:
 
         return rows, preload
 
-    def _load_documents(self, symbols: list[str]) -> dict[str, StockDocument]:
-        from services.shared_market_db import load_documents
+    def _load_documents(
+        self, symbols: list[str]
+    ) -> tuple[dict[str, StockDocument | None], dict[str, Any]]:
+        from services.portfolio_dividend_resolve import load_resolved_portfolio_documents
 
-        return load_documents(symbols)
+        docs, statuses = load_resolved_portfolio_documents(symbols, fetch_remote=False)
+        return docs, statuses
 
     @staticmethod
     def _schedule_deferred_live_reload(stale_symbols: list[str]) -> None:
@@ -365,7 +374,7 @@ class PortfolioDetailsService:
         missing = [row.ticker for row in rows if row.previous_close is None]
         if not missing:
             return rows
-        documents = self._load_documents(missing)
+        documents, _statuses = self._load_documents(missing)
         enriched: list[PortfolioDetailRow] = []
         for row in rows:
             if row.previous_close is not None:
@@ -398,6 +407,7 @@ class PortfolioDetailsService:
         previous_close: float | None = None,
         price_stale: bool = False,
         history_thin: bool = False,
+        dividend_status: Any | None = None,
     ) -> PortfolioDetailRow:
         current_price = live_price
         current_value = current_price * holding.shares if current_price is not None else None
@@ -432,7 +442,11 @@ class PortfolioDetailsService:
 
         score = ScoringService.calculate_score(stats) if stats else 0
         analyst_rating = self._format_analyst_rating(stats, score)
-        computed_dividend = self._format_computed_dividend(dividend_per_share, dividend_yield)
+        computed_dividend = self._format_computed_dividend(
+            dividend_per_share,
+            dividend_yield,
+            dividend_status=dividend_status,
+        )
         price_label = "live market price" if use_live_prices else "cached price (analysed stocks)"
         if has_db_stats:
             data_source = f"{price_label}; statistics from analysed stocks"
@@ -476,6 +490,16 @@ class PortfolioDetailsService:
             ex_dividend_date=ex_date,
             dividend_pay_date=dividend_pay_date,
             data_source=data_source,
+            dividend_data_status=(
+                dividend_status.missing_message
+                if dividend_status and getattr(dividend_status, "missing_message", None)
+                else None
+            ),
+            dividend_sources=(
+                dividend_status.sources_summary
+                if dividend_status and getattr(dividend_status, "sources_summary", None)
+                else None
+            ),
             previous_close=previous_close,
             price_stale=price_stale,
             history_thin=history_thin,
@@ -506,8 +530,12 @@ class PortfolioDetailsService:
     def _format_computed_dividend(
         dividend_per_share: float | None,
         dividend_yield_pct: float | None,
+        *,
+        dividend_status: Any | None = None,
     ) -> str:
         if dividend_per_share is None and dividend_yield_pct is None:
+            if dividend_status and getattr(dividend_status, "missing_message", None):
+                return "Not found"
             return "N/A"
         if dividend_per_share is None:
             return f"N/A ({dividend_yield_pct:.2f}%)"
