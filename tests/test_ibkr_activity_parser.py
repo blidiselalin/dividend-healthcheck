@@ -48,3 +48,25 @@ def test_validate_rejects_non_ibkr_file() -> None:
     issues = validate_statement(statement)
     assert has_blocking_errors(issues)
     assert any(issue.level == ImportIssueLevel.ERROR for issue in issues)
+
+
+def test_parse_dividend_with_spaced_symbol_and_ordinary_dividend_format() -> None:
+    csv_text = (
+        "Statement,Data,Title,Activity Statement\n"
+        "Open Positions,Data,Summary,Stocks,USD,SBUX,10,90,90,900\n"
+        "Open Positions,Data,Summary,Stocks,USD,ARCC,20,18,18,360\n"
+        "Dividends,Data,USD,2025-03-15,"
+        '"SBUX (US8552441094) Cash Dividend USD 0.61 (Ordinary Dividend)",6.10\n'
+        "Dividends,Data,USD,2025-06-15,"
+        '"ARCC (US04010L1035) Cash Dividend USD 0.48 (Ordinary Dividend)",9.60\n'
+    )
+    statement = parse_activity_statement_csv(csv_text)
+
+    assert not statement.issues
+    assert len(statement.dividends) == 2
+    sbux = next(d for d in statement.dividends if d.symbol == "SBUX")
+    assert sbux.per_share_usd == 0.61
+    assert sbux.gross_usd == 6.10
+    arcc = next(d for d in statement.dividends if d.symbol == "ARCC")
+    assert arcc.per_share_usd == 0.48
+    assert arcc.gross_usd == 9.60

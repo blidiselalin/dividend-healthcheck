@@ -12,8 +12,11 @@ from datetime import date, datetime
 from enum import Enum
 
 _SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
-_DIVIDEND_SYMBOL_RE = re.compile(r"^([A-Z][A-Z0-9.\-]{0,9})\(")
-_DIVIDEND_PER_SHARE_RE = re.compile(r"USD\s+([0-9]+(?:\.[0-9]+)?)\s+per Share", re.IGNORECASE)
+_DIVIDEND_SYMBOL_RE = re.compile(r"^([A-Z][A-Z0-9.\-]{0,9})\s*\(")
+_DIVIDEND_PER_SHARE_RE = re.compile(
+    r"(?:Cash Dividend\s+)?USD\s+([0-9]+(?:\.[0-9]+)?)(?:\s+per Share|\s*\(|$)",
+    re.IGNORECASE,
+)
 
 
 class ImportIssueLevel(str, Enum):
