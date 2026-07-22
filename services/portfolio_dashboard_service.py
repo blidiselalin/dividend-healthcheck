@@ -13,7 +13,10 @@ import pandas as pd
 
 from data_ingestion.deposits_store import MonthlyDeposit
 from services.portfolio_deposits_service import DepositsSummary, PortfolioDepositsService
-from services.portfolio_monthly_valuation import compute_monthly_portfolio_eur
+from services.portfolio_monthly_valuation import (
+    compute_monthly_portfolio_valuations,
+    pick_portfolio_eur_for_month,
+)
 from utils.chart_theme import (
     bottom_legend,
     evolution_chart_margins,
@@ -102,11 +105,11 @@ class PortfolioDashboardService:
         if not records:
             return self._empty_evolution_frame()
 
-        computed: dict[str, float] = {}
+        computed: dict[str, Any] = {}
         valuation_path = self._valuation_db_path(db_path)
         if use_computed_portfolio:
             try:
-                computed = compute_monthly_portfolio_eur(records, db_path=valuation_path)
+                computed = compute_monthly_portfolio_valuations(records, db_path=valuation_path)
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Monthly portfolio valuation skipped: %s", exc)
 
@@ -121,7 +124,7 @@ class PortfolioDashboardService:
 
             calculated = computed.get(item.period_key)
             stored = item.portfolio_eur if item.portfolio_eur > 0 else None
-            portfolio = calculated if calculated and calculated > 0 else stored
+            portfolio = pick_portfolio_eur_for_month(stored=stored, valuation=calculated)
             gain_vs_deposits = round(portfolio - running, 2) if portfolio is not None else None
             mom_pct = None
             if portfolio is not None and prev_portfolio is not None and prev_portfolio > 0:
@@ -135,7 +138,12 @@ class PortfolioDashboardService:
                     "deposit_usd": item.deposit_usd,
                     "portfolio_eur": portfolio,
                     "portfolio_eur_stored": stored,
-                    "portfolio_eur_computed": calculated,
+                    "portfolio_eur_computed": (
+                        calculated.portfolio_eur if calculated is not None else None
+                    ),
+                    "portfolio_coverage": (
+                        round(calculated.coverage, 4) if calculated is not None else None
+                    ),
                     "cumulative_deposits_eur": running,
                     "gain_vs_deposits_eur": gain_vs_deposits,
                     "mom_change_pct": mom_pct,

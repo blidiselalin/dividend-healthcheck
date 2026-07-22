@@ -15,7 +15,12 @@ from data_ingestion.portfolio_store import PortfolioStore
 from data_ingestion.purchase_journal_store import PurchaseJournalStore
 from services.portfolio_dashboard_service import PortfolioDashboardService
 from services.portfolio_deposits_service import PortfolioDepositsService
-from services.portfolio_monthly_valuation import compute_monthly_portfolio_eur
+from services.portfolio_monthly_valuation import (
+    compute_monthly_portfolio_eur,
+    fx_rates_carry_forward,
+    pick_portfolio_eur_for_month,
+    shares_from_records,
+)
 
 
 def _price_doc(symbol: str, points: list[tuple[date, float]]) -> StockDocument:
@@ -89,7 +94,75 @@ def test_compute_monthly_portfolio_eur_from_journal_and_prices(tmp_path: Path) -
 
     assert values["2025-01"] == pytest.approx(10 * 50.0 * (1000 / 1100), rel=0.01)
     assert values["2025-02"] == pytest.approx(10 * 52.0 * (500 / 550), rel=0.01)
-    assert values["2025-03"] == pytest.approx(15 * 60.0 * 0.92, rel=0.01)
+    assert values["2025-03"] == pytest.approx(15 * 60.0 * (500 / 550), rel=0.01)
+
+
+def test_shares_from_records_accounts_for_sells(
+    journal_store: PurchaseJournalStore,
+) -> None:
+    journal_store.add_purchase(
+        "AAPL",
+        date(2025, 1, 10),
+        150.0,
+        shares=10.0,
+        side="buy",
+        source="ibkr",
+    )
+    journal_store.add_purchase(
+        "AAPL",
+        date(2025, 6, 1),
+        170.0,
+        shares=4.0,
+        side="sell",
+        source="ibkr",
+    )
+    records = journal_store.list_purchases(portfolio_only=False)
+    assert shares_from_records(records, date(2025, 3, 31)) == pytest.approx(10.0)
+    assert shares_from_records(records, date(2025, 7, 31)) == pytest.approx(6.0)
+
+
+def test_pick_portfolio_prefers_stored_when_price_coverage_incomplete() -> None:
+    from services.portfolio_monthly_valuation import MonthPortfolioValuation
+
+    partial = MonthPortfolioValuation(
+        portfolio_usd=1000.0,
+        portfolio_eur=900.0,
+        symbols_held=3,
+        symbols_priced=2,
+    )
+    assert pick_portfolio_eur_for_month(stored=1200.0, valuation=partial) == 1200.0
+    full = MonthPortfolioValuation(
+        portfolio_usd=1000.0,
+        portfolio_eur=900.0,
+        symbols_held=2,
+        symbols_priced=2,
+    )
+    assert pick_portfolio_eur_for_month(stored=1200.0, valuation=full) == 900.0
+
+
+def test_fx_rates_carry_forward_from_prior_deposit_month() -> None:
+    from data_ingestion.deposits_store import MonthlyDeposit
+
+    rows = [
+        MonthlyDeposit(
+            period=date(2025, 1, 1),
+            label="Jan",
+            deposit_eur=1000.0,
+            deposit_usd=1100.0,
+            portfolio_eur=0.0,
+            sort_order=1,
+        ),
+        MonthlyDeposit(
+            period=date(2025, 2, 1),
+            label="Feb",
+            deposit_eur=0.0,
+            deposit_usd=0.0,
+            portfolio_eur=0.0,
+            sort_order=2,
+        ),
+    ]
+    rates = fx_rates_carry_forward(rows)
+    assert rates["2025-02"] == pytest.approx(1000 / 1100)
 
 
 def test_evolution_chart_uses_full_cumulative_deposit_timeline(tmp_path: Path) -> None:

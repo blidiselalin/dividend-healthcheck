@@ -85,3 +85,36 @@ def test_filter_attention_summary_drops_sold_symbols() -> None:
     )
     filtered = filter_attention_summary(summary, allowed_symbols={"AAPL"})
     assert [item.symbol for item in filtered.risk_items] == ["AAPL"]
+
+
+def test_reconcile_closed_holdings_drops_fully_sold_symbol(tmp_path) -> None:
+    from data_ingestion.portfolio_store import PortfolioStore
+    from data_ingestion.purchase_journal_store import PurchaseJournalStore
+    from services.portfolio_open_holdings import reconcile_closed_holdings
+
+    db = tmp_path / "portfolio.db"
+    portfolio = PortfolioStore(db_path=db, seed=False)
+    journal = PurchaseJournalStore(db_path=db, seed=False)
+    portfolio.upsert_holding("AMCR", shares=20.0, avg_cost_per_share=10.0)
+    journal.add_purchase(
+        "AMCR",
+        date(2024, 4, 1),
+        10.0,
+        shares=20.0,
+        side="buy",
+        source="ibkr",
+    )
+    journal.add_purchase(
+        "AMCR",
+        date(2024, 5, 1),
+        11.0,
+        shares=20.0,
+        side="sell",
+        source="ibkr",
+    )
+
+    dropped = reconcile_closed_holdings(db_path=db)
+
+    assert dropped == ["AMCR"]
+    assert portfolio.list_open_holdings() == []
+    assert len(journal.list_purchases(portfolio_only=False)) == 2

@@ -32,11 +32,11 @@ def _default_seed() -> bool:
 
 
 def portfolio_symbols(db_path: Path | None = None) -> set[str]:
-    """Tickers currently in the portfolio holdings table."""
+    """Tickers with an open position (positive share count) in holdings."""
     from data_ingestion.portfolio_store import PortfolioStore
 
     store = PortfolioStore(db_path=db_path, seed=False) if db_path else PortfolioStore(seed=False)
-    return {holding.symbol for holding in store.list_holdings()}
+    return {holding.symbol for holding in store.list_holdings() if holding.shares > 0}
 
 
 @dataclass(frozen=True)
@@ -106,8 +106,7 @@ class PurchaseJournalStore:
                 connection.execute("ALTER TABLE purchase_journal ADD COLUMN shares REAL")
             if "commission_usd" not in columns:
                 connection.execute(
-                    "ALTER TABLE purchase_journal "
-                    "ADD COLUMN commission_usd REAL NOT NULL DEFAULT 0"
+                    "ALTER TABLE purchase_journal ADD COLUMN commission_usd REAL NOT NULL DEFAULT 0"
                 )
             if "side" not in columns:
                 connection.execute(
@@ -115,8 +114,7 @@ class PurchaseJournalStore:
                 )
             if "source" not in columns:
                 connection.execute(
-                    "ALTER TABLE purchase_journal "
-                    "ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'"
+                    "ALTER TABLE purchase_journal ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'"
                 )
 
     def _seed_if_empty(self) -> None:

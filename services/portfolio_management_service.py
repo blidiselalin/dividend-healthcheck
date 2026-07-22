@@ -266,8 +266,12 @@ class PortfolioManagementService:
         *,
         shares: float | None = None,
         commission_usd: float = 0.0,
+        side: str = "buy",
     ) -> PurchaseRecord:
         normalized = self.normalize_symbol(symbol)
+        side_value = side.strip().lower() or "buy"
+        if side_value not in {"buy", "sell"}:
+            raise ValueError("Side must be 'buy' or 'sell'")
         if not self.portfolio.holding_exists(normalized):
             raise ValueError(f"Add {normalized} to holdings before logging purchases.")
         record = self.journal.add_purchase(
@@ -276,20 +280,58 @@ class PortfolioManagementService:
             price_usd,
             shares=shares,
             commission_usd=commission_usd,
+            side=side_value,
         )
         if shares is not None and shares > 0:
             holding = self.portfolio.get_holding(normalized)
             if holding is not None:
-                lot_cost = shares * price_usd + commission_usd
-                new_shares = holding.shares + shares
-                new_acquisition = holding.acquisition_value + lot_cost
-                new_avg = new_acquisition / new_shares if new_shares else holding.avg_cost_per_share
-                self.portfolio.update_holding(
-                    normalized,
-                    shares=new_shares,
-                    avg_cost_per_share=round(new_avg, 4),
-                    commission=holding.commission + commission_usd,
-                )
+                if side_value == "sell":
+                    if shares > holding.shares:
+                        raise ValueError(
+                            f"Cannot sell {shares:g} shares of {normalized}; "
+                            f"only {holding.shares:g} held."
+                        )
+                    proceeds = shares * price_usd - commission_usd
+                    new_shares = round(holding.shares - shares, 6)
+                    if new_shares <= 0:
+                        self.portfolio.drop_holding(normalized)
+                    else:
+                        remaining_ratio = new_shares / holding.shares
+                        new_acquisition = round(holding.acquisition_value * remaining_ratio, 2)
+                        new_avg = (
+                            new_acquisition / new_shares
+                            if new_shares
+                            else holding.avg_cost_per_share
+                        )
+                        self.portfolio.update_holding(
+                            normalized,
+                            shares=new_shares,
+                            avg_cost_per_share=round(new_avg, 4),
+                            commission=holding.commission + commission_usd,
+                        )
+                    logger.debug(
+                        "Recorded sell for %s (%g shares, proceeds $%.2f)",
+                        normalized,
+                        shares,
+                        proceeds,
+                    )
+                else:
+                    lot_cost = shares * price_usd + commission_usd
+                    new_shares = holding.shares + shares
+                    new_acquisition = holding.acquisition_value + lot_cost
+                    new_avg = (
+                        new_acquisition / new_shares if new_shares else holding.avg_cost_per_share
+                    )
+                    self.portfolio.update_holding(
+                        normalized,
+                        shares=new_shares,
+                        avg_cost_per_share=round(new_avg, 4),
+                        commission=holding.commission + commission_usd,
+                    )
+        if side_value == "sell":
+            from services.portfolio_open_holdings import reconcile_closed_holdings
+
+            reconcile_closed_holdings(db_path=self.portfolio.db_path)
         sync_portfolio_to_vector_db(enrich_missing=False, symbols=[normalized])
         sync_received_dividends(db_path=self.portfolio.db_path, symbols=[normalized])
         try:
@@ -356,4 +398,4 @@ class PortfolioManagementService:
         return round(value_usd * fx, 2)
 
     def list_holdings(self) -> list[PortfolioHolding]:
-        return self.portfolio.list_holdings()
+        return self.portfolio.list_open_holdings()

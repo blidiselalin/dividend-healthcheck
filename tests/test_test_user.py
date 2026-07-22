@@ -58,6 +58,9 @@ def test_apply_example_action_holding(monkeypatch: pytest.MonkeyPatch) -> None:
         def get(self, key: str, default: Any = None) -> Any:
             return session.get(key, default)
 
+        def pop(self, key: str, default: Any = None) -> Any:
+            return session.pop(key, default)
+
     monkeypatch.setattr("ui.portfolio_home.st.session_state", FakeSession())
     from ui.portfolio_home import PORTFOLIO_VIEW_HOLDING
 

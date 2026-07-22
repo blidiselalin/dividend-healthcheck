@@ -73,12 +73,12 @@ class PortfolioPurchaseJournalService:
             self.journal = journal_store or PurchaseJournalStore(db_path=path, seed=False)
             self.portfolio = portfolio_store or PortfolioStore(db_path=path, seed=False)
 
-    def list_purchases(self) -> list[PurchaseRecord]:
-        return self.journal.list_purchases(portfolio_only=True)
+    def list_purchases(self, *, portfolio_only: bool = False) -> list[PurchaseRecord]:
+        return self.journal.list_purchases(portfolio_only=portfolio_only)
 
     def summarize(self, records: list[PurchaseRecord] | None = None) -> PurchaseJournalSummary:
         items = records if records is not None else self.list_purchases()
-        holdings = self.portfolio.list_holdings()
+        holdings = self.portfolio.list_open_holdings()
         if not items:
             return PurchaseJournalSummary(0, 0, "—", "—", len(holdings))
 
@@ -108,30 +108,38 @@ class PortfolioPurchaseJournalService:
             ]
         )
 
-    def by_symbol_dataframe(self, records: list[PurchaseRecord] | None = None) -> pd.DataFrame:
+    def by_symbol_dataframe(
+        self,
+        records: list[PurchaseRecord] | None = None,
+        *,
+        include_closed: bool = True,
+    ) -> pd.DataFrame:
         items = records if records is not None else self.list_purchases()
-        holdings = {h.symbol: h for h in self.portfolio.list_holdings()}
+        holdings = {h.symbol: h for h in self.portfolio.list_open_holdings()}
         grouped: dict[str, list[PurchaseRecord]] = defaultdict(list)
         for item in items:
             grouped[item.symbol].append(item)
 
         rows = []
-        for symbol in sorted(holdings):
+        symbols = sorted(set(grouped) | (set(holdings) if include_closed else set()))
+        for symbol in symbols:
             lots = grouped.get(symbol, [])
-            if not lots:
+            if not lots and symbol not in holdings:
+                continue
+            if not include_closed and symbol not in holdings:
                 continue
             dates = ", ".join(lot.label for lot in lots)
             prices = ", ".join(f"${lot.price_usd:.2f}" for lot in lots)
-            holding = holdings[symbol]
+            holding = holdings.get(symbol)
             rows.append(
                 {
                     "Ticker": symbol,
-                    "Shares": holding.shares,
-                    "# Purchases": len(lots),
-                    "Purchase dates": dates,
+                    "Shares": holding.shares if holding is not None else 0.0,
+                    "# Trades": len(lots),
+                    "Trade dates": dates,
                     "Prices $": prices,
                     "Avg price $": round(sum(lot.price_usd for lot in lots) / len(lots), 2),
-                    "DB avg cost $": holding.avg_cost_per_share,
+                    "DB avg cost $": holding.avg_cost_per_share if holding is not None else None,
                 }
             )
         return pd.DataFrame(rows)
@@ -146,24 +154,30 @@ class PortfolioPurchaseJournalService:
         )
 
     def symbols_without_journal(self) -> list[str]:
-        purchases = {item.symbol for item in self.list_purchases()}
+        purchases = {item.symbol for item in self.list_purchases(portfolio_only=True)}
         return sorted(
             holding.symbol
-            for holding in self.portfolio.list_holdings()
+            for holding in self.portfolio.list_open_holdings()
             if holding.symbol not in purchases
         )
 
     def build_estimated_lots(
-        self, records: list[PurchaseRecord] | None = None
+        self,
+        records: list[PurchaseRecord] | None = None,
+        *,
+        include_closed: bool = False,
     ) -> list[EstimatedPurchaseLot]:
         """
-        Split each holding's shares evenly across journal purchases, then scale
+        Split each holding's shares across journal purchases, then scale
         lot values so they sum to the portfolio DB acquisition value.
+
+        When ``include_closed`` is False, symbols removed from holdings after a
+        full sell are omitted from portfolio analytics but remain in the journal.
         """
         items = records
         if items is None:
             items = self.journal.list_purchases(portfolio_only=False)
-        holdings = {h.symbol: h for h in self.portfolio.list_holdings()}
+        holdings = {h.symbol: h for h in self.portfolio.list_open_holdings()}
         grouped: dict[str, list[PurchaseRecord]] = defaultdict(list)
         for item in items:
             grouped[item.symbol].append(item)
@@ -171,10 +185,14 @@ class PortfolioPurchaseJournalService:
         estimates: list[EstimatedPurchaseLot] = []
         for symbol, lots in grouped.items():
             holding = holdings.get(symbol)
+            if not include_closed and holding is None:
+                continue
             lots_sorted = sorted(lots, key=lambda lot: lot.purchase_date)
-            if all(lot.shares is not None and lot.shares > 0 for lot in lots_sorted):
+            if any(lot.shares is not None and lot.shares > 0 for lot in lots_sorted):
                 for lot in lots_sorted:
-                    shares = float(lot.shares or 0.0)
+                    if lot.shares is None or lot.shares <= 0:
+                        continue
+                    shares = float(lot.shares)
                     signed = -shares if lot.side == "sell" else shares
                     value = shares * lot.price_usd + lot.commission_usd
                     if lot.side == "sell":
@@ -220,9 +238,9 @@ class PortfolioPurchaseJournalService:
     def acquisition_split(
         self, records: list[PurchaseRecord] | None = None
     ) -> list[SymbolAcquisitionSplit]:
-        items = records if records is not None else self.list_purchases()
-        holdings = {h.symbol: h for h in self.portfolio.list_holdings()}
-        estimates = self.build_estimated_lots(items)
+        items = records if records is not None else self.list_purchases(portfolio_only=True)
+        holdings = {h.symbol: h for h in self.portfolio.list_open_holdings()}
+        estimates = self.build_estimated_lots(items, include_closed=False)
 
         value_by_symbol: dict[str, float] = defaultdict(float)
         lots_by_symbol: dict[str, int] = defaultdict(int)
@@ -235,7 +253,9 @@ class PortfolioPurchaseJournalService:
 
         splits: list[SymbolAcquisitionSplit] = []
         for symbol in sorted(value_by_symbol, key=lambda x: value_by_symbol[x], reverse=True):
-            holding = holdings[symbol]
+            holding = holdings.get(symbol)
+            if holding is None:
+                continue
             journal_val = value_by_symbol[symbol]
             splits.append(
                 SymbolAcquisitionSplit(

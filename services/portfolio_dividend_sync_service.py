@@ -97,7 +97,7 @@ def sync_received_dividends(
     )
 
     ctx = create_portfolio_context(db_path=db_path)
-    holdings = ctx.portfolio.list_holdings()
+    holdings = ctx.portfolio.list_open_holdings()
     if symbols:
         wanted = {symbol.strip().upper() for symbol in symbols}
         holdings = [holding for holding in holdings if holding.symbol in wanted]

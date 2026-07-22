@@ -127,7 +127,7 @@ def preload_portfolio_analysis(
 
     total = len(symbols)
     completed = 0
-    chart_base = 0.4 if needs_backfill else 0.0
+    chart_base = 0.4 if (allow_library_backfill and needs_backfill) else 0.0
     if progress_callback and total:
         progress_callback(chart_base, f"0/{total} yield charts")
 

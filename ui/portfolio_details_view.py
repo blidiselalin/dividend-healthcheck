@@ -377,7 +377,7 @@ class PortfolioDetailsView:
         preload: PortfolioAnalysisPreload,
     ) -> None:
         """Monthly dividend cash forecast and payer chart with drill-down."""
-        holdings = PortfolioStore().list_holdings()
+        holdings = PortfolioStore().list_open_holdings()
         if not holdings:
             return
 
@@ -859,7 +859,7 @@ class PortfolioDetailsView:
         )
 
         portfolio_symbols = {
-            holding.symbol.upper() for holding in PortfolioStore(seed=False).list_holdings()
+            holding.symbol.upper() for holding in PortfolioStore(seed=False).list_open_holdings()
         }
         if symbol in portfolio_symbols:
             st.info(
@@ -1330,8 +1330,8 @@ class PortfolioDetailsView:
 
         st.markdown("##### Portfolio evolution (€)")
         st.caption(
-            "Green line = month-end portfolio value (from journal + library prices when available) · "
-            "dotted line = cumulative deposits"
+            "Green line = month-end stock value (journal shares × library prices, EUR converted at "
+            "deposit FX). Uses IBKR/manual Portfolio € when library prices are incomplete."
         )
         evolution_chart = service.create_evolution_chart(deposits)
         if evolution_chart:
@@ -1623,19 +1623,22 @@ class PortfolioDetailsView:
 
     @classmethod
     def _render_purchase_journal_page(cls) -> None:
-        """Chronological log of stock purchases (current portfolio only)."""
+        """Chronological log of stock purchases and sells (including closed positions)."""
         service = PortfolioPurchaseJournalService()
         records = service.list_purchases()
         summary = service.summarize(records)
 
         st.markdown("##### Summary")
-        st.caption("Excludes removed tickers: AMCR, CCI, INTC, LEG, OHI, VFC, WBA.")
+        st.caption(
+            "Includes buy and sell rows from IBKR import and manual entries. "
+            "Fully sold tickers stay in the journal even when removed from holdings."
+        )
 
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             st.metric("Recorded transactions", summary.total_lots)
         with c2:
-            st.metric("Tickers with purchases", summary.symbols_with_buys)
+            st.metric("Tickers with trades", summary.symbols_with_buys)
         with c3:
             st.metric("First purchase", summary.first_purchase)
         with c4:
@@ -1645,14 +1648,14 @@ class PortfolioDetailsView:
         if missing:
             st.info("No journal data (but in portfolio): " + ", ".join(missing))
 
-        st.markdown("##### Purchase tables")
+        st.markdown("##### Trade tables")
         by_symbol = service.by_symbol_dataframe(records)
         st.dataframe(
             by_symbol,
             use_container_width=True,
             hide_index=True,
             column_config={
-                "Shares": st.column_config.NumberColumn(format="%.0f"),
+                "Shares": st.column_config.NumberColumn(format="%.4f"),
                 "Avg price $": st.column_config.NumberColumn(format="$%.2f"),
                 "DB avg cost $": st.column_config.NumberColumn(format="$%.2f"),
             },
@@ -1662,7 +1665,12 @@ class PortfolioDetailsView:
             chrono,
             use_container_width=True,
             hide_index=True,
-            column_config={"Price $": st.column_config.NumberColumn(format="$%.2f")},
+            column_config={
+                "Price $": st.column_config.NumberColumn(format="$%.2f"),
+                "Commission $": st.column_config.NumberColumn(format="$%.2f"),
+                "Cost $": st.column_config.NumberColumn(format="$%.2f"),
+                "Shares": st.column_config.NumberColumn(format="%+.4f"),
+            },
         )
         st.download_button(
             "Download purchase journal CSV",

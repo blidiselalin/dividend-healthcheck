@@ -235,6 +235,9 @@ def apply_import(  # noqa: C901
 
     _report(progress, "Syncing monthly dividend totals…", 0.92)
     _sync_monthly_net_from_receipts(ctx)
+    from services.portfolio_open_holdings import reconcile_closed_holdings
+
+    reconcile_closed_holdings(db_path=db_path)
     _report(progress, "Finalizing import…", 0.96)
     _finalize_broker_import(ctx, db_path=db_path)
     _report(progress, "Import complete", 1.0)

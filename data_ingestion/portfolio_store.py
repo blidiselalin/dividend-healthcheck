@@ -144,6 +144,10 @@ class PortfolioStore:
             for row in rows
         ]
 
+    def list_open_holdings(self) -> list[PortfolioHolding]:
+        """Positions with a positive share count."""
+        return [holding for holding in self.list_holdings() if holding.shares > 0]
+
     def get_holding(self, symbol: str) -> PortfolioHolding | None:
         symbol = symbol.strip().upper()
         with self._connect() as connection:
@@ -354,6 +358,9 @@ class PortfolioStore:
         new_avg = (
             avg_cost_per_share if avg_cost_per_share is not None else current.avg_cost_per_share
         )
+        if new_shares <= 0:
+            self.drop_holding(symbol)
+            return None
         return self.upsert_holding(
             symbol,
             shares=new_shares,

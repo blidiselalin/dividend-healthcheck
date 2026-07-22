@@ -75,7 +75,7 @@ class PortfolioDividendGrowthService:
         """Return {symbol: first_year_owned} from the purchase journal."""
         result: dict[str, int] = {}
         try:
-            for purchase in self.journal_store.list_purchases():
+            for purchase in self.journal_store.list_purchases(portfolio_only=False):
                 year = purchase.purchase_date.year
                 if purchase.symbol not in result or year < result[purchase.symbol]:
                     result[purchase.symbol] = year
@@ -147,7 +147,7 @@ class PortfolioDividendGrowthService:
         return float(round(((end_val / start_val) ** (1 / span) - 1) * 100, 2))
 
     def build_symbol_growth(self, since_year: int = SINCE_YEAR) -> list[SymbolDividendGrowth]:
-        holdings = {h.symbol: h for h in self.portfolio.list_holdings()}
+        holdings = {h.symbol: h for h in self.portfolio.list_open_holdings()}
         if not holdings:
             return []
 

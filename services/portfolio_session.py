@@ -229,7 +229,9 @@ def refresh_session_if_portfolio_db_changed(*, force: bool = False) -> bool:
         from data_ingestion.portfolio_store import PortfolioStore
 
         store = PortfolioStore(db_path=resolve_current_portfolio_db(), seed=False)
-        db_symbols = {holding.symbol for holding in store.list_holdings()}
+        from services.portfolio_open_holdings import open_portfolio_symbols
+
+        db_symbols = open_portfolio_symbols(db_path=store.db_path)
         session_symbols = {
             getattr(row, "ticker", None) for row in st.session_state["portfolio_details_rows"]
         }

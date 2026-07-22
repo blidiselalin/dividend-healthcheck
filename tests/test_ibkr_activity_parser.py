@@ -8,6 +8,7 @@ import pytest
 
 from services.ibkr_activity_parser import (
     ImportIssueLevel,
+    build_monthly_deposits,
     has_blocking_errors,
     parse_activity_statement_csv,
     validate_statement,
@@ -32,7 +33,7 @@ def test_parse_sample_statement(sample_csv: str) -> None:
     assert sells[0].symbol == "AAPL"
     assert sells[0].quantity == 3.0
     assert len(statement.dividends) == 2
-    assert len(statement.cash_transfers) == 3
+    assert len(statement.cash_transfers) == 2
     assert statement.nav_total == pytest.approx(3500.0)
     assert statement.fx_rates["EUR"] == pytest.approx(0.92)
     aapl_div = next(d for d in statement.dividends if d.symbol == "AAPL")
@@ -48,8 +49,6 @@ def test_statement_symbol_scope_includes_trades_and_dividends(sample_csv: str) -
 
 
 def test_build_monthly_deposits_aggregates_inflows(sample_csv: str) -> None:
-    from services.ibkr_activity_parser import build_monthly_deposits
-
     statement = parse_activity_statement_csv(sample_csv)
     monthly = build_monthly_deposits(statement)
     assert len(monthly) == 2
@@ -131,3 +130,46 @@ def test_parse_skips_forex_trades() -> None:
     statement = parse_activity_statement_csv(csv_text)
     assert len(statement.trades) == 1
     assert statement.forex_trades_skipped == 1
+
+
+def test_parse_eur_base_deposits_with_header_and_fx() -> None:
+    csv_text = (
+        "Statement,Data,Title,Activity Statement\n"
+        "Account Information,Data,Base Currency,EUR\n"
+        "Net Asset Value,Header,Asset Class,Prior Total,Current Long,"
+        "Current Short,Current Total,Change\n"
+        "Net Asset Value,Data,Total,64658.07,99084.96,0,99084.96,34426.88\n"
+        "Deposits & Withdrawals,Header,Currency,Settle Date,Description,Amount\n"
+        "Deposits & Withdrawals,Data,EUR,2025-02-13,Electronic Fund Transfer,2500\n"
+        "Deposits & Withdrawals,Data,EUR,2025-02-17,Electronic Fund Transfer,5300\n"
+        "Deposits & Withdrawals,Data,Total,,,7800\n"
+        "Deposits & Withdrawals,Data,USD,2025-02-03,Internal (Transfer to U15587745),4.21\n"
+        "Deposits & Withdrawals,Data,Total,,,4.21\n"
+        "Deposits & Withdrawals,Data,Total in EUR,,,4.01\n"
+    )
+    statement = parse_activity_statement_csv(csv_text)
+    assert statement.meta.base_currency == "EUR"
+    assert statement.nav_total == pytest.approx(99084.96)
+    assert len(statement.cash_transfers) == 2
+    assert statement.deposits_fx_eur_per_usd == pytest.approx(4.01 / 4.21)
+
+    monthly = build_monthly_deposits(statement)
+    assert len(monthly) == 1
+    feb = monthly[0]
+    assert feb.deposit_eur == 7800.0
+    assert feb.deposit_usd == pytest.approx(7800.0 * (4.21 / 4.01))
+    assert feb.portfolio_eur == pytest.approx(99084.96)
+
+
+def test_parse_deposits_with_asset_category_column() -> None:
+    csv_text = (
+        "Statement,Data,Title,Activity Statement\n"
+        "Deposits & Withdrawals,Header,Asset Category,Currency,Settle Date,"
+        "Description,Amount\n"
+        "Deposits & Withdrawals,Data,Deposits & Withdrawals,EUR,2025-03-05,"
+        "Electronic Fund Transfer,1800\n"
+    )
+    statement = parse_activity_statement_csv(csv_text)
+    assert len(statement.cash_transfers) == 1
+    assert statement.cash_transfers[0].currency == "EUR"
+    assert statement.cash_transfers[0].amount == 1800.0

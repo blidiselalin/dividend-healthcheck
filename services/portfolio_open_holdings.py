@@ -5,16 +5,59 @@ Active (open) portfolio positions — exclude fully sold names from analysis UI.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from data_ingestion.purchase_journal_store import PurchaseRecord
     from services.portfolio_analysis_preload import PortfolioAnalysisPreload
     from services.portfolio_attention_service import AttentionItem, AttentionSummary
     from services.portfolio_details_service import PortfolioDetailRow
 else:
     AttentionItem = object
     AttentionSummary = object
+    PurchaseRecord = object
+
+
+def net_shares_for_symbol(records: Sequence[PurchaseRecord], symbol: str) -> float | None:
+    """
+    Net share balance from explicit buy/sell journal rows.
+
+    Returns None when the symbol has no share-aware journal entries.
+    """
+    symbol_records = [record for record in records if record.symbol == symbol.upper()]
+    if not symbol_records:
+        return None
+    if not any(record.shares is not None and record.shares > 0 for record in symbol_records):
+        return None
+    from services.portfolio_monthly_valuation import shares_from_records
+
+    return shares_from_records(list(symbol_records), date.max)
+
+
+def reconcile_closed_holdings(*, db_path: Path | None = None) -> list[str]:
+    """
+    Drop holdings with zero shares or a fully sold share-aware journal balance.
+
+    Journal rows are kept for historical views.
+    """
+    from services.portfolio_context import create_portfolio_context
+
+    ctx = create_portfolio_context(db_path=db_path)
+    records = ctx.journal.list_purchases(portfolio_only=False)
+    dropped: list[str] = []
+    for holding in list(ctx.portfolio.list_holdings()):
+        symbol = holding.symbol
+        if holding.shares <= 0:
+            ctx.portfolio.drop_holding(symbol)
+            dropped.append(symbol)
+            continue
+        net = net_shares_for_symbol(records, symbol)
+        if net is not None and net <= 0:
+            ctx.portfolio.drop_holding(symbol)
+            dropped.append(symbol)
+    return dropped
 
 
 def open_portfolio_symbols(*, db_path: Path | None = None) -> set[str]:

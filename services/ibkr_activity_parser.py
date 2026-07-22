@@ -104,6 +104,7 @@ class IBKRActivityStatement:
     cash_transfers: list[IBKRCashTransfer] = field(default_factory=list)
     fx_rates: dict[str, float] = field(default_factory=dict)
     nav_total: float | None = None
+    deposits_fx_eur_per_usd: float | None = None
     issues: list[ImportIssue] = field(default_factory=list)
     forex_trades_skipped: int = 0
 
@@ -158,6 +159,44 @@ def _normalize_currency(value: str) -> str | None:
     return None
 
 
+def _header_map(row: list[str]) -> dict[str, int]:
+    return {column.strip(): index for index, column in enumerate(row) if column.strip()}
+
+
+def _cell(
+    row: list[str],
+    header_map: dict[str, int],
+    *names: str,
+    fallback_idx: int | None = None,
+) -> str | None:
+    for name in names:
+        index = header_map.get(name)
+        if index is not None and index < len(row):
+            value = row[index].strip()
+            if value:
+                return value
+    if fallback_idx is not None and fallback_idx < len(row):
+        value = row[fallback_idx].strip()
+        return value or None
+    return None
+
+
+def _is_internal_transfer(description: str) -> bool:
+    lowered = description.strip().lower()
+    return lowered.startswith("internal (transfer")
+
+
+def _statement_eur_per_usd(statement: IBKRActivityStatement) -> float | None:
+    if statement.deposits_fx_eur_per_usd and statement.deposits_fx_eur_per_usd > 0:
+        return statement.deposits_fx_eur_per_usd
+    base = (statement.meta.base_currency or "USD").strip().upper()
+    if base == "USD":
+        eur_rate = statement.fx_rates.get("EUR")
+        if eur_rate and eur_rate > 0:
+            return eur_rate
+    return None
+
+
 def _month_label(year: int, month: int) -> str:
     import calendar
 
@@ -199,14 +238,17 @@ def build_monthly_deposits(statement: IBKRActivityStatement) -> list[IBKRMonthly
     nav_eur = _nav_to_portfolio_eur(statement)
     last_month = max(totals)
     rows: list[IBKRMonthlyDeposit] = []
+    eur_per_usd = _statement_eur_per_usd(statement)
+    usd_per_eur = (1.0 / eur_per_usd) if eur_per_usd and eur_per_usd > 0 else None
+
     for year, month in sorted(totals):
         bucket = totals[(year, month)]
         deposit_usd = round(bucket.get("USD", 0.0), 2)
         deposit_eur = round(bucket.get("EUR", 0.0), 2)
-        if deposit_eur == 0.0 and deposit_usd > 0:
-            eur_rate = statement.fx_rates.get("EUR")
-            if eur_rate and eur_rate > 0:
-                deposit_eur = round(deposit_usd * eur_rate, 2)
+        if deposit_eur == 0.0 and deposit_usd > 0 and eur_per_usd:
+            deposit_eur = round(deposit_usd * eur_per_usd, 2)
+        elif deposit_usd == 0.0 and deposit_eur > 0 and usd_per_eur:
+            deposit_usd = round(deposit_eur * usd_per_eur, 2)
         portfolio_eur = nav_eur if (year, month) == last_month and nav_eur > 0 else 0.0
         rows.append(
             IBKRMonthlyDeposit(
@@ -230,6 +272,10 @@ def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:
 
     reader = csv.reader(io.StringIO(text))
     statement = IBKRActivityStatement()
+    deposits_header_map: dict[str, int] = {}
+    nav_header_map: dict[str, int] = {}
+    deposits_subsection: str | None = None
+    deposits_usd_gross: float | None = None
 
     for row in reader:
         if not row:
@@ -375,13 +421,68 @@ def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:
                     description=description,
                 )
             )
-        elif section == "Deposits & Withdrawals" and len(row) >= 6 and row[1] == "Data":
-            currency = _normalize_currency(row[2])
-            transfer_date = _parse_trade_date(row[3]) or _parse_pay_date(row[3])
-            description = row[4].strip()
-            amount = _parse_float(row[5])
-            if currency is None or transfer_date is None or amount is None or amount == 0:
+        elif section == "Deposits & Withdrawals" and len(row) >= 4:
+            if row[1] == "Header":
+                deposits_header_map = _header_map(row)
+                deposits_subsection = None
                 continue
+            if row[1] != "Data" or len(row) < 6:
+                continue
+
+            row_label = row[2].strip()
+            if row_label == "Total in EUR":
+                usd_in_eur = _parse_float(_cell(row, deposits_header_map, "Amount", fallback_idx=5))
+                if usd_in_eur and deposits_usd_gross and deposits_usd_gross > 0:
+                    statement.deposits_fx_eur_per_usd = round(
+                        usd_in_eur / deposits_usd_gross,
+                        8,
+                    )
+                continue
+            if row_label in {"Total", "Total Deposits & Withdrawals in EUR"}:
+                total_amount = _parse_float(
+                    _cell(row, deposits_header_map, "Amount", fallback_idx=5)
+                )
+                if row_label == "Total" and deposits_subsection == "USD" and total_amount:
+                    deposits_usd_gross = total_amount
+                continue
+
+            currency = _normalize_currency(
+                _cell(row, deposits_header_map, "Currency", fallback_idx=2)
+            )
+            date_idx = 3
+            desc_idx = 4
+            amount_idx = 5
+            if currency is None and row_label == "Deposits & Withdrawals" and len(row) >= 7:
+                currency = _normalize_currency(row[3])
+                date_idx = 4
+                desc_idx = 5
+                amount_idx = 6
+            if currency is None:
+                continue
+
+            date_text = _cell(
+                row,
+                deposits_header_map,
+                "Settle Date",
+                "Date",
+                fallback_idx=date_idx,
+            )
+            transfer_date = _parse_trade_date(date_text or "") or _parse_pay_date(date_text or "")
+            description = (
+                _cell(row, deposits_header_map, "Description", fallback_idx=desc_idx) or ""
+            ).strip()
+            amount = _parse_float(
+                _cell(row, deposits_header_map, "Amount", fallback_idx=amount_idx)
+            )
+            if transfer_date is None or amount is None or amount == 0:
+                continue
+
+            deposits_subsection = currency
+            if _is_internal_transfer(description):
+                continue
+            if amount < 0:
+                continue
+
             statement.cash_transfers.append(
                 IBKRCashTransfer(
                     transfer_date=transfer_date,
@@ -395,15 +496,25 @@ def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:
             rate = _parse_float(row[3])
             if currency and rate and rate > 0:
                 statement.fx_rates[currency] = rate
-        elif section == "Net Asset Value" and len(row) >= 4 and row[1] == "Data":
-            if row[2].strip().lower() != "total":
+        elif section == "Net Asset Value" and len(row) >= 4:
+            if row[1] == "Header":
+                nav_header_map = _header_map(row)
                 continue
+            if row[1] != "Data":
+                continue
+            asset_class = (_cell(row, nav_header_map, "Asset Class", fallback_idx=2) or "").strip()
+            if asset_class.lower() != "total":
+                continue
+            current_total_idx = nav_header_map.get("Current Total")
             nav_value = None
-            for cell in reversed(row[3:]):
-                parsed = _parse_float(cell)
-                if parsed is not None and parsed > 0:
-                    nav_value = parsed
-                    break
+            if current_total_idx is not None and current_total_idx < len(row):
+                nav_value = _parse_float(row[current_total_idx])
+            else:
+                for cell in reversed(row[3:]):
+                    parsed = _parse_float(cell)
+                    if parsed is not None and parsed > 0:
+                        nav_value = parsed
+                        break
             if nav_value is not None:
                 statement.nav_total = nav_value
 

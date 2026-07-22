@@ -108,7 +108,7 @@ class PortfolioDetailsService:
         use_live_prices: bool = False,
         preload_analysis: bool = True,
     ) -> tuple[list[PortfolioDetailRow], PortfolioAnalysisPreload]:
-        holdings = holdings if holdings is not None else self.store.list_holdings()
+        holdings = holdings if holdings is not None else self.store.list_open_holdings()
         symbols = [holding.symbol for holding in holdings]
         if use_live_prices:
             logger.info(
@@ -296,7 +296,8 @@ class PortfolioDetailsService:
 
         from services.portfolio_open_holdings import filter_open_portfolio_rows
 
-        rows = filter_open_portfolio_rows(rows)
+        allowed_symbols = {holding.symbol for holding in holdings if holding.shares > 0}
+        rows = filter_open_portfolio_rows(rows, allowed_symbols=allowed_symbols)
         active_symbols = {row.ticker for row in rows}
         preload = preload.for_symbols(active_symbols)
 

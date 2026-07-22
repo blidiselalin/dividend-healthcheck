@@ -35,7 +35,10 @@ def store_portfolio_payload(
         trim_preload_for_symbols,
     )
 
-    active_rows = filter_open_portfolio_rows(rows)
+    active_rows = filter_open_portfolio_rows(
+        rows,
+        allowed_symbols={row.ticker for row in rows if row.shares > 0},
+    )
     active_symbols = {row.ticker for row in active_rows}
     trimmed_preload = trim_preload_for_symbols(preload, active_symbols)
     st.session_state["portfolio_details_rows"] = list(active_rows)
@@ -72,7 +75,12 @@ def get_cached_attention_summary() -> AttentionSummary | None:
     )
     if summary is None:
         return None
-    return filter_attention_summary(summary, allowed_symbols=open_portfolio_symbols())
+    session_rows = st.session_state.get("portfolio_details_rows")
+    if session_rows:
+        allowed = {row.ticker for row in session_rows if row.shares > 0}
+    else:
+        allowed = open_portfolio_symbols()
+    return filter_attention_summary(summary, allowed_symbols=allowed)
 
 
 def refresh_portfolio_risks(

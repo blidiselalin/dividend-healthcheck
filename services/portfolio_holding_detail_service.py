@@ -98,7 +98,11 @@ class PortfolioHoldingDetailService:
         return DividendReceiptStore(db_path=self.portfolio.db_path)
 
     def estimated_lots_for_symbol(self, symbol: str) -> list[EstimatedPurchaseLot]:
-        return [lot for lot in self.journal.build_estimated_lots() if lot.symbol == symbol]
+        return [
+            lot
+            for lot in self.journal.build_estimated_lots(include_closed=True)
+            if lot.symbol == symbol
+        ]
 
     def purchase_history(self, symbol: str) -> list[HoldingPurchaseRow]:
         lots = sorted(
