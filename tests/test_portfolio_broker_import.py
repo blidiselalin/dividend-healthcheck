@@ -25,6 +25,23 @@ def test_preview_sample(sample_csv: str) -> None:
     assert not preview.blocking
 
 
+def test_apply_import_reports_progress(sample_csv: str, tmp_path: Path) -> None:
+    db = tmp_path / "portfolio.db"
+    steps: list[tuple[str, float]] = []
+
+    apply_import(
+        sample_csv,
+        mode=ImportMode.REPLACE,
+        db_path=db,
+        progress=lambda message, fraction: steps.append((message, fraction)),
+    )
+
+    assert steps
+    assert steps[0][0].startswith("Parsing")
+    assert steps[-1] == ("Import complete", 1.0)
+    assert all(0.0 <= fraction <= 1.0 for _, fraction in steps)
+
+
 def test_replace_import_loads_holdings_and_receipts(tmp_path: Path, sample_csv: str) -> None:
     db = tmp_path / "portfolio.db"
     result = apply_import(sample_csv, mode=ImportMode.REPLACE, db_path=db)
@@ -246,18 +263,18 @@ def test_merge_imports_trades_for_symbols_not_in_open_positions(tmp_path: Path) 
     assert len(ctx.receipts.list_for_symbol("AMCR")) == 1
 
 
-def test_apply_import_resets_portfolio_views_and_syncs_vector(
+def test_apply_import_invalidates_cache_and_syncs_vector(
     tmp_path: Path,
     sample_csv: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     db = tmp_path / "portfolio.db"
-    reset_calls: list[bool] = []
+    invalidate_calls: list[bool] = []
     sync_calls: list[bool] = []
 
     monkeypatch.setattr(
-        "services.portfolio_session.reset_portfolio_view_state",
-        lambda: reset_calls.append(True),
+        "services.portfolio_session.invalidate_holdings_cache",
+        lambda: invalidate_calls.append(True),
     )
 
     def _sync(**kwargs: object) -> dict[str, int]:
@@ -271,5 +288,32 @@ def test_apply_import_resets_portfolio_views_and_syncs_vector(
 
     apply_import(sample_csv, mode=ImportMode.REPLACE, db_path=db)
 
-    assert reset_calls
+    assert invalidate_calls
     assert sync_calls
+
+
+def test_merge_import_never_calls_clear_user_portfolio(
+    tmp_path: Path,
+    sample_csv: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = tmp_path / "portfolio.db"
+    ctx = create_portfolio_context(db_path=db)
+    ctx.portfolio.upsert_holding("VZ", shares=5, avg_cost_per_share=40.0)
+
+    clear_calls: list[bool] = []
+
+    def _fail_clear(**kwargs: object) -> None:
+        clear_calls.append(True)
+        raise AssertionError("merge must not clear portfolio tables")
+
+    monkeypatch.setattr(
+        "services.portfolio_broker_import_service.clear_user_portfolio",
+        _fail_clear,
+    )
+
+    apply_import(sample_csv, mode=ImportMode.MERGE, db_path=db)
+
+    assert not clear_calls
+    symbols = {h.symbol for h in create_portfolio_context(db_path=db).portfolio.list_holdings()}
+    assert "VZ" in symbols

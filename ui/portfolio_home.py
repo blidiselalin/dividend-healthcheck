@@ -60,6 +60,20 @@ def navigate_to_portfolio_home() -> None:
     st.session_state["portfolio_view_mode"] = PORTFOLIO_VIEW_OVERVIEW
     st.session_state.pop("portfolio_research_mode", None)
     st.session_state["portfolio_section_label"] = "Home"
+    st.session_state.pop("portfolio_holdings_drill_ticker", None)
+    st.rerun()
+
+
+def navigate_to_portfolio_section(section_key: str) -> None:
+    """Open a portfolio workspace section (overview mode)."""
+    from ui.admin_page import set_admin_console_active
+
+    label = PORTFOLIO_LABEL_BY_KEY.get(section_key, "Home")
+    set_admin_console_active(False)
+    st.session_state["portfolio_view_mode"] = PORTFOLIO_VIEW_OVERVIEW
+    st.session_state["portfolio_section_label"] = label
+    st.session_state.pop("portfolio_research_mode", None)
+    st.session_state.pop("portfolio_holdings_drill_ticker", None)
     st.rerun()
 
 
@@ -96,15 +110,11 @@ def apply_example_action(example: dict) -> None:
     kind = example.get("kind")
     if kind == "holding":
         symbol = (example.get("symbol") or "KO").upper()
-        st.session_state["portfolio_selected_symbol"] = symbol
-        st.session_state["portfolio_view_mode"] = PORTFOLIO_VIEW_HOLDING
-        st.session_state["portfolio_analysis_ready"] = True
-        st.session_state["portfolio_section_label"] = "Holdings"
-    elif kind == "section":
+        set_holding_selection(symbol)
+        return
+    if kind == "section":
         section_key = example.get("section", "holdings")
-        label = PORTFOLIO_LABEL_BY_KEY.get(section_key, "Holdings")
-        st.session_state["portfolio_section_label"] = label
-        st.session_state["portfolio_view_mode"] = PORTFOLIO_VIEW_OVERVIEW
+        navigate_to_portfolio_section(str(section_key))
 
 
 def render_test_user_banner() -> None:
@@ -274,3 +284,13 @@ def render_portfolio_home_header(
     render_try_it_examples(expanded=is_demo_session())
     st.divider()
     return True
+
+
+def render_portfolio_workspace_nav() -> None:
+    """Section picker for non-home portfolio views (no duplicate summary table)."""
+    render_app_about(expanded=False)
+    from ui.sp500_research_picker import render_sp500_research_picker
+
+    render_sp500_research_picker(key_prefix="workspace")
+    st.divider()
+    render_portfolio_section_nav()

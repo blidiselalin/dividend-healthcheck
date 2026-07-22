@@ -40,6 +40,30 @@ class PortfolioAnalysisPreload:
             dividend_statuses=dict(dividend_statuses or {}),
         )
 
+    def for_symbols(self, symbols: set[str]) -> PortfolioAnalysisPreload:
+        """Return a copy limited to the given tickers."""
+        allowed = {symbol.upper() for symbol in symbols}
+        return PortfolioAnalysisPreload(
+            stock_data={
+                symbol: data for symbol, data in self.stock_data.items() if symbol in allowed
+            },
+            yield_channels={
+                symbol: channel
+                for symbol, channel in self.yield_channels.items()
+                if symbol in allowed
+            },
+            vector_docs={
+                symbol: document
+                for symbol, document in self.vector_docs.items()
+                if symbol in allowed
+            },
+            dividend_statuses={
+                symbol: status
+                for symbol, status in (self.dividend_statuses or {}).items()
+                if symbol in allowed
+            },
+        )
+
 
 def preload_portfolio_analysis(
     symbols: list[str],
@@ -50,12 +74,13 @@ def preload_portfolio_analysis(
     max_workers: int = 6,
     progress_callback: ProgressCallback | None = None,
     dividend_statuses: dict[str, Any] | None = None,
+    allow_library_backfill: bool = False,
 ) -> PortfolioAnalysisPreload:
     """
     Fetch yield-channel series and retain vector documents for every holding.
 
-    Backfills thin price/dividend history for portfolio symbols first, then loads
-    charts from the updated library.
+    Reads the shared market library only unless ``allow_library_backfill`` is True
+    (explicit admin / backfill jobs — never portfolio import or holding edits).
     """
     from services.portfolio_details_service import PortfolioDetailsService
     from services.stock_analysis_service import load_yield_channel_data
@@ -78,7 +103,7 @@ def preload_portfolio_analysis(
         for symbol in symbols
         if docs.get(symbol) is None or history_is_thin(docs.get(symbol))
     ]
-    if needs_backfill:
+    if allow_library_backfill and needs_backfill:
         if progress_callback:
             progress_callback(0.0, f"Backfilling history for {len(needs_backfill)} holdings…")
         backfill_portfolio_holdings(

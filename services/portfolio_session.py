@@ -104,6 +104,7 @@ def user_has_holdings_in_db() -> bool:
 def _clear_stale_session_when_empty() -> None:
     """Drop cached UI rows when the portfolio DB has no holdings."""
     if user_has_holdings_in_db():
+        _prune_stale_session_symbols()
         return
 
     try:
@@ -118,6 +119,66 @@ def _clear_stale_session_when_empty() -> None:
         clear_portfolio_session_state()
     clear_session_cache()
     st.session_state.pop(_PORTFOLIO_DB_FINGERPRINT_KEY, None)
+
+
+def _prune_stale_session_symbols() -> None:
+    """Remove sold or dropped holdings from cached session rows and analysis."""
+    try:
+        import streamlit as st
+    except ImportError:
+        return
+
+    rows = st.session_state.get("portfolio_details_rows")
+    if not rows:
+        return
+
+    from services.portfolio_open_holdings import (
+        filter_attention_summary,
+        filter_open_portfolio_rows,
+        open_portfolio_symbols,
+        trim_preload_for_symbols,
+    )
+    from ui.portfolio_risk_panel import SESSION_SUMMARY_KEY
+
+    db_symbols = open_portfolio_symbols(
+        db_path=resolve_current_portfolio_db(),
+    )
+    filtered = filter_open_portfolio_rows(rows, allowed_symbols=db_symbols)
+    if len(filtered) == len(rows):
+        return
+
+    st.session_state["portfolio_details_rows"] = filtered
+    from services.portfolio_analysis_preload import PortfolioAnalysisPreload
+
+    preload = PortfolioAnalysisPreload.from_caches(
+        st.session_state.get("portfolio_stock_cache") or {},
+        st.session_state.get("portfolio_yield_cache") or {},
+        st.session_state.get("portfolio_vector_docs") or {},
+        st.session_state.get("portfolio_dividend_statuses") or {},
+    )
+    trimmed = trim_preload_for_symbols(preload, db_symbols)
+    st.session_state["portfolio_stock_cache"] = trimmed.stock_data
+    st.session_state["portfolio_yield_cache"] = trimmed.yield_channels
+    st.session_state["portfolio_vector_docs"] = trimmed.vector_docs
+    st.session_state["portfolio_dividend_statuses"] = trimmed.dividend_statuses or {}
+
+    cached_summary = st.session_state.get(SESSION_SUMMARY_KEY)
+    if cached_summary:
+        from services.portfolio_attention_service import normalize_attention_summary
+
+        summary = normalize_attention_summary(cached_summary)
+        if summary is not None:
+            st.session_state[SESSION_SUMMARY_KEY] = filter_attention_summary(
+                summary,
+                allowed_symbols=db_symbols,
+            )
+
+    try:
+        from services.portfolio_ui_cache import save_session_cache
+
+        save_session_cache(force=True)
+    except ImportError:
+        pass
 
 
 def _portfolio_refresh_job_running() -> bool:

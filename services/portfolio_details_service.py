@@ -10,7 +10,6 @@ from datetime import date, datetime, timedelta
 from functools import lru_cache
 from typing import Any
 
-import requests
 import yfinance as yf
 
 from data_ingestion.models import StockDocument
@@ -21,7 +20,7 @@ from services.portfolio_analysis_preload import PortfolioAnalysisPreload, preloa
 from services.scoring import ScoringService
 from services.stock_analysis_service import load_portfolio_statistics_stock
 from utils.logging_config import get_logger
-from utils.yfinance_compat import YFinanceError
+from utils.yfinance_compat import yahoo_network_errors
 
 logger = get_logger("dividendscope.portfolio")
 
@@ -213,6 +212,7 @@ class PortfolioDetailsService:
                 symbol,
                 stats_cache.get(symbol),
                 document,
+                fetch_remote=use_live_prices,
             )
 
         total_value = sum(
@@ -293,6 +293,12 @@ class PortfolioDetailsService:
         # live-reload job so the UI updates without blocking the first render.
         if not use_live_prices and price_stale_set:
             self._schedule_deferred_live_reload(list(price_stale_set))
+
+        from services.portfolio_open_holdings import filter_open_portfolio_rows
+
+        rows = filter_open_portfolio_rows(rows)
+        active_symbols = {row.ticker for row in rows}
+        preload = preload.for_symbols(active_symbols)
 
         return rows, preload
 
@@ -626,7 +632,7 @@ class PortfolioDetailsService:
     def _fetch_price_snapshot(symbol: str) -> PriceSnapshot:
         try:
             history = yf.Ticker(symbol).history(period="2y", auto_adjust=True)
-        except (YFinanceError, requests.exceptions.RequestException):  # noqa: BLE001
+        except yahoo_network_errors():  # noqa: BLE001
             return PriceSnapshot(None, None, None, None, None)
 
         if history is None or history.empty or "Close" not in history.columns:
@@ -655,6 +661,8 @@ class PortfolioDetailsService:
         symbol: str,
         stats: StockData | None,
         document: StockDocument | None,
+        *,
+        fetch_remote: bool = True,
     ) -> tuple[float | None, date | None, date | None]:
         pay_date = None
         ex_date = None
@@ -666,7 +674,7 @@ class PortfolioDetailsService:
             ex_date = stats.dividend_history.ex_dividend_date
 
         price_to_fcf = None
-        if pay_date is None or ex_date is None:
+        if fetch_remote and (pay_date is None or ex_date is None):
             fetched_pfcf, fetched_pay, fetched_ex = self._fetch_market_extras(symbol, ex_date)
             return fetched_pfcf, pay_date or fetched_pay, ex_date or fetched_ex
 
@@ -680,7 +688,7 @@ class PortfolioDetailsService:
     ) -> tuple[float | None, date | None, date | None]:
         try:
             info = yf.Ticker(symbol).info or {}
-        except (YFinanceError, requests.exceptions.RequestException):  # noqa: BLE001
+        except yahoo_network_errors():  # noqa: BLE001
             return None, ex_date, ex_date
 
         price_to_fcf = info.get("priceToFreeCashFlows")

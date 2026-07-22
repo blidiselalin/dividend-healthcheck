@@ -21,7 +21,7 @@ from services.yield_channel_chart import YieldChannelData
 from utils.converters import document_to_stock_data
 from utils.logging_config import get_logger
 from utils.stock_history_enrichment import enrich_stock_data_from_history
-from utils.yfinance_compat import YFinanceError
+from utils.yfinance_compat import YFinanceError, yahoo_network_errors
 
 logger = get_logger("dividendscope.stock_analysis")
 
@@ -90,14 +90,14 @@ def load_portfolio_statistics_stock(
         from services.enhanced_stock_service import EnhancedStockService
 
         return EnhancedStockService(fetch_realtime_prices=False).fetch(symbol)
-    except (requests.exceptions.RequestException, YFinanceError):  # noqa: S110
+    except yahoo_network_errors():  # noqa: S110
         pass
 
     try:
         from services.stock_service import StockService
 
         return StockService.fetch(symbol)
-    except (requests.exceptions.RequestException, YFinanceError):
+    except yahoo_network_errors():
         return None
 
 

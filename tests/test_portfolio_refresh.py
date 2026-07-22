@@ -81,27 +81,54 @@ def test_reload_portfolio_after_data_import_sets_home_view(
     st.session_state["portfolio_research_mode"] = True
     st.session_state["portfolio_holdings_drill_ticker"] = "KO"
     mock_preload = PortfolioAnalysisPreload.from_caches()
-    mock_reload = MagicMock(return_value=mock_preload)
-    mock_risks = MagicMock()
+    mock_payload = {
+        "rows": [],
+        "preload": mock_preload,
+        "analysis_ready": False,
+        "fast_loaded": True,
+    }
+    mock_compute = MagicMock(return_value=mock_payload)
+    mock_store = MagicMock()
+    mock_rebuild = MagicMock()
+    mock_schedule_sync = MagicMock()
+    mock_yield = MagicMock()
 
     monkeypatch.setattr(
-        "services.portfolio_refresh.reload_portfolio_session",
-        mock_reload,
+        "services.portfolio_ui_cache.compute_fast_portfolio_payload",
+        mock_compute,
+    )
+    monkeypatch.setattr("services.portfolio_refresh.store_portfolio_payload", mock_store)
+    monkeypatch.setattr(
+        "services.portfolio_refresh.schedule_forced_dividend_sync",
+        mock_schedule_sync,
     )
     monkeypatch.setattr(
-        "services.portfolio_refresh.refresh_portfolio_risks",
-        mock_risks,
+        "services.deferred_startup.trigger_yield_preload",
+        mock_yield,
     )
-    st.session_state["portfolio_details_rows"] = [{"ticker": "KO"}]
+    monkeypatch.setattr(
+        "ui.portfolio_risk_panel._rebuild_attention_from_session",
+        mock_rebuild,
+    )
+    monkeypatch.setattr(
+        "services.portfolio_ui_cache.save_session_cache",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "utils.portfolio_db.compute_portfolio_db_fingerprint",
+        lambda **kwargs: "fp-test",
+    )
 
-    reload_portfolio_after_data_import(section_label="Home", refresh_risks=True)
+    reload_portfolio_after_data_import(section_label="Home", refresh_risks=False)
 
-    mock_reload.assert_called_once_with(refresh_risks=False, sections=["all"])
-    mock_risks.assert_called_once()
+    mock_compute.assert_called_once()
+    mock_store.assert_called_once_with([], mock_preload, analysis_ready=False)
+    mock_schedule_sync.assert_called_once()
     assert st.session_state["portfolio_section_label"] == "Home"
     assert st.session_state["portfolio_view_mode"] == PORTFOLIO_VIEW_OVERVIEW
     assert "portfolio_research_mode" not in st.session_state
     assert "portfolio_holdings_drill_ticker" not in st.session_state
+    assert st.session_state.get("portfolio_fast_loaded") is True
 
 
 def test_reload_portfolio_session_resets_view_state(monkeypatch: pytest.MonkeyPatch) -> None:

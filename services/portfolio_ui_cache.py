@@ -488,6 +488,7 @@ def compute_yield_preload_payload(
         stock_cache,
         dict(vector_docs),
         progress_callback=progress_callback,
+        allow_library_backfill=True,
     )
     return {
         "yield_channels": preload.yield_channels,

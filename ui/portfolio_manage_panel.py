@@ -13,6 +13,7 @@ import streamlit as st
 from services.portfolio_management_service import PortfolioManagementService
 from services.portfolio_refresh import schedule_portfolio_reload
 from services.portfolio_session import is_demo_session, user_has_holdings_in_db
+from ui.inline_operation_progress import inline_operation_progress
 
 
 def _after_change(
@@ -150,14 +151,17 @@ def _render_monthly_evolution_tab(service: PortfolioManagementService) -> None:
             label = st.session_state[f"pm_evo_label_{form_key}"].strip() or _month_label(
                 year_val, month_val
             )
-            saved = service.add_deposit(
-                year=year_val,
-                month=month_val,
-                label=label,
-                deposit_eur=st.session_state[f"pm_evo_eur_{form_key}"],
-                deposit_usd=st.session_state[f"pm_evo_usd_{form_key}"],
-                portfolio_eur=st.session_state[f"pm_evo_port_{form_key}"],
-            )
+            with inline_operation_progress("Saving monthly snapshot") as progress:
+                progress("Writing deposit and portfolio values…", 0.35)
+                saved = service.add_deposit(
+                    year=year_val,
+                    month=month_val,
+                    label=label,
+                    deposit_eur=st.session_state[f"pm_evo_eur_{form_key}"],
+                    deposit_usd=st.session_state[f"pm_evo_usd_{form_key}"],
+                    portfolio_eur=st.session_state[f"pm_evo_port_{form_key}"],
+                )
+                progress("Updating dashboard caches…", 0.85)
             msg = f"Saved {saved.label}."
             if saved.portfolio_eur <= 0:
                 msg += " Portfolio € is still zero — evolution charts will skip this month."
@@ -221,14 +225,20 @@ def render_portfolio_manage_sidebar() -> None:
                     elif st.session_state.pm_add_avg <= 0 and not st.session_state.pm_add_skip:
                         st.error("Enter average cost per share.")
                     else:
-                        result = service.add_ticker(
-                            st.session_state.pm_add_symbol,
-                            shares=st.session_state.pm_add_shares,
-                            avg_cost_per_share=st.session_state.pm_add_avg or 0.01,
-                            commission=st.session_state.pm_add_comm,
-                            company_name=(st.session_state.pm_add_company.strip() or None),
-                            skip_validation=st.session_state.pm_add_skip,
-                        )
+                        symbol = st.session_state.pm_add_symbol
+                        with inline_operation_progress(
+                            f"Adding {symbol.strip().upper()}"
+                        ) as progress:
+                            progress("Validating symbol and saving holding…", 0.25)
+                            result = service.add_ticker(
+                                symbol,
+                                shares=st.session_state.pm_add_shares,
+                                avg_cost_per_share=st.session_state.pm_add_avg or 0.01,
+                                commission=st.session_state.pm_add_comm,
+                                company_name=(st.session_state.pm_add_company.strip() or None),
+                                skip_validation=st.session_state.pm_add_skip,
+                            )
+                            progress("Syncing market library…", 0.85)
                         sync = result.get("vector_sync") or {}
                         created = sync.get("created", 0)
                         msg = f"Added {result['symbol']}."
@@ -290,22 +300,32 @@ def render_portfolio_manage_sidebar() -> None:
                 with col_save:
                     if st.button("Save changes", key="pm_edit_save"):
                         try:
-                            service.update_holding_fields(
-                                pick,
-                                shares=new_shares,
-                                avg_cost_per_share=new_avg,
-                                commission=new_comm,
-                                company_name=new_company.strip() or None,
-                            )
+                            with inline_operation_progress(f"Updating {pick}") as progress:
+                                progress("Saving position changes…", 0.4)
+                                service.update_holding_fields(
+                                    pick,
+                                    shares=new_shares,
+                                    avg_cost_per_share=new_avg,
+                                    commission=new_comm,
+                                    company_name=new_company.strip() or None,
+                                )
+                                progress("Refreshing portfolio views…", 0.85)
                             _after_change(f"Updated {pick}.")
                         except Exception as exc:
                             st.error(str(exc))
                 with col_del:
                     if st.button("Remove", key="pm_edit_remove"):
-                        if service.remove_ticker(pick):
-                            _after_change(f"Removed {pick}.")
-                        else:
-                            st.error("Could not remove position.")
+                        try:
+                            with inline_operation_progress(f"Removing {pick}") as progress:
+                                progress("Removing holding…", 0.4)
+                                removed = service.remove_ticker(pick)
+                                progress("Refreshing portfolio views…", 0.85)
+                            if removed:
+                                _after_change(f"Removed {pick}.")
+                            else:
+                                st.error("Could not remove position.")
+                        except Exception as exc:
+                            st.error(str(exc))
 
         with tab_evolution:
             _render_monthly_evolution_tab(service)
@@ -352,16 +372,21 @@ def render_portfolio_manage_sidebar() -> None:
                         elif price <= 0:
                             st.error("Price per share must be greater than zero.")
                         else:
-                            service.add_purchase(
-                                st.session_state.pm_buy_symbol,
-                                st.session_state.pm_buy_date,
-                                price,
-                                shares=shares,
-                                commission_usd=commission,
-                            )
+                            symbol = st.session_state.pm_buy_symbol
+                            with inline_operation_progress(
+                                f"Logging purchase for {symbol}"
+                            ) as progress:
+                                progress("Recording purchase in journal…", 0.35)
+                                service.add_purchase(
+                                    symbol,
+                                    st.session_state.pm_buy_date,
+                                    price,
+                                    shares=shares,
+                                    commission_usd=commission,
+                                )
+                                progress("Updating position totals…", 0.85)
                             _after_change(
-                                f"Logged purchase for {st.session_state.pm_buy_symbol} "
-                                f"({shares:g} shares).",
+                                f"Logged purchase for {symbol} ({shares:g} shares).",
                                 full_reload=True,
                             )
                     except ValueError as exc:
@@ -454,15 +479,23 @@ def _render_ibkr_import_tab() -> None:
     if st.button("Apply import", type="primary", key="pm_ibkr_apply", disabled=apply_disabled):
         mode = ImportMode.REPLACE if replace_mode else ImportMode.MERGE
         try:
-            result = apply_import(content, mode=mode)
+            with inline_operation_progress("Importing IBKR statement") as progress:
+                result = apply_import(content, mode=mode, progress=progress)
+                if has_blocking_errors(result.issues):
+                    st.error("Import blocked by validation errors.")
+                    raise RuntimeError("import blocked")
+                if result.holdings_upserted == 0:
+                    st.error("Import did not write any holdings.")
+                    raise RuntimeError("import empty")
+                progress("Loading portfolio from library…", 0.98)
+                from services.portfolio_refresh import reload_portfolio_after_data_import
+
+                reload_portfolio_after_data_import(section_label="Home", refresh_risks=True)
+                progress("Charts and dividends will update in the background", 1.0)
+        except RuntimeError:
+            return
         except Exception as exc:
             st.error(f"Import failed: {exc}")
-            return
-        if has_blocking_errors(result.issues):
-            st.error("Import blocked by validation errors.")
-            return
-        if result.holdings_upserted == 0:
-            st.error("Import did not write any holdings.")
             return
         st.session_state.pop("pm_ibkr_file_content", None)
         st.session_state.pop("pm_ibkr_file_name", None)
@@ -471,9 +504,6 @@ def _render_ibkr_import_tab() -> None:
             f"{result.trades_imported} stock trades, {result.dividends_imported} dividends, "
             f"{result.deposits_imported} deposit months."
         )
-        from services.portfolio_refresh import reload_portfolio_after_data_import
-
-        reload_portfolio_after_data_import(section_label="Home", refresh_risks=True)
         st.success(msg)
         st.rerun()
 

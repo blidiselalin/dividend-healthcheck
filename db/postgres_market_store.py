@@ -22,6 +22,15 @@ _STOCK_DOCUMENT_COLUMNS = """
   source
 """
 
+_PORTFOLIO_JSON_KEYS = (
+    "in_portfolio",
+    "portfolio_shares",
+    "portfolio_avg_cost_per_share",
+    "portfolio_acquisition_value",
+    "portfolio_dividends_paid",
+    "portfolio_purchase_count",
+)
+
 
 class PostgresMarketStore:
     """Persist StockDocument payloads as JSONB in PostgreSQL."""
@@ -75,6 +84,50 @@ class PostgresMarketStore:
                     ),
                 )
                 history_store.upsert_document_history(doc, conn=conn)
+                ids.append(doc.document_id)
+        return ids
+
+    def patch_portfolio_metadata(self, documents: list[Any]) -> list[str]:
+        """
+        Update portfolio overlay fields on stock_documents only.
+
+        Does not write ``stock_price_history`` / ``stock_dividend_history`` — yield
+        channel data stays in the shared market library ingest pipeline.
+        """
+        from data_ingestion.models import StockDocument
+        from db.connection import ensure_schema, get_connection
+
+        if not documents:
+            return []
+
+        ensure_schema()
+        ids: list[str] = []
+        with get_connection() as conn:
+            for doc in documents:
+                if not isinstance(doc, StockDocument):
+                    continue
+                symbol = doc.symbol.upper()
+                payload = doc.to_full_dict()
+                overlay = {key: payload[key] for key in _PORTFOLIO_JSON_KEYS if key in payload}
+                if doc.name and doc.name.strip() and doc.name != symbol:
+                    overlay["name"] = doc.name
+                overlay["symbol"] = symbol
+                if doc.source:
+                    overlay["source"] = doc.source.value
+                conn.execute(
+                    """
+                    INSERT INTO stock_documents (symbol, document, source, last_updated)
+                    VALUES (%s, %s::jsonb, %s, NOW())
+                    ON CONFLICT (symbol) DO UPDATE SET
+                      document = COALESCE(stock_documents.document, '{}'::jsonb)
+                        || EXCLUDED.document
+                    """,
+                    (
+                        symbol,
+                        json.dumps(overlay, default=_json_default),
+                        doc.source.value if doc.source else "manual",
+                    ),
+                )
                 ids.append(doc.document_id)
         return ids
 

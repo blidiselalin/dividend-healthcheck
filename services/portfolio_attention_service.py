@@ -202,8 +202,21 @@ class PortfolioAttentionService:
     ) -> AttentionSummary:
         today = reference_date or date.today()
         from services.portfolio_context import create_portfolio_context
+        from services.portfolio_open_holdings import filter_open_portfolio_rows
 
-        holdings = create_portfolio_context().portfolio.list_holdings()
+        holdings = [
+            holding
+            for holding in create_portfolio_context().portfolio.list_holdings()
+            if holding.shares > 0
+        ]
+        allowed = {holding.symbol for holding in holdings}
+        if allowed:
+            rows = filter_open_portfolio_rows(rows, allowed_symbols=allowed)
+        else:
+            rows = [row for row in rows if row.shares > 0]
+        if not rows:
+            return AttentionSummary(reference_date=today)
+
         row_dates = {row.ticker: (row.ex_dividend_date, row.dividend_pay_date) for row in rows}
         calendar = build_portfolio_dividend_calendar(
             holdings,

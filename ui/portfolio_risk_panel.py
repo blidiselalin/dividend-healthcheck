@@ -30,11 +30,19 @@ def store_portfolio_payload(
     analysis_ready: bool = True,
 ) -> None:
     """Keep portfolio session state in sync with the risk monitor."""
-    st.session_state["portfolio_details_rows"] = list(rows)
-    st.session_state["portfolio_stock_cache"] = preload.stock_data
-    st.session_state["portfolio_yield_cache"] = preload.yield_channels
-    st.session_state["portfolio_vector_docs"] = preload.vector_docs
-    st.session_state["portfolio_dividend_statuses"] = preload.dividend_statuses or {}
+    from services.portfolio_open_holdings import (
+        filter_open_portfolio_rows,
+        trim_preload_for_symbols,
+    )
+
+    active_rows = filter_open_portfolio_rows(rows)
+    active_symbols = {row.ticker for row in active_rows}
+    trimmed_preload = trim_preload_for_symbols(preload, active_symbols)
+    st.session_state["portfolio_details_rows"] = list(active_rows)
+    st.session_state["portfolio_stock_cache"] = trimmed_preload.stock_data
+    st.session_state["portfolio_yield_cache"] = trimmed_preload.yield_channels
+    st.session_state["portfolio_vector_docs"] = trimmed_preload.vector_docs
+    st.session_state["portfolio_dividend_statuses"] = trimmed_preload.dividend_statuses or {}
     st.session_state["portfolio_details_time"] = datetime.now()
     st.session_state["portfolio_analysis_ready"] = analysis_ready
     st.session_state["portfolio_show_analysis"] = True
@@ -57,9 +65,14 @@ def _session_rows_and_preload() -> (
 
 
 def get_cached_attention_summary() -> AttentionSummary | None:
-    return normalize_attention_summary(
+    from services.portfolio_open_holdings import filter_attention_summary, open_portfolio_symbols
+
+    summary = normalize_attention_summary(
         PortfolioRiskMonitorService.summary_from_store(st.session_state.get(SESSION_SUMMARY_KEY))
     )
+    if summary is None:
+        return None
+    return filter_attention_summary(summary, allowed_symbols=open_portfolio_symbols())
 
 
 def refresh_portfolio_risks(

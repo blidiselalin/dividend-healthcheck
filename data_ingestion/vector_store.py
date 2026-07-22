@@ -197,6 +197,37 @@ class VectorStore:
             self._save_fallback()
             return doc_id
 
+    def patch_portfolio_metadata(self, documents: list[StockDocument]) -> list[str]:
+        """Portfolio overlay only — never rewrites shared price/dividend history."""
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.patch_portfolio_metadata(documents)  # type: ignore[no-any-return]
+        if not documents:
+            return []
+
+        ids: list[str] = []
+        if self._use_fallback:
+            for doc in documents:
+                existing = self._fallback_store.get(doc.document_id)
+                if existing is not None:
+                    existing.in_portfolio = doc.in_portfolio
+                    existing.portfolio_shares = doc.portfolio_shares
+                    existing.portfolio_avg_cost_per_share = doc.portfolio_avg_cost_per_share
+                    existing.portfolio_acquisition_value = doc.portfolio_acquisition_value
+                    existing.portfolio_dividends_paid = doc.portfolio_dividends_paid
+                    existing.portfolio_purchase_count = doc.portfolio_purchase_count
+                    if doc.name and doc.name != doc.symbol:
+                        existing.name = doc.name
+                    ids.append(existing.document_id)
+                else:
+                    self._fallback_store[doc.document_id] = doc
+                    ids.append(doc.document_id)
+            self._save_fallback()
+            return ids
+
+        for doc in documents:
+            ids.append(self.add_document(doc))
+        return ids
+
     def add_documents(self, documents: list[StockDocument]) -> list[str]:
         """
         Add multiple documents to the vector store.

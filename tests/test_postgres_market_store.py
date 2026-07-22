@@ -10,6 +10,31 @@ import pytest
 from data_ingestion.models import StockDocument
 
 
+def test_patch_portfolio_metadata_merges_without_history() -> None:
+    mock_conn = MagicMock()
+    mock_cm = MagicMock()
+    mock_cm.__enter__ = MagicMock(return_value=mock_conn)
+    mock_cm.__exit__ = MagicMock(return_value=False)
+
+    doc = StockDocument(symbol="KO", name="Coca-Cola")
+    doc.in_portfolio = True
+    doc.portfolio_shares = 10.0
+
+    with (
+        patch("db.connection.ensure_schema"),
+        patch("db.connection.get_connection", return_value=mock_cm),
+        patch("db.postgres_market_history_store.PostgresMarketHistoryStore") as mock_history,
+    ):
+        from db.postgres_market_store import PostgresMarketStore
+
+        PostgresMarketStore().patch_portfolio_metadata([doc])
+
+    sql = mock_conn.execute.call_args[0][0]
+    assert "INSERT INTO stock_documents" in sql
+    assert "|| EXCLUDED.document" in sql
+    mock_history.return_value.upsert_document_history.assert_not_called()
+
+
 def test_add_documents_executes_upsert() -> None:
     mock_conn = MagicMock()
     mock_cm = MagicMock()

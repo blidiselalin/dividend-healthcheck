@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -24,6 +25,13 @@ from services.portfolio_clear_service import clear_user_portfolio
 from services.portfolio_context import create_portfolio_context
 
 logger = logging.getLogger(__name__)
+
+ImportProgressCallback = Callable[[str, float], None]
+
+
+def _report(progress: ImportProgressCallback | None, message: str, fraction: float) -> None:
+    if progress is not None:
+        progress(message, fraction)
 
 
 class ImportMode(str, Enum):
@@ -76,13 +84,16 @@ def preview_import(content: str | bytes) -> ImportPreview:
     )
 
 
-def apply_import(
+def apply_import(  # noqa: C901
     content: str | bytes,
     *,
     mode: ImportMode,
     db_path: Path | None = None,
+    progress: ImportProgressCallback | None = None,
 ) -> ImportApplyResult:
+    _report(progress, "Parsing activity statement…", 0.05)
     statement = parse_activity_statement_csv(content)
+    _report(progress, "Validating statement…", 0.10)
     issues = validate_statement(statement)
     if has_blocking_errors(issues):
         return ImportApplyResult(
@@ -97,14 +108,17 @@ def apply_import(
 
     cleared: int | None = None
     if mode == ImportMode.REPLACE:
+        _report(progress, "Clearing existing portfolio data…", 0.15)
         clear_result = clear_user_portfolio(db_path=db_path)
         cleared = clear_result.total_rows
 
+    _report(progress, "Opening portfolio stores…", 0.18)
     ctx = create_portfolio_context(db_path=db_path)
     open_symbols = {pos.symbol for pos in statement.open_positions}
     scope_symbols = statement_symbol_scope(statement)
 
     if mode == ImportMode.MERGE:
+        _report(progress, "Replacing prior IBKR rows for file symbols…", 0.22)
         for symbol in scope_symbols:
             ctx.journal.delete_for_symbol(symbol, source="ibkr")
             ctx.receipts.delete_for_symbol(symbol, source="ibkr")
@@ -115,7 +129,9 @@ def apply_import(
     dividends_imported = 0
     deposits_imported = 0
 
-    for position in statement.open_positions:
+    positions = statement.open_positions
+    _report(progress, "Importing open positions…", 0.25)
+    for index, position in enumerate(positions, start=1):
         symbol = position.symbol
         existing = next(
             (h for h in ctx.portfolio.list_holdings() if h.symbol == symbol),
@@ -131,12 +147,17 @@ def apply_import(
             else (existing.dividends_paid if existing else 0.0),
         )
         holdings_upserted += 1
+        if positions:
+            fraction = 0.25 + (0.20 * index / len(positions))
+            _report(progress, f"Importing positions ({index}/{len(positions)})…", fraction)
 
     if mode == ImportMode.MERGE:
         for symbol in sorted(scope_symbols - open_symbols):
             ctx.portfolio.drop_holding(symbol)
 
-    for trade in statement.trades:
+    trades = statement.trades
+    _report(progress, "Importing stock trades…", 0.48)
+    for index, trade in enumerate(trades, start=1):
         if mode == ImportMode.MERGE and trade.symbol not in scope_symbols:
             continue
         ctx.journal.add_purchase(
@@ -149,8 +170,13 @@ def apply_import(
             source="ibkr",
         )
         trades_imported += 1
+        if trades:
+            fraction = 0.48 + (0.15 * index / len(trades))
+            _report(progress, f"Importing trades ({index}/{len(trades)})…", fraction)
 
-    for dividend in statement.dividends:
+    dividends = statement.dividends
+    _report(progress, "Importing dividends…", 0.65)
+    for index, dividend in enumerate(dividends, start=1):
         if mode == ImportMode.MERGE and dividend.symbol not in scope_symbols:
             continue
         shares_held = (
@@ -169,12 +195,18 @@ def apply_import(
         )
         if outcome in {"added", "updated"}:
             dividends_imported += 1
+        if dividends:
+            fraction = 0.65 + (0.10 * index / len(dividends))
+            _report(progress, f"Importing dividends ({index}/{len(dividends)})…", fraction)
 
+    _report(progress, "Updating dividend totals on holdings…", 0.78)
     for symbol in open_symbols:
         total = ctx.receipts.total_for_symbol(symbol)
         ctx.portfolio.set_dividends_paid(symbol, total)
 
-    for month_deposit in build_monthly_deposits(statement):
+    monthly_deposits = build_monthly_deposits(statement)
+    _report(progress, "Importing monthly deposits…", 0.82)
+    for index, month_deposit in enumerate(monthly_deposits, start=1):
         ctx.deposits.upsert_deposit(
             year=month_deposit.year,
             month=month_deposit.month,
@@ -184,9 +216,19 @@ def apply_import(
             portfolio_eur=month_deposit.portfolio_eur,
         )
         deposits_imported += 1
+        if monthly_deposits:
+            fraction = 0.82 + (0.08 * index / len(monthly_deposits))
+            _report(
+                progress,
+                f"Importing deposits ({index}/{len(monthly_deposits)})…",
+                fraction,
+            )
 
+    _report(progress, "Syncing monthly dividend totals…", 0.92)
     _sync_monthly_net_from_receipts(ctx)
+    _report(progress, "Finalizing import…", 0.96)
     _finalize_broker_import(ctx, db_path=db_path)
+    _report(progress, "Import complete", 1.0)
 
     logger.info(
         "IBKR import (%s): holdings=%d trades=%d dividends=%d deposits=%d symbols=%d",
@@ -223,11 +265,11 @@ def _sync_monthly_net_from_receipts(ctx: object) -> int:
 
 
 def _finalize_broker_import(ctx: object, *, db_path: Path | None) -> None:
-    """Refresh derived stores and drop stale UI snapshots after broker import."""
+    """Refresh derived stores after broker import without wiping the UI snapshot."""
     try:
-        from services.portfolio_session import reset_portfolio_view_state
+        from services.portfolio_session import invalidate_holdings_cache
 
-        reset_portfolio_view_state()
+        invalidate_holdings_cache()
     except ImportError:
         pass
 

@@ -110,21 +110,58 @@ def reload_portfolio_after_data_import(
     """
     Rebuild session snapshot after a major portfolio mutation (IBKR import, CLI load).
 
-    Points the workspace at Home/overview so tables and sections match the database.
+    Fast path: library prices only, no blocking Yahoo/backfill. Dividend sync, yield
+    charts, and optional live quotes run in background jobs afterward.
     """
     from services.portfolio_session import invalidate_holdings_cache
+    from services.portfolio_ui_cache import compute_fast_portfolio_payload
     from ui.portfolio_home import PORTFOLIO_VIEW_OVERVIEW
 
     invalidate_holdings_cache()
-    preload = reload_portfolio_session(refresh_risks=False, sections=["all"])
+    invalidate_section_caches(["all"])
+
+    logger.info("Portfolio import reload started (fast library load)")
+    payload = compute_fast_portfolio_payload()
+    rows = payload.get("rows") or []
+    preload = payload.get("preload")
+    if preload is None:
+        preload = PortfolioAnalysisPreload.from_caches()
+
+    store_portfolio_payload(rows, preload, analysis_ready=False)
+    st.session_state["portfolio_fast_loaded"] = True
+
+    schedule_forced_dividend_sync()
+    try:
+        from services.deferred_startup import trigger_yield_preload
+
+        trigger_yield_preload()
+    except ImportError:
+        pass
+
+    try:
+        from utils.portfolio_db import compute_portfolio_db_fingerprint
+
+        st.session_state["_portfolio_db_fingerprint"] = compute_portfolio_db_fingerprint(
+            use_cache=False
+        )
+    except (SQLiteError, PostgresError, OSError) as exc:
+        logger.debug("Could not store portfolio DB fingerprint after import reload: %s", exc)
+
     st.session_state["portfolio_section_label"] = section_label
     st.session_state["portfolio_view_mode"] = PORTFOLIO_VIEW_OVERVIEW
     st.session_state.pop("portfolio_research_mode", None)
     st.session_state.pop("portfolio_holdings_drill_ticker", None)
     st.session_state.pop("portfolio_selected_symbol", None)
-    if refresh_risks:
-        rows = st.session_state.get("portfolio_details_rows") or []
-        refresh_portfolio_risks(force=True, rows=rows, preload=preload)
+    if refresh_risks and rows:
+        from ui.portfolio_risk_panel import _rebuild_attention_from_session
+
+        _rebuild_attention_from_session()
+    try:
+        from services.portfolio_ui_cache import save_session_cache
+
+        save_session_cache(force=True)
+    except ImportError:
+        pass
     logger.info(
         "Portfolio import applied to session (%d holdings, section=%s)",
         len(st.session_state.get("portfolio_details_rows") or []),

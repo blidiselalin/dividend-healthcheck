@@ -20,34 +20,41 @@ from ui.theme import portfolio_data_ready, sidebar_heading
 
 
 def _go_portfolio_section(section_label: str) -> None:
-    from ui.admin_page import set_admin_console_active
-    from ui.portfolio_home import PORTFOLIO_VIEW_OVERVIEW
+    from ui.theme import PORTFOLIO_SECTION_BY_LABEL, resolve_portfolio_section_label
 
-    set_admin_console_active(False)
-    st.session_state["portfolio_view_mode"] = PORTFOLIO_VIEW_OVERVIEW
-    st.session_state["portfolio_section_label"] = section_label
-    st.session_state.pop("portfolio_research_mode", None)
-    st.rerun()
+    section_key = PORTFOLIO_SECTION_BY_LABEL[resolve_portfolio_section_label(section_label)]
+    from ui.portfolio_home import navigate_to_portfolio_section
+
+    navigate_to_portfolio_section(section_key)
 
 
 def _render_sidebar_quick_nav() -> None:
     st.sidebar.caption("Navigate")
     row1 = st.sidebar.columns(2)
     with row1[0]:
-        if st.button("Dashboard", key="sidebar_nav_dashboard", use_container_width=True):
+        if st.button("Home", key="sidebar_nav_home", use_container_width=True):
             from ui.portfolio_home import navigate_to_portfolio_home
 
             navigate_to_portfolio_home()
     with row1[1]:
-        if st.button("Dividends", key="sidebar_nav_dividends", use_container_width=True):
-            _go_portfolio_section("Dividend income")
+        if st.button("Holdings", key="sidebar_nav_holdings", use_container_width=True):
+            from ui.portfolio_home import navigate_to_portfolio_section
+
+            navigate_to_portfolio_section("holdings")
     row2 = st.sidebar.columns(2)
     with row2[0]:
-        if st.button("Watchlist", key="sidebar_nav_watchlist", use_container_width=True):
-            st.toast("Risk & timing watchlists are below.")
+        if st.button("Dividends", key="sidebar_nav_dividends", use_container_width=True):
+            _go_portfolio_section("Dividend income")
     with row2[1]:
-        if st.button("Feedback", key="sidebar_nav_feedback", use_container_width=True):
-            st.toast("Use **Send beta feedback** on Home or any stock page.")
+        if st.button("Income & growth", key="sidebar_nav_growth", use_container_width=True):
+            _go_portfolio_section("Dividend growth")
+    row3 = st.sidebar.columns(2)
+    with row3[0]:
+        if st.button("Journal", key="sidebar_nav_journal", use_container_width=True):
+            _go_portfolio_section("Purchase journal")
+    with row3[1]:
+        if st.button("Deposits", key="sidebar_nav_deposits", use_container_width=True):
+            _go_portfolio_section("Deposits & benchmarks")
 
 
 def _reload_live_data() -> None:

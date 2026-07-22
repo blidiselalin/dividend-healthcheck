@@ -1,5 +1,8 @@
 """
-Sidebar progress bars for background portfolio and admin tasks.
+Background job progress for portfolio sidebar tasks.
+
+Progress bars render inside the **Background tasks** expander
+(``ui/background_tasks_panel``), not at the top of the sidebar.
 """
 
 from __future__ import annotations
@@ -19,18 +22,15 @@ from services.deferred_startup import (
     visible_jobs,
 )
 
+_RERUN_KINDS = {
+    JOB_YIELD_PRELOAD,
+    JOB_WARM_PORTFOLIO,
+    JOB_LIVE_RELOAD,
+    JOB_PORTFOLIO_DB_REFRESH,
+}
 
-@st.fragment(run_every=timedelta(seconds=2))
-def _background_progress_fragment() -> None:
-    applied_kinds = apply_background_results()
-    jobs = visible_jobs(admin=is_app_admin())
-    if not jobs and not applied_kinds:
-        return
 
-    st.markdown(
-        '<p class="ds-sidebar-heading">Background tasks</p>',
-        unsafe_allow_html=True,
-    )
+def _render_job_rows(jobs: list) -> None:
     for job in jobs:
         label = job.label
         if job.message:
@@ -43,23 +43,51 @@ def _background_progress_fragment() -> None:
         elif job.status == "done":
             st.success(f"{label} ✓")
 
-    rerun_kinds = {
-        JOB_YIELD_PRELOAD,
-        JOB_WARM_PORTFOLIO,
-        JOB_LIVE_RELOAD,
-        JOB_PORTFOLIO_DB_REFRESH,
-    }
-    if applied_kinds and any(kind in rerun_kinds for kind in applied_kinds):
+
+def render_inline_background_progress(*, poll: bool = False) -> bool:
+    """
+    Render active background jobs in the current container.
+
+    Returns True when any job row was shown.
+    """
+    applied_kinds = apply_background_results()
+    jobs = visible_jobs(admin=is_app_admin())
+    if not jobs and not applied_kinds:
+        return False
+
+    st.markdown("**Progress**")
+    _render_job_rows(jobs)
+
+    if poll and applied_kinds and any(kind in _RERUN_KINDS for kind in applied_kinds):
+        st.rerun()
+
+    return True
+
+
+@st.fragment(run_every=timedelta(seconds=2))
+def _background_progress_poll_fragment() -> None:
+    applied_kinds = apply_background_results()
+    jobs = visible_jobs(admin=is_app_admin())
+    if not jobs:
+        return
+
+    st.markdown("**Progress**")
+    _render_job_rows(jobs)
+
+    if applied_kinds and any(kind in _RERUN_KINDS for kind in applied_kinds):
         st.rerun()
 
 
-def render_sidebar_progress() -> None:
-    """Show active background jobs and poll while work is running."""
+def render_background_tasks_progress() -> None:
+    """Poll and show job progress inside the Background tasks expander."""
     jobs = visible_jobs(admin=is_app_admin())
     if jobs or has_active_jobs():
-        with st.sidebar:
-            if not is_app_admin() or not st.session_state.get("admin_console_active"):
-                _background_progress_fragment()
+        _background_progress_poll_fragment()
         return
 
+    render_inline_background_progress(poll=False)
+
+
+def render_sidebar_progress() -> None:
+    """Apply completed background jobs on each rerun (no top-of-sidebar UI)."""
     apply_background_results()

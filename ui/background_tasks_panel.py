@@ -16,7 +16,10 @@ from services.portfolio_session import user_has_holdings_in_db
 
 def render_background_tasks_panel() -> None:
     """Background task preferences and manual triggers (off by default)."""
-    with st.sidebar.expander("Background tasks", expanded=False):
+    from ui.sidebar_progress_panel import render_background_tasks_progress
+
+    busy = has_active_jobs()
+    with st.sidebar.expander("Background tasks", expanded=busy):
         st.caption(
             "Automatic enrichment is **off by default** for faster startup. "
             "Use the buttons below to refresh data when you want it, or enable "
@@ -114,5 +117,4 @@ def render_background_tasks_panel() -> None:
             st.toast("Starting history backfill…")
             st.rerun()
 
-        if busy:
-            st.caption("A background task is already running — see progress above.")
+        render_background_tasks_progress()

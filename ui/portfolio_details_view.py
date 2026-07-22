@@ -48,6 +48,7 @@ from services.scoring import ScoringService
 from ui.charts import show_chart
 from ui.components import UIComponents
 from ui.dividend_timing_display import dividend_timing_legend, render_dividend_timing_dataframe
+from ui.portfolio_home import PORTFOLIO_VIEW_HOLDING, PORTFOLIO_VIEW_OVERVIEW
 from ui.portfolio_manage_panel import render_tab_refresh_button
 from ui.portfolio_risk_panel import (
     SESSION_SUMMARY_KEY,
@@ -62,9 +63,6 @@ from ui.theme import (
 )
 from ui.views import SingleStockView
 from utils.formatting import format_large_number
-
-PORTFOLIO_VIEW_OVERVIEW = "overview"
-PORTFOLIO_VIEW_HOLDING = "holding"
 
 
 def _row_status_badge(row: PortfolioDetailRow) -> str:
@@ -2407,7 +2405,11 @@ class PortfolioDetailsView:
 
     @classmethod
     def render(cls) -> None:
-        from ui.portfolio_home import render_empty_home, render_portfolio_home_header
+        from ui.portfolio_home import (
+            render_empty_home,
+            render_portfolio_home_header,
+            render_portfolio_workspace_nav,
+        )
 
         if st.session_state.get("portfolio_view_mode") == PORTFOLIO_VIEW_HOLDING:
             research_mode = bool(st.session_state.get("portfolio_research_mode"))
@@ -2429,9 +2431,23 @@ class PortfolioDetailsView:
             return
 
         rows_loaded = st.session_state.get("portfolio_details_rows")
-        if not render_portfolio_home_header(rows_loaded):
-            return
-
         section_key = current_portfolio_section_key()
+        if section_key == "dashboard":
+            if not render_portfolio_home_header(rows_loaded):
+                return
+        else:
+            render_portfolio_workspace_nav()
+            if not portfolio_data_ready() or not rows_loaded:
+                from services.portfolio_session import user_has_holdings_in_db
+
+                st.divider()
+                if user_has_holdings_in_db():
+                    from ui.portfolio_load_prompt import render_portfolio_load_prompt
+
+                    render_portfolio_load_prompt(key_prefix=f"section_{section_key}")
+                else:
+                    render_empty_home()
+                return
+
         render_portfolio_status_line()
         cls._render_portfolio_section(section_key)

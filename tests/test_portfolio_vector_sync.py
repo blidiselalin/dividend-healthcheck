@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from datetime import date
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -59,6 +60,34 @@ def test_company_name_for_prefers_holding_db(
     assert sync._company_name_for("NEW", ctx) == "Custom Name Inc"
 
 
+def test_link_portfolio_uses_metadata_patch(
+    portfolio_store: PortfolioStore,
+    journal_store: PurchaseJournalStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    portfolio_store.upsert_holding("AAA", shares=1, avg_cost_per_share=1.0)
+    ctx = portfolio_context_from_stores(portfolio_store, journal_store)
+    store = MagicMock()
+    store.get_all_documents.return_value = [StockDocument(symbol="AAA", name="AAA")]
+    store.get_by_symbol.return_value = StockDocument(symbol="AAA", name="AAA")
+    store.patch_portfolio_metadata.return_value = ["AAA"]
+    monkeypatch.setattr(
+        sync,
+        "create_portfolio_context",
+        lambda db_path=None: ctx,
+    )
+    monkeypatch.setattr(
+        "services.shared_market_db.get_shared_vector_store",
+        lambda: store,
+    )
+
+    stats = sync.link_portfolio_in_vector_db()
+
+    store.patch_portfolio_metadata.assert_called_once()
+    store.add_documents.assert_not_called()
+    assert stats["linked"] == 1
+
+
 def test_collect_portfolio_symbols(
     portfolio_store: PortfolioStore,
     journal_store: PurchaseJournalStore,
@@ -75,7 +104,34 @@ def test_collect_portfolio_symbols(
     journal_store.add_purchase("BBB", date(2024, 1, 1), 5.0)
 
     symbols = sync.collect_portfolio_symbols(ctx)
+    assert symbols == {"AAA"}
+
+
+def test_collect_portfolio_symbols_can_include_journal_history(
+    portfolio_store: PortfolioStore,
+    journal_store: PurchaseJournalStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ctx = portfolio_context_from_stores(portfolio_store, journal_store)
+    monkeypatch.setattr(
+        sync,
+        "create_portfolio_context",
+        lambda db_path=None: ctx,
+    )
+
+    portfolio_store.upsert_holding("AAA", shares=1, avg_cost_per_share=1.0)
+    journal_store.add_purchase("BBB", date(2024, 1, 1), 5.0)
+
+    symbols = sync.collect_portfolio_symbols(ctx, include_journal_history=True)
     assert symbols == {"AAA", "BBB"}
+
+
+def test_apply_portfolio_fields_without_holding_not_in_portfolio() -> None:
+    doc = StockDocument(symbol="SOLD", name="SOLD")
+    sync.apply_portfolio_fields(doc, holding=None, purchase_count=2)
+    assert doc.in_portfolio is False
+    assert doc.portfolio_shares is None
+    assert "Portfolio holding" not in doc.embedding_text
 
 
 def test_collect_portfolio_symbols_excludes_delisted(

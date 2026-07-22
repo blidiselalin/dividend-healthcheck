@@ -27,14 +27,20 @@ def _company_name_for(symbol: str, ctx: PortfolioContext) -> str | None:
     return None
 
 
-def collect_portfolio_symbols(ctx: PortfolioContext | None = None) -> set[str]:
-    """All tickers from holdings and purchase journal."""
+def collect_portfolio_symbols(
+    ctx: PortfolioContext | None = None,
+    *,
+    include_journal_history: bool = False,
+) -> set[str]:
+    """Tickers with open holdings; optionally include journal-only history symbols."""
     context = ctx or create_portfolio_context()
     symbols: set[str] = set()
     for holding in context.portfolio.list_holdings():
-        symbols.add(holding.symbol.upper())
-    for purchase in context.journal.list_purchases(portfolio_only=False):
-        symbols.add(purchase.symbol.upper())
+        if holding.shares > 0:
+            symbols.add(holding.symbol.upper())
+    if include_journal_history:
+        for purchase in context.journal.list_purchases(portfolio_only=False):
+            symbols.add(purchase.symbol.upper())
     return {symbol for symbol in symbols if symbol not in DELISTED_SYMBOLS}
 
 
@@ -44,10 +50,12 @@ def apply_portfolio_fields(
     holding: Any | None = None,
     purchase_count: int = 0,
     company_name: str | None = None,
+    touch_library_timestamp: bool = True,
 ) -> StockDocument:
     """Attach portfolio position data to a market library document."""
-    document.in_portfolio = True
-    document.last_updated = datetime.now()
+    document.in_portfolio = holding is not None
+    if touch_library_timestamp:
+        document.last_updated = datetime.now()
 
     if company_name and (document.name == document.symbol or not document.name):
         document.name = company_name
@@ -72,6 +80,17 @@ def _purchase_counts(ctx: PortfolioContext) -> dict[str, int]:
     for purchase in ctx.journal.list_purchases(portfolio_only=False):
         counts[purchase.symbol.upper()] += 1
     return dict(counts)
+
+
+def _should_full_library_store(
+    document: StockDocument, *, existed: bool, enrich_missing: bool
+) -> bool:
+    """Full ingest (with history dual-write) only for newly enriched library documents."""
+    if existed or not enrich_missing:
+        return False
+    return bool(
+        document.price_history or document.dividend_history or document.current_price is not None
+    )
 
 
 def _fetch_or_create_document(
@@ -146,7 +165,8 @@ def sync_portfolio_to_vector_db(
         holding.symbol.upper(): holding for holding in ctx.portfolio.list_holdings()
     }
     purchases = _purchase_counts(ctx)
-    to_store: list[StockDocument] = []
+    to_patch: list[StockDocument] = []
+    to_store_full: list[StockDocument] = []
     existing_ids = {
         document.symbol.upper() for document in store.get_all_documents() if document.symbol
     }
@@ -167,16 +187,27 @@ def sync_portfolio_to_vector_db(
                 holding=holdings_by_symbol.get(symbol),
                 purchase_count=purchases.get(symbol, 0),
                 company_name=_company_name_for(symbol, ctx),
+                touch_library_timestamp=False,
             )
-            to_store.append(document)
+            if _should_full_library_store(document, existed=existed, enrich_missing=enrich_missing):
+                to_store_full.append(document)
+            else:
+                to_patch.append(document)
             stats["linked"] += 1
         except requests.exceptions.RequestException as exc:
             logger.error("Portfolio vector sync failed for %s: %s", symbol, exc)
             stats["errors"] += 1
 
-    if to_store:
-        store.add_documents(to_store)
-        stats["stored"] = len(to_store)
+    if hasattr(store, "patch_portfolio_metadata") and to_patch:
+        store.patch_portfolio_metadata(to_patch)
+        stats["stored"] += len(to_patch)
+    elif to_patch:
+        store.add_documents(to_patch)
+        stats["stored"] += len(to_patch)
+
+    if to_store_full:
+        store.add_documents(to_store_full)
+        stats["stored"] += len(to_store_full)
 
     stats["total_documents"] = store.count()
     return stats
