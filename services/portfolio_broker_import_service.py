@@ -66,11 +66,20 @@ class ImportApplyResult:
     issues: list[ImportIssue]
     cleared: int | None = None
 
+    @property
+    def wrote_data(self) -> bool:
+        return (
+            self.holdings_upserted > 0
+            or self.trades_imported > 0
+            or self.dividends_imported > 0
+            or self.deposits_imported > 0
+        )
+
 
 def preview_import(content: str | bytes) -> ImportPreview:
     statement = parse_activity_statement_csv(content)
     issues = validate_statement(statement)
-    symbols = sorted({pos.symbol for pos in statement.open_positions})
+    symbols = sorted(statement_symbol_scope(statement))
     monthly_deposits = build_monthly_deposits(statement)
     return ImportPreview(
         meta=statement.meta,

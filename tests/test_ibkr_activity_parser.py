@@ -75,6 +75,30 @@ def test_validate_rejects_non_ibkr_file() -> None:
     assert any(issue.level == ImportIssueLevel.ERROR for issue in issues)
 
 
+def test_validate_allows_import_without_open_positions() -> None:
+    csv_text = (
+        "Statement,Data,Title,Activity Statement\n"
+        'Trades,Data,Order,Stocks,USD,AAPL,"2025-02-13, 09:30:00",10,150,1500,USD,-1.25\n'
+        'Dividends,Data,USD,2025-03-15,"AAPL(US0378331005) Cash Dividend USD 0.25 per Share",2.50\n'
+        "Deposits & Withdrawals,Data,USD,2025-02-01,Electronic Fund Transfer,1000,USD\n"
+    )
+    statement = parse_activity_statement_csv(csv_text)
+    issues = validate_statement(statement)
+    assert not has_blocking_errors(issues)
+    assert any(
+        issue.level == ImportIssueLevel.WARNING and "No open stock positions" in issue.message
+        for issue in issues
+    )
+
+
+def test_validate_rejects_statement_with_no_importable_data() -> None:
+    csv_text = "Statement,Data,Title,Activity Statement\n"
+    statement = parse_activity_statement_csv(csv_text)
+    issues = validate_statement(statement)
+    assert has_blocking_errors(issues)
+    assert any("No importable portfolio data" in issue.message for issue in issues)
+
+
 def test_parse_dividend_with_spaced_symbol_and_ordinary_dividend_format() -> None:
     csv_text = (
         "Statement,Data,Title,Activity Statement\n"

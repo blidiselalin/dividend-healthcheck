@@ -410,11 +410,21 @@ def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:
     return statement
 
 
+def statement_has_importable_data(statement: IBKRActivityStatement) -> bool:
+    """True when the statement contains holdings, activity, or cash flows to import."""
+    return bool(
+        statement.open_positions
+        or statement.trades
+        or statement.dividends
+        or statement.cash_transfers
+    )
+
+
 def validate_statement(statement: IBKRActivityStatement) -> list[ImportIssue]:
     """Return validation issues; fatal errors block import."""
     issues = list(statement.issues)
     title_ok = statement.meta.title and "activity statement" in statement.meta.title.lower()
-    if not title_ok and not statement.open_positions and not statement.trades:
+    if not title_ok and not statement_has_importable_data(statement):
         issues.append(
             ImportIssue(
                 ImportIssueLevel.ERROR,
@@ -422,14 +432,23 @@ def validate_statement(statement: IBKRActivityStatement) -> list[ImportIssue]:
             )
         )
     if not statement.open_positions:
-        issues.append(
-            ImportIssue(
-                ImportIssueLevel.ERROR,
-                "No open stock positions found (Open Positions → Summary → Stocks → USD).",
+        if statement_has_importable_data(statement):
+            issues.append(
+                ImportIssue(
+                    ImportIssueLevel.WARNING,
+                    "No open stock positions found — trades, dividends, and deposits will "
+                    "still import.",
+                )
             )
-        )
+        else:
+            issues.append(
+                ImportIssue(
+                    ImportIssueLevel.ERROR,
+                    "No importable portfolio data found in statement.",
+                )
+            )
     symbols = [pos.symbol for pos in statement.open_positions]
-    if len(symbols) != len(set(symbols)):
+    if symbols and len(symbols) != len(set(symbols)):
         issues.append(
             ImportIssue(
                 ImportIssueLevel.ERROR,

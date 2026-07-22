@@ -484,8 +484,8 @@ def _render_ibkr_import_tab() -> None:
                 if has_blocking_errors(result.issues):
                     st.error("Import blocked by validation errors.")
                     raise RuntimeError("import blocked")
-                if result.holdings_upserted == 0:
-                    st.error("Import did not write any holdings.")
+                if not result.wrote_data:
+                    st.error("Import did not write any portfolio data.")
                     raise RuntimeError("import empty")
                 progress("Loading portfolio from library…", 0.98)
                 from services.portfolio_refresh import reload_portfolio_after_data_import

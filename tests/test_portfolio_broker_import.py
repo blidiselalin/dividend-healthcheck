@@ -25,6 +25,45 @@ def test_preview_sample(sample_csv: str) -> None:
     assert not preview.blocking
 
 
+def test_preview_without_open_positions_is_not_blocking() -> None:
+    csv_text = (
+        "Statement,Data,Title,Activity Statement\n"
+        'Trades,Data,Order,Stocks,USD,AAPL,"2025-02-13, 09:30:00",10,150,1500,USD,-1.25\n'
+        'Dividends,Data,USD,2025-03-15,"AAPL(US0378331005) Cash Dividend USD 0.25 per Share",2.50\n'
+        "Deposits & Withdrawals,Data,USD,2025-02-01,Electronic Fund Transfer,1000.00\n"
+    )
+    preview = preview_import(csv_text)
+    assert preview.position_count == 0
+    assert preview.trade_count == 1
+    assert preview.dividend_count == 1
+    assert preview.deposit_month_count == 1
+    assert preview.symbols == ["AAPL"]
+    assert not preview.blocking
+
+
+def test_apply_import_without_open_positions(tmp_path: Path) -> None:
+    csv_text = (
+        "Statement,Data,Title,Activity Statement\n"
+        'Trades,Data,Order,Stocks,USD,AAPL,"2025-02-13, 09:30:00",10,150,1500,USD,-1.25\n'
+        'Trades,Data,Order,Stocks,USD,AAPL,"2025-08-01, 10:00:00",-10,170,1700,USD,-1.00\n'
+        'Dividends,Data,USD,2025-03-15,"AAPL(US0378331005) Cash Dividend USD 0.25 per Share",2.50\n'
+        "Deposits & Withdrawals,Data,USD,2025-02-01,Electronic Fund Transfer,1000.00\n"
+    )
+    db = tmp_path / "portfolio.db"
+    result = apply_import(csv_text, mode=ImportMode.REPLACE, db_path=db)
+    assert result.holdings_upserted == 0
+    assert result.trades_imported == 2
+    assert result.dividends_imported == 1
+    assert result.deposits_imported == 1
+    assert result.wrote_data
+
+    ctx = create_portfolio_context(db_path=db)
+    assert ctx.portfolio.list_holdings() == []
+    assert len(ctx.journal.list_purchases(portfolio_only=False)) == 2
+    assert len(ctx.receipts.list_for_symbol("AAPL")) == 1
+    assert len(ctx.deposits.list_deposits()) == 1
+
+
 def test_apply_import_reports_progress(sample_csv: str, tmp_path: Path) -> None:
     db = tmp_path / "portfolio.db"
     steps: list[tuple[str, float]] = []
