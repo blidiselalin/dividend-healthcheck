@@ -305,9 +305,9 @@ def inject_app_theme() -> None:
         }
         .ds-onboarding-sidebar-hint {
             font-size: 0.82rem;
-            color: rgba(49, 51, 63, 0.85);
-            background: rgba(28, 131, 225, 0.08);
-            border-left: 3px solid rgba(28, 131, 225, 0.55);
+            color: var(--ds-text);
+            background: rgba(56, 189, 248, 0.12);
+            border-left: 3px solid rgba(56, 189, 248, 0.55);
             padding: 0.45rem 0.55rem;
             margin: 0 0 0.75rem 0;
             line-height: 1.4;

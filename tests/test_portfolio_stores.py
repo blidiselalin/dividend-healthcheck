@@ -81,6 +81,24 @@ def test_portfolio_update_holding_returns_none_for_missing(
     assert result is None
 
 
+def test_drop_holding_removes_row_but_not_journal(
+    portfolio_store: PortfolioStore,
+    journal_store: PurchaseJournalStore,
+) -> None:
+    portfolio_store.upsert_holding("SOLD", shares=5, avg_cost_per_share=20.0)
+    journal_store.add_purchase(
+        "SOLD",
+        date(2024, 1, 1),
+        20.0,
+        shares=5.0,
+        side="sell",
+        source="ibkr",
+    )
+    assert portfolio_store.drop_holding("SOLD") is True
+    assert portfolio_store.get_holding("SOLD") is None
+    assert len(journal_store.list_purchases(portfolio_only=False)) == 1
+
+
 def test_portfolio_set_dividends_paid(portfolio_store: PortfolioStore) -> None:
     portfolio_store.upsert_holding("DIV", shares=10, avg_cost_per_share=50.0)
     portfolio_store.set_dividends_paid("DIV", 123.45)

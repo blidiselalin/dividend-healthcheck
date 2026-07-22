@@ -31,3 +31,9 @@ stock_dividend_history   ← ex-date payments (yield charts, monthly exposure)
 **Runtime reads:** `get_by_symbol()` merges `stock_documents` with history tables (prefers tables when richer).
 
 **Post-import history sync** in `import_legacy_market_library()` is best-effort — failures must not abort the import.
+
+## Agent discipline
+
+- Read via `services.shared_market_db` — do not add new Chroma paths or local JSON runtime stores.
+- Enrich via `create_stock_enricher()` — do not wire raw yfinance calls in UI or new one-off services.
+- Backfill/sync scripts already exist (`ingest_data.py`, admin UI) — extend them instead of duplicate CLI tools.

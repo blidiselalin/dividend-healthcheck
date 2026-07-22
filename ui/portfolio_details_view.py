@@ -12,7 +12,6 @@ import streamlit as st
 
 from data_ingestion.deposits_store import MonthlyDeposit
 from data_ingestion.portfolio_store import PortfolioStore
-from data_ingestion.sp500_universe import sectors_match
 from models.stock import StockData
 from services.dividend_timing import classify_dividend_timing
 from services.portfolio_allocation_service import PortfolioAllocationService
@@ -924,27 +923,24 @@ class PortfolioDetailsView:
         nav_tickers: list[str],
     ) -> None:
         """Compare the active holding with other positions in the same sector."""
-        sector = row.sector
-        if not sector or sector.strip().lower() in {"unknown", "n/a", ""}:
-            return
+        from services.portfolio_holding_peers import collect_portfolio_sector_peers
 
-        current_data = preload.stock_data.get(symbol)
-        peers: list[dict[str, Any]] = []
-        for other in rows:
-            if other.ticker.upper() == symbol.upper():
-                continue
-            if not other.sector or not sectors_match(sector, other.sector):
-                continue
-            data = preload.stock_data.get(other.ticker)
-            if data:
-                peers.append(cls._peer_dict_from_stock(data))
+        sector, peers, current_data = collect_portfolio_sector_peers(
+            symbol,
+            row,
+            rows,
+            preload,
+            stock_to_peer=cls._peer_dict_from_stock,
+        )
+        if not sector:
+            return
 
         st.divider()
         st.markdown("##### Compare with other holdings (same sector)")
         if not peers:
             st.info(
-                "No other portfolio positions share this sector. "
-                "Add another name in the same industry to compare side by side."
+                f"No other holdings in **{sector}** yet. "
+                "Add another position in this sector to compare side by side."
             )
             return
 
@@ -2110,16 +2106,15 @@ class PortfolioDetailsView:
         )
 
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Journal buys", summary.purchase_count)
+        m1.metric("Journal trades", summary.purchase_count)
         m2.metric("Est. cost (journal)", f"${summary.total_estimated_cost_usd:,.2f}")
         m3.metric("Dividend payments", summary.dividend_payment_count)
         m4.metric("Est. dividends received", f"${summary.total_dividend_cash_usd:,.2f}")
 
         if summary.uses_journal_shares:
             st.caption(
-                "Shares per buy are estimated from the purchase journal (even split, "
-                "scaled to portfolio acquisition value). Dividend cash = $/share × "
-                "shares held on each ex-date."
+                "Buy and sell lots from the purchase journal drive share counts over time. "
+                "Dividend cash = $/share × shares held on each ex-date."
             )
         else:
             st.caption(
@@ -2137,9 +2132,9 @@ class PortfolioDetailsView:
         )
 
         with buy_col:
-            st.markdown("**All purchases (journal)**")
+            st.markdown("**Buy / sell history (journal)**")
             if purchases_df.empty:
-                st.info("No purchase journal entries for this ticker.")
+                st.info("No journal entries for this ticker.")
             else:
                 st.dataframe(
                     purchases_df,
@@ -2147,7 +2142,7 @@ class PortfolioDetailsView:
                     hide_index=True,
                     column_config={
                         "Price $": st.column_config.NumberColumn(format="$%.2f"),
-                        "Shares": st.column_config.NumberColumn(format="%.4f"),
+                        "Shares": st.column_config.NumberColumn(format="%+.4f"),
                         "Cost $": st.column_config.NumberColumn(format="$%.2f"),
                         "Cumulative shares": st.column_config.NumberColumn(format="%.4f"),
                     },
@@ -2277,10 +2272,14 @@ class PortfolioDetailsView:
         st.markdown("##### Positions table")
         st.caption(
             "Worst performers first · select a row to load holding detail below, "
-            "or use **Holding detail** for full dividend analysis."
+            "or use **Holding detail** for full dividend analysis. "
+            "Red = loss · green = gain."
         )
+        from services.portfolio_position_table import style_holdings_detail_dataframe
+
+        display_df = style_holdings_detail_dataframe(filtered)
         table_selection = st.dataframe(
-            filtered,
+            display_df,
             use_container_width=True,
             hide_index=True,
             on_select="rerun",
@@ -2381,9 +2380,9 @@ class PortfolioDetailsView:
                 from services.portfolio_session import user_has_holdings_in_db
 
                 if user_has_holdings_in_db():
-                    st.info(
-                        "Loading positions from your portfolio… refresh the page if this persists."
-                    )
+                    from ui.portfolio_load_prompt import render_portfolio_load_prompt
+
+                    render_portfolio_load_prompt(key_prefix="holdings")
                 else:
                     st.info("Add holdings under **Manage portfolio** to see positions here.")
                 return

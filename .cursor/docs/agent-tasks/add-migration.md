@@ -15,8 +15,10 @@
 
 ## Do not
 
-- Skip the migration SQL file ( `ensure_schema()` tracks `schema_migrations` ).
+- Skip the migration SQL file (`ensure_schema()` tracks `schema_migrations`).
 - Use `date.fromisoformat(row[...])` on Postgres query results.
 - Set global `DATABASE_URL` in unit tests.
+- Add migration + new store class when extending an existing store method is enough.
+- Leave old columns unused “for backward compatibility” without a follow-up removal plan.
 
 See `.cursor/docs/agents/storage.md` for data ownership and store patterns.

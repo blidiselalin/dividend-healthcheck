@@ -109,6 +109,7 @@ def test_import_stores_dividends_for_closed_positions(tmp_path: Path) -> None:
     assert len(amcr) == 1
     assert amcr[0].source == "ibkr"
     assert amcr[0].gross_usd == 1.20
+    assert result.symbols_touched == ["AMCR", "KO"]
 
 
 def test_merge_import_stores_dividends_for_closed_positions(tmp_path: Path) -> None:
@@ -131,6 +132,22 @@ def test_merge_import_stores_dividends_for_closed_positions(tmp_path: Path) -> N
     assert len(ctx.receipts.list_for_symbol("AMCR")) == 1
 
 
+def test_replace_import_journal_net_shares_match_open_position(
+    tmp_path: Path,
+    sample_csv: str,
+) -> None:
+    db = tmp_path / "portfolio.db"
+    result = apply_import(sample_csv, mode=ImportMode.REPLACE, db_path=db)
+    ctx = create_portfolio_context(db_path=db)
+
+    aapl = next(h for h in ctx.portfolio.list_holdings() if h.symbol == "AAPL")
+    lots = ctx.journal_service.build_estimated_lots()
+    aapl_net = sum(lot.estimated_shares for lot in lots if lot.symbol == "AAPL")
+    assert aapl_net == pytest.approx(7.0)
+    assert aapl.shares == pytest.approx(10.0)
+    assert result.symbols_touched == ["AAPL", "MSFT"]
+
+
 def test_replace_import_validates_against_open_positions(tmp_path: Path, sample_csv: str) -> None:
     db = tmp_path / "portfolio.db"
     apply_import(sample_csv, mode=ImportMode.REPLACE, db_path=db)
@@ -143,3 +160,84 @@ def test_replace_import_validates_against_open_positions(tmp_path: Path, sample_
         holding = next(h for h in ctx.portfolio.list_holdings() if h.symbol == position.symbol)
         assert holding.shares == pytest.approx(position.shares)
         assert holding.avg_cost_per_share == pytest.approx(position.cost_price)
+
+
+def test_merge_drops_fully_sold_holding_keeps_history(tmp_path: Path) -> None:
+    """Merge removes open positions that were fully sold but keeps journal + receipts."""
+    sold_csv = (
+        "Statement,Data,Title,Activity Statement\n"
+        "Open Positions,Data,Summary,Stocks,USD,MSFT,5,400,400,2000\n"
+        'Trades,Data,Order,Stocks,USD,AAPL,"2025-02-13, 09:30:00",10,150,1500,USD,-1.25\n'
+        'Trades,Data,Order,Stocks,USD,AAPL,"2025-08-01, 10:00:00",-10,170,1700,USD,-1.00\n'
+        'Trades,Data,Order,Stocks,USD,MSFT,"2025-03-01, 11:00:00",5,400,2000,USD,-1.50\n'
+        'Dividends,Data,USD,2025-03-15,"AAPL(US0378331005) Cash Dividend USD 0.25 per Share",2.50\n'
+    )
+    db = tmp_path / "portfolio.db"
+    apply_import(FIXTURE.read_text(encoding="utf-8"), mode=ImportMode.REPLACE, db_path=db)
+
+    result = apply_import(sold_csv, mode=ImportMode.MERGE, db_path=db)
+    assert result.trades_imported == 3
+
+    ctx = create_portfolio_context(db_path=db)
+    symbols = {h.symbol for h in ctx.portfolio.list_holdings()}
+    assert symbols == {"MSFT"}
+    aapl_trades = [
+        p for p in ctx.journal.list_purchases(portfolio_only=False) if p.symbol == "AAPL"
+    ]
+    assert len(aapl_trades) == 2
+    assert {p.side for p in aapl_trades} == {"buy", "sell"}
+    assert len(ctx.receipts.list_for_symbol("AAPL")) == 1
+
+
+def test_merge_imports_trades_for_symbols_not_in_open_positions(tmp_path: Path) -> None:
+    """Closed-position trades in the statement are still written on merge."""
+    csv_text = (
+        "Statement,Data,Title,Activity Statement\n"
+        "Open Positions,Data,Summary,Stocks,USD,KO,10,60,60,600\n"
+        'Trades,Data,Order,Stocks,USD,AMCR,"2025-04-01, 09:30:00",20,10,200,USD,-1.00\n'
+        'Trades,Data,Order,Stocks,USD,AMCR,"2025-05-01, 10:00:00",-20,11,220,USD,-1.00\n'
+        "Dividends,Data,USD,2025-03-15,"
+        '"AMCR(US001) Cash Dividend USD 0.12 (Ordinary Dividend)",1.20\n'
+    )
+    db = tmp_path / "portfolio.db"
+    ctx = create_portfolio_context(db_path=db)
+    ctx.portfolio.upsert_holding("AMCR", shares=5, avg_cost_per_share=10.0)
+
+    apply_import(csv_text, mode=ImportMode.MERGE, db_path=db)
+
+    ctx = create_portfolio_context(db_path=db)
+    assert "AMCR" not in {h.symbol for h in ctx.portfolio.list_holdings()}
+    amcr_trades = [
+        p for p in ctx.journal.list_purchases(portfolio_only=False) if p.symbol == "AMCR"
+    ]
+    assert len(amcr_trades) == 2
+    assert len(ctx.receipts.list_for_symbol("AMCR")) == 1
+
+
+def test_apply_import_resets_portfolio_views_and_syncs_vector(
+    tmp_path: Path,
+    sample_csv: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = tmp_path / "portfolio.db"
+    reset_calls: list[bool] = []
+    sync_calls: list[bool] = []
+
+    monkeypatch.setattr(
+        "services.portfolio_session.reset_portfolio_view_state",
+        lambda: reset_calls.append(True),
+    )
+
+    def _sync(**kwargs: object) -> dict[str, int]:
+        sync_calls.append(True)
+        return {"linked": 2}
+
+    monkeypatch.setattr(
+        "services.portfolio_vector_sync.sync_portfolio_to_vector_db",
+        _sync,
+    )
+
+    apply_import(sample_csv, mode=ImportMode.REPLACE, db_path=db)
+
+    assert reset_calls
+    assert sync_calls

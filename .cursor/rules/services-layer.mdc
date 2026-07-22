@@ -1,10 +1,16 @@
 ---
-description: Service layer wiring and portfolio flows
+description: Service layer wiring — extend canonical modules, no duplicate services
 globs: services/**/*.py
 alwaysApply: false
 ---
 
 # Services layer
+
+## Before adding a new service function
+
+1. Grep `services/` for an existing function that already does 80% of the work.
+2. Extend the nearest module — do **not** create `*_helper.py`, `*_utils.py`, or a second import service.
+3. If replacing behavior, remove or stop calling the old function in the same change.
 
 ## Portfolio context
 
@@ -14,20 +20,38 @@ Multi-table portfolio work must share one DB path:
 from services.portfolio_context import create_portfolio_context
 
 ctx = create_portfolio_context()
-# ctx.portfolio, ctx.journal, ctx.receipts, ctx.detail
+# ctx.portfolio, ctx.journal, ctx.receipts, ctx.journal_service, ctx.detail
 ```
 
-Use in sync, management, and any flow combining holdings + journal + dividends.
+Never construct `PortfolioStore()` and `PurchaseJournalStore()` separately unless they share an explicit `db_path`.
+
+## Portfolio reload (do not duplicate)
+
+| Situation | Call |
+|-----------|------|
+| Normal UI edit / sidebar refresh | `schedule_portfolio_reload()` |
+| IBKR or full broker import apply | `reload_portfolio_after_data_import()` |
+| Unit tests / scripts needing sync state | `reload_portfolio_session()` |
+
+Do **not** add a fourth reload helper — use or extend `services/portfolio_refresh.py`.
+
+## Holdings removal
+
+| Situation | Call |
+|-----------|------|
+| User deletes position (wipe receipts too) | `portfolio.delete_holding(symbol)` |
+| IBKR merge — fully sold symbol | `portfolio.drop_holding(symbol)` — keeps journal + receipts |
 
 ## Market library
 
 - Read: `services.shared_market_db.get_document(symbol)`
 - Enrich: `data_ingestion.stock_enricher.create_stock_enricher()` — not ad-hoc `YFinanceEnricher()` in new code
 
-## Side effects
+## Side effects (existing — don't reimplement)
 
 - Portfolio mutations → `sync_received_dividends()` (dividend receipts + `dividends_paid`)
 - Holding changes → `sync_portfolio_to_vector_db()` for portfolio metadata overlay only
+- IBKR import finalize → `reset_portfolio_view_state()` + vector sync (already in broker import service)
 
 ## Logging
 

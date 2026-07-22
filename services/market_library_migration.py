@@ -135,10 +135,29 @@ def diagnose_legacy_import(data_dir: Path) -> LegacyImportDiagnostics:  # noqa: 
             "or rsync with --include-vectordb, then run migrate."
         )
     elif diag.legacy_document_count == 0:
-        if diag.fallback_json:
+        if diag.postgres_document_count > 0:
             diag.message = (
-                "fallback_store.json exists but parsed 0 documents — file may be empty or corrupt."
+                f"PostgreSQL market library has {diag.postgres_document_count} symbols; "
+                "legacy import not needed."
             )
+        elif diag.fallback_json:
+            fallback_path = vectordb_dir / "fallback_store.json"
+            try:
+                payload = json.loads(fallback_path.read_text(encoding="utf-8"))
+                fallback_empty = not isinstance(payload, dict) or not payload
+            except (json.JSONDecodeError, OSError):
+                fallback_empty = False
+            if fallback_empty:
+                if diag.chroma_sqlite:
+                    diag.message = (
+                        "Empty fallback_store.json scaffold; Chroma database has no documents."
+                    )
+                else:
+                    diag.message = "Empty fallback_store.json scaffold; no legacy documents found."
+            else:
+                diag.message = (
+                    "fallback_store.json exists but parsed 0 documents — file may be corrupt."
+                )
         elif diag.chroma_sqlite and not diag.chromadb_available:
             diag.message = (
                 "Chroma files found but chromadb package unavailable in this environment."

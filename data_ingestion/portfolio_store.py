@@ -375,6 +375,11 @@ class PortfolioStore:
         from data_ingestion.dividend_receipt_store import DividendReceiptStore
 
         DividendReceiptStore(db_path=self.db_path).delete_for_symbol(symbol)
+        return self.drop_holding(symbol)
+
+    def drop_holding(self, symbol: str) -> bool:
+        """Remove an open position row only — keeps journal and dividend receipts."""
+        symbol = symbol.strip().upper()
         with self._connect() as connection:
             if connection.is_postgres:
                 cursor = connection.execute(

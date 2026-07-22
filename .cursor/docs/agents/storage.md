@@ -74,3 +74,9 @@ When hashing DB rows, iterate **column names** — not the row itself:
 ```python
 tuple(row[key] for key in row.keys())  # not: for key in row
 ```
+
+## Agent discipline
+
+- Extend `create_portfolio_context()` and existing stores — do not add a second portfolio access layer.
+- Schema changes need **one** migration file + mirror in store `_ensure_schema()` — not ad-hoc DDL in services.
+- Grep before adding new store tables or JSON files under `/data/users/`.

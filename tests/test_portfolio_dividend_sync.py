@@ -72,6 +72,28 @@ def test_sync_respects_purchase_journal_shares(tmp_path: Path) -> None:
     assert holding.dividends_paid == pytest.approx(4.62, rel=0.01)
 
 
+def test_drop_holding_keeps_dividend_receipts(tmp_path: Path) -> None:
+    db = tmp_path / "portfolio.db"
+    portfolio = PortfolioStore(db_path=db, seed=False)
+    portfolio.upsert_holding("KO", shares=10, avg_cost_per_share=50.0)
+    from data_ingestion.dividend_receipt_store import DividendReceiptStore
+
+    DividendReceiptStore(db_path=db).sync_receipt(
+        "KO",
+        ex_date=date(2024, 4, 1),
+        pay_date=date(2024, 4, 1),
+        per_share_usd=0.46,
+        shares_held=10.0,
+        gross_usd=4.60,
+        source="ibkr",
+    )
+
+    assert portfolio.drop_holding("KO") is True
+
+    assert portfolio.get_holding("KO") is None
+    assert len(DividendReceiptStore(db_path=db).list_for_symbol("KO")) == 1
+
+
 def test_delete_holding_removes_dividend_receipts(tmp_path: Path) -> None:
     db = tmp_path / "portfolio.db"
     portfolio = PortfolioStore(db_path=db, seed=False)

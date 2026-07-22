@@ -28,22 +28,11 @@ class PortfolioClearResult:
 
 def _clear_session_caches() -> None:
     try:
-        from services.portfolio_ui_cache import clear_session_cache
+        from services.portfolio_session import reset_portfolio_view_state
 
-        clear_session_cache()
+        reset_portfolio_view_state()
     except Exception as exc:  # noqa: BLE001
-        logger.debug("Could not clear portfolio UI cache: %s", exc)
-
-    try:
-        import streamlit as st
-
-        from auth.user_context import clear_portfolio_session_state
-
-        if st.session_state.get("portfolio_details_rows"):
-            clear_portfolio_session_state()
-        st.session_state.pop("_portfolio_db_fingerprint", None)
-    except Exception:  # noqa: S110
-        pass
+        logger.debug("Could not reset portfolio view state: %s", exc)
 
 
 def clear_user_portfolio(*, db_path: Path | None = None) -> PortfolioClearResult:

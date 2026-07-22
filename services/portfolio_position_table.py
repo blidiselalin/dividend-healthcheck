@@ -5,7 +5,7 @@ Home positions table — concerns, formatting, and dataframe rows (no Streamlit)
 from __future__ import annotations
 
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
@@ -13,6 +13,12 @@ if TYPE_CHECKING:
     from services.portfolio_details_service import PortfolioDetailRow
 
 _COMPANY_MAX_LEN = 28
+_POS_BG = "rgba(16, 185, 129, 0.2)"
+_POS_FG = "#34d399"
+_NEG_BG = "rgba(239, 68, 68, 0.22)"
+_NEG_FG = "#f87171"
+_NEUTRAL_FG = "#94a3b8"
+_SIGNED_PCT_COLUMNS = ("P/L %", "Day %", "1Y %")
 _PROFIT_ALERT_PCT = -20.0
 _HIGH_YIELD_PCT = 9.0
 _LOW_YIELD_PCT = 1.0
@@ -142,3 +148,98 @@ def build_home_positions_dataframe(
             }
         )
     return pd.DataFrame(records)
+
+
+def _is_missing(value: object) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, float) and pd.isna(value):
+        return True
+    return False
+
+
+def _signed_pct_style(value: object) -> str:
+    if _is_missing(value):
+        return f"color: {_NEUTRAL_FG};"
+    numeric = float(value)
+    if numeric < -0.05:
+        return f"background-color: {_NEG_BG}; color: {_NEG_FG}; font-weight: 650;"
+    if numeric > 0.05:
+        return f"background-color: {_POS_BG}; color: {_POS_FG}; font-weight: 650;"
+    return f"color: {_NEUTRAL_FG};"
+
+
+def _pl_bar_style(value: object) -> str:
+    if _is_missing(value):
+        return f"color: {_NEUTRAL_FG};"
+    numeric = float(value)
+    if numeric < 49.5:
+        return f"background-color: {_NEG_BG}; color: {_NEG_FG}; font-weight: 650;"
+    if numeric > 50.5:
+        return f"background-color: {_POS_BG}; color: {_POS_FG}; font-weight: 650;"
+    return f"color: {_NEUTRAL_FG};"
+
+
+def _pl_bar_class(value: object) -> str:
+    if _is_missing(value):
+        return ""
+    numeric = float(value)
+    if numeric < 49.5:
+        return "ds-pl-loss"
+    if numeric > 50.5:
+        return "ds-pl-gain"
+    return "ds-pl-flat"
+
+
+def _signed_pct_class(value: object) -> str:
+    if _is_missing(value):
+        return ""
+    numeric = float(value)
+    if numeric < -0.05:
+        return "ds-pct-loss"
+    if numeric > 0.05:
+        return "ds-pct-gain"
+    return ""
+
+
+def _style_signed_pct_dataframe(
+    df: pd.DataFrame,
+    *,
+    pct_columns: tuple[str, ...],
+    pl_column: str | None = None,
+) -> pd.DataFrame | Any:
+    """Highlight signed % columns (and optional P/L bar column) for Streamlit tables."""
+    if df.empty:
+        return df
+
+    classes = pd.DataFrame("", index=df.index, columns=df.columns)
+    for col in pct_columns:
+        if col in df.columns:
+            classes[col] = df[col].map(_signed_pct_class)
+    if pl_column and pl_column in df.columns:
+        classes[pl_column] = df[pl_column].map(_pl_bar_class)
+
+    styler = df.style
+    for col in pct_columns:
+        if col in df.columns:
+            styler = styler.map(_signed_pct_style, subset=[col])
+    if pl_column and pl_column in df.columns:
+        styler = styler.map(_pl_bar_style, subset=[pl_column])
+    return styler.set_td_classes(classes)
+
+
+def style_home_positions_dataframe(df: pd.DataFrame) -> pd.DataFrame | Any:
+    """Highlight losses in red and gains in green for the home positions table."""
+    return _style_signed_pct_dataframe(
+        df,
+        pct_columns=_SIGNED_PCT_COLUMNS,
+        pl_column="P/L",
+    )
+
+
+HOLDINGS_DETAIL_PCT_COLUMNS = ("Profit %", "180", "365 Day %")
+
+
+def style_holdings_detail_dataframe(df: pd.DataFrame) -> pd.DataFrame | Any:
+    """Color profit and price-change columns on the Holdings detail table."""
+    return _style_signed_pct_dataframe(df, pct_columns=HOLDINGS_DETAIL_PCT_COLUMNS)

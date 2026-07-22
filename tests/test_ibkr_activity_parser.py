@@ -37,6 +37,13 @@ def test_parse_sample_statement(sample_csv: str) -> None:
     assert aapl_div.gross_usd == 2.50
 
 
+def test_statement_symbol_scope_includes_trades_and_dividends(sample_csv: str) -> None:
+    from services.ibkr_activity_parser import statement_symbol_scope
+
+    statement = parse_activity_statement_csv(sample_csv)
+    assert statement_symbol_scope(statement) == {"AAPL", "MSFT"}
+
+
 def test_validate_sample_has_no_blocking_errors(sample_csv: str) -> None:
     statement = parse_activity_statement_csv(sample_csv)
     issues = validate_statement(statement)

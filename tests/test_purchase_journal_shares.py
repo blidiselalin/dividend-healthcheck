@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from data_ingestion.portfolio_store import PortfolioStore
 from data_ingestion.purchase_journal_store import PurchaseJournalStore
 from services.portfolio_purchase_journal_service import PortfolioPurchaseJournalService
@@ -49,3 +51,72 @@ def test_build_estimated_lots_uses_recorded_shares(
     assert lots[0].estimated_value_usd == 480.0
     assert lots[1].estimated_shares == 5.0
     assert lots[1].estimated_value_usd == 261.0
+
+
+def test_sell_lot_cost_is_negative(journal_store: PurchaseJournalStore) -> None:
+    record = journal_store.add_purchase(
+        "KO",
+        date(2024, 8, 1),
+        55.0,
+        shares=4.0,
+        commission_usd=1.0,
+        side="sell",
+        source="ibkr",
+    )
+    assert record.lot_cost_usd == -221.0
+
+
+def test_build_estimated_lots_includes_sold_symbol_without_holding(
+    portfolio_store: PortfolioStore,
+    journal_store: PurchaseJournalStore,
+) -> None:
+    portfolio_store.upsert_holding("AMCR", shares=20.0, avg_cost_per_share=10.0)
+    journal_store.add_purchase(
+        "AMCR",
+        date(2024, 4, 1),
+        10.0,
+        shares=20.0,
+        side="buy",
+        source="ibkr",
+    )
+    journal_store.add_purchase(
+        "AMCR",
+        date(2024, 5, 1),
+        11.0,
+        shares=20.0,
+        side="sell",
+        source="ibkr",
+    )
+    portfolio_store.drop_holding("AMCR")
+
+    service = PortfolioPurchaseJournalService(
+        journal_store=journal_store,
+        portfolio_store=portfolio_store,
+    )
+    lots = [lot for lot in service.build_estimated_lots() if lot.symbol == "AMCR"]
+    assert len(lots) == 2
+    assert sum(lot.estimated_shares for lot in lots) == pytest.approx(0.0)
+
+
+def test_chronological_dataframe_includes_side(
+    portfolio_store: PortfolioStore,
+    journal_store: PurchaseJournalStore,
+) -> None:
+    portfolio_store.upsert_holding("KO", shares=10.0, avg_cost_per_share=50.0)
+    journal_store.add_purchase("KO", date(2024, 1, 1), 48.0, shares=10.0, side="buy")
+    journal_store.add_purchase(
+        "KO",
+        date(2024, 6, 1),
+        52.0,
+        shares=3.0,
+        side="sell",
+        source="ibkr",
+    )
+
+    service = PortfolioPurchaseJournalService(
+        journal_store=journal_store,
+        portfolio_store=portfolio_store,
+    )
+    frame = service.chronological_dataframe()
+    assert "Side" in frame.columns
+    assert set(frame["Side"]) == {"Buy", "Sell"}

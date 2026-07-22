@@ -167,11 +167,9 @@ def render_real_user_getting_started() -> None:
             kind="info",
         )
     elif not st.session_state.get("portfolio_details_rows"):
-        render_notice(
-            "<strong>Loading:</strong> Your holding was saved. Watch **Background tasks** in the "
-            "sidebar — Home will populate when the portfolio job finishes.",
-            kind="info",
-        )
+        from ui.portfolio_load_prompt import render_portfolio_load_prompt
+
+        render_portfolio_load_prompt(key_prefix="onboarding_home")
 
 
 def render_onboarding_banner_if_needed() -> None:

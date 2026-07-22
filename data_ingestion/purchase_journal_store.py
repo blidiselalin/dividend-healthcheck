@@ -58,7 +58,8 @@ class PurchaseRecord:
     def lot_cost_usd(self) -> float | None:
         if self.shares is None or self.shares <= 0:
             return None
-        return round(self.shares * self.price_usd + self.commission_usd, 2)
+        gross = round(self.shares * self.price_usd + self.commission_usd, 2)
+        return -gross if self.side == "sell" else gross
 
 
 class PurchaseJournalStore:

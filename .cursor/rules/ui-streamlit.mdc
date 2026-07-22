@@ -18,6 +18,13 @@ Portfolio rebuilds belong in background jobs, not render paths.
 | Apply jobs | `services/deferred_startup.py` | `apply_background_results()` on main thread only |
 
 Use `reload_portfolio_session()` in **tests only**, not production UI paths.
+After **IBKR import apply**, use `reload_portfolio_after_data_import()` (see `services/portfolio_refresh.py`).
+
+## Do not add UI junk
+
+- No new `ui/*_helpers.py` for one panel — keep logic in the panel or existing service.
+- No duplicate reload/fingerprint/session-reset code — import from `services/portfolio_*`.
+- Session key constants only → `ui/session_keys.py`.
 
 ## Streamlit context managers
 

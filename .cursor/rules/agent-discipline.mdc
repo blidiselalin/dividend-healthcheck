@@ -1,29 +1,64 @@
 ---
-description: Keep agent changes small, safe, and verified
+description: Keep agent changes small, safe, and verified — no junk or obsolete parallel code
 alwaysApply: true
 ---
 
 # Agent discipline
 
+## Scope (minimal diff)
+
 - Fix the reported issue only. Do not reformat or refactor unrelated files.
 - Prefer editing **1–5 files**. If you need **10+**, stop and explain why before continuing.
 - Never run broad search-and-replace across `ui/`, `services/`, or `tests/` without a scoped plan.
-- Read `AGENTS.md` before storage, migrations, portfolio session, or test changes.
-- Read the scoped rule for the area you touch (`.cursor/rules/*.mdc`).
-- Run before finishing:
-  - `pre-commit run --all-files`
-  - `pytest -m "not integration"`
+- **Search before adding.** Grep for an existing function, store method, or UI pattern — extend it instead of creating a parallel module.
+- **One behavior, one path.** When replacing logic, delete or stop calling the obsolete path in the same change. Do not leave duplicate helpers “for compatibility.”
+- **No drive-by cleanup:** no unrelated renames, import reordering, type-hint sweeps, or “while I’m here” refactors.
+
+## Avoid junk code
+
+- Do **not** add one-line wrappers, “util” files for a single call site, or extra abstraction layers the task does not need.
+- Do **not** add speculative fallbacks, feature flags, or “future-proof” config unless the user asked.
+- Do **not** add comments that restate obvious code; only non-obvious business rules or Postgres/Streamlit gotchas.
+- Do **not** add tests that only assert mocks, private attributes, or trivial getters unless they catch a real regression.
+- Prefer **inline** over new helpers when the logic is used once and under ~10 lines.
+
+## When to remove (not deprecate)
+
+Remove dead code in the same PR when you confirm nothing imports it:
+
+- Legacy Excel / broker parsers superseded by `services/portfolio_broker_import_service.py`
+- Runtime Chroma / per-user SQLite writes when `DATABASE_URL` is set
+- Duplicate reload paths in UI (see portfolio refresh table below)
+- Unused exports left after a refactor
+
+If unsure whether code is still used, **grep the repo** before deleting.
+
+## Read before editing
+
+- `AGENTS.md` — index, obsolete patterns, canonical modules
+- Scoped rule for the area: `.cursor/rules/*.mdc`
+- Deep dive when touching storage, portfolio UI, or market library (links below)
+
+## Verify before finishing
+
+```bash
+pre-commit run --all-files
+pytest -m "not integration"
+```
+
 - Do **not** commit unless the user explicitly asks.
-- Resolve merge conflicts fully — never leave `<<<<<<<` markers in files.
+- Resolve merge conflicts fully — never leave `<<<<<<<` markers.
 
 ## Hard rules (common agent mistakes)
 
 - Streamlit: only `with st.sidebar:` is a context manager — **never** `with st:`.
 - Postgres rows: use `db.parsing.parse_date` — **never** `date.fromisoformat(row[...])`.
-- Portfolio UI: use `schedule_portfolio_reload()` — **never** block reruns with sync rebuilds in `ui/*`.
+- Portfolio UI: use `schedule_portfolio_reload()` — **never** block reruns with sync rebuilds in `ui/*` (exception: IBKR apply → `reload_portfolio_after_data_import()`).
 - Production storage: PostgreSQL when `DATABASE_URL` is set — no runtime Chroma/SQLite writes.
+- Portfolio data: `create_portfolio_context()` — never separate stores without shared `db_path`.
+- Market library: `services.shared_market_db` — never `VectorStore(persist_directory=...)` in services/UI.
 
-## Deep dives (read when relevant)
+## Deep dives
 
 - Storage & migrations: `.cursor/docs/agents/storage.md`
 - Portfolio UI session: `.cursor/docs/agents/portfolio-ui.md`

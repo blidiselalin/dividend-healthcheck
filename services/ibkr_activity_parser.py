@@ -327,3 +327,11 @@ def validate_statement(statement: IBKRActivityStatement) -> list[ImportIssue]:
 
 def has_blocking_errors(issues: list[ImportIssue]) -> bool:
     return any(issue.level == ImportIssueLevel.ERROR for issue in issues)
+
+
+def statement_symbol_scope(statement: IBKRActivityStatement) -> set[str]:
+    """Symbols touched by open positions, trades, or dividends in the statement."""
+    symbols = {pos.symbol for pos in statement.open_positions}
+    symbols.update(trade.symbol for trade in statement.trades)
+    symbols.update(dividend.symbol for dividend in statement.dividends)
+    return symbols

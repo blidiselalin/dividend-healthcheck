@@ -15,7 +15,11 @@ if TYPE_CHECKING:
     from services.portfolio_details_service import PortfolioDetailRow
 
 from services.portfolio_holdings_summary import sort_positions_worst_first
-from services.portfolio_position_table import build_home_positions_dataframe, risk_hints_by_ticker
+from services.portfolio_position_table import (
+    build_home_positions_dataframe,
+    risk_hints_by_ticker,
+    style_home_positions_dataframe,
+)
 from ui.design_system import close_table_container, render_section_header, wrap_table_container
 
 
@@ -45,15 +49,17 @@ def render_positions_table(
     sorted_rows = sort_positions_worst_first(rows)
     nav_tickers = [row.ticker for row in sorted_rows]
     df = build_home_positions_dataframe(sorted_rows, risk_hints=_load_risk_hints())
+    styled_df = style_home_positions_dataframe(df)
 
     render_section_header(
         "All positions",
-        "Worst performers first · click a row to open dividend analysis.",
+        "Worst performers first · click a row to open dividend analysis. "
+        "Red = loss · green = gain.",
     )
     wrap_table_container()
 
     selection = st.dataframe(
-        df,
+        styled_df,
         use_container_width=True,
         hide_index=True,
         on_select="rerun",
@@ -81,7 +87,7 @@ def render_positions_table(
                 format="%.0f",
                 min_value=0,
                 max_value=100,
-                help="Visual P/L: left of center = loss, right = gain (50 = flat).",
+                help="Visual P/L: bar left of center = loss (red), right = gain (green).",
             ),
             "Day %": st.column_config.NumberColumn(
                 format="%+.2f%%",

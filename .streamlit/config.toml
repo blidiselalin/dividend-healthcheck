@@ -1,8 +1,10 @@
 [theme]
-primaryColor = "#0f766e"
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f8fafc"
-textColor = "#0f172a"
+# Match DividendScope dark defaults (ui/theme_mode.py). Light mode overrides via injected CSS.
+base = "dark"
+primaryColor = "#2dd4bf"
+backgroundColor = "#0b1220"
+secondaryBackgroundColor = "#131c2e"
+textColor = "#e8eef7"
 font = "sans serif"
 
 [server]

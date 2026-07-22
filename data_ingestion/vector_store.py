@@ -1180,8 +1180,13 @@ def load_legacy_vectordb_documents(
         store._use_fallback = True
         store._init_fallback()
         docs = list(store._fallback_store.values())
-        logger.info("Loaded %s documents from fallback_store.json at %s", len(docs), path)
-        return docs
+        if docs:
+            logger.info("Loaded %s documents from fallback_store.json at %s", len(docs), path)
+            return docs
+        logger.debug(
+            "fallback_store.json at %s is empty; trying Chroma if present",
+            path,
+        )
 
     if not CHROMADB_AVAILABLE:
         logger.warning("chromadb not installed; cannot read legacy vectordb at %s", path)

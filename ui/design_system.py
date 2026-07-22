@@ -392,8 +392,26 @@ section.main {
 [data-testid="stDataFrame"] [role="gridcell"] {
   font-variant-numeric: tabular-nums;
   font-size: 0.85rem;
-  background: var(--ds-surface) !important;
-  color: var(--ds-text) !important;
+  color: var(--ds-text);
+}
+[data-testid="stDataFrame"] [role="gridcell"].ds-pct-loss,
+[data-testid="stDataFrame"] [role="gridcell"].ds-pl-loss {
+  background: rgba(239, 68, 68, 0.22) !important;
+  color: #f87171 !important;
+}
+[data-testid="stDataFrame"] [role="gridcell"].ds-pct-gain,
+[data-testid="stDataFrame"] [role="gridcell"].ds-pl-gain {
+  background: rgba(16, 185, 129, 0.2) !important;
+  color: #34d399 !important;
+}
+[data-testid="stDataFrame"] [role="gridcell"].ds-pl-loss [data-testid="stProgressBar"] > div > div {
+  background: linear-gradient(90deg, #ef4444 0%, #f87171 100%) !important;
+}
+[data-testid="stDataFrame"] [role="gridcell"].ds-pl-gain [data-testid="stProgressBar"] > div > div {
+  background: linear-gradient(90deg, #059669 0%, #34d399 100%) !important;
+}
+[data-testid="stDataFrame"] [role="gridcell"].ds-pl-flat [data-testid="stProgressBar"] > div > div {
+  background: linear-gradient(90deg, #64748b 0%, #94a3b8 100%) !important;
 }
 [data-testid="stDataFrame"] [role="row"]:hover [role="gridcell"] {
   background: rgba(45, 212, 191, 0.06) !important;
@@ -519,13 +537,18 @@ section.main {
 .stButton > button,
 .stFormSubmitButton > button,
 .stDownloadButton > button,
-[data-testid="stLinkButton"] a {
+[data-testid="stLinkButton"] a,
+button[data-testid="stBaseButton-secondary"],
+button[data-testid="stBaseButton-primary"],
+button[data-testid="stBaseButton-minimal"],
+button[kind="secondary"],
+button[kind="primary"] {
   border-radius: 10px !important;
   font-weight: 600 !important;
   transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.12s ease, box-shadow 0.12s ease !important;
 }
 
-/* Default / secondary buttons — Streamlit often omits kind until hover */
+/* Default / secondary — force readable text over Streamlit config theme */
 .stButton > button:not([kind="primary"]):not([data-testid="stBaseButton-primary"]),
 .stFormSubmitButton > button:not([kind="primary"]):not([data-testid="stBaseButton-primary"]),
 .stDownloadButton > button,
@@ -533,11 +556,23 @@ section.main {
 .stButton > button[kind="secondary"],
 .stButton > button[data-testid="stBaseButton-secondary"],
 .stFormSubmitButton > button[kind="secondary"],
-.stFormSubmitButton > button[data-testid="stBaseButton-secondary"] {
+.stFormSubmitButton > button[data-testid="stBaseButton-secondary"],
+button[kind="secondary"],
+button[data-testid="stBaseButton-secondary"],
+button[data-testid="stBaseButton-minimal"] {
   background-color: var(--ds-btn-bg) !important;
   color: var(--ds-btn-text) !important;
   border: 1px solid var(--ds-btn-border) !important;
   box-shadow: var(--ds-btn-shadow) !important;
+}
+
+.stButton > button:not([kind="primary"]):not([data-testid="stBaseButton-primary"]) *,
+.stFormSubmitButton > button:not([kind="primary"]):not([data-testid="stBaseButton-primary"]) *,
+.stButton > button[kind="secondary"] *,
+.stButton > button[data-testid="stBaseButton-secondary"] *,
+button[kind="secondary"] *,
+button[data-testid="stBaseButton-secondary"] * {
+  color: var(--ds-btn-text) !important;
 }
 
 .stButton > button:not([kind="primary"]):not([data-testid="stBaseButton-primary"]):hover:not(:disabled),
@@ -547,7 +582,9 @@ section.main {
 .stDownloadButton > button:hover:not(:disabled),
 .stFormSubmitButton > button[kind="secondary"]:hover:not(:disabled),
 .stFormSubmitButton > button[data-testid="stBaseButton-secondary"]:hover:not(:disabled),
-[data-testid="stLinkButton"] a:hover {
+[data-testid="stLinkButton"] a:hover,
+button[kind="secondary"]:hover:not(:disabled),
+button[data-testid="stBaseButton-secondary"]:hover:not(:disabled) {
   background-color: var(--ds-btn-bg-hover) !important;
   border-color: var(--ds-btn-border-hover) !important;
   color: var(--ds-btn-text) !important;
@@ -557,17 +594,30 @@ section.main {
 .stButton > button[kind="primary"],
 .stButton > button[data-testid="stBaseButton-primary"],
 .stFormSubmitButton > button[kind="primary"],
-.stFormSubmitButton > button[data-testid="stBaseButton-primary"] {
+.stFormSubmitButton > button[data-testid="stBaseButton-primary"],
+button[kind="primary"],
+button[data-testid="stBaseButton-primary"] {
   background: linear-gradient(135deg, var(--ds-primary-light) 0%, var(--ds-primary-dark) 100%) !important;
   border: 1px solid transparent !important;
   box-shadow: 0 2px 14px rgba(45, 212, 191, 0.28) !important;
   color: var(--ds-btn-primary-text) !important;
 }
 
+.stButton > button[kind="primary"] *,
+.stButton > button[data-testid="stBaseButton-primary"] *,
+.stFormSubmitButton > button[kind="primary"] *,
+.stFormSubmitButton > button[data-testid="stBaseButton-primary"] *,
+button[kind="primary"] *,
+button[data-testid="stBaseButton-primary"] * {
+  color: var(--ds-btn-primary-text) !important;
+}
+
 .stButton > button[kind="primary"]:hover:not(:disabled),
 .stButton > button[data-testid="stBaseButton-primary"]:hover:not(:disabled),
 .stFormSubmitButton > button[kind="primary"]:hover:not(:disabled),
-.stFormSubmitButton > button[data-testid="stBaseButton-primary"]:hover:not(:disabled) {
+.stFormSubmitButton > button[data-testid="stBaseButton-primary"]:hover:not(:disabled),
+button[kind="primary"]:hover:not(:disabled),
+button[data-testid="stBaseButton-primary"]:hover:not(:disabled) {
   filter: brightness(1.06);
   transform: translateY(-1px);
 }
@@ -577,6 +627,14 @@ section.main {
 .stDownloadButton > button:disabled,
 [data-testid="stLinkButton"] a[aria-disabled="true"] {
   opacity: 0.55 !important;
+}
+
+/* Portfolio section picker — inactive tabs stay readable on dark surfaces */
+.ds-portfolio-nav-section .stButton > button[kind="secondary"],
+.ds-portfolio-nav-section .stButton > button[data-testid="stBaseButton-secondary"] {
+  background-color: var(--ds-surface-elevated) !important;
+  color: var(--ds-text) !important;
+  border-color: var(--ds-border) !important;
 }
 
 /* Theme toggle (segmented control) */
@@ -592,18 +650,24 @@ section.main {
   padding: 3px !important;
   box-shadow: var(--ds-btn-shadow) !important;
 }
-[data-testid="stSegmentedControl"] button {
+[data-testid="stSegmentedControl"] button,
+[data-testid="stSegmentedControl"] [role="radiogroup"] button {
   border-radius: 999px !important;
   font-weight: 600 !important;
-  color: var(--ds-muted) !important;
+  color: var(--ds-text) !important;
   background: transparent !important;
   border: none !important;
 }
 [data-testid="stSegmentedControl"] button[aria-checked="true"],
 [data-testid="stSegmentedControl"] button[aria-selected="true"] {
-  background: var(--ds-btn-bg) !important;
-  color: var(--ds-btn-text) !important;
+  background: linear-gradient(135deg, var(--ds-primary-light) 0%, var(--ds-primary-dark) 100%) !important;
+  color: var(--ds-btn-primary-text) !important;
   box-shadow: var(--ds-btn-shadow) !important;
+  border: 1px solid rgba(45, 212, 191, 0.35) !important;
+}
+[data-testid="stSegmentedControl"] button[aria-checked="true"] *,
+[data-testid="stSegmentedControl"] button[aria-selected="true"] * {
+  color: var(--ds-btn-primary-text) !important;
 }
 
 /* Streamlit metrics — dark surfaces */
@@ -651,12 +715,30 @@ div[data-testid="stMetric"].ds-metric-dividend-highlight label p {
   color: var(--ds-text) !important;
 }
 [data-testid="stSelectbox"] label,
-[data-testid="stMultiSelect"] label {
-  color: var(--ds-muted) !important;
+[data-testid="stMultiSelect"] label,
+[data-testid="stRadio"] label,
+[data-testid="stCheckbox"] label,
+[data-testid="stTextInput"] label,
+[data-testid="stNumberInput"] label {
+  color: var(--ds-text) !important;
 }
-[data-testid="stAlert"] {
+[data-testid="stAlert"],
+[data-testid="stAlert"] > div {
   background: var(--ds-surface) !important;
   border-color: var(--ds-border) !important;
+  color: var(--ds-text) !important;
+}
+[data-testid="stAlert"] p,
+[data-testid="stAlert"] [data-testid="stMarkdownContainer"] p,
+[data-testid="stAlert"] span {
+  color: var(--ds-text) !important;
+}
+[data-testid="stTabs"] button {
+  color: var(--ds-muted) !important;
+}
+[data-testid="stTabs"] button[aria-selected="true"] {
+  color: var(--ds-text) !important;
+  border-bottom-color: var(--ds-primary) !important;
 }
 
 /* Plotly in chart cards */
@@ -791,7 +873,7 @@ div[data-testid="stMetric"].ds-metric-dividend-highlight label p {
   align-items: center;
   gap: 0.75rem;
   padding: 0.55rem 0;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--ds-border-subtle);
   font-size: 0.84rem;
   color: var(--ds-text);
 }

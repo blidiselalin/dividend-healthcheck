@@ -470,7 +470,11 @@ def _render_ibkr_import_tab() -> None:
             f"IBKR import ({result.mode.value}): {result.holdings_upserted} holdings, "
             f"{result.trades_imported} stock trades, {result.dividends_imported} dividends."
         )
-        _after_change(msg, full_reload=True)
+        from services.portfolio_refresh import reload_portfolio_after_data_import
+
+        reload_portfolio_after_data_import(section_label="Home", refresh_risks=True)
+        st.success(msg)
+        st.rerun()
 
 
 def render_tab_refresh_button(

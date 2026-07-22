@@ -31,4 +31,6 @@ parse_date(row["purchase_date"])
 ## Stores
 
 - Default `seed=False` for portfolio stores in app code.
-- Deletes on holdings must cascade related rows (`dividend_receipts`, etc.).
+- User deletes position → `delete_holding()` (cascades receipts).
+- IBKR merge, fully sold symbol → `drop_holding()` (keeps journal + receipts).
+- Extend existing store methods before adding a parallel store class.

@@ -98,6 +98,7 @@ class PortfolioPurchaseJournalService:
                 {
                     "Date": item.label,
                     "Ticker": item.symbol,
+                    "Side": item.side.title(),
                     "Shares": item.shares,
                     "Price $": item.price_usd,
                     "Commission $": item.commission_usd,
@@ -159,7 +160,9 @@ class PortfolioPurchaseJournalService:
         Split each holding's shares evenly across journal purchases, then scale
         lot values so they sum to the portfolio DB acquisition value.
         """
-        items = records if records is not None else self.list_purchases()
+        items = records
+        if items is None:
+            items = self.journal.list_purchases(portfolio_only=False)
         holdings = {h.symbol: h for h in self.portfolio.list_holdings()}
         grouped: dict[str, list[PurchaseRecord]] = defaultdict(list)
         for item in items:
@@ -168,8 +171,6 @@ class PortfolioPurchaseJournalService:
         estimates: list[EstimatedPurchaseLot] = []
         for symbol, lots in grouped.items():
             holding = holdings.get(symbol)
-            if not holding or not lots:
-                continue
             lots_sorted = sorted(lots, key=lambda lot: lot.purchase_date)
             if all(lot.shares is not None and lot.shares > 0 for lot in lots_sorted):
                 for lot in lots_sorted:
@@ -188,6 +189,9 @@ class PortfolioPurchaseJournalService:
                             estimated_value_usd=round(value, 2),
                         )
                     )
+                continue
+
+            if not holding or not lots:
                 continue
 
             shares_per_lot = holding.shares / len(lots_sorted)

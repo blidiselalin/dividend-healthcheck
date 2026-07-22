@@ -47,6 +47,127 @@ def test_load_legacy_vectordb_documents_empty_chroma_scaffold(tmp_path: Path) ->
     assert load_legacy_vectordb_documents(vdb) == []
 
 
+def test_load_legacy_vectordb_documents_empty_fallback_falls_back_to_chroma(tmp_path: Path) -> None:
+    import chromadb
+    from chromadb.config import Settings
+
+    vdb = tmp_path / "vectordb"
+    vdb.mkdir()
+    (vdb / "fallback_store.json").write_text("{}")
+    client = chromadb.PersistentClient(path=str(vdb), settings=Settings(anonymized_telemetry=False))
+    collection = client.get_or_create_collection("dividend_stocks")
+    doc = StockDocument(symbol="KO", name="Coca-Cola")
+    collection.add(
+        ids=[doc.document_id],
+        documents=[doc.name or doc.symbol],
+        metadatas=[doc.to_metadata()],
+    )
+
+    docs = load_legacy_vectordb_documents(vdb)
+    assert len(docs) == 1
+    assert docs[0].symbol == "KO"
+
+
+def test_diagnose_legacy_import_quiet_when_postgres_populated(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.market_library_migration import diagnose_legacy_import
+
+    data_dir = tmp_path / "data"
+    vdb = data_dir / "vectordb"
+    vdb.mkdir(parents=True)
+    (vdb / "fallback_store.json").write_text("{}")
+
+    with (
+        patch("db.connection.use_cloud_sql", return_value=True),
+        patch("db.postgres_market_store.PostgresMarketStore") as store_cls,
+        patch(
+            "data_ingestion.vector_store.load_legacy_vectordb_documents",
+            return_value=[],
+        ),
+        patch(
+            "services.market_library_migration.candidate_vectordb_dirs",
+            return_value=[vdb],
+        ),
+    ):
+        store_cls.return_value.count.return_value = 502
+        store_cls.return_value.history_coverage_summary.return_value = {
+            "yield_ready": 400,
+        }
+        diag = diagnose_legacy_import(data_dir)
+
+    assert diag.legacy_document_count == 0
+    assert "legacy import not needed" in diag.message
+    assert "corrupt" not in diag.message.lower()
+
+
+def test_auto_import_main_silent_when_postgres_ready(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("config.DATA_DIR", str(tmp_path))
+    with (
+        patch("services.market_library_migration.should_auto_import", return_value=False),
+        patch("services.market_library_migration.diagnose_legacy_import") as diag_fn,
+    ):
+        from services.market_library_migration import LegacyImportDiagnostics
+
+        diag_fn.return_value = LegacyImportDiagnostics(
+            data_dir=tmp_path,
+            vectordb_dir=tmp_path / "vectordb",
+            vectordb_exists=True,
+            fallback_json=True,
+            chroma_sqlite=False,
+            chromadb_available=True,
+            legacy_document_count=0,
+            postgres_document_count=502,
+        )
+        from scripts.auto_import_market_library import main
+
+        assert main() == 0
+
+    assert capsys.readouterr().out == ""
+
+
+def test_auto_import_main_prints_when_action_needed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("config.DATA_DIR", str(tmp_path))
+    with (
+        patch("services.market_library_migration.should_auto_import", return_value=True),
+        patch("services.market_library_migration.diagnose_legacy_import") as diag_fn,
+        patch(
+            "services.market_library_migration.import_legacy_market_library",
+            return_value={"message": "Wrote 1 documents", "errors": 0},
+        ),
+    ):
+        from services.market_library_migration import LegacyImportDiagnostics
+
+        diag_fn.return_value = LegacyImportDiagnostics(
+            data_dir=tmp_path,
+            vectordb_dir=tmp_path / "vectordb",
+            vectordb_exists=True,
+            fallback_json=True,
+            chroma_sqlite=False,
+            chromadb_available=True,
+            legacy_document_count=1,
+            postgres_document_count=0,
+            message="Found 1 legacy documents but PostgreSQL stock_documents is empty",
+        )
+        from scripts.auto_import_market_library import main
+
+        assert main() == 0
+
+    out = capsys.readouterr().out
+    assert "Market library diagnostics:" in out
+    assert "Auto-importing legacy vectordb" in out
+    assert "Wrote 1 documents" in out
+
+
 def _doc(symbol: str, prices: int, divs: int) -> StockDocument:
     doc = StockDocument(symbol=symbol, name=symbol)
     doc.price_history = [{"date": f"2024-01-{i:02d}", "close": 100.0} for i in range(1, prices + 1)]

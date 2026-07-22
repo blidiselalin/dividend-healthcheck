@@ -19,8 +19,10 @@ Production uses **PostgreSQL** when `DATABASE_URL` is set (Docker Compose defaul
 - Separate `PortfolioStore()` + `PurchaseJournalStore()` without shared `db_path`
 - Skipping migration SQL when adding tables/columns
 - Setting global `DATABASE_URL` in unit tests (use `PYTEST_USE_SQLITE` in `tests/conftest.py`)
+- New parallel services/stores that duplicate an existing canonical module (see `AGENTS.md`)
+- Leaving obsolete code paths active alongside replacements — remove or stop calling the old path
 
 ## Read first
 
-- `AGENTS.md` — agent index (deep dives in `.cursor/docs/agents/`)
+- `AGENTS.md` — agent index, obsolete patterns, canonical modules
 - `DEPLOY-GCP.md` — VM deploy and volume layout

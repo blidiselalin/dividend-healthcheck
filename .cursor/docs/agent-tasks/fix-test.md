@@ -16,6 +16,13 @@
    ```
 5. Do **not** refactor unrelated modules or reformat the whole repo.
 
+## Keep tests lean
+
+- Add tests only for the regression you fixed — not a mirror test for every branch.
+- Do not add tests that only assert mocks were called unless call order is the contract.
+- Prefer one focused test over several overlapping cases for the same bug.
+- Reuse fixtures from `tests/conftest.py` and existing `_row()` / `_doc_with_*` helpers in the same test file.
+
 ## Common pitfalls in this repo
 
 - Unit tests must run **without** `DATABASE_URL` (`PYTEST_USE_SQLITE=1` in `tests/conftest.py`).

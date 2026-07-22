@@ -16,6 +16,7 @@ from services.ibkr_activity_parser import (
     ImportIssue,
     has_blocking_errors,
     parse_activity_statement_csv,
+    statement_symbol_scope,
     validate_statement,
 )
 from services.portfolio_clear_service import clear_user_portfolio
@@ -94,10 +95,11 @@ def apply_import(
         cleared = clear_result.total_rows
 
     ctx = create_portfolio_context(db_path=db_path)
-    symbols = sorted({pos.symbol for pos in statement.open_positions})
+    open_symbols = {pos.symbol for pos in statement.open_positions}
+    scope_symbols = statement_symbol_scope(statement)
 
     if mode == ImportMode.MERGE:
-        for symbol in symbols:
+        for symbol in scope_symbols:
             ctx.journal.delete_for_symbol(symbol, source="ibkr")
             ctx.receipts.delete_for_symbol(symbol, source="ibkr")
 
@@ -123,8 +125,12 @@ def apply_import(
         )
         holdings_upserted += 1
 
+    if mode == ImportMode.MERGE:
+        for symbol in sorted(scope_symbols - open_symbols):
+            ctx.portfolio.drop_holding(symbol)
+
     for trade in statement.trades:
-        if mode == ImportMode.MERGE and trade.symbol not in symbols:
+        if mode == ImportMode.MERGE and trade.symbol not in scope_symbols:
             continue
         ctx.journal.add_purchase(
             trade.symbol,
@@ -138,6 +144,8 @@ def apply_import(
         trades_imported += 1
 
     for dividend in statement.dividends:
+        if mode == ImportMode.MERGE and dividend.symbol not in scope_symbols:
+            continue
         shares_held = (
             round(dividend.gross_usd / dividend.per_share_usd, 4)
             if dividend.per_share_usd > 0
@@ -155,11 +163,12 @@ def apply_import(
         if outcome in {"added", "updated"}:
             dividends_imported += 1
 
-    for symbol in symbols:
+    for symbol in open_symbols:
         total = ctx.receipts.total_for_symbol(symbol)
         ctx.portfolio.set_dividends_paid(symbol, total)
 
     _sync_monthly_net_from_receipts(ctx)
+    _finalize_broker_import(ctx, db_path=db_path)
 
     logger.info(
         "IBKR import (%s): holdings=%d trades=%d dividends=%d symbols=%d",
@@ -167,14 +176,14 @@ def apply_import(
         holdings_upserted,
         trades_imported,
         dividends_imported,
-        len(symbols),
+        len(open_symbols),
     )
     return ImportApplyResult(
         mode=mode,
         holdings_upserted=holdings_upserted,
         trades_imported=trades_imported,
         dividends_imported=dividends_imported,
-        symbols_touched=symbols,
+        symbols_touched=sorted(scope_symbols),
         issues=issues,
         cleared=cleared,
     )
@@ -191,3 +200,30 @@ def _sync_monthly_net_from_receipts(ctx: object) -> int:
     from services.portfolio_dividend_sync_service import _sync_monthly_net_from_receipts
 
     return _sync_monthly_net_from_receipts(ctx)
+
+
+def _finalize_broker_import(ctx: object, *, db_path: Path | None) -> None:
+    """Refresh derived stores and drop stale UI snapshots after broker import."""
+    try:
+        from services.portfolio_session import reset_portfolio_view_state
+
+        reset_portfolio_view_state()
+    except ImportError:
+        pass
+
+    try:
+        from services.portfolio_vector_sync import sync_portfolio_to_vector_db
+
+        sync_portfolio_to_vector_db(enrich_missing=False, db_path=db_path)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Portfolio vector sync after IBKR import failed: %s", exc)
+
+    try:
+        portfolio = getattr(ctx, "portfolio", None)
+        if portfolio is not None and hasattr(portfolio, "list_holdings"):
+            logger.debug(
+                "IBKR import finalized with %d holdings in database",
+                len(portfolio.list_holdings()),
+            )
+    except Exception:  # noqa: S110
+        pass

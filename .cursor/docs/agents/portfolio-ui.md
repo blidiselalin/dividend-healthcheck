@@ -9,8 +9,12 @@ Do **not** block Streamlit reruns with synchronous portfolio rebuilds in `ui/*`.
 | DB changed since last load | `services/portfolio_session.py` | `compute_portfolio_db_fingerprint()` → `schedule_portfolio_refresh()` |
 | Fast startup | `services/portfolio_ui_cache.py` | `hydrate_session_from_disk()`; stale cache schedules `warm_portfolio` |
 | User-triggered reload | `services/portfolio_refresh.py` | `schedule_portfolio_reload(live_prices=…)` |
+| IBKR / full import apply | `services/portfolio_refresh.py` | `reload_portfolio_after_data_import()` — only after broker import |
+| Empty session, DB has holdings | `ui/portfolio_load_prompt.py` | “Load portfolio now” or Background tasks |
 | Apply job results | `services/deferred_startup.py` | `apply_background_results()` on main thread only |
-| Tests needing sync rebuild | `services/portfolio_refresh.py` | `reload_portfolio_session()` — **not** for production UI |
+| Tests needing sync rebuild | `services/portfolio_refresh.py` | `reload_portfolio_session()` — **not** for normal UI |
+
+Do **not** add another reload helper or duplicate session-reset logic in `ui/*` — call the service above.
 
 Fingerprint tables: `holdings`, `purchase_journal`, `monthly_deposits`, `dividend_receipts`, `net_dividends` (`utils/portfolio_db.py`).
 
@@ -28,9 +32,10 @@ Automatic enrichment is **off by default** (`services/background_task_prefs.py`)
 
 - Parser: `services/ibkr_activity_parser.py`
 - Apply: `services/portfolio_broker_import_service.py` (merge / full replace)
-- UI: `ui/portfolio_manage_panel.py` → **Import IBKR** tab
+- UI: `ui/portfolio_manage_panel.py` → **Import IBKR** tab → `reload_portfolio_after_data_import()`
 - CLI: `scripts/import_ibkr_activity.py`
 - Schema: `migrations/009_broker_import_metadata.sql` (`source`, `side`)
+- Sold symbols: `drop_holding()` on merge — journal + receipts kept; buy/sell lots drive share history
 
 ## New-user onboarding
 
@@ -45,3 +50,9 @@ Automatic enrichment is **off by default** (`services/background_task_prefs.py`)
 - Do **not** call inference APIs from `components.html` / browser JS
 - Disable UI: `DIVIDENDSCOPE_CHATBOT_ENABLED=0`
 - Tests: `tests/test_chatbot_service.py`
+
+## UI change discipline
+
+- Render-only changes stay in `ui/*` — do not add service wrappers for one `st.dataframe` call.
+- Shared session key strings → `ui/session_keys.py` (constants only, no logic).
+- Do not copy-paste reload/fingerprint logic into a panel — import from `services/portfolio_*`.

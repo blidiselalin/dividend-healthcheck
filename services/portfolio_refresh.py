@@ -78,6 +78,9 @@ def reload_portfolio_session(
         invalidate_section_caches(["all"])
 
     logger.info("Portfolio reload started (refresh_risks=%s)", refresh_risks)
+    from services.portfolio_session import reset_portfolio_view_state
+
+    reset_portfolio_view_state()
     clear_session_cache()
     schedule_forced_dividend_sync()
     rows, preload = PortfolioDetailsService().build_rows_with_cache(
@@ -96,6 +99,37 @@ def reload_portfolio_session(
     logger.info("Portfolio reload finished (%d holdings)", len(rows))
     if refresh_risks:
         refresh_portfolio_risks(force=True, rows=rows, preload=preload)
+    return preload
+
+
+def reload_portfolio_after_data_import(
+    *,
+    section_label: str = "Home",
+    refresh_risks: bool = True,
+) -> PortfolioAnalysisPreload:
+    """
+    Rebuild session snapshot after a major portfolio mutation (IBKR import, CLI load).
+
+    Points the workspace at Home/overview so tables and sections match the database.
+    """
+    from services.portfolio_session import invalidate_holdings_cache
+    from ui.portfolio_home import PORTFOLIO_VIEW_OVERVIEW
+
+    invalidate_holdings_cache()
+    preload = reload_portfolio_session(refresh_risks=False, sections=["all"])
+    st.session_state["portfolio_section_label"] = section_label
+    st.session_state["portfolio_view_mode"] = PORTFOLIO_VIEW_OVERVIEW
+    st.session_state.pop("portfolio_research_mode", None)
+    st.session_state.pop("portfolio_holdings_drill_ticker", None)
+    st.session_state.pop("portfolio_selected_symbol", None)
+    if refresh_risks:
+        rows = st.session_state.get("portfolio_details_rows") or []
+        refresh_portfolio_risks(force=True, rows=rows, preload=preload)
+    logger.info(
+        "Portfolio import applied to session (%d holdings, section=%s)",
+        len(st.session_state.get("portfolio_details_rows") or []),
+        section_label,
+    )
     return preload
 
 

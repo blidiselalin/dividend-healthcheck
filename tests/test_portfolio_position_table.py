@@ -9,6 +9,8 @@ from services.portfolio_position_table import (
     build_home_positions_dataframe,
     concerns_summary,
     position_concerns,
+    style_holdings_detail_dataframe,
+    style_home_positions_dataframe,
 )
 
 
@@ -80,3 +82,35 @@ def test_build_home_positions_dataframe_columns() -> None:
 
 def test_concerns_summary_empty() -> None:
     assert concerns_summary([]) == "—"
+
+
+def test_style_home_positions_marks_loss_and_gain() -> None:
+    df = build_home_positions_dataframe(
+        [
+            _row(ticker="LOSS", profit_pct=-15.0),
+            _row(ticker="WIN", profit_pct=12.0, previous_close=101.0),
+        ]
+    )
+    styled = style_home_positions_dataframe(df)
+    computed = styled.to_html()
+    assert "ds-pl-loss" in computed
+    assert "ds-pl-gain" in computed
+    assert "ds-pct-loss" in computed
+    assert "ds-pct-gain" in computed
+
+
+def test_style_holdings_detail_marks_signed_pct_columns() -> None:
+    import pandas as pd
+
+    df = pd.DataFrame(
+        {
+            "Ticker": ["LOSS", "WIN"],
+            "Profit %": [-8.5, 14.2],
+            "180": [-3.1, 2.0],
+            "365 Day %": [-12.0, 6.5],
+        }
+    )
+    styled = style_holdings_detail_dataframe(df)
+    html = styled.to_html()
+    assert "ds-pct-loss" in html
+    assert "ds-pct-gain" in html

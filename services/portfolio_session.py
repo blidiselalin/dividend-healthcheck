@@ -49,6 +49,26 @@ def invalidate_holdings_cache() -> None:
     invalidate_portfolio_db_fingerprint_cache()
 
 
+def reset_portfolio_view_state() -> None:
+    """Clear session snapshot, disk UI cache, and fingerprint after DB mutations."""
+    invalidate_holdings_cache()
+    try:
+        from services.portfolio_ui_cache import clear_session_cache
+
+        clear_session_cache()
+    except ImportError:
+        pass
+    try:
+        import streamlit as st
+
+        from auth.user_context import clear_portfolio_session_state
+
+        clear_portfolio_session_state()
+        st.session_state.pop("_portfolio_db_fingerprint", None)
+    except Exception:  # noqa: S110
+        pass
+
+
 def is_demo_session() -> bool:
     """True only for the configured test/demo user."""
     try:

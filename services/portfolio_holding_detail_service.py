@@ -208,6 +208,7 @@ class PortfolioHoldingDetailService:
             return pd.DataFrame(
                 columns=[
                     "Date",
+                    "Side",
                     "Price $",
                     "Shares",
                     "Cost $",
@@ -218,6 +219,7 @@ class PortfolioHoldingDetailService:
             [
                 {
                     "Date": row.label,
+                    "Side": "Sell" if row.estimated_shares < 0 else "Buy",
                     "Price $": row.price_usd,
                     "Shares": row.estimated_shares,
                     "Cost $": row.estimated_cost_usd,

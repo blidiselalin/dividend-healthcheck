@@ -29,3 +29,5 @@ Never rely on default `PortfolioStore()` path when passing a temp DB to one stor
 
 - Remove `use_sqlite_backend` without splitting CI jobs
 - Assert exact row counts against shared Postgres without unique `pg_user_id`
+- Add large fixture files or duplicate CSV samples when extending an existing fixture works
+- Add tests for every private method — test the public behavior the user cares about

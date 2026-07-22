@@ -70,12 +70,13 @@ Browser → Caddy (HTTPS 443) → Streamlit :8501 → PostgreSQL 16
 
 Use these conventions when extending the app so features remain fast, testable, and consistent:
 
+- **Minimal diffs:** fix the task in 1–5 files when possible; search before adding; extend existing modules — see `AGENTS.md` and `.cursor/rules/agent-discipline.mdc`.
 - **One portfolio context per flow**: use `services.portfolio_context.create_portfolio_context()` for holdings + journal + dividends in the same request.
-- **Service-first UI**: keep `ui/*` focused on rendering and state; move data orchestration and fallback logic to `services/*`.
+- **Service-first UI**: keep `ui/*` focused on rendering and state; move data orchestration and fallback logic to `services/*` — but do not add thin wrapper services for one call site.
 - **Batch over per-symbol loops**: prefer `get_by_symbols()` / `load_documents()` style bulk fetches for holdings and screening views.
 - **Cloud SQL as runtime source of truth**: when `DATABASE_URL` is set, avoid introducing new runtime SQLite/Chroma write paths.
 - **Date parsing discipline**: parse DB values through `db.parsing` helpers to support both PostgreSQL and local SQLite tests.
-- **Background-first UI**: heavy portfolio work (live prices, yield preload, dividend sync, vector linking) runs in **background threads** via `services/deferred_startup.py` + `services/background_jobs.py`. UI code should call `schedule_portfolio_reload()` — not block reruns with `reload_portfolio_session()` or synchronous `build_rows_with_cache(use_live_prices=True)`.
+- **Background-first UI**: heavy portfolio work (live prices, yield preload, dividend sync, vector linking) runs in **background threads** via `services/deferred_startup.py` + `services/background_jobs.py`. UI code should call `schedule_portfolio_reload()` — not block reruns with `reload_portfolio_session()` or synchronous `build_rows_with_cache(use_live_prices=True)`. After IBKR import apply, use `reload_portfolio_after_data_import()`.
 - **Single DB sync checkpoint**: `sync_portfolio_session_with_db()` runs once at app startup (`app.py`). Do not call it from every tab render.
 
 ### Portfolio UI runtime
@@ -97,7 +98,7 @@ Browser rerun
 | **Disk cache** | `services/portfolio_ui_cache.py` | Per-user `portfolio_ui_session.json` (rows, preload, risk summary, fingerprint) for instant startup |
 | **Job queue** | `services/deferred_startup.py` | Schedule warm load, live reload, yield preload, dividend sync |
 | **Job registry** | `services/background_jobs.py` | Thread-safe workers; results applied on the main Streamlit thread |
-| **UI triggers** | `services/portfolio_refresh.py` | `schedule_portfolio_reload()` for sidebar/manage/section refresh; `reload_portfolio_session()` for tests/scripts only |
+| **UI triggers** | `services/portfolio_refresh.py` | `schedule_portfolio_reload()` for sidebar/manage/section refresh; `reload_portfolio_after_data_import()` after IBKR apply; `reload_portfolio_session()` for tests/scripts only |
 | **Progress** | `ui/sidebar_progress_panel.py` | Polls every 2s while jobs run; reruns when warm/live/yield/DB refresh completes |
 
 **Background job kinds** (see `services/deferred_startup.py`):
