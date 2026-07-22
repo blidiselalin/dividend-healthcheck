@@ -7,6 +7,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
@@ -17,6 +18,7 @@ _DIVIDEND_PER_SHARE_RE = re.compile(
     r"(?:Cash Dividend\s+)?USD\s+([0-9]+(?:\.[0-9]+)?)(?:\s+per Share|\s*\(|$)",
     re.IGNORECASE,
 )
+_CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 
 
 class ImportIssueLevel(str, Enum):
@@ -71,12 +73,37 @@ class IBKRDividend:
     description: str = ""
 
 
+@dataclass(frozen=True)
+class IBKRCashTransfer:
+    """Incoming or outgoing cash from Deposits & Withdrawals."""
+
+    transfer_date: date
+    amount: float
+    currency: str
+    description: str = ""
+
+
+@dataclass(frozen=True)
+class IBKRMonthlyDeposit:
+    """Aggregated deposit totals for one calendar month."""
+
+    year: int
+    month: int
+    label: str
+    deposit_usd: float
+    deposit_eur: float
+    portfolio_eur: float = 0.0
+
+
 @dataclass
 class IBKRActivityStatement:
     meta: IBKRStatementMeta = field(default_factory=IBKRStatementMeta)
     open_positions: list[IBKROpenPosition] = field(default_factory=list)
     trades: list[IBKRTrade] = field(default_factory=list)
     dividends: list[IBKRDividend] = field(default_factory=list)
+    cash_transfers: list[IBKRCashTransfer] = field(default_factory=list)
+    fx_rates: dict[str, float] = field(default_factory=dict)
+    nav_total: float | None = None
     issues: list[ImportIssue] = field(default_factory=list)
     forex_trades_skipped: int = 0
 
@@ -122,6 +149,76 @@ def _normalize_symbol(symbol: str) -> str | None:
     if _SYMBOL_RE.match(sym):
         return sym
     return None
+
+
+def _normalize_currency(value: str) -> str | None:
+    currency = value.strip().upper()
+    if _CURRENCY_RE.match(currency):
+        return currency
+    return None
+
+
+def _month_label(year: int, month: int) -> str:
+    import calendar
+
+    return f"{calendar.month_name[month]} {year}"
+
+
+def _nav_to_portfolio_eur(statement: IBKRActivityStatement) -> float:
+    """Convert statement NAV total to EUR for the portfolio snapshot field."""
+    if statement.nav_total is None or statement.nav_total <= 0:
+        return 0.0
+    base = (statement.meta.base_currency or "USD").strip().upper()
+    if base == "EUR":
+        return round(statement.nav_total, 2)
+    if base == "USD":
+        eur_rate = statement.fx_rates.get("EUR")
+        if eur_rate and eur_rate > 0:
+            return round(statement.nav_total * eur_rate, 2)
+    return 0.0
+
+
+def build_monthly_deposits(statement: IBKRActivityStatement) -> list[IBKRMonthlyDeposit]:
+    """
+    Aggregate Deposits & Withdrawals rows into monthly_deposits records.
+
+    Counts positive cash inflows only (withdrawals are ignored for deposit totals).
+    Assigns converted NAV to the latest month in the statement when available.
+    """
+    totals: dict[tuple[int, int], dict[str, float]] = defaultdict(lambda: {"USD": 0.0, "EUR": 0.0})
+    for transfer in statement.cash_transfers:
+        if transfer.amount <= 0:
+            continue
+        key = (transfer.transfer_date.year, transfer.transfer_date.month)
+        bucket = totals[key]
+        bucket[transfer.currency] = bucket.get(transfer.currency, 0.0) + transfer.amount
+
+    if not totals:
+        return []
+
+    nav_eur = _nav_to_portfolio_eur(statement)
+    last_month = max(totals)
+    rows: list[IBKRMonthlyDeposit] = []
+    for year, month in sorted(totals):
+        bucket = totals[(year, month)]
+        deposit_usd = round(bucket.get("USD", 0.0), 2)
+        deposit_eur = round(bucket.get("EUR", 0.0), 2)
+        if deposit_eur == 0.0 and deposit_usd > 0:
+            eur_rate = statement.fx_rates.get("EUR")
+            if eur_rate and eur_rate > 0:
+                deposit_eur = round(deposit_usd * eur_rate, 2)
+        portfolio_eur = nav_eur if (year, month) == last_month and nav_eur > 0 else 0.0
+        rows.append(
+            IBKRMonthlyDeposit(
+                year=year,
+                month=month,
+                label=_month_label(year, month),
+                deposit_usd=deposit_usd,
+                deposit_eur=deposit_eur,
+                portfolio_eur=portfolio_eur,
+            )
+        )
+    return rows
 
 
 def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:  # noqa: C901
@@ -278,6 +375,37 @@ def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:
                     description=description,
                 )
             )
+        elif section == "Deposits & Withdrawals" and len(row) >= 6 and row[1] == "Data":
+            currency = _normalize_currency(row[2])
+            transfer_date = _parse_trade_date(row[3]) or _parse_pay_date(row[3])
+            description = row[4].strip()
+            amount = _parse_float(row[5])
+            if currency is None or transfer_date is None or amount is None or amount == 0:
+                continue
+            statement.cash_transfers.append(
+                IBKRCashTransfer(
+                    transfer_date=transfer_date,
+                    amount=amount,
+                    currency=currency,
+                    description=description,
+                )
+            )
+        elif section == "Base Currency Exchange Rate" and len(row) >= 4 and row[1] == "Data":
+            currency = _normalize_currency(row[2])
+            rate = _parse_float(row[3])
+            if currency and rate and rate > 0:
+                statement.fx_rates[currency] = rate
+        elif section == "Net Asset Value" and len(row) >= 4 and row[1] == "Data":
+            if row[2].strip().lower() != "total":
+                continue
+            nav_value = None
+            for cell in reversed(row[3:]):
+                parsed = _parse_float(cell)
+                if parsed is not None and parsed > 0:
+                    nav_value = parsed
+                    break
+            if nav_value is not None:
+                statement.nav_total = nav_value
 
     return statement
 
@@ -320,6 +448,13 @@ def validate_statement(statement: IBKRActivityStatement) -> list[ImportIssue]:
             ImportIssue(
                 ImportIssueLevel.WARNING,
                 "No cash dividends in statement period.",
+            )
+        )
+    if not statement.cash_transfers:
+        issues.append(
+            ImportIssue(
+                ImportIssueLevel.WARNING,
+                "No deposits or withdrawals in statement period.",
             )
         )
     return issues

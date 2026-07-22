@@ -21,6 +21,7 @@ def sample_csv() -> str:
 def test_preview_sample(sample_csv: str) -> None:
     preview = preview_import(sample_csv)
     assert preview.position_count == 2
+    assert preview.deposit_month_count == 2
     assert not preview.blocking
 
 
@@ -30,6 +31,7 @@ def test_replace_import_loads_holdings_and_receipts(tmp_path: Path, sample_csv: 
     assert result.holdings_upserted == 2
     assert result.trades_imported == 3
     assert result.dividends_imported == 2
+    assert result.deposits_imported == 2
 
     ctx = create_portfolio_context(db_path=db)
     symbols = {h.symbol for h in ctx.portfolio.list_holdings()}
@@ -40,6 +42,11 @@ def test_replace_import_loads_holdings_and_receipts(tmp_path: Path, sample_csv: 
     assert len(receipts) == 1
     assert receipts[0].source == "ibkr"
     assert receipts[0].gross_usd == 2.50
+    deposits = ctx.deposits.list_deposits()
+    assert len(deposits) == 2
+    march = next(item for item in deposits if item.period.month == 3)
+    assert march.deposit_usd == 1500.0
+    assert march.portfolio_eur == pytest.approx(3220.0)
 
 
 def test_merge_leaves_untouched_symbols(tmp_path: Path, sample_csv: str) -> None:
@@ -130,6 +137,31 @@ def test_merge_import_stores_dividends_for_closed_positions(tmp_path: Path) -> N
     ctx = create_portfolio_context(db_path=db)
     assert {h.symbol for h in ctx.portfolio.list_holdings()} == {"KO", "VZ"}
     assert len(ctx.receipts.list_for_symbol("AMCR")) == 1
+
+
+def test_merge_import_updates_deposit_months_without_wiping_manual_months(
+    tmp_path: Path,
+    sample_csv: str,
+) -> None:
+    db = tmp_path / "portfolio.db"
+    ctx = create_portfolio_context(db_path=db)
+    ctx.deposits.upsert_deposit(
+        year=2024,
+        month=12,
+        label="December 2024",
+        deposit_eur=4500.0,
+        deposit_usd=4729.10,
+        portfolio_eur=65006.66,
+    )
+
+    apply_import(sample_csv, mode=ImportMode.MERGE, db_path=db)
+
+    ctx = create_portfolio_context(db_path=db)
+    deposits = ctx.deposits.list_deposits()
+    assert len(deposits) == 3
+    assert any(item.period_key == "2024-12" for item in deposits)
+    assert any(item.period_key == "2025-02" for item in deposits)
+    assert any(item.period_key == "2025-03" for item in deposits)
 
 
 def test_replace_import_journal_net_shares_match_open_position(

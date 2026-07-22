@@ -9,3 +9,9 @@ Trades,Data,Order,Stocks,USD,AAPL,"2025-06-01, 10:00:00",-3,160,480,USD,-1.00
 Trades,Data,Order,Stocks,USD,MSFT,"2025-03-01, 11:00:00",5,400,2000,USD,-1.50
 Dividends,Data,USD,2025-03-15,"AAPL(US0378331005) Cash Dividend USD 0.25 per Share",2.50
 Dividends,Data,USD,2025-06-15,"MSFT(US5949181045) Cash Dividend USD 0.75 per Share",3.75
+Deposits & Withdrawals,Data,USD,2025-02-01,Electronic Fund Transfer,2000.00
+Deposits & Withdrawals,Data,USD,2025-03-10,Electronic Fund Transfer,1500.00
+Deposits & Withdrawals,Data,USD,2025-04-05,Disbursement Initiated by client,-500.00
+Base Currency Exchange Rate,Data,USD,1
+Base Currency Exchange Rate,Data,EUR,0.92
+Net Asset Value,Data,Total,USD,3500.00

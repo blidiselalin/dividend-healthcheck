@@ -14,6 +14,7 @@ from services.ibkr_activity_parser import (
     IBKRActivityStatement,
     IBKRStatementMeta,
     ImportIssue,
+    build_monthly_deposits,
     has_blocking_errors,
     parse_activity_statement_csv,
     statement_symbol_scope,
@@ -36,6 +37,7 @@ class ImportPreview:
     position_count: int
     trade_count: int
     dividend_count: int
+    deposit_month_count: int
     symbols: list[str]
     issues: list[ImportIssue]
     forex_trades_skipped: int = 0
@@ -51,6 +53,7 @@ class ImportApplyResult:
     holdings_upserted: int
     trades_imported: int
     dividends_imported: int
+    deposits_imported: int
     symbols_touched: list[str]
     issues: list[ImportIssue]
     cleared: int | None = None
@@ -60,11 +63,13 @@ def preview_import(content: str | bytes) -> ImportPreview:
     statement = parse_activity_statement_csv(content)
     issues = validate_statement(statement)
     symbols = sorted({pos.symbol for pos in statement.open_positions})
+    monthly_deposits = build_monthly_deposits(statement)
     return ImportPreview(
         meta=statement.meta,
         position_count=len(statement.open_positions),
         trade_count=len(statement.trades),
         dividend_count=len(statement.dividends),
+        deposit_month_count=len(monthly_deposits),
         symbols=symbols,
         issues=issues,
         forex_trades_skipped=statement.forex_trades_skipped,
@@ -85,6 +90,7 @@ def apply_import(
             holdings_upserted=0,
             trades_imported=0,
             dividends_imported=0,
+            deposits_imported=0,
             symbols_touched=[],
             issues=issues,
         )
@@ -107,6 +113,7 @@ def apply_import(
     holdings_upserted = 0
     trades_imported = 0
     dividends_imported = 0
+    deposits_imported = 0
 
     for position in statement.open_positions:
         symbol = position.symbol
@@ -167,15 +174,27 @@ def apply_import(
         total = ctx.receipts.total_for_symbol(symbol)
         ctx.portfolio.set_dividends_paid(symbol, total)
 
+    for month_deposit in build_monthly_deposits(statement):
+        ctx.deposits.upsert_deposit(
+            year=month_deposit.year,
+            month=month_deposit.month,
+            label=month_deposit.label,
+            deposit_eur=month_deposit.deposit_eur,
+            deposit_usd=month_deposit.deposit_usd,
+            portfolio_eur=month_deposit.portfolio_eur,
+        )
+        deposits_imported += 1
+
     _sync_monthly_net_from_receipts(ctx)
     _finalize_broker_import(ctx, db_path=db_path)
 
     logger.info(
-        "IBKR import (%s): holdings=%d trades=%d dividends=%d symbols=%d",
+        "IBKR import (%s): holdings=%d trades=%d dividends=%d deposits=%d symbols=%d",
         mode.value,
         holdings_upserted,
         trades_imported,
         dividends_imported,
+        deposits_imported,
         len(open_symbols),
     )
     return ImportApplyResult(
@@ -183,6 +202,7 @@ def apply_import(
         holdings_upserted=holdings_upserted,
         trades_imported=trades_imported,
         dividends_imported=dividends_imported,
+        deposits_imported=deposits_imported,
         symbols_touched=sorted(scope_symbols),
         issues=issues,
         cleared=cleared,

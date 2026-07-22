@@ -32,6 +32,9 @@ def test_parse_sample_statement(sample_csv: str) -> None:
     assert sells[0].symbol == "AAPL"
     assert sells[0].quantity == 3.0
     assert len(statement.dividends) == 2
+    assert len(statement.cash_transfers) == 3
+    assert statement.nav_total == pytest.approx(3500.0)
+    assert statement.fx_rates["EUR"] == pytest.approx(0.92)
     aapl_div = next(d for d in statement.dividends if d.symbol == "AAPL")
     assert aapl_div.per_share_usd == 0.25
     assert aapl_div.gross_usd == 2.50
@@ -42,6 +45,21 @@ def test_statement_symbol_scope_includes_trades_and_dividends(sample_csv: str) -
 
     statement = parse_activity_statement_csv(sample_csv)
     assert statement_symbol_scope(statement) == {"AAPL", "MSFT"}
+
+
+def test_build_monthly_deposits_aggregates_inflows(sample_csv: str) -> None:
+    from services.ibkr_activity_parser import build_monthly_deposits
+
+    statement = parse_activity_statement_csv(sample_csv)
+    monthly = build_monthly_deposits(statement)
+    assert len(monthly) == 2
+    feb = next(item for item in monthly if item.month == 2)
+    mar = next(item for item in monthly if item.month == 3)
+    assert feb.deposit_usd == 2000.0
+    assert feb.deposit_eur == pytest.approx(1840.0)
+    assert mar.deposit_usd == 1500.0
+    assert mar.deposit_eur == pytest.approx(1380.0)
+    assert mar.portfolio_eur == pytest.approx(3220.0)
 
 
 def test_validate_sample_has_no_blocking_errors(sample_csv: str) -> None:

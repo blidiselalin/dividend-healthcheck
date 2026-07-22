@@ -430,7 +430,7 @@ def _render_ibkr_import_tab() -> None:
         st.markdown(f"**Account:** {meta.account or '—'} · **Period:** {meta.period or '—'}")
     st.markdown(
         f"**{preview.position_count}** positions · **{preview.trade_count}** stock trades · "
-        f"**{preview.dividend_count}** dividends"
+        f"**{preview.dividend_count}** dividends · **{preview.deposit_month_count}** deposit months"
     )
     if preview.forex_trades_skipped:
         st.caption(
@@ -468,7 +468,8 @@ def _render_ibkr_import_tab() -> None:
         st.session_state.pop("pm_ibkr_file_name", None)
         msg = (
             f"IBKR import ({result.mode.value}): {result.holdings_upserted} holdings, "
-            f"{result.trades_imported} stock trades, {result.dividends_imported} dividends."
+            f"{result.trades_imported} stock trades, {result.dividends_imported} dividends, "
+            f"{result.deposits_imported} deposit months."
         )
         from services.portfolio_refresh import reload_portfolio_after_data_import
 

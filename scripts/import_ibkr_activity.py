@@ -58,7 +58,7 @@ def main() -> int:
     print(f"Period: {preview.meta.period or '—'}")
     print(
         f"Positions: {preview.position_count}  Stock trades: {preview.trade_count}  "
-        f"Dividends: {preview.dividend_count}"
+        f"Dividends: {preview.dividend_count}  Deposit months: {preview.deposit_month_count}"
     )
     if preview.forex_trades_skipped:
         print(f"FX trades skipped: {preview.forex_trades_skipped}")
@@ -82,7 +82,8 @@ def main() -> int:
     result = apply_import(content, mode=mode, db_path=args.db_path)
     print(
         f"Applied ({result.mode.value}): holdings={result.holdings_upserted} "
-        f"trades={result.trades_imported} dividends={result.dividends_imported}"
+        f"trades={result.trades_imported} dividends={result.dividends_imported} "
+        f"deposits={result.deposits_imported}"
     )
     if result.cleared is not None:
         print(f"Cleared {result.cleared} rows before import.")

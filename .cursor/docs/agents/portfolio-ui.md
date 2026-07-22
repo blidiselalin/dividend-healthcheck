@@ -35,6 +35,7 @@ Automatic enrichment is **off by default** (`services/background_task_prefs.py`)
 - UI: `ui/portfolio_manage_panel.py` → **Import IBKR** tab → `reload_portfolio_after_data_import()`
 - CLI: `scripts/import_ibkr_activity.py`
 - Schema: `migrations/009_broker_import_metadata.sql` (`source`, `side`)
+- Deposits: `Deposits & Withdrawals` + NAV/FX → `monthly_deposits` on import
 - Sold symbols: `drop_holding()` on merge — journal + receipts kept; buy/sell lots drive share history
 
 ## New-user onboarding
