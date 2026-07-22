@@ -162,7 +162,7 @@ def resolve_dividend_document(
         sources_found.append("Postgres history")
 
     yf_records: list[DividendRecord] = []
-    if len(library_records) < 4:
+    if fetch_remote and len(library_records) < 4:
         yf_records = _records_from_yfinance(sym)
         if yf_records and "Yahoo Finance" not in sources_found:
             sources_found.append("Yahoo Finance")
@@ -225,12 +225,23 @@ def load_resolved_portfolio_documents(
 
     for symbol in symbols:
         sym = symbol.strip().upper()
-        doc, status = resolve_dividend_document(
-            sym,
-            raw.get(sym) or raw.get(symbol),
-            stock=stock_data.get(sym) or stock_data.get(symbol),
-            fetch_remote=fetch_remote,
-        )
+        try:
+            doc, status = resolve_dividend_document(
+                sym,
+                raw.get(sym) or raw.get(symbol),
+                stock=stock_data.get(sym) or stock_data.get(symbol),
+                fetch_remote=fetch_remote,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Dividend resolve failed for %s: %s", sym, exc)
+            doc = raw.get(sym) or raw.get(symbol)
+            status = PortfolioDividendStatus(
+                symbol=sym,
+                history_count=len(doc.dividend_history) if doc and doc.dividend_history else 0,
+                sources_checked=EXPOSED_SOURCES,
+                sources_found=("market library",) if doc and doc.dividend_history else (),
+                payment_date_sources=(),
+            )
         resolved[sym] = doc
         statuses[sym] = status
 

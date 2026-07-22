@@ -26,10 +26,14 @@ class DividendSyncStats:
     pay_dates_corrected: int = 0
 
 
-def _load_documents(symbols: list[str]) -> dict[str, StockDocument | None]:
+def _load_documents(
+    symbols: list[str],
+    *,
+    fetch_remote: bool = False,
+) -> dict[str, StockDocument | None]:
     from services.portfolio_dividend_resolve import load_resolved_portfolio_documents
 
-    docs, _statuses = load_resolved_portfolio_documents(symbols, fetch_remote=True)
+    docs, _statuses = load_resolved_portfolio_documents(symbols, fetch_remote=fetch_remote)
     return docs
 
 
@@ -72,7 +76,8 @@ def sync_received_dividends(
     *,
     db_path: Path | None = None,
     symbols: list[str] | None = None,
-    fetch_nasdaq: bool = True,  # noqa: ARG001 — kept for callers; resolve uses remote fetch
+    fetch_remote: bool = False,
+    fetch_nasdaq: bool | None = None,  # deprecated alias for fetch_remote
 ) -> DividendSyncStats:
     """
     Record paid dividends for current holdings and refresh lifetime/monthly totals.
@@ -80,7 +85,12 @@ def sync_received_dividends(
     Dividends are derived from the shared market library (with Nasdaq payment
     dates when available), share counts from the purchase journal when present.
     Stored receipts are reconciled so pay/ex dates match Yahoo-style calendars.
+
+    Remote Yahoo/Nasdaq lookups are off by default so background sync does not
+    block on live network calls; pass ``fetch_remote=True`` for explicit refresh.
     """
+    if fetch_nasdaq is not None:
+        fetch_remote = fetch_nasdaq
     from services.dividend_payment_dates import (
         clear_nasdaq_payment_cache,
         reconcile_receipt_dates,
@@ -95,7 +105,7 @@ def sync_received_dividends(
         return DividendSyncStats(0, 0, 0, 0, 0)
 
     clear_nasdaq_payment_cache()
-    documents = _load_documents([holding.symbol for holding in holdings])
+    documents = _load_documents([holding.symbol for holding in holdings], fetch_remote=fetch_remote)
     today = date.today()
 
     for holding in holdings:

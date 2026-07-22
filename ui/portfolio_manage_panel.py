@@ -43,8 +43,9 @@ def _month_label(year: int, month: int) -> str:
 def _render_monthly_evolution_tab(service: PortfolioManagementService) -> None:
     """Add or edit monthly deposit + portfolio snapshots for the dashboard."""
     st.caption(
-        "Record monthly **deposits** and **Portfolio €** for the dashboard evolution table and charts. "
-        "Portfolio € must be set for gain and month-over-month columns to appear."
+        "Record monthly **deposits** and optional **Portfolio €** snapshots. "
+        "The dashboard computes month-end portfolio value from your purchase journal and "
+        "library prices when snapshots are missing."
     )
 
     deposits = service.list_deposits()

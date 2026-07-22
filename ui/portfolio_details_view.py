@@ -1329,7 +1329,10 @@ class PortfolioDetailsView:
             cls._render_attention_watchlist(rows, preload)
 
         st.markdown("##### Portfolio evolution (€)")
-        st.caption("Green line = portfolio value · dotted line = cumulative deposits")
+        st.caption(
+            "Green line = month-end portfolio value (from journal + library prices when available) · "
+            "dotted line = cumulative deposits"
+        )
         evolution_chart = service.create_evolution_chart(deposits)
         if evolution_chart:
             show_chart(

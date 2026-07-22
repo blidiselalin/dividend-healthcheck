@@ -446,9 +446,11 @@ def fetch_dividend_series(symbol: str) -> pd.Series[Any]:
         return pd.Series(dtype=float)
 
     from data_ingestion.sp500_universe import yahoo_ticker
+    from utils.yfinance_compat import yahoo_network_errors
 
     sym = yahoo_ticker(symbol)
     ticker = yf.Ticker(sym)
+    network_errors = yahoo_network_errors()
     with suppress_yfinance_noise():
         try:
             divs = ticker.dividends
@@ -456,15 +458,20 @@ def fetch_dividend_series(symbol: str) -> pd.Series[Any]:
                 cleaned = divs[divs > 0].astype(float)
                 if not cleaned.empty:
                     return cleaned.sort_index()  # type: ignore[no-any-return]
+        except network_errors as exc:
+            logger.debug("%s ticker.dividends failed: %s", sym, exc)
         except Exception as exc:
             logger.debug("%s ticker.dividends failed: %s", sym, exc)
 
-        frame = fetch_price_history(sym, years=10)
-        if frame is not None and not frame.empty and "Dividends" in frame.columns:
-            payments = frame["Dividends"]
-            payments = payments[payments > 0].astype(float)
-            if not payments.empty:
-                return payments.sort_index()
+        try:
+            frame = fetch_price_history(sym, years=10)
+            if frame is not None and not frame.empty and "Dividends" in frame.columns:
+                payments = frame["Dividends"]
+                payments = payments[payments > 0].astype(float)
+                if not payments.empty:
+                    return payments.sort_index()
+        except network_errors as exc:
+            logger.debug("%s dividend history fallback failed: %s", sym, exc)
 
     return pd.Series(dtype=float)
 

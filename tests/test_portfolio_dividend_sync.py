@@ -34,6 +34,21 @@ def _doc_with_dividends() -> StockDocument:
     )
 
 
+def test_sync_uses_library_only_by_default(tmp_path: Path) -> None:
+    db = tmp_path / "portfolio.db"
+    portfolio = PortfolioStore(db_path=db, seed=False)
+    portfolio.upsert_holding("KO", shares=10, avg_cost_per_share=50.0)
+
+    with patch(
+        "services.portfolio_dividend_resolve.load_resolved_portfolio_documents",
+        return_value=({"KO": _doc_with_dividends()}, {}),
+    ) as load_docs:
+        sync_received_dividends(db_path=db)
+
+    load_docs.assert_called_once()
+    assert load_docs.call_args.kwargs.get("fetch_remote") is False
+
+
 def test_sync_records_paid_dividends_and_updates_holding(tmp_path: Path) -> None:
     db = tmp_path / "portfolio.db"
     portfolio = PortfolioStore(db_path=db, seed=False)

@@ -21,7 +21,7 @@ import requests
 
 from data_ingestion.models import DividendRecord, StockDocument
 from utils.dividend_amounts import normalize_payment_amount
-from utils.yfinance_compat import YFinanceError
+from utils.yfinance_compat import yahoo_network_errors
 
 try:
     from psycopg import Error as PostgresError
@@ -285,7 +285,7 @@ def _yahoo_payment_lookup(symbol: str) -> PaymentDateLookup:
             lookup.by_ex.setdefault(ex, pay)
             lookup.ex_to_pay_lags.append((pay - ex).days)
             lookup.sources.add("yahoo_info")
-    except (ImportError, YFinanceError) as exc:
+    except (ImportError, *yahoo_network_errors()) as exc:
         logger.debug("Yahoo dividend calendar unavailable for %s: %s", symbol, exc)
 
     return lookup

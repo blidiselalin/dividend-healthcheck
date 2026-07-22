@@ -58,17 +58,39 @@ def test_resolve_merges_yahoo_when_library_is_thin() -> None:
         patch(
             "services.portfolio_dividend_resolve._records_from_yfinance",
             return_value=yahoo_records,
-        ),
+        ) as yahoo_fetch,
         patch(
             "services.portfolio_dividend_resolve.enrich_document_payment_dates",
             side_effect=lambda _sym, doc, fetch_nasdaq=False: doc,
         ),
     ):
-        resolved, status = resolve_dividend_document("XYZ", document, fetch_remote=False)
+        resolved, status = resolve_dividend_document("XYZ", document, fetch_remote=True)
 
+    yahoo_fetch.assert_called_once()
     assert resolved is not None
     assert len(resolved.dividend_history or []) == 4
     assert "Yahoo Finance" in status.sources_found
+
+
+def test_resolve_skips_yahoo_when_remote_fetch_disabled() -> None:
+    document = StockDocument(
+        symbol="XYZ",
+        name="Example",
+        dividend_history=[
+            DividendRecord(ex_date=date(2025, 11, 15), payment_date=None, amount=0.25),
+        ],
+    )
+
+    with patch(
+        "services.portfolio_dividend_resolve._records_from_yfinance",
+        return_value=[],
+    ) as yahoo_fetch:
+        resolved, status = resolve_dividend_document("XYZ", document, fetch_remote=False)
+
+    yahoo_fetch.assert_not_called()
+    assert resolved is not None
+    assert len(resolved.dividend_history or []) == 1
+    assert "Yahoo Finance" not in status.sources_found
 
 
 def test_resolve_reports_missing_when_no_history_or_metadata() -> None:
