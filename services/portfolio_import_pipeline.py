@@ -12,6 +12,7 @@ import calendar
 import hashlib
 from dataclasses import replace
 from datetime import date
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from services.ibkr_activity_parser import (
@@ -411,3 +412,57 @@ def prepare_statement(content: str | bytes) -> tuple[IBKRActivityStatement, list
     issues.extend(detect_in_statement_duplicates(statement))
     issues.extend(validate_extreme_values(statement))
     return statement, issues, fingerprint
+
+
+def backfill_monthly_portfolio_eur(
+    ctx: PortfolioContext,
+    *,
+    db_path: Path | None = None,
+) -> tuple[int, list[ImportIssue]]:
+    """
+    Write journal+price-based month-end values into ``monthly_deposits.portfolio_eur``.
+
+    IBKR exports only include one NAV snapshot (statement end). This fills every month
+    that has full pricing coverage so evolution charts do not show one spike and zeros.
+    """
+    from services.ibkr_activity_parser import ImportIssue, ImportIssueLevel
+    from services.portfolio_monthly_valuation import compute_monthly_portfolio_valuations
+
+    issues: list[ImportIssue] = []
+    deposits = ctx.deposits.list_deposits()
+    if not deposits:
+        return 0, issues
+
+    valuations = compute_monthly_portfolio_valuations(deposits, db_path=db_path)
+    if not valuations:
+        return 0, issues
+
+    updated = 0
+    for deposit in deposits:
+        valuation = valuations.get(deposit.period_key)
+        if valuation is None or valuation.coverage < 1.0 or valuation.portfolio_eur <= 0:
+            continue
+        if abs(deposit.portfolio_eur - valuation.portfolio_eur) < 0.01:
+            continue
+        ctx.deposits.upsert_deposit(
+            year=deposit.period.year,
+            month=deposit.period.month,
+            label=deposit.label,
+            deposit_eur=deposit.deposit_eur,
+            deposit_usd=deposit.deposit_usd,
+            portfolio_eur=valuation.portfolio_eur,
+        )
+        updated += 1
+
+    if updated:
+        issues.append(
+            ImportIssue(
+                ImportIssueLevel.INFO,
+                (
+                    f"Updated portfolio € for {updated} month(s) from purchase journal "
+                    "and market prices."
+                ),
+                section="Deposits & Withdrawals",
+            )
+        )
+    return updated, issues

@@ -279,11 +279,14 @@ def pick_portfolio_eur_for_month(
     """
     Prefer a full stock-based valuation; fall back to stored IBKR/manual NAV when incomplete.
 
-    Partial share/pricing coverage is not shown — it understates the portfolio and skews
-    the evolution chart.
+    When no stored snapshot exists, a partial journal-based mark is shown rather than leaving
+    the month blank — it is closer to reality than a single end-of-year NAV spike on one row.
     """
-    if valuation is not None and valuation.portfolio_eur > 0 and valuation.coverage >= 1.0:
-        return valuation.portfolio_eur
+    if valuation is not None and valuation.portfolio_eur > 0:
+        if valuation.coverage >= 1.0:
+            return valuation.portfolio_eur
+        if stored is None or stored <= 0:
+            return valuation.portfolio_eur
     if stored is not None and stored > 0:
         return stored
     return None

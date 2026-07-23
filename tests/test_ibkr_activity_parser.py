@@ -199,6 +199,7 @@ def test_parse_deposits_with_asset_category_column() -> None:
 def test_parse_all_2025_deposit_fixture() -> None:
     fixture = Path(__file__).resolve().parent / "fixtures" / "ibkr_deposits_2025.csv"
     statement = parse_activity_statement_csv(fixture.read_text(encoding="utf-8"))
+    assert statement.nav_total == pytest.approx(99084.96)
     assert len(statement.cash_transfers) == 20
     assert statement.deposits_inflow_total_base == pytest.approx(34460.79)
     assert not any(

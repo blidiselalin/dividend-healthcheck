@@ -26,6 +26,7 @@ from services.ibkr_activity_parser import (
 from services.portfolio_clear_service import clear_user_portfolio
 from services.portfolio_context import create_portfolio_context
 from services.portfolio_import_pipeline import (
+    backfill_monthly_portfolio_eur,
     fill_missing_deposit_months,
     prepare_statement,
     run_post_import_checks,
@@ -280,6 +281,10 @@ def apply_import(  # noqa: C901
             range_end=period[1] if period else None,
         )
         issues.extend(fill_issues)
+
+    _report(progress, "Estimating monthly portfolio values…", 0.91)
+    _portfolio_updates, portfolio_issues = backfill_monthly_portfolio_eur(ctx, db_path=db_path)
+    issues.extend(portfolio_issues)
 
     _report(progress, "Syncing monthly dividend totals…", 0.92)
     _sync_monthly_net_from_receipts(ctx)

@@ -518,6 +518,40 @@ def _iter_calendar_months(start: date, end: date) -> list[tuple[int, int]]:
     return months
 
 
+def _parse_nav_total_row(row: list[str], nav_header_map: dict[str, int]) -> float | None:
+    """Extract end-of-statement NAV from a Net Asset Value data row."""
+    asset_class = (_cell(row, nav_header_map, "Asset Class", fallback_idx=2) or "").strip()
+    if asset_class.lower() != "total":
+        return None
+
+    current_total_idx = nav_header_map.get("Current Total")
+    if current_total_idx is not None and current_total_idx < len(row):
+        nav_value = _parse_float(row[current_total_idx])
+        if nav_value is not None:
+            return nav_value
+
+    if len(row) >= 5 and _normalize_currency(row[3]):
+        nav_value = _parse_float(row[4])
+        if nav_value is not None:
+            return nav_value
+
+    numerics: list[float] = []
+    for cell in row[3:]:
+        if _normalize_currency(cell):
+            continue
+        parsed = _parse_float(cell)
+        if parsed is not None:
+            numerics.append(parsed)
+    if not numerics:
+        return None
+    if len(numerics) == 1:
+        return numerics[0]
+    # Headerless IBKR row: Prior, Long, Short, Current Total, Change → use Current Total.
+    if len(numerics) >= 4:
+        return numerics[-2]
+    return numerics[-1]
+
+
 def _nav_to_portfolio_eur(statement: IBKRActivityStatement) -> float:
     """Convert statement NAV total to EUR for the portfolio snapshot field."""
     if statement.nav_total is None or statement.nav_total <= 0:
@@ -567,7 +601,11 @@ def build_monthly_deposits(
         return []
 
     nav_eur = _nav_to_portfolio_eur(statement)
-    last_month = month_keys[-1]
+    period_end_month: tuple[int, int] | None = None
+    if period:
+        period_end_month = (period[1].year, period[1].month)
+    elif month_keys:
+        period_end_month = month_keys[-1]
     rows: list[IBKRMonthlyDeposit] = []
     eur_per_usd = _statement_eur_per_usd(statement)
 
@@ -578,7 +616,11 @@ def build_monthly_deposits(
         deposit_eur, deposit_usd = _monthly_deposit_amounts(bucket, eur_per_usd=eur_per_usd)
         if not include_zero_months and deposit_eur <= 0.01 and deposit_usd <= 0.01:
             continue
-        portfolio_eur = nav_eur if (year, month) == last_month and nav_eur > 0 else 0.0
+        portfolio_eur = (
+            nav_eur
+            if period_end_month is not None and (year, month) == period_end_month and nav_eur > 0
+            else 0.0
+        )
         rows.append(
             IBKRMonthlyDeposit(
                 year=year,
@@ -952,16 +994,7 @@ def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:
             asset_class = (_cell(row, nav_header_map, "Asset Class", fallback_idx=2) or "").strip()
             if asset_class.lower() != "total":
                 continue
-            current_total_idx = nav_header_map.get("Current Total")
-            nav_value = None
-            if current_total_idx is not None and current_total_idx < len(row):
-                nav_value = _parse_float(row[current_total_idx])
-            else:
-                for cell in reversed(row[3:]):
-                    parsed = _parse_float(cell)
-                    if parsed is not None and parsed > 0:
-                        nav_value = parsed
-                        break
+            nav_value = _parse_nav_total_row(row, nav_header_map)
             if nav_value is not None:
                 statement.nav_total = nav_value
 

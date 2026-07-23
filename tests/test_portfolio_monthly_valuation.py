@@ -133,7 +133,7 @@ def test_pick_portfolio_prefers_stored_when_price_coverage_incomplete() -> None:
         symbols_priced=2,
     )
     assert pick_portfolio_eur_for_month(stored=1200.0, valuation=partial) == 1200.0
-    assert pick_portfolio_eur_for_month(stored=None, valuation=partial) is None
+    assert pick_portfolio_eur_for_month(stored=None, valuation=partial) == 900.0
     full = MonthPortfolioValuation(
         portfolio_usd=1000.0,
         portfolio_eur=900.0,
