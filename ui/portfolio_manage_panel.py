@@ -431,9 +431,10 @@ def _render_ibkr_import_tab() -> None:
         ["Merge with existing", "Full replace"],
         key="pm_ibkr_mode",
         help=(
-            "**Merge** appends new IBKR rows and refreshes only matching trades, "
-            "dividends, and deposit months (same date/key). Symbols not in the file "
-            "are left unchanged. **Full replace** deletes all portfolio data first."
+            "**Merge** appends new IBKR rows and refreshes matching trades, dividends, "
+            "and deposit months. Import multiple statements per year **oldest → newest**; "
+            "overlapping months use the larger or combined total (not a duplicate sum). "
+            "**Full replace** deletes all portfolio data first."
         ),
     )
     replace_mode = mode_label == "Full replace"

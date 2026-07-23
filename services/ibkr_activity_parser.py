@@ -93,6 +93,8 @@ class IBKRMonthlyDeposit:
     deposit_usd: float
     deposit_eur: float
     portfolio_eur: float = 0.0
+    native_eur: float = 0.0
+    native_usd: float = 0.0
 
 
 @dataclass
@@ -451,13 +453,21 @@ def _nav_to_portfolio_eur(statement: IBKRActivityStatement) -> float:
     return 0.0
 
 
-def build_monthly_deposits(statement: IBKRActivityStatement) -> list[IBKRMonthlyDeposit]:
+def build_monthly_deposits(
+    statement: IBKRActivityStatement,
+    *,
+    include_zero_months: bool = True,
+) -> list[IBKRMonthlyDeposit]:
     """
     Aggregate Deposits & Withdrawals rows into monthly_deposits records.
 
-    Counts positive cash inflows only (withdrawals are ignored for deposit totals).
+    Multiple inflows in the same calendar month (EUR and/or USD) are summed into
+    one row per month. Counts positive cash inflows only (withdrawals are ignored).
     When the statement Period is present, emits every calendar month in that range
     (zero-deposit months included) and assigns NAV to the period's last month.
+
+    Set ``include_zero_months=False`` when merging partial statements so blank
+    months from the file period are not written over existing history.
     """
     totals: dict[tuple[int, int], dict[str, float]] = defaultdict(lambda: {"USD": 0.0, "EUR": 0.0})
     for transfer in statement.cash_transfers:
@@ -484,7 +494,11 @@ def build_monthly_deposits(statement: IBKRActivityStatement) -> list[IBKRMonthly
 
     for year, month in month_keys:
         bucket = totals.get((year, month), {})
+        native_eur = round(float(bucket.get("EUR", 0.0)), 2)
+        native_usd = round(float(bucket.get("USD", 0.0)), 2)
         deposit_eur, deposit_usd = _monthly_deposit_amounts(bucket, eur_per_usd=eur_per_usd)
+        if not include_zero_months and deposit_eur <= 0.01 and deposit_usd <= 0.01:
+            continue
         portfolio_eur = nav_eur if (year, month) == last_month and nav_eur > 0 else 0.0
         rows.append(
             IBKRMonthlyDeposit(
@@ -494,6 +508,8 @@ def build_monthly_deposits(statement: IBKRActivityStatement) -> list[IBKRMonthly
                 deposit_usd=deposit_usd,
                 deposit_eur=deposit_eur,
                 portfolio_eur=portfolio_eur,
+                native_eur=native_eur,
+                native_usd=native_usd,
             )
         )
     return rows

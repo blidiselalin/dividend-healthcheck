@@ -67,6 +67,13 @@ def test_build_monthly_deposits_aggregates_inflows(sample_csv: str) -> None:
     assert mar.portfolio_eur == 0.0
 
 
+def test_build_monthly_deposits_can_skip_zero_months(sample_csv: str) -> None:
+    statement = parse_activity_statement_csv(sample_csv)
+    monthly = build_monthly_deposits(statement, include_zero_months=False)
+    assert len(monthly) == 2
+    assert {item.month for item in monthly} == {2, 3}
+
+
 def test_validate_sample_has_no_blocking_errors(sample_csv: str) -> None:
     statement = parse_activity_statement_csv(sample_csv)
     issues = validate_statement(statement)
@@ -203,6 +210,12 @@ def test_parse_all_2025_deposit_fixture() -> None:
     assert deposit_months_with_inflows(monthly) == 11
     assert sum(item.deposit_eur for item in monthly) == pytest.approx(34460.79)
     assert next(item for item in monthly if item.month == 11).deposit_eur == 0.0
+    feb = next(item for item in monthly if item.month == 2)
+    assert feb.deposit_eur == pytest.approx(11800.0)
+    apr = next(item for item in monthly if item.month == 4)
+    assert apr.deposit_eur == pytest.approx(3360.25)
+    may = next(item for item in monthly if item.month == 5)
+    assert may.deposit_eur == pytest.approx(3500.0)
 
 
 def test_parse_deposits_us_date_format() -> None:

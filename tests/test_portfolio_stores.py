@@ -150,3 +150,54 @@ def test_deposits_upsert_and_delete(deposits_store: DepositsStore) -> None:
 
     assert deposits_store.delete_deposit("2025-06")
     assert deposits_store.list_deposits() == []
+
+
+def test_merge_deposit_accumulates_complementary_same_month(deposits_store: DepositsStore) -> None:
+    deposits_store.upsert_deposit(
+        year=2026,
+        month=5,
+        label="May 2026",
+        deposit_eur=700.07,
+        deposit_usd=0.0,
+        portfolio_eur=0.0,
+    )
+    outcome = deposits_store.merge_deposit(
+        year=2026,
+        month=5,
+        label="May 2026",
+        deposit_eur=16752.0,
+        deposit_usd=4000.0,
+        portfolio_eur=0.0,
+        native_eur=0.0,
+        native_usd=4000.0,
+    )
+    assert outcome == "updated"
+    may = next(item for item in deposits_store.list_deposits() if item.period_key == "2026-05")
+    assert may.deposit_eur == pytest.approx(17452.07)
+    assert may.deposit_usd == pytest.approx(4000.0)
+
+
+def test_merge_deposit_replaces_with_fuller_restatement(deposits_store: DepositsStore) -> None:
+    deposits_store.upsert_deposit(
+        year=2026,
+        month=5,
+        label="May 2026",
+        deposit_eur=700.07,
+        deposit_usd=0.0,
+        portfolio_eur=0.0,
+    )
+    outcome = deposits_store.merge_deposit(
+        year=2026,
+        month=5,
+        label="May 2026",
+        deposit_eur=17452.07,
+        deposit_usd=4000.0,
+        portfolio_eur=120000.0,
+        native_eur=700.07,
+        native_usd=4000.0,
+    )
+    assert outcome == "updated"
+    may = next(item for item in deposits_store.list_deposits() if item.period_key == "2026-05")
+    assert may.deposit_eur == pytest.approx(17452.07)
+    assert may.deposit_usd == pytest.approx(4000.0)
+    assert may.portfolio_eur == pytest.approx(120000.0)

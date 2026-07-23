@@ -91,6 +91,56 @@ class MonthlyDeposit:
         return self.period.strftime("%Y-%m")
 
 
+def _merge_deposit_totals(
+    existing: MonthlyDeposit,
+    *,
+    deposit_eur: float,
+    deposit_usd: float,
+    native_eur: float,
+    native_usd: float,
+) -> tuple[float, float]:
+    """Combine stored and incoming month totals for IBKR merge imports."""
+    incoming_full_month = native_eur > 0.01 and native_usd > 0.01
+    incoming_eur_only = native_eur > 0.01 and native_usd <= 0.01
+    incoming_usd_only = native_usd > 0.01 and native_eur <= 0.01
+    existing_has_eur = existing.deposit_eur > 0.01
+    existing_has_usd = existing.deposit_usd > 0.01
+
+    if incoming_full_month:
+        return round(deposit_eur, 2), round(deposit_usd, 2)
+
+    complementary = (incoming_usd_only and existing_has_eur and not existing_has_usd) or (
+        incoming_eur_only and existing_has_usd and not existing_has_eur
+    )
+    if complementary:
+        return (
+            round(existing.deposit_eur + deposit_eur, 2),
+            round(existing.deposit_usd + deposit_usd, 2),
+        )
+
+    same_currency_overlap = (incoming_eur_only and existing_has_eur and not existing_has_usd) or (
+        incoming_usd_only and existing_has_usd and not existing_has_eur
+    )
+    if same_currency_overlap:
+        return (
+            round(max(existing.deposit_eur, deposit_eur), 2),
+            round(max(existing.deposit_usd, deposit_usd), 2),
+        )
+
+    incoming_dominates = (
+        deposit_eur >= existing.deposit_eur - 0.01
+        and deposit_usd >= (existing.deposit_usd - 0.01)
+        and (deposit_eur > existing.deposit_eur + 0.01 or deposit_usd > existing.deposit_usd + 0.01)
+    )
+    if incoming_dominates:
+        return round(deposit_eur, 2), round(deposit_usd, 2)
+
+    return (
+        round(existing.deposit_eur + deposit_eur, 2),
+        round(existing.deposit_usd + deposit_usd, 2),
+    )
+
+
 class DepositsStore:
     """Read monthly deposit records from SQLite (same DB as holdings)."""
 
@@ -357,6 +407,120 @@ class DepositsStore:
             deposit_eur=deposit_eur,
             deposit_usd=deposit_usd,
             portfolio_eur=portfolio_eur,
+        )
+        return "updated"
+
+    def merge_deposit(
+        self,
+        *,
+        year: int,
+        month: int,
+        label: str,
+        deposit_eur: float,
+        deposit_usd: float,
+        portfolio_eur: float,
+        native_eur: float = 0.0,
+        native_usd: float = 0.0,
+    ) -> str:
+        """
+        Merge one month's IBKR deposit totals into storage.
+
+        - Appends when incoming is a complementary single-currency partial (EUR + USD).
+        - Replaces when incoming is a full dual-currency restatement or a larger total.
+        - Uses the larger total for overlapping same-currency statements (not a sum).
+        - Skips creating new zero-deposit months.
+        """
+        period_key = f"{year:04d}-{month:02d}"
+        has_inflow = deposit_eur > 0.01 or deposit_usd > 0.01
+        existing = next(
+            (item for item in self.list_deposits() if item.period_key == period_key),
+            None,
+        )
+        if existing is None:
+            if not has_inflow:
+                if portfolio_eur > 0.01:
+                    self.upsert_deposit(
+                        year=year,
+                        month=month,
+                        label=label,
+                        deposit_eur=0.0,
+                        deposit_usd=0.0,
+                        portfolio_eur=portfolio_eur,
+                    )
+                    return "added"
+                return "unchanged"
+            self.upsert_deposit(
+                year=year,
+                month=month,
+                label=label,
+                deposit_eur=deposit_eur,
+                deposit_usd=deposit_usd,
+                portfolio_eur=portfolio_eur,
+            )
+            return "added"
+
+        portfolio_out = portfolio_eur if portfolio_eur > 0 else existing.portfolio_eur
+        if not has_inflow:
+            if abs(existing.portfolio_eur - portfolio_out) >= 0.01:
+                self.upsert_deposit(
+                    year=year,
+                    month=month,
+                    label=existing.label,
+                    deposit_eur=existing.deposit_eur,
+                    deposit_usd=existing.deposit_usd,
+                    portfolio_eur=portfolio_out,
+                )
+                return "updated"
+            return "unchanged"
+        if (
+            abs(existing.deposit_eur - deposit_eur) < 0.01
+            and abs(existing.deposit_usd - deposit_usd) < 0.01
+            and abs(existing.portfolio_eur - portfolio_out) < 0.01
+        ):
+            return "unchanged"
+
+        if (
+            deposit_eur <= existing.deposit_eur + 0.01
+            and deposit_usd <= existing.deposit_usd + 0.01
+            and (
+                deposit_eur < existing.deposit_eur - 0.01
+                or deposit_usd < existing.deposit_usd - 0.01
+            )
+        ):
+            if abs(existing.portfolio_eur - portfolio_out) >= 0.01:
+                self.upsert_deposit(
+                    year=year,
+                    month=month,
+                    label=existing.label,
+                    deposit_eur=existing.deposit_eur,
+                    deposit_usd=existing.deposit_usd,
+                    portfolio_eur=portfolio_out,
+                )
+                return "updated"
+            return "unchanged"
+
+        combined_eur, combined_usd = _merge_deposit_totals(
+            existing,
+            deposit_eur=deposit_eur,
+            deposit_usd=deposit_usd,
+            native_eur=native_eur,
+            native_usd=native_usd,
+        )
+
+        if (
+            abs(existing.deposit_eur - combined_eur) < 0.01
+            and abs(existing.deposit_usd - combined_usd) < 0.01
+            and abs(existing.portfolio_eur - portfolio_out) < 0.01
+        ):
+            return "unchanged"
+
+        self.upsert_deposit(
+            year=year,
+            month=month,
+            label=label or existing.label,
+            deposit_eur=combined_eur,
+            deposit_usd=combined_usd,
+            portfolio_eur=portfolio_out,
         )
         return "updated"
 

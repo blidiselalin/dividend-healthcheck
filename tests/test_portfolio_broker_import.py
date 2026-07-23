@@ -216,11 +216,11 @@ def test_merge_import_updates_deposit_months_without_wiping_manual_months(
 
     ctx = create_portfolio_context(db_path=db)
     deposits = ctx.deposits.list_deposits()
-    assert len(deposits) == 13
+    assert len(deposits) == 3
     assert any(item.period_key == "2024-12" for item in deposits)
     assert any(item.period_key == "2025-02" for item in deposits)
     assert any(item.period_key == "2025-03" for item in deposits)
-    assert any(item.period_key == "2025-12" for item in deposits)
+    assert not any(item.period_key == "2025-01" for item in deposits)
     feb_2025 = next(item for item in deposits if item.period_key == "2025-02")
     assert feb_2025.deposit_eur == pytest.approx(1840.0)
 
@@ -340,6 +340,68 @@ def test_merge_second_year_keeps_first_year_trades(tmp_path: Path) -> None:
     assert dates == ["2023-06-01", "2024-06-01"]
     holding = next(h for h in ctx.portfolio.list_holdings() if h.symbol == "AAPL")
     assert holding.shares == pytest.approx(15.0)
+
+
+def test_merge_multiple_statements_same_year_without_double_count(tmp_path: Path) -> None:
+    """H1 then full-year merge: overlapping months use the larger total, not a sum."""
+    h1_csv = (
+        "Statement,Data,Title,Activity Statement\n"
+        'Statement,Data,Period,"January 1, 2025 - June 30, 2025"\n'
+        "Account Information,Data,Base Currency,EUR\n"
+        "Deposits & Withdrawals,Header,Currency,Settle Date,Description,Amount\n"
+        "Deposits & Withdrawals,Data,EUR,2025-02-13,Electronic Fund Transfer,2500\n"
+        "Deposits & Withdrawals,Data,Total,,,2500\n"
+    )
+    full_csv = (
+        "Statement,Data,Title,Activity Statement\n"
+        'Statement,Data,Period,"January 1, 2025 - December 31, 2025"\n'
+        "Account Information,Data,Base Currency,EUR\n"
+        "Deposits & Withdrawals,Header,Currency,Settle Date,Description,Amount\n"
+        "Deposits & Withdrawals,Data,EUR,2025-02-13,Electronic Fund Transfer,2500\n"
+        "Deposits & Withdrawals,Data,EUR,2025-02-17,Electronic Fund Transfer,5300\n"
+        "Deposits & Withdrawals,Data,EUR,2025-07-08,Electronic Fund Transfer,1500\n"
+        "Deposits & Withdrawals,Data,Total,,,9300\n"
+    )
+    db = tmp_path / "portfolio.db"
+    apply_import(h1_csv, mode=ImportMode.MERGE, db_path=db)
+    apply_import(full_csv, mode=ImportMode.MERGE, db_path=db)
+
+    ctx = create_portfolio_context(db_path=db)
+    deposits = ctx.deposits.list_deposits()
+    assert len(deposits) == 2
+    feb = next(item for item in deposits if item.period_key == "2025-02")
+    jul = next(item for item in deposits if item.period_key == "2025-07")
+    assert feb.deposit_eur == pytest.approx(7800.0)
+    assert jul.deposit_eur == pytest.approx(1500.0)
+
+
+def test_merge_accumulates_complementary_deposits_same_month(tmp_path: Path) -> None:
+    eur_csv = (
+        "Statement,Data,Title,Activity Statement\n"
+        'Statement,Data,Period,"May 1, 2026 - May 31, 2026"\n'
+        "Account Information,Data,Base Currency,EUR\n"
+        "Deposits & Withdrawals,Header,Currency,Settle Date,Description,Amount\n"
+        "Deposits & Withdrawals,Data,EUR,2026-05-11,Electronic Fund Transfer,700.07\n"
+        "Deposits & Withdrawals,Data,Total,,,700.07\n"
+    )
+    usd_csv = (
+        "Statement,Data,Title,Activity Statement\n"
+        'Statement,Data,Period,"May 1, 2026 - May 31, 2026"\n'
+        "Account Information,Data,Base Currency,EUR\n"
+        "Deposits & Withdrawals,Header,Currency,Settle Date,Description,Amount\n"
+        "Deposits & Withdrawals,Data,USD,2026-05-06,Electronic Fund Transfer,4000\n"
+        "Deposits & Withdrawals,Data,Total,,,4000\n"
+        "Deposits & Withdrawals,Data,Total in EUR,,,16752\n"
+        "Deposits & Withdrawals,Data,Total Deposits & Withdrawals in EUR,,,17452.07\n"
+    )
+    db = tmp_path / "portfolio.db"
+    apply_import(eur_csv, mode=ImportMode.REPLACE, db_path=db)
+    apply_import(usd_csv, mode=ImportMode.MERGE, db_path=db)
+
+    ctx = create_portfolio_context(db_path=db)
+    may = next(item for item in ctx.deposits.list_deposits() if item.period_key == "2026-05")
+    assert may.deposit_eur == pytest.approx(17452.07)
+    assert may.deposit_usd == pytest.approx(4000.0)
 
 
 def test_merge_same_file_twice_is_idempotent(tmp_path: Path, sample_csv: str) -> None:

@@ -225,18 +225,25 @@ def apply_import(  # noqa: C901
         total = ctx.receipts.total_for_symbol(symbol)
         ctx.portfolio.set_dividends_paid(symbol, total)
 
-    monthly_deposits = build_monthly_deposits(statement)
+    monthly_deposits = build_monthly_deposits(
+        statement,
+        include_zero_months=(mode == ImportMode.REPLACE),
+    )
+    if mode == ImportMode.MERGE:
+        issues.extend(_deposit_overlap_issues(ctx, monthly_deposits))
     _report(progress, "Importing monthly deposits…", 0.82)
     if monthly_deposits:
         for index, month_deposit in enumerate(monthly_deposits, start=1):
             if mode == ImportMode.MERGE:
-                outcome = ctx.deposits.sync_deposit(
+                outcome = ctx.deposits.merge_deposit(
                     year=month_deposit.year,
                     month=month_deposit.month,
                     label=month_deposit.label,
                     deposit_eur=month_deposit.deposit_eur,
                     deposit_usd=month_deposit.deposit_usd,
                     portfolio_eur=month_deposit.portfolio_eur,
+                    native_eur=month_deposit.native_eur,
+                    native_usd=month_deposit.native_usd,
                 )
                 if outcome in {"added", "updated"}:
                     deposits_imported += 1
@@ -287,6 +294,54 @@ def apply_import(  # noqa: C901
         issues=issues,
         cleared=cleared,
     )
+
+
+def _deposit_overlap_issues(
+    ctx: object,
+    monthly_deposits: list[object],
+) -> list[ImportIssue]:
+    """Warn when merge would touch deposit months that already exist on file."""
+    from services.ibkr_activity_parser import ImportIssue, ImportIssueLevel
+
+    deposits = getattr(ctx, "deposits", None)
+    if deposits is None or not monthly_deposits:
+        return []
+
+    incoming_keys = {
+        (item.year, item.month)
+        for item in monthly_deposits
+        if item.deposit_eur > 0.01 or item.deposit_usd > 0.01
+    }
+    if not incoming_keys:
+        return []
+
+    existing_keys = {
+        (item.period.year, item.period.month)
+        for item in deposits.list_deposits()
+        if item.deposit_eur > 0.01 or item.deposit_usd > 0.01
+    }
+    overlap = incoming_keys & existing_keys
+    if not overlap:
+        return []
+
+    months = ", ".join(f"{year}-{month:02d}" for year, month in sorted(overlap))
+    years = sorted({year for year, _month in overlap})
+    year_hint = (
+        f" For {years[0]}, import statements oldest → newest; "
+        "overlapping months keep the larger or combined total."
+        if len(years) == 1
+        else " Import statements oldest → newest per year."
+    )
+    return [
+        ImportIssue(
+            ImportIssueLevel.INFO,
+            (
+                f"Deposit months already on file ({months}) will be merged — not duplicated."
+                f"{year_hint}"
+            ),
+            section="Deposits & Withdrawals",
+        )
+    ]
 
 
 def _journal_net_shares(journal: object, symbol: str) -> float:
