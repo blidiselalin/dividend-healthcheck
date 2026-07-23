@@ -374,7 +374,7 @@ class PortfolioManagementService:
     def sync_monthly_portfolio_timeline(self) -> tuple[int, int]:
         """Fill missing calendar months and backfill portfolio € from journal + prices."""
         from services.portfolio_context import create_portfolio_context
-        from services.portfolio_import_pipeline import sync_monthly_portfolio_timeline
+        from services.portfolio_timeline_service import sync_monthly_portfolio_timeline
 
         ctx = create_portfolio_context(db_path=self.portfolio.db_path)
         months_filled, portfolio_updates, _issues = sync_monthly_portfolio_timeline(

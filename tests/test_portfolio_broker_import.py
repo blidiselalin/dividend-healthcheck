@@ -61,7 +61,8 @@ def test_apply_import_without_open_positions(tmp_path: Path) -> None:
     assert ctx.portfolio.list_holdings() == []
     assert len(ctx.journal.list_purchases(portfolio_only=False)) == 2
     assert len(ctx.receipts.list_for_symbol("AAPL")) == 1
-    assert len(ctx.deposits.list_deposits()) == 1
+    inflow_months = [item for item in ctx.deposits.list_deposits() if item.deposit_usd > 0.01]
+    assert len(inflow_months) == 1
 
 
 def test_apply_import_reports_progress(sample_csv: str, tmp_path: Path) -> None:
@@ -99,10 +100,11 @@ def test_replace_import_loads_holdings_and_receipts(tmp_path: Path, sample_csv: 
     assert receipts[0].source == "ibkr"
     assert receipts[0].gross_usd == 2.50
     deposits = ctx.deposits.list_deposits()
-    assert len(deposits) == 12
-    march = next(item for item in deposits if item.period.month == 3)
+    keys_2025 = [item.period_key for item in deposits if item.period.year == 2025]
+    assert len(keys_2025) == 12
+    march = next(item for item in deposits if item.period_key == "2025-03")
     assert march.deposit_usd == 1500.0
-    december = next(item for item in deposits if item.period.month == 12)
+    december = next(item for item in deposits if item.period_key == "2025-12")
     assert december.portfolio_eur == pytest.approx(3220.0)
 
 

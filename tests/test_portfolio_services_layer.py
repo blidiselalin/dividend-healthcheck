@@ -80,7 +80,7 @@ def test_dashboard_evolution_and_metrics(sample_deposits: DepositsStore) -> None
     dashboard = PortfolioDashboardService(
         deposits_service=PortfolioDepositsService(store=sample_deposits)
     )
-    df = dashboard.evolution_dataframe(deposits)
+    df = dashboard.evolution_dataframe(deposits, include_current_month=False)
     assert len(df) == 2
     assert df.iloc[0]["cumulative_deposits_eur"] == 1000.0
     assert df.iloc[1]["cumulative_deposits_eur"] == 1500.0

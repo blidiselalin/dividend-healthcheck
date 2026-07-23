@@ -38,7 +38,12 @@ def month_end(day: date) -> date:
     return date(day.year, day.month, last)
 
 
-def continuous_monthly_deposits(deposits: list[MonthlyDeposit]) -> list[MonthlyDeposit]:
+def continuous_monthly_deposits(
+    deposits: list[MonthlyDeposit],
+    *,
+    include_current_month: bool = True,
+    reference: date | None = None,
+) -> list[MonthlyDeposit]:
     """
     Expand sparse deposit history into every calendar month from first to last.
 
@@ -51,6 +56,11 @@ def continuous_monthly_deposits(deposits: list[MonthlyDeposit]) -> list[MonthlyD
     by_key = {item.period_key: item for item in ordered}
     start = ordered[0].period
     end = ordered[-1].period
+    if include_current_month:
+        today = reference or date.today()
+        current_month = date(today.year, today.month, 1)
+        if current_month > end:
+            end = current_month
     out: list[MonthlyDeposit] = []
     sort_order = 1
     year, month = start.year, start.month
@@ -123,6 +133,16 @@ def shares_from_records(records: list[PurchaseRecord], as_of: date) -> float:
     return max(total, 0.0)
 
 
+def _last_bar_date_on_or_before(series: list[tuple[date, float]], as_of: date) -> date | None:
+    last: date | None = None
+    for point_date, _close in series:
+        if point_date <= as_of:
+            last = point_date
+        else:
+            break
+    return last
+
+
 def _close_on_or_before(series: list[tuple[date, float]], as_of: date) -> float | None:
     """Latest available close on or before ``as_of``."""
     if not series:
@@ -138,11 +158,8 @@ def _close_on_or_before(series: list[tuple[date, float]], as_of: date) -> float 
 
 def _close_for_month_end(series: list[tuple[date, float]], as_of: date) -> float | None:
     """
-    Month-end mark: prefer the last in-month close, else the latest prior close.
-
-    Uses the last close in the same calendar month when available. When the library
-    has no bar that month (thin history, holiday gaps), falls back to the most recent
-    close on or before ``as_of`` so the portfolio total stays close to reality.
+    Month-end mark: prefer the last in-month close on or before ``as_of``,
+    else the latest prior close.
     """
     if not series:
         return None
@@ -156,6 +173,34 @@ def _close_for_month_end(series: list[tuple[date, float]], as_of: date) -> float
     if in_month is not None:
         return in_month
     return _close_on_or_before(series, as_of)
+
+
+def _mark_price_for_date(
+    series: list[tuple[date, float]],
+    as_of: date,
+    *,
+    snapshot_price: float | None = None,
+    reference: date | None = None,
+) -> float | None:
+    """
+    Latest available price for portfolio marks on ``as_of``.
+
+    Past months use the last library close on or before month-end. The current
+    month uses the freshest library bar through today, falling back to the
+    document snapshot (hourly-refreshed library price) when history lags.
+    """
+    today = reference or date.today()
+    history_close = _close_for_month_end(series, as_of)
+    if as_of.year != today.year or as_of.month != today.month:
+        return history_close
+    if snapshot_price is None or snapshot_price <= 0:
+        return history_close
+    last_bar = _last_bar_date_on_or_before(series, as_of)
+    if last_bar is None or last_bar < today:
+        return snapshot_price
+    if history_close is None:
+        return snapshot_price
+    return history_close
 
 
 def _price_series(document: Any) -> list[tuple[date, float]]:
@@ -180,13 +225,15 @@ def _price_series(document: Any) -> list[tuple[date, float]]:
     return points
 
 
-def _load_price_series(symbols: list[str]) -> dict[str, list[tuple[date, float]]]:
+def _load_price_series(
+    symbols: list[str],
+) -> tuple[dict[str, list[tuple[date, float]]], dict[str, float]]:
     if not symbols:
-        return {}
+        return {}, {}
     try:
         from services.shared_market_db import load_documents
     except ImportError:
-        return {}
+        return {}, {}
 
     documents = load_documents(symbols)
     try:
@@ -213,14 +260,22 @@ def _load_price_series(symbols: list[str]) -> dict[str, list[tuple[date, float]]
     except ImportError:
         pass
 
-    out: dict[str, list[tuple[date, float]]] = {}
+    series_out: dict[str, list[tuple[date, float]]] = {}
+    snapshot_out: dict[str, float] = {}
     for symbol in symbols:
         sym = symbol.strip().upper()
         doc = documents.get(sym) or documents.get(symbol)
         series = _price_series(doc)
         if series:
-            out[sym] = series
-    return out
+            series_out[sym] = series
+        snapshot = getattr(doc, "current_price", None) if doc is not None else None
+        try:
+            price = float(snapshot) if snapshot is not None else None
+        except (TypeError, ValueError):
+            price = None
+        if price is not None and price > 0:
+            snapshot_out[sym] = price
+    return series_out, snapshot_out
 
 
 def compute_monthly_portfolio_valuations(
@@ -255,12 +310,13 @@ def compute_monthly_portfolio_valuations(
         records_by_symbol.setdefault(sym, []).append(record)
 
     symbols = sorted(records_by_symbol)
-    price_series = _load_price_series(symbols)
+    price_series, snapshot_prices = _load_price_series(symbols)
     fx_by_month = fx_rates_carry_forward(deposits)
     values: dict[str, MonthPortfolioValuation] = {}
+    today = date.today()
 
     for deposit in deposits:
-        as_of = valuation_as_of(deposit.period)
+        as_of = valuation_as_of(deposit.period, reference=today)
         total_usd = 0.0
         symbols_held = 0
         symbols_priced = 0
@@ -272,7 +328,12 @@ def compute_monthly_portfolio_valuations(
             if shares <= 0:
                 continue
             symbols_held += 1
-            close = _close_for_month_end(price_series.get(symbol, []), as_of)
+            close = _mark_price_for_date(
+                price_series.get(symbol, []),
+                as_of,
+                snapshot_price=snapshot_prices.get(symbol),
+                reference=today,
+            )
             if close is None:
                 missing_symbols.append(symbol)
                 continue
@@ -317,12 +378,7 @@ def pick_portfolio_eur_for_month(
     stored: float | None,
     valuation: MonthPortfolioValuation | None,
 ) -> float | None:
-    """
-    Prefer a full stock-based valuation; fall back to stored IBKR/manual NAV when incomplete.
-
-    When no stored snapshot exists, a partial journal-based mark is shown rather than leaving
-    the month blank — it is closer to reality than a single end-of-year NAV spike on one row.
-    """
+    """Prefer journal-based marks; fall back to stored IBKR/manual NAV when incomplete."""
     if valuation is not None and valuation.portfolio_eur > 0:
         if valuation.coverage >= 1.0:
             return valuation.portfolio_eur

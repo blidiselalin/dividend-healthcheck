@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -12,10 +13,10 @@ from services.portfolio_context import create_portfolio_context
 from services.portfolio_import_pipeline import (
     content_fingerprint,
     detect_in_statement_duplicates,
-    fill_missing_deposit_months,
     normalize_statement,
     prepare_statement,
 )
+from services.portfolio_timeline_service import fill_missing_deposit_months
 
 
 def test_content_fingerprint_is_stable() -> None:
@@ -73,7 +74,10 @@ def test_fill_missing_deposit_months_inserts_zero_rows(tmp_path: Path) -> None:
         portfolio_eur=10800.0,
     )
 
-    added, issues = fill_missing_deposit_months(ctx)
+    added, issues = fill_missing_deposit_months(
+        ctx,
+        range_end=date(2024, 3, 1),
+    )
     assert added == 1
     assert any("Filled 1 missing" in issue.message for issue in issues)
 
@@ -89,10 +93,11 @@ def test_import_fills_calendar_gaps_after_replace(tmp_path: Path, sample_csv: st
     assert result.months_filled >= 0
 
     ctx = create_portfolio_context(db_path=db)
-    months = [item.period.month for item in ctx.deposits.list_deposits()]
-    assert months == sorted(months)
-    if len(months) >= 2:
-        assert months[-1] - months[0] + 1 == len(months)
+    keys = [item.period_key for item in ctx.deposits.list_deposits()]
+    assert keys == sorted(keys)
+    assert len(keys) == len(set(keys))
+    assert "2025-01" in keys
+    assert "2025-12" in keys
 
 
 @pytest.fixture

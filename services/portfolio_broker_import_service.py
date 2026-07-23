@@ -27,8 +27,8 @@ from services.portfolio_context import create_portfolio_context
 from services.portfolio_import_pipeline import (
     prepare_statement,
     run_post_import_checks,
-    sync_monthly_portfolio_timeline,
 )
+from services.portfolio_timeline_service import sync_monthly_portfolio_timeline
 
 logger = logging.getLogger(__name__)
 

@@ -17,6 +17,7 @@ from services.portfolio_dashboard_service import PortfolioDashboardService
 from services.portfolio_deposits_service import PortfolioDepositsService
 from services.portfolio_monthly_valuation import (
     _close_for_month_end,
+    _mark_price_for_date,
     compute_monthly_portfolio_eur,
     continuous_monthly_deposits,
     fx_rates_carry_forward,
@@ -45,6 +46,52 @@ def _price_doc(symbol: str, points: list[tuple[date, float]]) -> StockDocument:
     )
 
 
+def test_continuous_monthly_deposits_includes_current_month() -> None:
+    from data_ingestion.deposits_store import MonthlyDeposit
+
+    rows = [
+        MonthlyDeposit(
+            period=date(2025, 1, 1),
+            label="January 2025",
+            deposit_eur=1000.0,
+            deposit_usd=1100.0,
+            portfolio_eur=0.0,
+            sort_order=1,
+        ),
+    ]
+    expanded = continuous_monthly_deposits(
+        rows,
+        include_current_month=True,
+        reference=date(2026, 7, 15),
+    )
+    assert expanded[-1].period_key == "2026-07"
+    assert len(expanded) >= 19
+
+
+def test_mark_price_for_current_month_uses_snapshot_when_history_stale() -> None:
+    series = [(date(2026, 7, 18), 50.0)]
+    today = date(2026, 7, 23)
+    assert _mark_price_for_date(
+        series,
+        today,
+        snapshot_price=55.0,
+        reference=today,
+    ) == pytest.approx(55.0)
+
+
+def test_mark_price_for_past_month_uses_last_in_month_close() -> None:
+    series = [
+        (date(2025, 1, 31), 50.0),
+        (date(2025, 2, 28), 52.0),
+    ]
+    assert _mark_price_for_date(
+        series,
+        date(2025, 1, 31),
+        snapshot_price=99.0,
+        reference=date(2026, 7, 23),
+    ) == pytest.approx(50.0)
+
+
 def test_continuous_monthly_deposits_fills_gaps() -> None:
     from data_ingestion.deposits_store import MonthlyDeposit
 
@@ -66,7 +113,7 @@ def test_continuous_monthly_deposits_fills_gaps() -> None:
             sort_order=2,
         ),
     ]
-    expanded = continuous_monthly_deposits(rows)
+    expanded = continuous_monthly_deposits(rows, include_current_month=False)
     assert len(expanded) == 3
     assert expanded[1].period.month == 2
     assert expanded[1].deposit_eur == 0.0
@@ -111,7 +158,7 @@ def test_evolution_includes_zero_deposit_months_with_portfolio(tmp_path: Path) -
         "services.shared_market_db.load_documents",
         return_value={"KO": ko_prices},
     ):
-        df = dashboard.evolution_dataframe(db_path=db)
+        df = dashboard.evolution_dataframe(db_path=db, include_current_month=False)
 
     assert len(df) == 3
     feb = df.iloc[1]
@@ -279,13 +326,16 @@ def test_evolution_chart_uses_full_cumulative_deposit_timeline(tmp_path: Path) -
         portfolio_eur=10800.0,
     )
     dashboard = PortfolioDashboardService(deposits_service=PortfolioDepositsService(store=store))
-    df = dashboard.evolution_dataframe(use_computed_portfolio=False)
+    df = dashboard.evolution_dataframe(use_computed_portfolio=False, include_current_month=False)
 
     assert df.iloc[0]["cumulative_deposits_eur"] == 1000.0
     assert df.iloc[1]["cumulative_deposits_eur"] == 1500.0
     assert pd.isna(df.iloc[0]["portfolio_eur"])
 
-    chart = dashboard.create_evolution_chart(use_computed_portfolio=False)
+    chart = dashboard.create_evolution_chart(
+        use_computed_portfolio=False,
+        include_current_month=False,
+    )
     assert chart is not None
     cumulative = chart.data[0].y
     assert list(cumulative) == [1000.0, 1500.0]

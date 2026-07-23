@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 from dataclasses import replace
 from datetime import date
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from services.ibkr_activity_parser import (
@@ -20,10 +19,6 @@ from services.ibkr_activity_parser import (
     ImportIssueLevel,
     build_monthly_deposits,
     parse_statement_period,
-)
-from services.portfolio_monthly_valuation import (
-    continuous_monthly_deposits,
-    pick_portfolio_eur_for_month,
 )
 from utils.import_money import round_money, round_rate, round_shares
 
@@ -243,41 +238,6 @@ def _iter_calendar_months(start: date, end: date) -> list[tuple[int, int]]:
     return months
 
 
-def fill_missing_deposit_months(
-    ctx: PortfolioContext,
-    *,
-    range_start: date | None = None,
-    range_end: date | None = None,
-) -> tuple[int, list[ImportIssue]]:
-    """
-    Insert zero-deposit placeholder rows for calendar gaps in stored history.
-
-    When ``range_start`` / ``range_end`` are set, only gaps inside that window
-    are filled (typically the imported statement period on full replace).
-    """
-    issues: list[ImportIssue] = []
-    added = ctx.deposits.fill_calendar_gaps(
-        range_start=range_start,
-        range_end=range_end,
-    )
-    if added:
-        months = ctx.deposits.list_deposits()
-        start = min(item.period for item in months)
-        end = max(item.period for item in months)
-        missing_count = added
-        issues.append(
-            ImportIssue(
-                ImportIssueLevel.INFO,
-                (
-                    f"Filled {missing_count} missing calendar month(s) with zero deposits "
-                    f"({start.strftime('%Y-%m')} → {end.strftime('%Y-%m')})."
-                ),
-                section="Deposits & Withdrawals",
-            )
-        )
-    return added, issues
-
-
 def run_post_import_checks(
     ctx: PortfolioContext,
     statement: IBKRActivityStatement,
@@ -393,79 +353,3 @@ def prepare_statement(content: str | bytes) -> tuple[IBKRActivityStatement, list
     issues.extend(detect_in_statement_duplicates(statement))
     issues.extend(validate_extreme_values(statement))
     return statement, issues, fingerprint
-
-
-def backfill_monthly_portfolio_eur(
-    ctx: PortfolioContext,
-    *,
-    db_path: Path | None = None,
-) -> tuple[int, list[ImportIssue]]:
-    """
-    Write month-end portfolio € for every stored month from journal + market prices.
-
-    Uses the best available mark per month (full valuation, partial journal mark,
-    or existing IBKR/manual snapshot) so zero-deposit months still show portfolio value.
-    """
-    from services.portfolio_monthly_valuation import compute_monthly_portfolio_valuations
-
-    issues: list[ImportIssue] = []
-    deposits = ctx.deposits.list_deposits()
-    if not deposits:
-        return 0, issues
-
-    timeline = continuous_monthly_deposits(deposits)
-    valuations = compute_monthly_portfolio_valuations(timeline, db_path=db_path)
-    if not valuations and not any(item.portfolio_eur > 0 for item in deposits):
-        return 0, issues
-
-    updated = 0
-    for deposit in timeline:
-        valuation = valuations.get(deposit.period_key)
-        stored = deposit.portfolio_eur if deposit.portfolio_eur > 0 else None
-        target = pick_portfolio_eur_for_month(stored=stored, valuation=valuation)
-        if target is None:
-            continue
-        if abs(deposit.portfolio_eur - target) < 0.01:
-            continue
-        ctx.deposits.upsert_deposit(
-            year=deposit.period.year,
-            month=deposit.period.month,
-            label=deposit.label,
-            deposit_eur=deposit.deposit_eur,
-            deposit_usd=deposit.deposit_usd,
-            portfolio_eur=target,
-        )
-        updated += 1
-
-    if updated:
-        issues.append(
-            ImportIssue(
-                ImportIssueLevel.INFO,
-                (
-                    f"Updated portfolio € for {updated} month(s) from purchase journal "
-                    "and market prices."
-                ),
-                section="Deposits & Withdrawals",
-            )
-        )
-    return updated, issues
-
-
-def sync_monthly_portfolio_timeline(
-    ctx: PortfolioContext,
-    *,
-    db_path: Path | None = None,
-    range_start: date | None = None,
-    range_end: date | None = None,
-) -> tuple[int, int, list[ImportIssue]]:
-    """Fill calendar gaps, then backfill portfolio € for every month."""
-    issues: list[ImportIssue] = []
-    months_filled, fill_issues = fill_missing_deposit_months(
-        ctx,
-        range_start=range_start,
-        range_end=range_end,
-    )
-    issues.extend(fill_issues)
-    portfolio_updates, portfolio_issues = backfill_monthly_portfolio_eur(ctx, db_path=db_path)
-    issues.extend(portfolio_issues)
-    return months_filled, portfolio_updates, issues

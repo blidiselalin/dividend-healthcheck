@@ -201,7 +201,7 @@ def test_current_month_paid_prefers_synced_receipts_over_live_compute(
 
     monkeypatch.setattr(
         "services.portfolio_month_dividends.PortfolioStore",
-        lambda: type("Store", (), {"list_holdings": lambda self: [holding]})(),
+        lambda: type("Store", (), {"list_open_holdings": lambda self: [holding]})(),
     )
     monkeypatch.setattr(
         "services.portfolio_month_dividends.gross_paid_in_calendar_month",
@@ -281,7 +281,7 @@ def test_current_month_paid_returns_zero_snapshot_for_rows(
         lambda: type(
             "Store",
             (),
-            {"list_holdings": lambda self: []},
+            {"list_open_holdings": lambda self: []},
         )(),
     )
     monkeypatch.setattr(

@@ -591,12 +591,14 @@ class DepositsStore:
         Returns the number of months added.
         """
         deposits = self.list_deposits()
-        if len(deposits) < 2:
+        if not deposits:
             return 0
 
         existing = {(item.period.year, item.period.month) for item in deposits}
         start = range_start or min(item.period for item in deposits)
-        end = range_end or max(item.period for item in deposits)
+        stored_end = max(item.period for item in deposits)
+        today_month = date.today().replace(day=1)
+        end = range_end or max(stored_end, today_month)
         added = 0
         year, month = start.year, start.month
         end_key = (end.year, end.month)

@@ -32,7 +32,7 @@ class _MockJournal:
     def __init__(self, records: list[PurchaseRecord]) -> None:
         self._records = records
 
-    def list_purchases(self) -> list[PurchaseRecord]:
+    def list_purchases(self, portfolio_only: bool = True) -> list[PurchaseRecord]:
         return self._records
 
 
@@ -272,6 +272,9 @@ class _MockPortfolio:
 
     def list_holdings(self) -> list[PortfolioHolding]:
         return self._holdings
+
+    def list_open_holdings(self) -> list[PortfolioHolding]:
+        return [holding for holding in self._holdings if holding.shares > 0]
 
 
 def test_build_symbol_growth_uses_journal_for_first_owned_year() -> None:

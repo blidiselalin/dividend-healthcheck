@@ -243,4 +243,7 @@ def test_build_rows_preloads_analysis_when_enabled(portfolio_store: PortfolioSto
         _, result = service.build_rows_with_cache(preload_analysis=True)
 
     mock_preload.assert_called_once()
-    assert result is preload
+    assert result.stock_data == preload.stock_data
+    assert result.yield_channels == preload.yield_channels
+    assert result.vector_docs == preload.vector_docs
+    assert result.dividend_statuses == {}

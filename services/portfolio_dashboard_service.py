@@ -100,13 +100,17 @@ class PortfolioDashboardService:
         *,
         db_path: Path | None = None,
         use_computed_portfolio: bool = True,
+        include_current_month: bool = True,
     ) -> pd.DataFrame:
         """Monthly series for charts: deposits, portfolio, cumulative capital, returns."""
         records = deposits if deposits is not None else self.list_deposits()
         if not records:
             return self._empty_evolution_frame()
 
-        records = continuous_monthly_deposits(records)
+        records = continuous_monthly_deposits(
+            records,
+            include_current_month=include_current_month,
+        )
         computed: dict[str, Any] = {}
         valuation_path = self._valuation_db_path(db_path)
         if use_computed_portfolio:
@@ -264,6 +268,7 @@ class PortfolioDashboardService:
         *,
         db_path: Path | None = None,
         use_computed_portfolio: bool = True,
+        include_current_month: bool = True,
     ) -> Any:
         """Portfolio € and cumulative deposits since inception."""
         if not PLOTLY_AVAILABLE:
@@ -272,6 +277,7 @@ class PortfolioDashboardService:
             deposits,
             db_path=db_path,
             use_computed_portfolio=use_computed_portfolio,
+            include_current_month=include_current_month,
         )
         if df.empty:
             return None
