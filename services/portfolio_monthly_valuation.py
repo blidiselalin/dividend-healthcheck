@@ -38,6 +38,47 @@ def month_end(day: date) -> date:
     return date(day.year, day.month, last)
 
 
+def continuous_monthly_deposits(deposits: list[MonthlyDeposit]) -> list[MonthlyDeposit]:
+    """
+    Expand sparse deposit history into every calendar month from first to last.
+
+    Missing months are returned as zero-deposit placeholders so evolution charts
+    can show portfolio value even when no cash was added that month.
+    """
+    if not deposits:
+        return []
+    ordered = sorted(deposits, key=lambda item: (item.period.year, item.period.month))
+    by_key = {item.period_key: item for item in ordered}
+    start = ordered[0].period
+    end = ordered[-1].period
+    out: list[MonthlyDeposit] = []
+    sort_order = 1
+    year, month = start.year, start.month
+    end_key = (end.year, end.month)
+    while (year, month) <= end_key:
+        period_key = f"{year:04d}-{month:02d}"
+        existing = by_key.get(period_key)
+        if existing is not None:
+            out.append(existing)
+        else:
+            out.append(
+                MonthlyDeposit(
+                    period=date(year, month, 1),
+                    label=f"{calendar.month_name[month]} {year}",
+                    deposit_eur=0.0,
+                    deposit_usd=0.0,
+                    portfolio_eur=0.0,
+                    sort_order=sort_order,
+                )
+            )
+        month += 1
+        if month > 12:
+            month = 1
+            year += 1
+        sort_order += 1
+    return out
+
+
 def valuation_as_of(deposit_period: date, *, reference: date | None = None) -> date:
     """Last date to use for month-end marks (today when valuing the current month)."""
     today = reference or date.today()

@@ -8,7 +8,6 @@ Wraps the existing IBKR parser/importer without replacing it:
 
 from __future__ import annotations
 
-import calendar
 import hashlib
 from dataclasses import replace
 from datetime import date
@@ -21,6 +20,10 @@ from services.ibkr_activity_parser import (
     ImportIssueLevel,
     build_monthly_deposits,
     parse_statement_period,
+)
+from services.portfolio_monthly_valuation import (
+    continuous_monthly_deposits,
+    pick_portfolio_eur_for_month,
 )
 from utils.import_money import round_money, round_rate, round_shares
 
@@ -228,10 +231,6 @@ def validate_extreme_values(statement: IBKRActivityStatement) -> list[ImportIssu
     return issues
 
 
-def _month_label(year: int, month: int) -> str:
-    return f"{calendar.month_name[month]} {year}"
-
-
 def _iter_calendar_months(start: date, end: date) -> list[tuple[int, int]]:
     months: list[tuple[int, int]] = []
     year, month = start.year, start.month
@@ -255,42 +254,24 @@ def fill_missing_deposit_months(
 
     When ``range_start`` / ``range_end`` are set, only gaps inside that window
     are filled (typically the imported statement period on full replace).
-
-    Missing portfolio values remain 0 (null-equivalent in charts).
     """
     issues: list[ImportIssue] = []
-    deposits = ctx.deposits.list_deposits()
-    if len(deposits) < 2:
-        return 0, issues
-
-    existing = {(item.period.year, item.period.month) for item in deposits}
-    start = range_start or min(item.period for item in deposits)
-    end = range_end or max(item.period for item in deposits)
-    missing = [
-        (year, month)
-        for year, month in _iter_calendar_months(start, end)
-        if (year, month) not in existing
-    ]
-    added = 0
-    for year, month in missing:
-        ctx.deposits.upsert_deposit(
-            year=year,
-            month=month,
-            label=_month_label(year, month),
-            deposit_eur=0.0,
-            deposit_usd=0.0,
-            portfolio_eur=0.0,
-        )
-        added += 1
-
+    added = ctx.deposits.fill_calendar_gaps(
+        range_start=range_start,
+        range_end=range_end,
+    )
     if added:
-        ctx.deposits.resequence_sort_order()
-        months = ", ".join(f"{year}-{month:02d}" for year, month in missing[:6])
-        suffix = "…" if len(missing) > 6 else ""
+        months = ctx.deposits.list_deposits()
+        start = min(item.period for item in months)
+        end = max(item.period for item in months)
+        missing_count = added
         issues.append(
             ImportIssue(
                 ImportIssueLevel.INFO,
-                f"Filled {added} missing calendar month(s) with zero deposits ({months}{suffix}).",
+                (
+                    f"Filled {missing_count} missing calendar month(s) with zero deposits "
+                    f"({start.strftime('%Y-%m')} → {end.strftime('%Y-%m')})."
+                ),
                 section="Deposits & Withdrawals",
             )
         )
@@ -420,12 +401,11 @@ def backfill_monthly_portfolio_eur(
     db_path: Path | None = None,
 ) -> tuple[int, list[ImportIssue]]:
     """
-    Write journal+price-based month-end values into ``monthly_deposits.portfolio_eur``.
+    Write month-end portfolio € for every stored month from journal + market prices.
 
-    IBKR exports only include one NAV snapshot (statement end). This fills every month
-    that has full pricing coverage so evolution charts do not show one spike and zeros.
+    Uses the best available mark per month (full valuation, partial journal mark,
+    or existing IBKR/manual snapshot) so zero-deposit months still show portfolio value.
     """
-    from services.ibkr_activity_parser import ImportIssue, ImportIssueLevel
     from services.portfolio_monthly_valuation import compute_monthly_portfolio_valuations
 
     issues: list[ImportIssue] = []
@@ -433,16 +413,19 @@ def backfill_monthly_portfolio_eur(
     if not deposits:
         return 0, issues
 
-    valuations = compute_monthly_portfolio_valuations(deposits, db_path=db_path)
-    if not valuations:
+    timeline = continuous_monthly_deposits(deposits)
+    valuations = compute_monthly_portfolio_valuations(timeline, db_path=db_path)
+    if not valuations and not any(item.portfolio_eur > 0 for item in deposits):
         return 0, issues
 
     updated = 0
-    for deposit in deposits:
+    for deposit in timeline:
         valuation = valuations.get(deposit.period_key)
-        if valuation is None or valuation.coverage < 1.0 or valuation.portfolio_eur <= 0:
+        stored = deposit.portfolio_eur if deposit.portfolio_eur > 0 else None
+        target = pick_portfolio_eur_for_month(stored=stored, valuation=valuation)
+        if target is None:
             continue
-        if abs(deposit.portfolio_eur - valuation.portfolio_eur) < 0.01:
+        if abs(deposit.portfolio_eur - target) < 0.01:
             continue
         ctx.deposits.upsert_deposit(
             year=deposit.period.year,
@@ -450,7 +433,7 @@ def backfill_monthly_portfolio_eur(
             label=deposit.label,
             deposit_eur=deposit.deposit_eur,
             deposit_usd=deposit.deposit_usd,
-            portfolio_eur=valuation.portfolio_eur,
+            portfolio_eur=target,
         )
         updated += 1
 
@@ -466,3 +449,23 @@ def backfill_monthly_portfolio_eur(
             )
         )
     return updated, issues
+
+
+def sync_monthly_portfolio_timeline(
+    ctx: PortfolioContext,
+    *,
+    db_path: Path | None = None,
+    range_start: date | None = None,
+    range_end: date | None = None,
+) -> tuple[int, int, list[ImportIssue]]:
+    """Fill calendar gaps, then backfill portfolio € for every month."""
+    issues: list[ImportIssue] = []
+    months_filled, fill_issues = fill_missing_deposit_months(
+        ctx,
+        range_start=range_start,
+        range_end=range_end,
+    )
+    issues.extend(fill_issues)
+    portfolio_updates, portfolio_issues = backfill_monthly_portfolio_eur(ctx, db_path=db_path)
+    issues.extend(portfolio_issues)
+    return months_filled, portfolio_updates, issues

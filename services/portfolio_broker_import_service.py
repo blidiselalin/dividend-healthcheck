@@ -19,17 +19,15 @@ from services.ibkr_activity_parser import (
     build_monthly_deposits,
     deposit_months_with_inflows,
     has_blocking_errors,
-    parse_statement_period,
     statement_deposit_period,
     statement_symbol_scope,
 )
 from services.portfolio_clear_service import clear_user_portfolio
 from services.portfolio_context import create_portfolio_context
 from services.portfolio_import_pipeline import (
-    backfill_monthly_portfolio_eur,
-    fill_missing_deposit_months,
     prepare_statement,
     run_post_import_checks,
+    sync_monthly_portfolio_timeline,
 )
 
 logger = logging.getLogger(__name__)
@@ -272,19 +270,12 @@ def apply_import(  # noqa: C901
         ctx.deposits.resequence_sort_order()
 
     months_filled = 0
-    if mode == ImportMode.REPLACE:
-        _report(progress, "Filling missing calendar months…", 0.90)
-        period = parse_statement_period(statement.meta.period or "")
-        months_filled, fill_issues = fill_missing_deposit_months(
-            ctx,
-            range_start=period[0] if period else None,
-            range_end=period[1] if period else None,
-        )
-        issues.extend(fill_issues)
-
-    _report(progress, "Estimating monthly portfolio values…", 0.91)
-    _portfolio_updates, portfolio_issues = backfill_monthly_portfolio_eur(ctx, db_path=db_path)
-    issues.extend(portfolio_issues)
+    _report(progress, "Building continuous monthly timeline…", 0.90)
+    months_filled, _portfolio_updates, timeline_issues = sync_monthly_portfolio_timeline(
+        ctx,
+        db_path=db_path,
+    )
+    issues.extend(timeline_issues)
 
     _report(progress, "Syncing monthly dividend totals…", 0.92)
     _sync_monthly_net_from_receipts(ctx)

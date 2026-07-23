@@ -4,6 +4,7 @@ Monthly account deposits and portfolio value snapshots (PostgreSQL or SQLite).
 
 from __future__ import annotations
 
+import calendar
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -577,6 +578,46 @@ class DepositsStore:
                     (start_key, end_key),
                 )
             return int(cursor.rowcount or 0)
+
+    def fill_calendar_gaps(
+        self,
+        *,
+        range_start: date | None = None,
+        range_end: date | None = None,
+    ) -> int:
+        """
+        Insert zero-deposit rows for every calendar month between bounds.
+
+        Returns the number of months added.
+        """
+        deposits = self.list_deposits()
+        if len(deposits) < 2:
+            return 0
+
+        existing = {(item.period.year, item.period.month) for item in deposits}
+        start = range_start or min(item.period for item in deposits)
+        end = range_end or max(item.period for item in deposits)
+        added = 0
+        year, month = start.year, start.month
+        end_key = (end.year, end.month)
+        while (year, month) <= end_key:
+            if (year, month) not in existing:
+                self.upsert_deposit(
+                    year=year,
+                    month=month,
+                    label=f"{calendar.month_name[month]} {year}",
+                    deposit_eur=0.0,
+                    deposit_usd=0.0,
+                    portfolio_eur=0.0,
+                )
+                added += 1
+            month += 1
+            if month > 12:
+                month = 1
+                year += 1
+        if added:
+            self.resequence_sort_order()
+        return added
 
     def resequence_sort_order(self) -> None:
         """Renumber sort_order chronologically by year and month."""

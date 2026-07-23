@@ -15,6 +15,7 @@ from data_ingestion.deposits_store import MonthlyDeposit
 from services.portfolio_deposits_service import DepositsSummary, PortfolioDepositsService
 from services.portfolio_monthly_valuation import (
     compute_monthly_portfolio_valuations,
+    continuous_monthly_deposits,
     pick_portfolio_eur_for_month,
 )
 from utils.chart_theme import (
@@ -105,6 +106,7 @@ class PortfolioDashboardService:
         if not records:
             return self._empty_evolution_frame()
 
+        records = continuous_monthly_deposits(records)
         computed: dict[str, Any] = {}
         valuation_path = self._valuation_db_path(db_path)
         if use_computed_portfolio:

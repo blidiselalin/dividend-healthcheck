@@ -371,6 +371,24 @@ class PortfolioManagementService:
     def list_deposits(self) -> list[MonthlyDeposit]:
         return self.deposits.list_deposits()
 
+    def sync_monthly_portfolio_timeline(self) -> tuple[int, int]:
+        """Fill missing calendar months and backfill portfolio € from journal + prices."""
+        from services.portfolio_context import create_portfolio_context
+        from services.portfolio_import_pipeline import sync_monthly_portfolio_timeline
+
+        ctx = create_portfolio_context(db_path=self.portfolio.db_path)
+        months_filled, portfolio_updates, _issues = sync_monthly_portfolio_timeline(
+            ctx,
+            db_path=self.portfolio.db_path,
+        )
+        try:
+            from services.portfolio_session import invalidate_holdings_cache
+
+            invalidate_holdings_cache()
+        except ImportError:  # noqa: S110
+            pass
+        return months_filled, portfolio_updates
+
     def get_deposit(self, year: int, month: int) -> MonthlyDeposit | None:
         period_key = f"{year:04d}-{month:02d}"
         for item in self.list_deposits():

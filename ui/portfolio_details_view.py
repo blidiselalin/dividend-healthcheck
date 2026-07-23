@@ -1249,6 +1249,15 @@ class PortfolioDetailsView:
                     )
             st.divider()
 
+        if not st.session_state.get("portfolio_timeline_synced"):
+            try:
+                from services.portfolio_management_service import PortfolioManagementService
+
+                PortfolioManagementService().sync_monthly_portfolio_timeline()
+                st.session_state["portfolio_timeline_synced"] = True
+            except Exception:  # noqa: S110
+                pass
+
         service = PortfolioDashboardService()
         deposits = service.list_deposits()
         holdings_snapshot = PortfolioDashboardService.holdings_from_rows(rows) if rows else None
@@ -2050,6 +2059,15 @@ class PortfolioDetailsView:
     @classmethod
     def _render_deposits_page(cls) -> None:
         """Monthly deposits and portfolio value history."""
+        if not st.session_state.get("portfolio_timeline_synced"):
+            try:
+                from services.portfolio_management_service import PortfolioManagementService
+
+                PortfolioManagementService().sync_monthly_portfolio_timeline()
+                st.session_state["portfolio_timeline_synced"] = True
+            except Exception:  # noqa: S110
+                pass
+
         dashboard = PortfolioDashboardService()
         deposits = dashboard.list_deposits()
         metrics = dashboard.build_metrics(deposits)

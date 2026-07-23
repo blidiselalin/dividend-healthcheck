@@ -18,6 +18,7 @@ from services.portfolio_deposits_service import PortfolioDepositsService
 from services.portfolio_monthly_valuation import (
     _close_for_month_end,
     compute_monthly_portfolio_eur,
+    continuous_monthly_deposits,
     fx_rates_carry_forward,
     pick_portfolio_eur_for_month,
     shares_from_records,
@@ -42,6 +43,80 @@ def _price_doc(symbol: str, points: list[tuple[date, float]]) -> StockDocument:
             for point_date, close in points
         ],
     )
+
+
+def test_continuous_monthly_deposits_fills_gaps() -> None:
+    from data_ingestion.deposits_store import MonthlyDeposit
+
+    rows = [
+        MonthlyDeposit(
+            period=date(2025, 1, 1),
+            label="January 2025",
+            deposit_eur=1000.0,
+            deposit_usd=1100.0,
+            portfolio_eur=0.0,
+            sort_order=1,
+        ),
+        MonthlyDeposit(
+            period=date(2025, 3, 1),
+            label="March 2025",
+            deposit_eur=500.0,
+            deposit_usd=550.0,
+            portfolio_eur=0.0,
+            sort_order=2,
+        ),
+    ]
+    expanded = continuous_monthly_deposits(rows)
+    assert len(expanded) == 3
+    assert expanded[1].period.month == 2
+    assert expanded[1].deposit_eur == 0.0
+
+
+def test_evolution_includes_zero_deposit_months_with_portfolio(tmp_path: Path) -> None:
+    db = tmp_path / "portfolio.db"
+    portfolio = PortfolioStore(db_path=db, seed=False)
+    journal = PurchaseJournalStore(db_path=db, seed=False)
+    deposits = DepositsStore(db_path=db, seed=False)
+
+    journal.add_purchase("KO", date(2025, 1, 10), 50.0, shares=10.0, side="buy")
+    portfolio.upsert_holding("KO", shares=10, avg_cost_per_share=50.0)
+    deposits.upsert_deposit(
+        year=2025,
+        month=1,
+        label="January 2025",
+        deposit_eur=1000.0,
+        deposit_usd=1100.0,
+        portfolio_eur=0.0,
+    )
+    deposits.upsert_deposit(
+        year=2025,
+        month=3,
+        label="March 2025",
+        deposit_eur=500.0,
+        deposit_usd=550.0,
+        portfolio_eur=0.0,
+    )
+
+    ko_prices = _price_doc(
+        "KO",
+        [
+            (date(2025, 1, 31), 50.0),
+            (date(2025, 2, 28), 52.0),
+            (date(2025, 3, 31), 60.0),
+        ],
+    )
+
+    dashboard = PortfolioDashboardService(deposits_service=PortfolioDepositsService(store=deposits))
+    with patch(
+        "services.shared_market_db.load_documents",
+        return_value={"KO": ko_prices},
+    ):
+        df = dashboard.evolution_dataframe(db_path=db)
+
+    assert len(df) == 3
+    feb = df.iloc[1]
+    assert feb["deposit_eur"] == 0.0
+    assert feb["portfolio_eur"] == pytest.approx(10 * 52.0 * (1000 / 1100), rel=0.02)
 
 
 def test_compute_monthly_portfolio_eur_from_journal_and_prices(tmp_path: Path) -> None:
