@@ -19,13 +19,17 @@ from services.ibkr_activity_parser import (
     build_monthly_deposits,
     deposit_months_with_inflows,
     has_blocking_errors,
-    parse_activity_statement_csv,
+    parse_statement_period,
     statement_deposit_period,
     statement_symbol_scope,
-    validate_statement,
 )
 from services.portfolio_clear_service import clear_user_portfolio
 from services.portfolio_context import create_portfolio_context
+from services.portfolio_import_pipeline import (
+    fill_missing_deposit_months,
+    prepare_statement,
+    run_post_import_checks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +72,7 @@ class ImportApplyResult:
     symbols_touched: list[str]
     issues: list[ImportIssue]
     cleared: int | None = None
+    months_filled: int = 0
 
     @property
     def wrote_data(self) -> bool:
@@ -80,8 +85,7 @@ class ImportApplyResult:
 
 
 def preview_import(content: str | bytes) -> ImportPreview:
-    statement = parse_activity_statement_csv(content)
-    issues = validate_statement(statement)
+    statement, issues, _fingerprint = prepare_statement(content)
     symbols = sorted(statement_symbol_scope(statement))
     monthly_deposits = build_monthly_deposits(statement)
     return ImportPreview(
@@ -104,9 +108,8 @@ def apply_import(  # noqa: C901
     progress: ImportProgressCallback | None = None,
 ) -> ImportApplyResult:
     _report(progress, "Parsing activity statement…", 0.05)
-    statement = parse_activity_statement_csv(content)
+    statement, issues, _fingerprint = prepare_statement(content)
     _report(progress, "Validating statement…", 0.10)
-    issues = validate_statement(statement)
     if has_blocking_errors(issues):
         return ImportApplyResult(
             mode=mode,
@@ -267,12 +270,24 @@ def apply_import(  # noqa: C901
             )
         ctx.deposits.resequence_sort_order()
 
+    months_filled = 0
+    if mode == ImportMode.REPLACE:
+        _report(progress, "Filling missing calendar months…", 0.90)
+        period = parse_statement_period(statement.meta.period or "")
+        months_filled, fill_issues = fill_missing_deposit_months(
+            ctx,
+            range_start=period[0] if period else None,
+            range_end=period[1] if period else None,
+        )
+        issues.extend(fill_issues)
+
     _report(progress, "Syncing monthly dividend totals…", 0.92)
     _sync_monthly_net_from_receipts(ctx)
     from services.portfolio_open_holdings import reconcile_closed_holdings
 
     reconcile_closed_holdings(db_path=db_path)
     issues.extend(_holdings_journal_consistency_issues(ctx, open_symbols))
+    issues.extend(run_post_import_checks(ctx, statement))
     _report(progress, "Finalizing import…", 0.96)
     _finalize_broker_import(ctx, db_path=db_path)
     _report(progress, "Import complete", 1.0)
@@ -295,6 +310,7 @@ def apply_import(  # noqa: C901
         symbols_touched=sorted(scope_symbols),
         issues=issues,
         cleared=cleared,
+        months_filled=months_filled,
     )
 
 

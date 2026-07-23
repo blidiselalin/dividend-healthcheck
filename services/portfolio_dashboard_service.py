@@ -128,7 +128,11 @@ class PortfolioDashboardService:
             gain_vs_deposits = round(portfolio - running, 2) if portfolio is not None else None
             mom_pct = None
             if portfolio is not None and prev_portfolio is not None and prev_portfolio > 0:
-                mom_pct = round((portfolio - prev_portfolio) / prev_portfolio * 100, 2)
+                net_flow = item.deposit_eur
+                mom_pct = round(
+                    (portfolio - prev_portfolio - net_flow) / prev_portfolio * 100,
+                    2,
+                )
 
             rows.append(
                 {

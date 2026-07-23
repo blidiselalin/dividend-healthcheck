@@ -84,7 +84,7 @@ def test_dashboard_evolution_and_metrics(sample_deposits: DepositsStore) -> None
     assert len(df) == 2
     assert df.iloc[0]["cumulative_deposits_eur"] == 1000.0
     assert df.iloc[1]["cumulative_deposits_eur"] == 1500.0
-    assert df.iloc[1]["mom_change_pct"] == pytest.approx(8.0, rel=0.01)
+    assert df.iloc[1]["mom_change_pct"] == pytest.approx(3.0, rel=0.01)
 
     metrics = dashboard.build_metrics(deposits)
     assert metrics.avg_monthly_deposit_eur == 750.0
