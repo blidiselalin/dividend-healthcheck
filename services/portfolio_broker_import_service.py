@@ -200,8 +200,10 @@ def apply_import(  # noqa: C901
     for index, dividend in enumerate(dividends, start=1):
         if mode == ImportMode.MERGE and dividend.symbol not in scope_symbols:
             continue
+        if dividend.gross_usd == 0:
+            continue
         shares_held = (
-            round(dividend.gross_usd / dividend.per_share_usd, 4)
+            round(abs(dividend.gross_usd) / dividend.per_share_usd, 4)
             if dividend.per_share_usd > 0
             else 0.0
         )

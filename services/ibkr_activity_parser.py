@@ -15,10 +15,30 @@ from enum import Enum
 _SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
 _DIVIDEND_SYMBOL_RE = re.compile(r"^([A-Z][A-Z0-9.\-]{0,9})\s*\(")
 _DIVIDEND_PER_SHARE_RE = re.compile(
-    r"(?:Cash Dividend\s+)?USD\s+([0-9]+(?:\.[0-9]+)?)(?:\s+per Share|\s*\(|$)",
+    r"(?:Cash Dividend|Payment in Lieu of Dividend)\s+USD\s+([0-9]+(?:\.[0-9]+)?)"
+    r"(?:\s+per Share|\s*\(|$)",
     re.IGNORECASE,
 )
 _CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
+_SKIP_SECTION_PREFIXES = ("Total P/L",)
+_OPTIONAL_SECTIONS = frozenset(
+    {
+        "Corporate Actions",
+        "Fees",
+        "Interest",
+        "Withholding Tax",
+        "Withholding",
+        "Change in Dividend Accruals",
+        "Stock Yield Enhancement Program Securities Lent",
+        "Stock Yield Enhancement Program Collaterals",
+        "Forex Balances",
+        "Cash Report",
+        "Net Stock Position Summary",
+        "Codes",
+        "Notes",
+    }
+)
+_SKIP_DATA_LABEL_PREFIXES = ("Total", "Starting", "Ending", "SubTotal", "Subtotal")
 
 
 class ImportIssueLevel(str, Enum):
@@ -41,6 +61,7 @@ class IBKRStatementMeta:
     account: str | None = None
     base_currency: str | None = None
     when_generated: str | None = None
+    broker_entity: str | None = None
 
 
 @dataclass(frozen=True)
@@ -61,6 +82,7 @@ class IBKRTrade:
     commission_usd: float
     side: str
     currency: str = "USD"
+    raw_row: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -71,6 +93,8 @@ class IBKRDividend:
     gross_usd: float
     currency: str = "USD"
     description: str = ""
+    kind: str = "ordinary"
+    raw_row: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -81,6 +105,7 @@ class IBKRCashTransfer:
     amount: float
     currency: str
     description: str = ""
+    raw_row: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -111,6 +136,8 @@ class IBKRActivityStatement:
     deposits_inflow_total_all_base: float | None = None
     issues: list[ImportIssue] = field(default_factory=list)
     forex_trades_skipped: int = 0
+    internal_transfers_skipped: int = 0
+    optional_sections_seen: set[str] = field(default_factory=set)
 
 
 def _parse_float(value: str | None) -> float | None:
@@ -215,7 +242,18 @@ def _cell(
 
 def _is_internal_transfer(description: str) -> bool:
     lowered = description.strip().lower()
-    return lowered.startswith("internal (transfer")
+    if not lowered:
+        return False
+    markers = (
+        "internal (transfer",
+        "internal transfer",
+        "transfer to u",
+        "transfer from u",
+        "position transfer",
+        "portfolio transfer",
+        "account transfer",
+    )
+    return any(marker in lowered for marker in markers)
 
 
 _DEPOSIT_TOTAL_LABELS = frozenset(
@@ -225,8 +263,48 @@ _DEPOSIT_TOTAL_LABELS = frozenset(
         "Total in USD",
         "Total Deposits & Withdrawals in EUR",
         "Total Deposits & Withdrawals in USD",
+        "Starting Cash",
+        "Ending Cash",
+        "Starting Balance",
+        "Ending Balance",
     }
 )
+
+
+def _is_skip_data_label(label: str) -> bool:
+    """True for IBKR total/summary rows that appear as Data rows."""
+    text = label.strip()
+    if not text:
+        return True
+    if text in _DEPOSIT_TOTAL_LABELS:
+        return True
+    if any(text.startswith(prefix) for prefix in _SKIP_DATA_LABEL_PREFIXES):
+        return True
+    lowered = text.lower()
+    return bool("total p/l" in lowered or ("statement period" in lowered and "total" in lowered))
+
+
+def _is_ignored_section(section: str) -> bool:
+    if section in _OPTIONAL_SECTIONS:
+        return True
+    return any(section.startswith(prefix) for prefix in _SKIP_SECTION_PREFIXES)
+
+
+def _classify_dividend(description: str, gross: float) -> str:
+    lowered = description.lower()
+    if "payment in lieu" in lowered:
+        return "payment_in_lieu"
+    if gross < 0:
+        return "reversal"
+    if "accrual" in lowered or "(po)" in lowered or "(re)" in lowered:
+        return "accrual"
+    if "withholding" in lowered or "tax" in lowered:
+        return "withholding"
+    return "ordinary"
+
+
+def _raw_row_tuple(row: list[str]) -> tuple[str, ...]:
+    return tuple(row)
 
 
 def _last_numeric_cell(row: list[str], *, start: int = 2) -> float | None:
@@ -246,7 +324,7 @@ def _parse_deposits_withdrawals_data_row(
         return None
 
     row_label = row[2].strip()
-    if row_label in _DEPOSIT_TOTAL_LABELS or row_label.startswith("Total "):
+    if _is_skip_data_label(row_label):
         return None
 
     currency = _normalize_currency(
@@ -296,6 +374,7 @@ def _parse_deposits_withdrawals_data_row(
         amount=amount,
         currency=currency,
         description=description,
+        raw_row=_raw_row_tuple(row),
     )
 
 
@@ -520,6 +599,162 @@ def deposit_months_with_inflows(monthly: list[IBKRMonthlyDeposit]) -> int:
     return sum(1 for item in monthly if item.deposit_eur > 0 or item.deposit_usd > 0)
 
 
+def _statement_activity_years(statement: IBKRActivityStatement) -> set[int]:
+    years: set[int] = set()
+    for trade in statement.trades:
+        years.add(trade.trade_date.year)
+    for dividend in statement.dividends:
+        years.add(dividend.pay_date.year)
+    for transfer in statement.cash_transfers:
+        years.add(transfer.transfer_date.year)
+    return years
+
+
+def statement_history_coverage_gaps(statement: IBKRActivityStatement) -> list[ImportIssue]:
+    """Report cross-year rows and missing prior-year export hints."""
+    issues: list[ImportIssue] = []
+    period = parse_statement_period(statement.meta.period or "")
+    activity_years = _statement_activity_years(statement)
+    if period and activity_years:
+        start_year = period[0].year
+        if any(year < start_year for year in activity_years):
+            issues.append(
+                ImportIssue(
+                    ImportIssueLevel.INFO,
+                    (
+                        f"Statement period starts in {start_year} but includes transactions "
+                        f"dated {min(activity_years)} — actual dates are preserved."
+                    ),
+                    section="Statement",
+                )
+            )
+        prior_year = start_year - 1
+        if (
+            prior_year not in activity_years
+            and statement.internal_transfers_skipped > 0
+            and start_year >= 2024
+        ):
+            issues.append(
+                ImportIssue(
+                    ImportIssueLevel.INFO,
+                    (
+                        f"No {prior_year} activity in this export and account transfers were "
+                        f"detected — import a separate {prior_year} statement if available "
+                        f"to avoid portfolio-history gaps."
+                    ),
+                    section="Transfers",
+                )
+            )
+    return issues
+
+
+def _parse_trade_order_row(
+    row: list[str],
+    header_map: dict[str, int],
+    statement: IBKRActivityStatement,
+) -> None:
+    if len(row) < 8 or row[1] != "Data" or row[2] != "Order":
+        return
+    asset = (_cell(row, header_map, "Asset Category", fallback_idx=3) or row[3]).strip()
+    currency = (_cell(row, header_map, "Currency", fallback_idx=4) or row[4]).strip()
+    if asset != "Stocks" or currency != "USD":
+        if asset == "Forex":
+            statement.forex_trades_skipped += 1
+        return
+
+    symbol_text = _cell(row, header_map, "Symbol", "Ticker", fallback_idx=5) or row[5]
+    symbol = _normalize_symbol(symbol_text)
+    date_text = _cell(row, header_map, "Date/Time", "Date", "Trade Date", fallback_idx=6) or row[6]
+    trade_date = _parse_trade_date(date_text) or _parse_activity_date(date_text)
+    quantity = _parse_float(_cell(row, header_map, "Quantity", fallback_idx=7) or row[7])
+    price = _parse_float(
+        _cell(row, header_map, "T. Price", "Trade Price", "Price", fallback_idx=8) or row[8]
+    )
+    commission = _parse_float(
+        _cell(row, header_map, "Comm/Fee", "Commission", "Comm", fallback_idx=11)
+    )
+    code = (_cell(row, header_map, "Code") or "").strip().upper()
+    if code in {"TR", "TRANSFER"}:
+        statement.internal_transfers_skipped += 1
+        return
+
+    if symbol is None or trade_date is None or quantity is None or quantity == 0:
+        return
+    if price is None or price <= 0:
+        statement.issues.append(
+            ImportIssue(
+                ImportIssueLevel.WARNING,
+                f"Skipped trade for {symbol} — invalid price",
+                section="Trades",
+            )
+        )
+        return
+    side = "buy" if quantity > 0 else "sell"
+    statement.trades.append(
+        IBKRTrade(
+            symbol=symbol,
+            trade_date=trade_date,
+            quantity=abs(quantity),
+            price_usd=price,
+            commission_usd=abs(commission or 0.0),
+            side=side,
+            currency="USD",
+            raw_row=_raw_row_tuple(row),
+        )
+    )
+
+
+def _parse_dividend_row(row: list[str], statement: IBKRActivityStatement) -> None:
+    if len(row) < 6 or row[1] != "Data":
+        return
+    currency = row[2].strip()
+    if currency not in {"USD", "EUR"}:
+        return
+    if _is_skip_data_label(currency):
+        return
+    pay_date = _parse_activity_date(row[3])
+    description = row[4].strip()
+    gross = _parse_float(row[5])
+    if pay_date is None or gross is None or gross == 0:
+        return
+    sym_match = _DIVIDEND_SYMBOL_RE.match(description)
+    if not sym_match:
+        statement.issues.append(
+            ImportIssue(
+                ImportIssueLevel.WARNING,
+                f"Could not parse dividend symbol: {description[:60]}",
+                section="Dividends",
+            )
+        )
+        return
+    symbol = sym_match.group(1)
+    per_share_match = _DIVIDEND_PER_SHARE_RE.search(description)
+    per_share = float(per_share_match.group(1)) if per_share_match else 0.0
+    if per_share <= 0:
+        per_share = round(abs(gross), 6)
+    statement.dividends.append(
+        IBKRDividend(
+            symbol=symbol,
+            pay_date=pay_date,
+            per_share_usd=per_share,
+            gross_usd=gross,
+            currency=currency,
+            description=description,
+            kind=_classify_dividend(description, gross),
+            raw_row=_raw_row_tuple(row),
+        )
+    )
+
+
+def _parse_transfer_row(row: list[str], statement: IBKRActivityStatement) -> None:
+    """Account/stock migration rows — counted but not imported as trades or deposits."""
+    if len(row) < 4 or row[1] != "Data":
+        return
+    description = " ".join(cell.strip() for cell in row[3:] if cell.strip())
+    if _is_internal_transfer(description) or "transfer" in description.lower():
+        statement.internal_transfers_skipped += 1
+
+
 def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:  # noqa: C901
     """Parse IBKR Activity Statement CSV text into structured sections."""
     if isinstance(content, bytes):
@@ -530,6 +765,7 @@ def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:
     reader = csv.reader(io.StringIO(text))
     statement = IBKRActivityStatement()
     deposits_header_map: dict[str, int] = {}
+    trades_header_map: dict[str, int] = {}
     nav_header_map: dict[str, int] = {}
     deposits_subsection: str | None = None
     deposits_usd_gross: float | None = None
@@ -538,6 +774,11 @@ def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:
         if not row:
             continue
         section = row[0].strip()
+        if _is_ignored_section(section):
+            statement.optional_sections_seen.add(section)
+            continue
+        if section.startswith("Total P/L"):
+            continue
         if section == "Statement" and len(row) >= 4 and row[1] == "Data":
             key = row[2].strip()
             value = row[3].strip()
@@ -548,6 +789,7 @@ def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:
                     account=statement.meta.account,
                     base_currency=statement.meta.base_currency,
                     when_generated=statement.meta.when_generated,
+                    broker_entity=statement.meta.broker_entity,
                 )
             elif key == "Period":
                 statement.meta = IBKRStatementMeta(
@@ -556,6 +798,7 @@ def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:
                     account=statement.meta.account,
                     base_currency=statement.meta.base_currency,
                     when_generated=statement.meta.when_generated,
+                    broker_entity=statement.meta.broker_entity,
                 )
             elif key == "WhenGenerated":
                 statement.meta = IBKRStatementMeta(
@@ -564,23 +807,37 @@ def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:
                     account=statement.meta.account,
                     base_currency=statement.meta.base_currency,
                     when_generated=value,
+                    broker_entity=statement.meta.broker_entity,
                 )
         elif section == "Account Information" and len(row) >= 4 and row[1] == "Data":
-            if row[2].strip() == "Account":
+            field = row[2].strip()
+            value = row[3].strip()
+            if field == "Account":
                 statement.meta = IBKRStatementMeta(
                     title=statement.meta.title,
                     period=statement.meta.period,
-                    account=row[3].strip(),
+                    account=value,
                     base_currency=statement.meta.base_currency,
                     when_generated=statement.meta.when_generated,
+                    broker_entity=statement.meta.broker_entity,
                 )
-            elif row[2].strip() == "Base Currency":
+            elif field == "Base Currency":
                 statement.meta = IBKRStatementMeta(
                     title=statement.meta.title,
                     period=statement.meta.period,
                     account=statement.meta.account,
-                    base_currency=row[3].strip(),
+                    base_currency=value,
                     when_generated=statement.meta.when_generated,
+                    broker_entity=statement.meta.broker_entity,
+                )
+            elif field in {"Broker", "Legal Entity", "Company", "Brokerage"}:
+                statement.meta = IBKRStatementMeta(
+                    title=statement.meta.title,
+                    period=statement.meta.period,
+                    account=statement.meta.account,
+                    base_currency=statement.meta.base_currency,
+                    when_generated=statement.meta.when_generated,
+                    broker_entity=value,
                 )
         elif section == "Open Positions" and len(row) >= 10 and row[1] == "Data":
             if row[2] != "Summary" or row[3] != "Stocks":
@@ -612,72 +869,16 @@ def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:
                     currency=currency,
                 )
             )
-        elif section == "Trades" and len(row) >= 12 and row[1] == "Data" and row[2] == "Order":
-            if row[3] != "Stocks" or row[4] != "USD":
-                if row[3] == "Forex":
-                    statement.forex_trades_skipped += 1
+        elif section == "Trades" and len(row) >= 4:
+            if row[1] == "Header":
+                trades_header_map = _header_map(row)
                 continue
-            symbol = _normalize_symbol(row[5])
-            trade_date = _parse_trade_date(row[6])
-            quantity = _parse_float(row[7])
-            price = _parse_float(row[8])
-            commission = _parse_float(row[11])
-            if symbol is None or trade_date is None or quantity is None or quantity == 0:
-                continue
-            if price is None or price <= 0:
-                statement.issues.append(
-                    ImportIssue(
-                        ImportIssueLevel.WARNING,
-                        f"Skipped trade for {symbol} — invalid price",
-                        section="Trades",
-                    )
-                )
-                continue
-            side = "buy" if quantity > 0 else "sell"
-            statement.trades.append(
-                IBKRTrade(
-                    symbol=symbol,
-                    trade_date=trade_date,
-                    quantity=abs(quantity),
-                    price_usd=price,
-                    commission_usd=abs(commission or 0.0),
-                    side=side,
-                    currency="USD",
-                )
-            )
-        elif section == "Dividends" and len(row) >= 6 and row[1] == "Data":
-            if row[2] != "USD":
-                continue
-            pay_date = _parse_pay_date(row[3])
-            description = row[4].strip()
-            gross = _parse_float(row[5])
-            if pay_date is None or gross is None or gross <= 0:
-                continue
-            sym_match = _DIVIDEND_SYMBOL_RE.match(description)
-            if not sym_match:
-                statement.issues.append(
-                    ImportIssue(
-                        ImportIssueLevel.WARNING,
-                        f"Could not parse dividend symbol: {description[:60]}",
-                        section="Dividends",
-                    )
-                )
-                continue
-            symbol = sym_match.group(1)
-            per_share_match = _DIVIDEND_PER_SHARE_RE.search(description)
-            per_share = float(per_share_match.group(1)) if per_share_match else 0.0
-            if per_share <= 0:
-                per_share = round(gross, 6)
-            statement.dividends.append(
-                IBKRDividend(
-                    symbol=symbol,
-                    pay_date=pay_date,
-                    per_share_usd=per_share,
-                    gross_usd=gross,
-                    currency="USD",
-                    description=description,
-                )
-            )
+            if row[1] == "Data":
+                _parse_trade_order_row(row, trades_header_map, statement)
+        elif section == "Dividends" and len(row) >= 4:
+            _parse_dividend_row(row, statement)
+        elif section == "Transfers" and len(row) >= 4:
+            _parse_transfer_row(row, statement)
         elif section == "Deposits & Withdrawals" and len(row) >= 4:
             if row[1] == "Header":
                 deposits_header_map = _header_map(row)
@@ -687,40 +888,43 @@ def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:
                 continue
 
             row_label = row[2].strip()
-            if row_label == "Total in EUR":
-                usd_in_eur = _parse_float(_cell(row, deposits_header_map, "Amount", fallback_idx=5))
-                if usd_in_eur and deposits_usd_gross and deposits_usd_gross > 0:
-                    statement.deposits_fx_eur_per_usd = round(
-                        usd_in_eur / deposits_usd_gross,
-                        8,
+            if _is_skip_data_label(row_label):
+                total_amount = None
+                if row_label == "Total in EUR":
+                    total_amount = _parse_float(
+                        _cell(row, deposits_header_map, "Amount", fallback_idx=5)
                     )
-                continue
-            if row_label in _DEPOSIT_TOTAL_LABELS or row_label.startswith("Total "):
-                total_amount = _parse_float(
-                    _cell(row, deposits_header_map, "Amount", fallback_idx=5)
-                )
-                if total_amount is None:
-                    total_amount = _last_numeric_cell(row, start=3)
-                base = (statement.meta.base_currency or "USD").strip().upper()
-                if row_label == "Total" and deposits_subsection == "USD" and total_amount:
-                    deposits_usd_gross = total_amount
-                if (
-                    total_amount
-                    and total_amount > 0
-                    and row_label == "Total"
-                    and deposits_subsection == base
-                ):
-                    statement.deposits_inflow_total_base = total_amount
-                if (
-                    total_amount
-                    and total_amount > 0
-                    and row_label == "Total Deposits & Withdrawals in EUR"
-                ) or (
-                    total_amount
-                    and total_amount > 0
-                    and row_label == "Total Deposits & Withdrawals in USD"
-                ):
-                    statement.deposits_inflow_total_all_base = total_amount
+                    if total_amount and deposits_usd_gross and deposits_usd_gross > 0:
+                        statement.deposits_fx_eur_per_usd = round(
+                            total_amount / deposits_usd_gross,
+                            8,
+                        )
+                elif row_label in _DEPOSIT_TOTAL_LABELS or row_label.startswith("Total "):
+                    total_amount = _parse_float(
+                        _cell(row, deposits_header_map, "Amount", fallback_idx=5)
+                    )
+                    if total_amount is None:
+                        total_amount = _last_numeric_cell(row, start=3)
+                    base = (statement.meta.base_currency or "USD").strip().upper()
+                    if row_label == "Total" and deposits_subsection == "USD" and total_amount:
+                        deposits_usd_gross = total_amount
+                    if (
+                        total_amount
+                        and total_amount > 0
+                        and row_label == "Total"
+                        and deposits_subsection == base
+                    ):
+                        statement.deposits_inflow_total_base = total_amount
+                    if (
+                        total_amount
+                        and total_amount > 0
+                        and row_label == "Total Deposits & Withdrawals in EUR"
+                    ) or (
+                        total_amount
+                        and total_amount > 0
+                        and row_label == "Total Deposits & Withdrawals in USD"
+                    ):
+                        statement.deposits_inflow_total_all_base = total_amount
                 continue
 
             transfer = _parse_deposits_withdrawals_data_row(row, deposits_header_map)
@@ -778,6 +982,7 @@ def statement_has_importable_data(statement: IBKRActivityStatement) -> bool:
 def validate_statement(statement: IBKRActivityStatement) -> list[ImportIssue]:
     """Return validation issues; fatal errors block import."""
     issues = list(statement.issues)
+    issues.extend(statement_history_coverage_gaps(statement))
     title_ok = statement.meta.title and "activity statement" in statement.meta.title.lower()
     if not title_ok and not statement_has_importable_data(statement):
         issues.append(

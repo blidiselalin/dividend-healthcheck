@@ -63,7 +63,7 @@ class DividendReceiptStore:
                   gross_usd REAL NOT NULL,
                   recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
                   source TEXT NOT NULL DEFAULT 'computed',
-                  UNIQUE(symbol, ex_date, per_share_usd)
+                  UNIQUE(symbol, ex_date, per_share_usd, gross_usd)
                 )
                 """
             )
@@ -125,12 +125,17 @@ class DividendReceiptStore:
         source: str = "computed",
     ) -> str:
         """
-        Insert or update a receipt keyed by (symbol, ex_date, per_share).
+        Insert or update a receipt keyed by (symbol, ex_date, per_share, gross).
 
         Returns ``added``, ``updated``, or ``unchanged``.
         """
         symbol = symbol.strip().upper()
-        existing = self._find_receipt(symbol, ex_date, per_share_usd)
+        existing = self._find_receipt(symbol, ex_date, per_share_usd, gross_usd)
+        if existing is None and source != "ibkr":
+            fallback = self._find_receipt(symbol, ex_date, per_share_usd, gross_usd=None)
+            if fallback is not None and fallback.source == "ibkr":
+                return "unchanged"
+            existing = fallback
         if existing is None:
             inserted = self._insert_receipt(
                 symbol,
@@ -226,21 +231,50 @@ class DividendReceiptStore:
         symbol: str,
         ex_date: date,
         per_share_usd: float,
+        gross_usd: float | None = None,
     ) -> DividendReceipt | None:
         symbol = symbol.strip().upper()
         per = round(float(per_share_usd), 6)
+        gross = round(float(gross_usd), 2) if gross_usd is not None else None
         with self._connect() as connection:
             if connection.is_postgres:
+                if gross is not None:
+                    row = connection.execute(
+                        """
+                        SELECT id, symbol, ex_date, pay_date, per_share_usd,
+                               shares_held, gross_usd, source
+                        FROM dividend_receipts
+                        WHERE user_id = ? AND symbol = ? AND ex_date = ?
+                          AND ABS(per_share_usd - ?) < 0.000001
+                          AND ABS(gross_usd - ?) < 0.000001
+                        LIMIT 1
+                        """,
+                        (connection.user_id, symbol, ex_date.isoformat(), per, gross),
+                    ).fetchone()
+                else:
+                    row = connection.execute(
+                        """
+                        SELECT id, symbol, ex_date, pay_date, per_share_usd,
+                               shares_held, gross_usd, source
+                        FROM dividend_receipts
+                        WHERE user_id = ? AND symbol = ? AND ex_date = ?
+                          AND ABS(per_share_usd - ?) < 0.000001
+                        LIMIT 1
+                        """,
+                        (connection.user_id, symbol, ex_date.isoformat(), per),
+                    ).fetchone()
+            elif gross is not None:
                 row = connection.execute(
                     """
                     SELECT id, symbol, ex_date, pay_date, per_share_usd,
                            shares_held, gross_usd, source
                     FROM dividend_receipts
-                    WHERE user_id = ? AND symbol = ? AND ex_date = ?
+                    WHERE symbol = ? AND ex_date = ?
                       AND ABS(per_share_usd - ?) < 0.000001
+                      AND ABS(gross_usd - ?) < 0.000001
                     LIMIT 1
                     """,
-                    (connection.user_id, symbol, ex_date.isoformat(), per),
+                    (symbol, ex_date.isoformat(), per, gross),
                 ).fetchone()
             else:
                 row = connection.execute(
@@ -287,7 +321,7 @@ class DividendReceiptStore:
                       user_id, symbol, ex_date, pay_date,
                       per_share_usd, shares_held, gross_usd, source
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT (user_id, symbol, ex_date, per_share_usd) DO NOTHING
+                    ON CONFLICT (user_id, symbol, ex_date, per_share_usd, gross_usd) DO NOTHING
                     RETURNING id
                     """,
                     (

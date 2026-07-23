@@ -1,0 +1,19 @@
+Statement,Data,Title,Activity Statement
+Statement,Data,Period,"January 1, 2024 - December 31, 2024"
+Account Information,Data,Account,U10587745
+Account Information,Data,Broker,Interactive Brokers LLC
+Account Information,Data,Base Currency,EUR
+Trades,Header,DataDiscriminator,Asset Category,Currency,Symbol,Date/Time,Quantity,T. Price,C. Price,Proceeds,Comm/Fee,Basis,Realized P/L,MTM P/L,Code
+Trades,Data,Order,Stocks,USD,AAPL,"2023-11-20, 10:00:00",5,150,150,750,USD,-1.00,,,,O
+Trades,Header,DataDiscriminator,Asset Category,Currency,Symbol,Date/Time,Quantity,T. Price,,Proceeds,Comm/Fee,,,Code
+Trades,Data,Order,Forex,USD,EUR.USD,"2024-01-13, 09:30:44",-446.15,1.01892,,454.59,0,,,,O
+Dividends,Data,USD,2024-03-15,"AAPL(US0378331005) Payment in Lieu of Dividend USD 0.25",2.50
+Dividends,Data,USD,2024-06-15,"AAPL(US0378331005) Cash Dividend USD 0.25 (Ordinary Dividend)",-1.25
+Deposits & Withdrawals,Header,Currency,Settle Date,Description,Amount
+Deposits & Withdrawals,Data,EUR,2024-02-01,Electronic Fund Transfer,"1,000.00"
+Deposits & Withdrawals,Data,Total,,,"1,000.00"
+Deposits & Withdrawals,Data,Starting Cash,,,500.00
+Deposits & Withdrawals,Data,Ending Cash,,,"1,500.00"
+Deposits & Withdrawals,Data,USD,2024-08-02,Internal (Transfer to U15587745),2.38
+Transfers,Data,Transfer,Stocks,USD,AAPL,"2024-08-01, 10:00:00",-100,160,,,Internal Transfer to U15587745,,,
+Total P/L for Statement Period,Data,Stocks,USD,,,,,,,,1000,,,

@@ -285,3 +285,57 @@ def test_deposit_outside_statement_period_is_included() -> None:
     monthly = build_monthly_deposits(statement)
     active = {(item.year, item.month) for item in monthly if item.deposit_eur > 0}
     assert active == {(2025, 2), (2025, 4)}
+
+
+def test_parse_2024_style_export() -> None:
+    fixture = Path(__file__).resolve().parent / "fixtures" / "ibkr_activity_2024_style.csv"
+    statement = parse_activity_statement_csv(fixture.read_text(encoding="utf-8"))
+
+    assert statement.meta.account == "U10587745"
+    assert statement.meta.broker_entity == "Interactive Brokers LLC"
+    assert len(statement.open_positions) == 0
+    assert len(statement.trades) == 1
+    assert statement.trades[0].trade_date.isoformat() == "2023-11-20"
+    assert statement.trades[0].raw_row
+    assert statement.forex_trades_skipped == 1
+    assert statement.internal_transfers_skipped >= 1
+    assert "Corporate Actions" not in statement.optional_sections_seen
+
+    assert len(statement.dividends) == 2
+    lieu = next(d for d in statement.dividends if d.kind == "payment_in_lieu")
+    assert lieu.gross_usd == 2.50
+    reversal = next(d for d in statement.dividends if d.kind == "reversal")
+    assert reversal.gross_usd == -1.25
+
+    assert len(statement.cash_transfers) == 1
+    assert statement.cash_transfers[0].amount == 1000.0
+    assert statement.cash_transfers[0].raw_row
+
+    issues = validate_statement(statement)
+    assert not has_blocking_errors(issues)
+    assert any("actual dates are preserved" in issue.message for issue in issues)
+
+
+def test_statement_history_coverage_gap_without_prior_year_activity() -> None:
+    csv_text = (
+        "Statement,Data,Title,Activity Statement\n"
+        'Statement,Data,Period,"January 1, 2024 - December 31, 2024"\n'
+        "Deposits & Withdrawals,Header,Currency,Settle Date,Description,Amount\n"
+        "Deposits & Withdrawals,Data,EUR,2024-02-01,Electronic Fund Transfer,1000\n"
+        "Transfers,Data,Transfer,Stocks,USD,AAPL,2024-08-01,Internal Transfer to U15587745\n"
+    )
+    statement = parse_activity_statement_csv(csv_text)
+    gaps = [issue for issue in validate_statement(statement) if "gap" in issue.message.lower()]
+    assert gaps
+    assert "2023" in gaps[0].message
+
+
+def test_parse_formatted_amounts_and_placeholders() -> None:
+    csv_text = (
+        "Statement,Data,Title,Activity Statement\n"
+        "Deposits & Withdrawals,Header,Currency,Settle Date,Description,Amount\n"
+        'Deposits & Withdrawals,Data,EUR,2024-05-01,Electronic Fund Transfer,"-1,951.80"\n'
+        "Deposits & Withdrawals,Data,EUR,2024-06-01,Disbursement,--\n"
+    )
+    statement = parse_activity_statement_csv(csv_text)
+    assert statement.cash_transfers == []
