@@ -79,12 +79,14 @@ class PortfolioDepositsService:
         gain_eur = round(latest_portfolio - total_eur, 2)
         gain_pct = (gain_eur / total_eur * 100) if total_eur > 0 else None
 
+        deposit_months = sum(1 for item in records if item.deposit_eur > 0 or item.deposit_usd > 0)
+
         return DepositsSummary(
             total_deposits_eur=total_eur,
             total_deposits_usd=total_usd,
             latest_portfolio_eur=latest_portfolio,
             latest_label=latest_label,
-            month_count=len(records),
+            month_count=deposit_months,
             gain_eur=gain_eur,
             gain_pct=gain_pct,
         )

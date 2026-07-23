@@ -132,6 +132,7 @@ class PortfolioDashboardService:
 
             rows.append(
                 {
+                    "period_key": item.period_key,
                     "period": item.period,
                     "label": item.label,
                     "deposit_eur": item.deposit_eur,

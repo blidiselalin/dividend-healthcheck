@@ -22,7 +22,6 @@ from services.portfolio_attention_service import (
 )
 from services.portfolio_benchmark_service import PortfolioBenchmarkService
 from services.portfolio_dashboard_service import PortfolioDashboardService
-from services.portfolio_deposits_service import PortfolioDepositsService
 from services.portfolio_details_service import PortfolioDetailRow
 from services.portfolio_dividend_calendar import (
     build_portfolio_dividend_calendar,
@@ -1330,8 +1329,9 @@ class PortfolioDetailsView:
 
         st.markdown("##### Portfolio evolution (€)")
         st.caption(
-            "Green line = month-end stock value (journal shares × library prices, EUR converted at "
-            "deposit FX). Uses IBKR/manual Portfolio € when library prices are incomplete."
+            "Green line = month-end stock value (journal shares × library closes, converted at "
+            "deposit FX). Uses the last in-month close when available, otherwise the latest "
+            "prior mark. Falls back to IBKR/manual Portfolio € when pricing is incomplete."
         )
         evolution_chart = service.create_evolution_chart(deposits)
         if evolution_chart:
@@ -1402,14 +1402,26 @@ class PortfolioDetailsView:
             )
 
     @classmethod
-    def _render_benchmark_comparison(cls, deposits: list[MonthlyDeposit]) -> None:
+    def _render_benchmark_comparison(
+        cls,
+        deposits: list[MonthlyDeposit],
+        evolution: pd.DataFrame | None = None,
+    ) -> None:
         """Compare actual portfolio to index/ETF DCA using recorded monthly share buys."""
         st.markdown("##### Benchmark comparison (S&P 500 & SCHD)")
         st.caption(
             "Same monthly share purchases as on the deposits sheet. "
             "Month-end closing prices (Yahoo Finance), converted to €. "
-            "Prices are cached in the database and refreshed on demand."
+            "Portfolio € matches the Dashboard evolution chart."
         )
+
+        portfolio_map: dict[str, float] = {}
+        if evolution is not None and not evolution.empty:
+            for _, row in evolution.iterrows():
+                value = row.get("portfolio_eur")
+                key = row.get("period_key")
+                if key and value is not None and pd.notna(value):
+                    portfolio_map[str(key)] = float(value)
 
         # Refresh button — triggers a fresh Yahoo Finance fetch and DB write
         col_refresh, _ = st.columns([1, 4])
@@ -1422,8 +1434,12 @@ class PortfolioDetailsView:
                 st.success(f"Saved {written} price rows. Reloading…")
                 st.rerun()
 
+        benchmark_svc = PortfolioBenchmarkService()
         try:
-            comparison_df = _load_benchmark_comparison()
+            comparison_df = benchmark_svc.build_comparison_dataframe(
+                deposits,
+                portfolio_eur_by_period=portfolio_map,
+            )
         except Exception as exc:
             st.warning(f"Could not load benchmark prices: {exc}")
             return
@@ -1432,7 +1448,6 @@ class PortfolioDetailsView:
             st.info("No benchmark comparison data available.")
             return
 
-        benchmark_svc = PortfolioBenchmarkService()
         yearly_df = benchmark_svc.build_yearly_summary(comparison_df)
 
         eur_cols = ["Portfolio €", "S&P 500 €", "SCHD €"]
@@ -1444,7 +1459,11 @@ class PortfolioDetailsView:
                 "Yearly tables still show deposits; reload when online for full charts."
             )
 
-        latest = benchmark_svc.latest_comparison(comparison_df, deposits)
+        latest = benchmark_svc.latest_comparison(
+            comparison_df,
+            deposits,
+            portfolio_eur_by_period=portfolio_map,
+        )
         portfolio_val = latest.get("Portfolio", 0.0)
         sp500_val = latest.get("S&P 500", 0.0)
         schd_val = latest.get("SCHD", 0.0)
@@ -1525,7 +1544,10 @@ class PortfolioDetailsView:
 
         st.markdown("##### All benchmarks (monthly)")
         with st.expander("Dow Jones, Nasdaq & full monthly detail"):
-            compare_chart = benchmark_svc.create_comparison_chart(deposits)
+            compare_chart = benchmark_svc.create_comparison_chart(
+                deposits,
+                portfolio_eur_by_period=portfolio_map,
+            )
             if compare_chart:
                 show_chart(
                     compare_chart,
@@ -2021,13 +2043,17 @@ class PortfolioDetailsView:
     @classmethod
     def _render_deposits_page(cls) -> None:
         """Monthly deposits and portfolio value history."""
-        service = PortfolioDepositsService()
-        deposits = service.list_deposits()
-        summary = service.summarize(deposits)
-        df = service.to_dataframe(deposits)
+        dashboard = PortfolioDashboardService()
+        deposits = dashboard.list_deposits()
+        metrics = dashboard.build_metrics(deposits)
+        summary = metrics.deposits
+        evolution = dashboard.evolution_dataframe(deposits)
 
-        st.markdown("##### Account deposits & recorded portfolio value")
-        st.caption("Monthly deposits (€ and $) and portfolio value at each month end.")
+        st.markdown("##### Account deposits & portfolio value")
+        st.caption(
+            "Monthly deposits (€ and $) and portfolio value at each month end. "
+            "Portfolio € uses the same computed/stored blend as the Dashboard."
+        )
 
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
@@ -2038,7 +2064,7 @@ class PortfolioDetailsView:
             st.metric(
                 "Portfolio €",
                 f"€{summary.latest_portfolio_eur:,.2f}",
-                help=f"Latest recorded value: {summary.latest_label}",
+                help=f"Latest value: {summary.latest_label}",
             )
         with col4:
             st.metric(
@@ -2047,38 +2073,61 @@ class PortfolioDetailsView:
                 f"{summary.gain_pct:+.1f}%" if summary.gain_pct is not None else None,
             )
         with col5:
-            st.metric("Months recorded", summary.month_count)
+            st.metric("Deposit months", summary.month_count)
 
-        chart = service.create_deposits_chart(deposits)
-        if chart:
-            show_chart(chart, width="stretch", key="portfolio_deposits_timeline")
+        evolution_chart = dashboard.create_evolution_chart(deposits)
+        if evolution_chart:
+            show_chart(evolution_chart, width="stretch", key="portfolio_deposits_timeline")
 
-        cum_chart = service.create_cumulative_chart(deposits)
-        if cum_chart:
-            show_chart(cum_chart, width="stretch", key="portfolio_deposits_cumulative")
+        flow_chart = dashboard.create_monthly_flow_chart(deposits)
+        if flow_chart:
+            st.markdown("###### Monthly deposits & MoM change")
+            show_chart(flow_chart, width="stretch", key="portfolio_deposits_flow")
 
         st.markdown("##### Monthly detail table")
-        st.dataframe(
-            df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Deposit €": st.column_config.NumberColumn(format="€%.2f"),
-                "Deposit $": st.column_config.NumberColumn(format="$%.2f"),
-                "Portfolio €": st.column_config.NumberColumn(format="€%.2f"),
-            },
-        )
-
-        st.download_button(
-            "Download deposits CSV",
-            df.to_csv(index=False),
-            "portfolio_deposits.csv",
-            "text/csv",
-            key="portfolio_deposits_csv",
-        )
+        if not evolution.empty:
+            display = evolution[
+                [
+                    "label",
+                    "deposit_eur",
+                    "deposit_usd",
+                    "portfolio_eur",
+                    "cumulative_deposits_eur",
+                    "gain_vs_deposits_eur",
+                ]
+            ].copy()
+            display = display.rename(
+                columns={
+                    "label": "Month",
+                    "deposit_eur": "Deposit €",
+                    "deposit_usd": "Deposit $",
+                    "portfolio_eur": "Portfolio €",
+                    "cumulative_deposits_eur": "Cumul. deposits €",
+                    "gain_vs_deposits_eur": "Gain vs deposits €",
+                }
+            )
+            st.dataframe(
+                display,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Deposit €": st.column_config.NumberColumn(format="€%.2f"),
+                    "Deposit $": st.column_config.NumberColumn(format="$%.2f"),
+                    "Portfolio €": st.column_config.NumberColumn(format="€%.2f"),
+                    "Cumul. deposits €": st.column_config.NumberColumn(format="€%.2f"),
+                    "Gain vs deposits €": st.column_config.NumberColumn(format="€%.2f"),
+                },
+            )
+            st.download_button(
+                "Download deposits CSV",
+                display.to_csv(index=False),
+                "portfolio_deposits.csv",
+                "text/csv",
+                key="portfolio_deposits_csv",
+            )
 
         st.divider()
-        cls._render_benchmark_comparison(deposits)
+        cls._render_benchmark_comparison(deposits, evolution)
 
     @classmethod
     def _render_holding_drilldown(

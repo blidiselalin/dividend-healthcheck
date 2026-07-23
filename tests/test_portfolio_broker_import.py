@@ -87,7 +87,7 @@ def test_replace_import_loads_holdings_and_receipts(tmp_path: Path, sample_csv: 
     assert result.holdings_upserted == 2
     assert result.trades_imported == 3
     assert result.dividends_imported == 2
-    assert result.deposits_imported == 2
+    assert result.deposits_imported == 12
 
     ctx = create_portfolio_context(db_path=db)
     symbols = {h.symbol for h in ctx.portfolio.list_holdings()}
@@ -99,10 +99,11 @@ def test_replace_import_loads_holdings_and_receipts(tmp_path: Path, sample_csv: 
     assert receipts[0].source == "ibkr"
     assert receipts[0].gross_usd == 2.50
     deposits = ctx.deposits.list_deposits()
-    assert len(deposits) == 2
+    assert len(deposits) == 12
     march = next(item for item in deposits if item.period.month == 3)
     assert march.deposit_usd == 1500.0
-    assert march.portfolio_eur == pytest.approx(3220.0)
+    december = next(item for item in deposits if item.period.month == 12)
+    assert december.portfolio_eur == pytest.approx(3220.0)
 
 
 def test_merge_leaves_untouched_symbols(tmp_path: Path, sample_csv: str) -> None:
@@ -214,10 +215,13 @@ def test_merge_import_updates_deposit_months_without_wiping_manual_months(
 
     ctx = create_portfolio_context(db_path=db)
     deposits = ctx.deposits.list_deposits()
-    assert len(deposits) == 3
+    assert len(deposits) == 13
     assert any(item.period_key == "2024-12" for item in deposits)
     assert any(item.period_key == "2025-02" for item in deposits)
     assert any(item.period_key == "2025-03" for item in deposits)
+    assert any(item.period_key == "2025-12" for item in deposits)
+    feb_2025 = next(item for item in deposits if item.period_key == "2025-02")
+    assert feb_2025.deposit_eur == pytest.approx(1840.0)
 
 
 def test_replace_import_journal_net_shares_match_open_position(

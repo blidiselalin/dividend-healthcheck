@@ -244,11 +244,14 @@ class PortfolioBenchmarkService:
     def build_comparison_dataframe(
         self,
         deposits: list[MonthlyDeposit] | None = None,
+        *,
+        portfolio_eur_by_period: dict[str, float] | None = None,
     ) -> pd.DataFrame:
         records = deposits if deposits is not None else self.store.list_deposits()
         if not records:
             return pd.DataFrame()
 
+        resolved_portfolio = portfolio_eur_by_period or {}
         prices = self._fetch_month_end_prices(records)
         cumulative: dict[str, float] = {benchmark.key: 0.0 for benchmark in BENCHMARKS}
         rows = []
@@ -265,7 +268,9 @@ class PortfolioBenchmarkService:
                 "Month": deposit.label,
                 "Deposit €": deposit.deposit_eur,
                 "Deposit $": deposit.deposit_usd,
-                "Portfolio €": deposit.portfolio_eur if deposit.portfolio_eur > 0 else None,
+                "Portfolio €": resolved_portfolio.get(deposit.period_key)
+                if deposit.period_key in resolved_portfolio
+                else (deposit.portfolio_eur if deposit.portfolio_eur > 0 else None),
             }
             for benchmark in BENCHMARKS:
                 price = month_prices.get(benchmark.key)
@@ -286,13 +291,19 @@ class PortfolioBenchmarkService:
         self,
         comparison_df: pd.DataFrame,
         deposits: list[MonthlyDeposit],
+        *,
+        portfolio_eur_by_period: dict[str, float] | None = None,
     ) -> dict[str, float]:
         """Latest portfolio EUR vs benchmark EUR (last row with portfolio value)."""
         if comparison_df.empty:
             return {}
 
+        resolved_portfolio = portfolio_eur_by_period or {}
         portfolio_eur = None
         for deposit in reversed(deposits):
+            if deposit.period_key in resolved_portfolio:
+                portfolio_eur = resolved_portfolio[deposit.period_key]
+                break
             if deposit.portfolio_eur > 0:
                 portfolio_eur = deposit.portfolio_eur
                 break
@@ -310,10 +321,15 @@ class PortfolioBenchmarkService:
     def create_comparison_chart(
         self,
         deposits: list[MonthlyDeposit] | None = None,
+        *,
+        portfolio_eur_by_period: dict[str, float] | None = None,
     ) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
-        df = self.build_comparison_dataframe(deposits)
+        df = self.build_comparison_dataframe(
+            deposits,
+            portfolio_eur_by_period=portfolio_eur_by_period,
+        )
         if df.empty:
             return None
 

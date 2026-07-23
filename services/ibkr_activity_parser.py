@@ -105,6 +105,7 @@ class IBKRActivityStatement:
     fx_rates: dict[str, float] = field(default_factory=dict)
     nav_total: float | None = None
     deposits_fx_eur_per_usd: float | None = None
+    deposits_inflow_total_base: float | None = None
     issues: list[ImportIssue] = field(default_factory=list)
     forex_trades_skipped: int = 0
 
@@ -141,6 +142,34 @@ def _parse_pay_date(value: str) -> date | None:
         return date.fromisoformat(text[:10])
     except ValueError:
         return None
+
+
+def _parse_activity_date(value: str | None) -> date | None:
+    """Parse IBKR activity dates across common export formats."""
+    if value is None:
+        return None
+    text = str(value).strip().strip('"')
+    if not text:
+        return None
+    parsed = _parse_trade_date(text) or _parse_pay_date(text)
+    if parsed is not None:
+        return parsed
+    for fmt in (
+        "%m/%d/%Y",
+        "%d/%m/%Y",
+        "%Y/%m/%d",
+        "%B %d, %Y",
+        "%b %d, %Y",
+        "%d-%b-%Y",
+        "%d-%b-%y",
+    ):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    if " " in text:
+        return _parse_activity_date(text.split(" ", 1)[0])
+    return None
 
 
 def _normalize_symbol(symbol: str) -> str | None:
@@ -186,6 +215,126 @@ def _is_internal_transfer(description: str) -> bool:
     return lowered.startswith("internal (transfer")
 
 
+_DEPOSIT_TOTAL_LABELS = frozenset(
+    {
+        "Total",
+        "Total in EUR",
+        "Total in USD",
+        "Total Deposits & Withdrawals in EUR",
+        "Total Deposits & Withdrawals in USD",
+    }
+)
+
+
+def _last_numeric_cell(row: list[str], *, start: int = 2) -> float | None:
+    for cell in reversed(row[start:]):
+        parsed = _parse_float(cell)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _parse_deposits_withdrawals_data_row(
+    row: list[str],
+    header_map: dict[str, int],
+) -> IBKRCashTransfer | None:
+    """Parse one Deposits & Withdrawals data row across IBKR column layouts."""
+    if len(row) < 5 or row[1].strip() != "Data":
+        return None
+
+    row_label = row[2].strip()
+    if row_label in _DEPOSIT_TOTAL_LABELS or row_label.startswith("Total "):
+        return None
+
+    currency = _normalize_currency(
+        _cell(row, header_map, "Currency", "CurrencyPrimary", fallback_idx=2)
+    )
+    date_idx = 3
+    desc_idx = 4
+    amount_idx = 5
+
+    if currency is None and row_label == "Deposits & Withdrawals" and len(row) >= 7:
+        currency = _normalize_currency(row[3])
+        date_idx = 4
+        desc_idx = 5
+        amount_idx = 6
+    elif currency is None:
+        currency = _normalize_currency(row_label)
+
+    if currency is None:
+        return None
+
+    date_text = _cell(
+        row,
+        header_map,
+        "Settle Date",
+        "SettleDate",
+        "Date",
+        "Report Date",
+        "Date/Time",
+        fallback_idx=date_idx,
+    )
+    transfer_date = _parse_activity_date(date_text)
+    if transfer_date is None and date_idx < len(row):
+        transfer_date = _parse_activity_date(row[date_idx])
+
+    description = (_cell(row, header_map, "Description", fallback_idx=desc_idx) or "").strip()
+    amount = _parse_float(_cell(row, header_map, "Amount", fallback_idx=amount_idx))
+    if amount is None:
+        amount = _last_numeric_cell(row, start=date_idx + 1)
+
+    if transfer_date is None or amount is None or amount == 0:
+        return None
+    if _is_internal_transfer(description) or amount < 0:
+        return None
+
+    return IBKRCashTransfer(
+        transfer_date=transfer_date,
+        amount=amount,
+        currency=currency,
+        description=description,
+    )
+
+
+def _sum_deposit_inflows_base(statement: IBKRActivityStatement) -> float:
+    """Sum positive deposit inflows converted to the account base currency."""
+    base = (statement.meta.base_currency or "USD").strip().upper()
+    total = 0.0
+    eur_per_usd = _statement_eur_per_usd(statement)
+    for transfer in statement.cash_transfers:
+        if transfer.amount <= 0:
+            continue
+        if transfer.currency == base:
+            total += transfer.amount
+        elif base == "EUR" and transfer.currency == "USD" and eur_per_usd:
+            total += transfer.amount * eur_per_usd
+        elif base == "USD" and transfer.currency == "EUR" and eur_per_usd:
+            total += transfer.amount / eur_per_usd
+    return round(total, 2)
+
+
+def _reconcile_deposit_parsing(statement: IBKRActivityStatement) -> None:
+    if not statement.cash_transfers or statement.deposits_inflow_total_base is None:
+        return
+    base = (statement.meta.base_currency or "USD").strip().upper()
+    parsed_total = _sum_deposit_inflows_base(statement)
+    expected = statement.deposits_inflow_total_base
+    if expected <= 0:
+        return
+    tolerance = max(0.05, expected * 0.001)
+    if abs(parsed_total - expected) > tolerance:
+        statement.issues.append(
+            ImportIssue(
+                ImportIssueLevel.WARNING,
+                (
+                    f"Parsed deposit inflows ({parsed_total:,.2f} {base}) do not match "
+                    f"statement total ({expected:,.2f} {base}) — review Deposits & Withdrawals."
+                ),
+                section="Deposits & Withdrawals",
+            )
+        )
+
+
 def _statement_eur_per_usd(statement: IBKRActivityStatement) -> float | None:
     if statement.deposits_fx_eur_per_usd and statement.deposits_fx_eur_per_usd > 0:
         return statement.deposits_fx_eur_per_usd
@@ -201,6 +350,46 @@ def _month_label(year: int, month: int) -> str:
     import calendar
 
     return f"{calendar.month_name[month]} {year}"
+
+
+def parse_statement_period(period: str) -> tuple[date, date] | None:
+    """Parse IBKR Period field, e.g. ``January 1, 2025 - December 31, 2025``."""
+    text = str(period or "").strip().strip('"')
+    if " - " not in text:
+        return None
+    start_text, end_text = text.split(" - ", 1)
+    for fmt in ("%B %d, %Y", "%b %d, %Y"):
+        try:
+            start = datetime.strptime(start_text.strip(), fmt).date()
+            end = datetime.strptime(end_text.strip(), fmt).date()
+            return start, end
+        except ValueError:
+            continue
+    return None
+
+
+def statement_deposit_period(statement: IBKRActivityStatement) -> tuple[date, date] | None:
+    """Statement month range for deposit sync — Period header or transfer date span."""
+    parsed = parse_statement_period(statement.meta.period or "")
+    if parsed:
+        return parsed
+    if not statement.cash_transfers:
+        return None
+    dates = [transfer.transfer_date for transfer in statement.cash_transfers]
+    return min(dates), max(dates)
+
+
+def _iter_calendar_months(start: date, end: date) -> list[tuple[int, int]]:
+    months: list[tuple[int, int]] = []
+    year, month = start.year, start.month
+    end_key = (end.year, end.month)
+    while (year, month) <= end_key:
+        months.append((year, month))
+        month += 1
+        if month > 12:
+            month = 1
+            year += 1
+    return months
 
 
 def _nav_to_portfolio_eur(statement: IBKRActivityStatement) -> float:
@@ -222,7 +411,8 @@ def build_monthly_deposits(statement: IBKRActivityStatement) -> list[IBKRMonthly
     Aggregate Deposits & Withdrawals rows into monthly_deposits records.
 
     Counts positive cash inflows only (withdrawals are ignored for deposit totals).
-    Assigns converted NAV to the latest month in the statement when available.
+    When the statement Period is present, emits every calendar month in that range
+    (zero-deposit months included) and assigns NAV to the period's last month.
     """
     totals: dict[tuple[int, int], dict[str, float]] = defaultdict(lambda: {"USD": 0.0, "EUR": 0.0})
     for transfer in statement.cash_transfers:
@@ -232,17 +422,24 @@ def build_monthly_deposits(statement: IBKRActivityStatement) -> list[IBKRMonthly
         bucket = totals[key]
         bucket[transfer.currency] = bucket.get(transfer.currency, 0.0) + transfer.amount
 
-    if not totals:
+    period = parse_statement_period(statement.meta.period or "")
+    if period:
+        month_keys = set(_iter_calendar_months(period[0], period[1]))
+        month_keys.update(totals)
+        month_keys = sorted(month_keys)
+    elif totals:
+        month_keys = sorted(totals)
+    else:
         return []
 
     nav_eur = _nav_to_portfolio_eur(statement)
-    last_month = max(totals)
+    last_month = month_keys[-1]
     rows: list[IBKRMonthlyDeposit] = []
     eur_per_usd = _statement_eur_per_usd(statement)
     usd_per_eur = (1.0 / eur_per_usd) if eur_per_usd and eur_per_usd > 0 else None
 
-    for year, month in sorted(totals):
-        bucket = totals[(year, month)]
+    for year, month in month_keys:
+        bucket = totals.get((year, month), {})
         deposit_usd = round(bucket.get("USD", 0.0), 2)
         deposit_eur = round(bucket.get("EUR", 0.0), 2)
         if deposit_eur == 0.0 and deposit_usd > 0 and eur_per_usd:
@@ -261,6 +458,11 @@ def build_monthly_deposits(statement: IBKRActivityStatement) -> list[IBKRMonthly
             )
         )
     return rows
+
+
+def deposit_months_with_inflows(monthly: list[IBKRMonthlyDeposit]) -> int:
+    """Count months that received a positive deposit inflow."""
+    return sum(1 for item in monthly if item.deposit_eur > 0 or item.deposit_usd > 0)
 
 
 def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:  # noqa: C901
@@ -426,7 +628,7 @@ def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:
                 deposits_header_map = _header_map(row)
                 deposits_subsection = None
                 continue
-            if row[1] != "Data" or len(row) < 6:
+            if row[1] != "Data":
                 continue
 
             row_label = row[2].strip()
@@ -438,59 +640,35 @@ def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:
                         8,
                     )
                 continue
-            if row_label in {"Total", "Total Deposits & Withdrawals in EUR"}:
+            if row_label in _DEPOSIT_TOTAL_LABELS or row_label.startswith("Total "):
                 total_amount = _parse_float(
                     _cell(row, deposits_header_map, "Amount", fallback_idx=5)
                 )
+                if total_amount is None:
+                    total_amount = _last_numeric_cell(row, start=3)
+                base = (statement.meta.base_currency or "USD").strip().upper()
                 if row_label == "Total" and deposits_subsection == "USD" and total_amount:
                     deposits_usd_gross = total_amount
+                if (
+                    total_amount
+                    and total_amount > 0
+                    and row_label == "Total"
+                    and deposits_subsection == base
+                ):
+                    statement.deposits_inflow_total_base = total_amount
                 continue
 
-            currency = _normalize_currency(
-                _cell(row, deposits_header_map, "Currency", fallback_idx=2)
+            transfer = _parse_deposits_withdrawals_data_row(row, deposits_header_map)
+            row_currency = _normalize_currency(
+                _cell(row, deposits_header_map, "Currency", "CurrencyPrimary", fallback_idx=2)
             )
-            date_idx = 3
-            desc_idx = 4
-            amount_idx = 5
-            if currency is None and row_label == "Deposits & Withdrawals" and len(row) >= 7:
-                currency = _normalize_currency(row[3])
-                date_idx = 4
-                desc_idx = 5
-                amount_idx = 6
-            if currency is None:
+            if row_currency is None and row[2].strip() not in _DEPOSIT_TOTAL_LABELS:
+                row_currency = _normalize_currency(row[2].strip())
+            if row_currency is not None:
+                deposits_subsection = row_currency
+            if transfer is None:
                 continue
-
-            date_text = _cell(
-                row,
-                deposits_header_map,
-                "Settle Date",
-                "Date",
-                fallback_idx=date_idx,
-            )
-            transfer_date = _parse_trade_date(date_text or "") or _parse_pay_date(date_text or "")
-            description = (
-                _cell(row, deposits_header_map, "Description", fallback_idx=desc_idx) or ""
-            ).strip()
-            amount = _parse_float(
-                _cell(row, deposits_header_map, "Amount", fallback_idx=amount_idx)
-            )
-            if transfer_date is None or amount is None or amount == 0:
-                continue
-
-            deposits_subsection = currency
-            if _is_internal_transfer(description):
-                continue
-            if amount < 0:
-                continue
-
-            statement.cash_transfers.append(
-                IBKRCashTransfer(
-                    transfer_date=transfer_date,
-                    amount=amount,
-                    currency=currency,
-                    description=description,
-                )
-            )
+            statement.cash_transfers.append(transfer)
         elif section == "Base Currency Exchange Rate" and len(row) >= 4 and row[1] == "Data":
             currency = _normalize_currency(row[2])
             rate = _parse_float(row[3])
@@ -518,6 +696,7 @@ def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:
             if nav_value is not None:
                 statement.nav_total = nav_value
 
+    _reconcile_deposit_parsing(statement)
     return statement
 
 

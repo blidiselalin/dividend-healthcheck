@@ -16,8 +16,10 @@ from services.ibkr_activity_parser import (
     IBKRStatementMeta,
     ImportIssue,
     build_monthly_deposits,
+    deposit_months_with_inflows,
     has_blocking_errors,
     parse_activity_statement_csv,
+    statement_deposit_period,
     statement_symbol_scope,
     validate_statement,
 )
@@ -86,7 +88,7 @@ def preview_import(content: str | bytes) -> ImportPreview:
         position_count=len(statement.open_positions),
         trade_count=len(statement.trades),
         dividend_count=len(statement.dividends),
-        deposit_month_count=len(monthly_deposits),
+        deposit_month_count=deposit_months_with_inflows(monthly_deposits),
         symbols=symbols,
         issues=issues,
         forex_trades_skipped=statement.forex_trades_skipped,
@@ -215,29 +217,39 @@ def apply_import(  # noqa: C901
 
     monthly_deposits = build_monthly_deposits(statement)
     _report(progress, "Importing monthly deposits…", 0.82)
-    for index, month_deposit in enumerate(monthly_deposits, start=1):
-        ctx.deposits.upsert_deposit(
-            year=month_deposit.year,
-            month=month_deposit.month,
-            label=month_deposit.label,
-            deposit_eur=month_deposit.deposit_eur,
-            deposit_usd=month_deposit.deposit_usd,
-            portfolio_eur=month_deposit.portfolio_eur,
-        )
-        deposits_imported += 1
-        if monthly_deposits:
+    if monthly_deposits:
+        period = statement_deposit_period(statement)
+        if period:
+            ctx.deposits.delete_deposits_in_range(
+                period[0].year,
+                period[0].month,
+                period[1].year,
+                period[1].month,
+            )
+        for index, month_deposit in enumerate(monthly_deposits, start=1):
+            ctx.deposits.upsert_deposit(
+                year=month_deposit.year,
+                month=month_deposit.month,
+                label=month_deposit.label,
+                deposit_eur=month_deposit.deposit_eur,
+                deposit_usd=month_deposit.deposit_usd,
+                portfolio_eur=month_deposit.portfolio_eur,
+            )
+            deposits_imported += 1
             fraction = 0.82 + (0.08 * index / len(monthly_deposits))
             _report(
                 progress,
                 f"Importing deposits ({index}/{len(monthly_deposits)})…",
                 fraction,
             )
+        ctx.deposits.resequence_sort_order()
 
     _report(progress, "Syncing monthly dividend totals…", 0.92)
     _sync_monthly_net_from_receipts(ctx)
     from services.portfolio_open_holdings import reconcile_closed_holdings
 
     reconcile_closed_holdings(db_path=db_path)
+    issues.extend(_holdings_journal_consistency_issues(ctx, open_symbols))
     _report(progress, "Finalizing import…", 0.96)
     _finalize_broker_import(ctx, db_path=db_path)
     _report(progress, "Import complete", 1.0)
@@ -261,6 +273,46 @@ def apply_import(  # noqa: C901
         issues=issues,
         cleared=cleared,
     )
+
+
+def _holdings_journal_consistency_issues(ctx: object, open_symbols: set[str]) -> list[ImportIssue]:
+    """Warn when IBKR open positions disagree with net shares from imported trades."""
+    from services.ibkr_activity_parser import ImportIssue, ImportIssueLevel
+
+    portfolio = getattr(ctx, "portfolio", None)
+    journal_service = getattr(ctx, "journal_service", None)
+    if portfolio is None or journal_service is None or not open_symbols:
+        return []
+
+    net_by_symbol: dict[str, float] = {}
+    for symbol in open_symbols:
+        purchases = [
+            row
+            for row in journal_service.journal.list_purchases(portfolio_only=False)
+            if row.symbol == symbol
+        ]
+        buy = sum(float(row.shares or 0.0) for row in purchases if row.side != "sell")
+        sell = sum(float(row.shares or 0.0) for row in purchases if row.side == "sell")
+        net_by_symbol[symbol] = round(buy - sell, 4)
+
+    issues: list[ImportIssue] = []
+    for symbol in sorted(open_symbols):
+        holding = next((h for h in portfolio.list_holdings() if h.symbol == symbol), None)
+        if holding is None:
+            continue
+        net = net_by_symbol.get(symbol, 0.0)
+        if abs(holding.shares - net) > 0.05:
+            issues.append(
+                ImportIssue(
+                    ImportIssueLevel.WARNING,
+                    (
+                        f"{symbol}: open position shows {holding.shares:g} shares but "
+                        f"imported trades net to {net:g} — evolution valuation uses trades."
+                    ),
+                    section="Open Positions",
+                )
+            )
+    return issues
 
 
 def _commission_totals(statement: IBKRActivityStatement) -> dict[str, float]:

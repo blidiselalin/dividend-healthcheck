@@ -9,8 +9,11 @@ import pytest
 from services.ibkr_activity_parser import (
     ImportIssueLevel,
     build_monthly_deposits,
+    deposit_months_with_inflows,
     has_blocking_errors,
     parse_activity_statement_csv,
+    parse_statement_period,
+    statement_deposit_period,
     validate_statement,
 )
 
@@ -51,14 +54,17 @@ def test_statement_symbol_scope_includes_trades_and_dividends(sample_csv: str) -
 def test_build_monthly_deposits_aggregates_inflows(sample_csv: str) -> None:
     statement = parse_activity_statement_csv(sample_csv)
     monthly = build_monthly_deposits(statement)
-    assert len(monthly) == 2
+    assert len(monthly) == 12
+    assert deposit_months_with_inflows(monthly) == 2
     feb = next(item for item in monthly if item.month == 2)
     mar = next(item for item in monthly if item.month == 3)
+    dec = next(item for item in monthly if item.month == 12)
     assert feb.deposit_usd == 2000.0
     assert feb.deposit_eur == pytest.approx(1840.0)
     assert mar.deposit_usd == 1500.0
     assert mar.deposit_eur == pytest.approx(1380.0)
-    assert mar.portfolio_eur == pytest.approx(3220.0)
+    assert dec.portfolio_eur == pytest.approx(3220.0)
+    assert mar.portfolio_eur == 0.0
 
 
 def test_validate_sample_has_no_blocking_errors(sample_csv: str) -> None:
@@ -135,6 +141,7 @@ def test_parse_skips_forex_trades() -> None:
 def test_parse_eur_base_deposits_with_header_and_fx() -> None:
     csv_text = (
         "Statement,Data,Title,Activity Statement\n"
+        'Statement,Data,Period,"February 1, 2025 - February 28, 2025"\n'
         "Account Information,Data,Base Currency,EUR\n"
         "Net Asset Value,Header,Asset Class,Prior Total,Current Long,"
         "Current Short,Current Total,Change\n"
@@ -161,6 +168,13 @@ def test_parse_eur_base_deposits_with_header_and_fx() -> None:
     assert feb.portfolio_eur == pytest.approx(99084.96)
 
 
+def test_parse_statement_period() -> None:
+    parsed = parse_statement_period("January 1, 2025 - December 31, 2025")
+    assert parsed is not None
+    assert parsed[0].isoformat() == "2025-01-01"
+    assert parsed[1].isoformat() == "2025-12-31"
+
+
 def test_parse_deposits_with_asset_category_column() -> None:
     csv_text = (
         "Statement,Data,Title,Activity Statement\n"
@@ -173,3 +187,65 @@ def test_parse_deposits_with_asset_category_column() -> None:
     assert len(statement.cash_transfers) == 1
     assert statement.cash_transfers[0].currency == "EUR"
     assert statement.cash_transfers[0].amount == 1800.0
+
+
+def test_parse_all_2025_deposit_fixture() -> None:
+    fixture = Path(__file__).resolve().parent / "fixtures" / "ibkr_deposits_2025.csv"
+    statement = parse_activity_statement_csv(fixture.read_text(encoding="utf-8"))
+    assert len(statement.cash_transfers) == 20
+    assert statement.deposits_inflow_total_base == pytest.approx(34460.79)
+    assert not any(
+        issue.level == ImportIssueLevel.WARNING and "do not match" in issue.message
+        for issue in statement.issues
+    )
+    monthly = build_monthly_deposits(statement)
+    assert len(monthly) == 12
+    assert deposit_months_with_inflows(monthly) == 11
+    assert sum(item.deposit_eur for item in monthly) == pytest.approx(34460.79)
+    assert next(item for item in monthly if item.month == 11).deposit_eur == 0.0
+
+
+def test_parse_deposits_us_date_format() -> None:
+    csv_text = (
+        "Statement,Data,Title,Activity Statement\n"
+        "Account Information,Data,Base Currency,USD\n"
+        "Deposits & Withdrawals,Header,Currency,Date,Description,Amount\n"
+        "Deposits & Withdrawals,Data,USD,01/15/2025,Electronic Fund Transfer,500\n"
+        "Deposits & Withdrawals,Data,Total,,,500\n"
+    )
+    statement = parse_activity_statement_csv(csv_text)
+    assert len(statement.cash_transfers) == 1
+    assert statement.cash_transfers[0].transfer_date.isoformat() == "2025-01-15"
+    assert statement.deposits_inflow_total_base == pytest.approx(500.0)
+
+
+def test_statement_deposit_period_falls_back_to_transfer_dates() -> None:
+    csv_text = (
+        "Statement,Data,Title,Activity Statement\n"
+        "Account Information,Data,Base Currency,EUR\n"
+        "Deposits & Withdrawals,Header,Currency,Settle Date,Description,Amount\n"
+        "Deposits & Withdrawals,Data,EUR,2025-02-01,Electronic Fund Transfer,1000\n"
+        "Deposits & Withdrawals,Data,EUR,2025-04-05,Electronic Fund Transfer,250\n"
+        "Deposits & Withdrawals,Data,Total,,,1250\n"
+    )
+    statement = parse_activity_statement_csv(csv_text)
+    period = statement_deposit_period(statement)
+    assert period is not None
+    assert period[0].isoformat() == "2025-02-01"
+    assert period[1].isoformat() == "2025-04-05"
+
+
+def test_deposit_outside_statement_period_is_included() -> None:
+    csv_text = (
+        "Statement,Data,Title,Activity Statement\n"
+        'Statement,Data,Period,"January 1, 2025 - March 31, 2025"\n'
+        "Account Information,Data,Base Currency,EUR\n"
+        "Deposits & Withdrawals,Header,Currency,Settle Date,Description,Amount\n"
+        "Deposits & Withdrawals,Data,EUR,2025-02-01,Electronic Fund Transfer,1000\n"
+        "Deposits & Withdrawals,Data,EUR,2025-04-05,Electronic Fund Transfer,250\n"
+        "Deposits & Withdrawals,Data,Total,,,1250\n"
+    )
+    statement = parse_activity_statement_csv(csv_text)
+    monthly = build_monthly_deposits(statement)
+    active = {(item.year, item.month) for item in monthly if item.deposit_eur > 0}
+    assert active == {(2025, 2), (2025, 4)}

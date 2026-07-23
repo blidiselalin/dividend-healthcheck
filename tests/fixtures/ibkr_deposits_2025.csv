@@ -1,0 +1,30 @@
+Statement,Data,Title,Activity Statement
+Statement,Data,Period,"January 1, 2025 - December 31, 2025"
+Account Information,Data,Base Currency,EUR
+Net Asset Value,Data,Total,64658.07,99084.96,0,99084.96,34426.88
+Deposits & Withdrawals,Header,Currency,Settle Date,Description,Amount
+Deposits & Withdrawals,Data,EUR,2025-01-13,Electronic Fund Transfer,2000
+Deposits & Withdrawals,Data,EUR,2025-02-13,Electronic Fund Transfer,2500
+Deposits & Withdrawals,Data,EUR,2025-02-17,Electronic Fund Transfer,5300
+Deposits & Withdrawals,Data,EUR,2025-02-25,Electronic Fund Transfer,4000
+Deposits & Withdrawals,Data,EUR,2025-03-05,Electronic Fund Transfer,1800
+Deposits & Withdrawals,Data,EUR,2025-03-31,Electronic Fund Transfer,2000.54
+Deposits & Withdrawals,Data,EUR,2025-04-03,Electronic Fund Transfer,1000
+Deposits & Withdrawals,Data,EUR,2025-04-03,Electronic Fund Transfer,860.25
+Deposits & Withdrawals,Data,EUR,2025-04-07,Electronic Fund Transfer,1500
+Deposits & Withdrawals,Data,EUR,2025-05-05,Electronic Fund Transfer,1500
+Deposits & Withdrawals,Data,EUR,2025-05-23,Electronic Fund Transfer,100
+Deposits & Withdrawals,Data,EUR,2025-05-27,Electronic Fund Transfer,1000
+Deposits & Withdrawals,Data,EUR,2025-05-27,Electronic Fund Transfer,900
+Deposits & Withdrawals,Data,EUR,2025-06-16,Electronic Fund Transfer,1500
+Deposits & Withdrawals,Data,EUR,2025-07-08,Electronic Fund Transfer,1500
+Deposits & Withdrawals,Data,EUR,2025-08-04,Electronic Fund Transfer,1500
+Deposits & Withdrawals,Data,EUR,2025-09-04,Electronic Fund Transfer,1500
+Deposits & Withdrawals,Data,EUR,2025-10-08,Electronic Fund Transfer,1500
+Deposits & Withdrawals,Data,EUR,2025-10-31,Electronic Fund Transfer,1500
+Deposits & Withdrawals,Data,EUR,2025-12-09,Electronic Fund Transfer,1000
+Deposits & Withdrawals,Data,Total,,,34460.79
+Deposits & Withdrawals,Data,USD,2025-01-29,Internal (Transfer to U15587745),2.38
+Deposits & Withdrawals,Data,Total,,,2.38
+Deposits & Withdrawals,Data,Total in EUR,,,2.27
+Deposits & Withdrawals,Data,Total Deposits & Withdrawals in EUR,,,34463.06

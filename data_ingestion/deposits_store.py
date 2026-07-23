@@ -339,3 +339,67 @@ class DepositsStore:
             else:
                 cursor = connection.execute("DELETE FROM monthly_deposits")
             return int(cursor.rowcount or 0)
+
+    def delete_deposits_in_range(
+        self,
+        start_year: int,
+        start_month: int,
+        end_year: int,
+        end_month: int,
+    ) -> int:
+        """Remove deposit rows whose period_key falls within the inclusive month range."""
+        start_key = f"{start_year:04d}-{start_month:02d}"
+        end_key = f"{end_year:04d}-{end_month:02d}"
+        with self._connect() as connection:
+            if connection.is_postgres:
+                cursor = connection.execute(
+                    """
+                    DELETE FROM monthly_deposits
+                    WHERE user_id = ? AND period_key >= ? AND period_key <= ?
+                    """,
+                    (connection.user_id, start_key, end_key),
+                )
+            else:
+                cursor = connection.execute(
+                    """
+                    DELETE FROM monthly_deposits
+                    WHERE period_key >= ? AND period_key <= ?
+                    """,
+                    (start_key, end_key),
+                )
+            return int(cursor.rowcount or 0)
+
+    def resequence_sort_order(self) -> None:
+        """Renumber sort_order chronologically by year and month."""
+        with self._connect() as connection:
+            if connection.is_postgres:
+                rows = connection.execute(
+                    """
+                    SELECT period_key FROM monthly_deposits
+                    WHERE user_id = ?
+                    ORDER BY year, month
+                    """,
+                    (connection.user_id,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT period_key FROM monthly_deposits ORDER BY year, month"
+                ).fetchall()
+            for order, row in enumerate(rows, start=1):
+                period_key = row["period_key"] if hasattr(row, "keys") else row[0]
+                if connection.is_postgres:
+                    connection.execute(
+                        """
+                        UPDATE monthly_deposits SET sort_order = ?
+                        WHERE user_id = ? AND period_key = ?
+                        """,
+                        (order, connection.user_id, period_key),
+                    )
+                else:
+                    connection.execute(
+                        """
+                        UPDATE monthly_deposits SET sort_order = ?
+                        WHERE period_key = ?
+                        """,
+                        (order, period_key),
+                    )

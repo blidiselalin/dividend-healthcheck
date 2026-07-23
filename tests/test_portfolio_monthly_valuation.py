@@ -16,10 +16,12 @@ from data_ingestion.purchase_journal_store import PurchaseJournalStore
 from services.portfolio_dashboard_service import PortfolioDashboardService
 from services.portfolio_deposits_service import PortfolioDepositsService
 from services.portfolio_monthly_valuation import (
+    _close_for_month_end,
     compute_monthly_portfolio_eur,
     fx_rates_carry_forward,
     pick_portfolio_eur_for_month,
     shares_from_records,
+    valuation_as_of,
 )
 
 
@@ -131,6 +133,7 @@ def test_pick_portfolio_prefers_stored_when_price_coverage_incomplete() -> None:
         symbols_priced=2,
     )
     assert pick_portfolio_eur_for_month(stored=1200.0, valuation=partial) == 1200.0
+    assert pick_portfolio_eur_for_month(stored=None, valuation=partial) is None
     full = MonthPortfolioValuation(
         portfolio_usd=1000.0,
         portfolio_eur=900.0,
@@ -138,6 +141,23 @@ def test_pick_portfolio_prefers_stored_when_price_coverage_incomplete() -> None:
         symbols_priced=2,
     )
     assert pick_portfolio_eur_for_month(stored=1200.0, valuation=full) == 900.0
+
+
+def test_close_for_month_end_prefers_in_month_then_falls_back() -> None:
+    series = [
+        (date(2025, 1, 31), 50.0),
+        (date(2025, 2, 28), 52.0),
+        (date(2025, 3, 31), 60.0),
+    ]
+    assert _close_for_month_end(series, date(2025, 2, 28)) == pytest.approx(52.0)
+    assert _close_for_month_end(series, date(2025, 2, 15)) == pytest.approx(50.0)
+    assert _close_for_month_end(series, date(2025, 4, 30)) == pytest.approx(60.0)
+
+
+def test_valuation_as_of_caps_current_month_at_today() -> None:
+    today = date(2026, 7, 23)
+    assert valuation_as_of(date(2026, 7, 1), reference=today) == today
+    assert valuation_as_of(date(2025, 12, 1), reference=today) == date(2025, 12, 31)
 
 
 def test_fx_rates_carry_forward_from_prior_deposit_month() -> None:

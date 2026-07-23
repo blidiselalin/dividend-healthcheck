@@ -38,6 +38,15 @@ def month_end(day: date) -> date:
     return date(day.year, day.month, last)
 
 
+def valuation_as_of(deposit_period: date, *, reference: date | None = None) -> date:
+    """Last date to use for month-end marks (today when valuing the current month)."""
+    today = reference or date.today()
+    end = month_end(deposit_period)
+    if deposit_period.year == today.year and deposit_period.month == today.month:
+        return min(today, end)
+    return end
+
+
 def fx_rates_carry_forward(
     deposits: list[MonthlyDeposit],
     *,
@@ -74,6 +83,7 @@ def shares_from_records(records: list[PurchaseRecord], as_of: date) -> float:
 
 
 def _close_on_or_before(series: list[tuple[date, float]], as_of: date) -> float | None:
+    """Latest available close on or before ``as_of``."""
     if not series:
         return None
     best: float | None = None
@@ -83,6 +93,28 @@ def _close_on_or_before(series: list[tuple[date, float]], as_of: date) -> float 
         else:
             break
     return best
+
+
+def _close_for_month_end(series: list[tuple[date, float]], as_of: date) -> float | None:
+    """
+    Month-end mark: prefer the last in-month close, else the latest prior close.
+
+    Uses the last close in the same calendar month when available. When the library
+    has no bar that month (thin history, holiday gaps), falls back to the most recent
+    close on or before ``as_of`` so the portfolio total stays close to reality.
+    """
+    if not series:
+        return None
+    year, month = as_of.year, as_of.month
+    in_month: float | None = None
+    for point_date, close in series:
+        if point_date > as_of:
+            break
+        if point_date.year == year and point_date.month == month:
+            in_month = close
+    if in_month is not None:
+        return in_month
+    return _close_on_or_before(series, as_of)
 
 
 def _price_series(document: Any) -> list[tuple[date, float]]:
@@ -130,6 +162,16 @@ def _load_price_series(symbols: list[str]) -> dict[str, list[tuple[date, float]]
     except Exception as exc:  # noqa: BLE001
         logger.debug("Could not attach Postgres price history: %s", exc)
 
+    try:
+        from utils.stock_document_history import hydrate_document_history
+
+        for symbol in list(documents):
+            doc = documents.get(symbol)
+            if doc is not None:
+                documents[symbol] = hydrate_document_history(doc)
+    except ImportError:
+        pass
+
     out: dict[str, list[tuple[date, float]]] = {}
     for symbol in symbols:
         sym = symbol.strip().upper()
@@ -148,8 +190,9 @@ def compute_monthly_portfolio_valuations(
     """
     Estimate end-of-month portfolio value from journal share counts and library closes.
 
-    Uses explicit buy/sell share counts when present. A month is only marked fully
-    covered when every held symbol has a month-end (or prior) library close.
+    Uses explicit buy/sell share counts when present. Each held symbol is priced from
+    the last in-month library close when available, otherwise the latest prior close.
+    A month is fully covered when every held symbol has some mark on or before month-end.
     """
     if not deposits:
         return {}
@@ -176,10 +219,11 @@ def compute_monthly_portfolio_valuations(
     values: dict[str, MonthPortfolioValuation] = {}
 
     for deposit in deposits:
-        as_of = month_end(deposit.period)
+        as_of = valuation_as_of(deposit.period)
         total_usd = 0.0
         symbols_held = 0
         symbols_priced = 0
+        missing_symbols: list[str] = []
 
         for symbol in symbols:
             symbol_records = records_by_symbol.get(symbol, [])
@@ -187,14 +231,22 @@ def compute_monthly_portfolio_valuations(
             if shares <= 0:
                 continue
             symbols_held += 1
-            close = _close_on_or_before(price_series.get(symbol, []), as_of)
+            close = _close_for_month_end(price_series.get(symbol, []), as_of)
             if close is None:
+                missing_symbols.append(symbol)
                 continue
             total_usd += shares * close
             symbols_priced += 1
 
         if total_usd <= 0 or symbols_held == 0:
             continue
+
+        if missing_symbols:
+            logger.debug(
+                "Month %s missing in-month closes for: %s",
+                deposit.period_key,
+                ", ".join(missing_symbols[:8]) + ("…" if len(missing_symbols) > 8 else ""),
+            )
 
         fx = fx_by_month.get(deposit.period_key, 0.92)
         values[deposit.period_key] = MonthPortfolioValuation(
@@ -226,12 +278,11 @@ def pick_portfolio_eur_for_month(
 ) -> float | None:
     """
     Prefer a full stock-based valuation; fall back to stored IBKR/manual NAV when incomplete.
+
+    Partial share/pricing coverage is not shown — it understates the portfolio and skews
+    the evolution chart.
     """
-    if valuation is not None and valuation.portfolio_eur > 0:
-        if valuation.coverage >= 1.0:
-            return valuation.portfolio_eur
-        if stored is not None and stored > 0:
-            return stored
+    if valuation is not None and valuation.portfolio_eur > 0 and valuation.coverage >= 1.0:
         return valuation.portfolio_eur
     if stored is not None and stored > 0:
         return stored
