@@ -152,7 +152,8 @@ def test_sell_lots_produce_negative_estimated_shares(tmp_path: Path, sample_csv:
     aapl_lots = [lot for lot in lots if lot.symbol == "AAPL"]
     assert any(lot.estimated_shares < 0 for lot in aapl_lots)
     net = sum(lot.estimated_shares for lot in aapl_lots)
-    assert net == pytest.approx(7.0)
+    aapl_holding = next(h for h in ctx.portfolio.list_holdings() if h.symbol == "AAPL")
+    assert net == pytest.approx(aapl_holding.shares)
 
 
 def test_import_stores_dividends_for_closed_positions(tmp_path: Path) -> None:
@@ -235,8 +236,15 @@ def test_replace_import_journal_net_shares_match_open_position(
     aapl = next(h for h in ctx.portfolio.list_holdings() if h.symbol == "AAPL")
     lots = ctx.journal_service.build_estimated_lots()
     aapl_net = sum(lot.estimated_shares for lot in lots if lot.symbol == "AAPL")
-    assert aapl_net == pytest.approx(7.0)
+    assert aapl_net == pytest.approx(10.0)
     assert aapl.shares == pytest.approx(10.0)
+    open_rows = [
+        p
+        for p in ctx.journal.list_purchases(portfolio_only=False)
+        if p.symbol == "AAPL" and p.source == "ibkr-open"
+    ]
+    assert len(open_rows) == 1
+    assert open_rows[0].shares == pytest.approx(3.0)
     assert result.symbols_touched == ["AAPL", "MSFT"]
 
 
@@ -268,7 +276,7 @@ def test_merge_drops_fully_sold_holding_keeps_history(tmp_path: Path) -> None:
     apply_import(FIXTURE.read_text(encoding="utf-8"), mode=ImportMode.REPLACE, db_path=db)
 
     result = apply_import(sold_csv, mode=ImportMode.MERGE, db_path=db)
-    assert result.trades_imported == 3
+    assert result.trades_imported == 1
 
     ctx = create_portfolio_context(db_path=db)
     symbols = {h.symbol for h in ctx.portfolio.list_holdings()}
@@ -276,7 +284,7 @@ def test_merge_drops_fully_sold_holding_keeps_history(tmp_path: Path) -> None:
     aapl_trades = [
         p for p in ctx.journal.list_purchases(portfolio_only=False) if p.symbol == "AAPL"
     ]
-    assert len(aapl_trades) == 2
+    assert len(aapl_trades) == 3
     assert {p.side for p in aapl_trades} == {"buy", "sell"}
     assert len(ctx.receipts.list_for_symbol("AAPL")) == 1
 
@@ -304,6 +312,81 @@ def test_merge_imports_trades_for_symbols_not_in_open_positions(tmp_path: Path) 
     ]
     assert len(amcr_trades) == 2
     assert len(ctx.receipts.list_for_symbol("AMCR")) == 1
+
+
+def test_merge_second_year_keeps_first_year_trades(tmp_path: Path) -> None:
+    csv_2023 = (
+        "Statement,Data,Title,Activity Statement\n"
+        'Statement,Data,Period,"January 1, 2023 - December 31, 2023"\n'
+        "Open Positions,Data,Summary,Stocks,USD,AAPL,10,150,150,1500\n"
+        'Trades,Data,Order,Stocks,USD,AAPL,"2023-06-01, 09:30:00",10,150,1500,USD,-1.00\n'
+    )
+    csv_2024 = (
+        "Statement,Data,Title,Activity Statement\n"
+        'Statement,Data,Period,"January 1, 2024 - December 31, 2024"\n'
+        "Open Positions,Data,Summary,Stocks,USD,AAPL,15,160,160,2400\n"
+        'Trades,Data,Order,Stocks,USD,AAPL,"2024-06-01, 09:30:00",5,160,800,USD,-1.00\n'
+    )
+    db = tmp_path / "portfolio.db"
+    apply_import(csv_2023, mode=ImportMode.REPLACE, db_path=db)
+    apply_import(csv_2024, mode=ImportMode.MERGE, db_path=db)
+
+    ctx = create_portfolio_context(db_path=db)
+    aapl_trades = [
+        p for p in ctx.journal.list_purchases(portfolio_only=False) if p.symbol == "AAPL"
+    ]
+    assert len(aapl_trades) == 2
+    dates = sorted(p.purchase_date.isoformat() for p in aapl_trades if p.source == "ibkr")
+    assert dates == ["2023-06-01", "2024-06-01"]
+    holding = next(h for h in ctx.portfolio.list_holdings() if h.symbol == "AAPL")
+    assert holding.shares == pytest.approx(15.0)
+
+
+def test_merge_same_file_twice_is_idempotent(tmp_path: Path, sample_csv: str) -> None:
+    db = tmp_path / "portfolio.db"
+    first = apply_import(sample_csv, mode=ImportMode.MERGE, db_path=db)
+    ctx = create_portfolio_context(db_path=db)
+    trades_after_first = len(ctx.journal.list_purchases(portfolio_only=False))
+    deposits_after_first = len(ctx.deposits.list_deposits())
+
+    second = apply_import(sample_csv, mode=ImportMode.MERGE, db_path=db)
+    ctx = create_portfolio_context(db_path=db)
+
+    assert second.trades_imported == 0
+    assert second.dividends_imported == 0
+    assert second.deposits_imported == 0
+    assert len(ctx.journal.list_purchases(portfolio_only=False)) == trades_after_first
+    assert len(ctx.deposits.list_deposits()) == deposits_after_first
+    assert first.trades_imported > 0
+
+
+def test_merge_does_not_overwrite_manual_journal_row(tmp_path: Path) -> None:
+    csv_text = (
+        "Statement,Data,Title,Activity Statement\n"
+        "Open Positions,Data,Summary,Stocks,USD,AAPL,10,150,150,1500\n"
+        'Trades,Data,Order,Stocks,USD,AAPL,"2025-02-13, 09:30:00",10,150,1500,USD,-1.25\n'
+    )
+    db = tmp_path / "portfolio.db"
+    ctx = create_portfolio_context(db_path=db)
+    ctx.journal.add_purchase(
+        "AAPL",
+        date(2025, 2, 13),
+        150.0,
+        shares=99.0,
+        commission_usd=0.0,
+        side="buy",
+        source="manual",
+    )
+
+    apply_import(csv_text, mode=ImportMode.MERGE, db_path=db)
+
+    manual_rows = [
+        p
+        for p in create_portfolio_context(db_path=db).journal.list_purchases(portfolio_only=False)
+        if p.symbol == "AAPL" and p.source == "manual"
+    ]
+    assert len(manual_rows) == 1
+    assert manual_rows[0].shares == pytest.approx(99.0)
 
 
 def test_apply_import_invalidates_cache_and_syncs_vector(

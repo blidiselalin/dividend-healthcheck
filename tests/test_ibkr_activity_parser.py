@@ -219,6 +219,29 @@ def test_parse_deposits_us_date_format() -> None:
     assert statement.deposits_inflow_total_base == pytest.approx(500.0)
 
 
+def test_dual_currency_deposits_in_same_month_are_combined() -> None:
+    csv_text = (
+        "Statement,Data,Title,Activity Statement\n"
+        'Statement,Data,Period,"January 1, 2026 - July 31, 2026"\n'
+        "Account Information,Data,Base Currency,EUR\n"
+        "Deposits & Withdrawals,Header,Currency,Settle Date,Description,Amount\n"
+        "Deposits & Withdrawals,Data,EUR,2026-05-11,Electronic Fund Transfer,700.07\n"
+        "Deposits & Withdrawals,Data,USD,2026-05-06,Electronic Fund Transfer,4000\n"
+        "Deposits & Withdrawals,Data,Total,,,700.07\n"
+        "Deposits & Withdrawals,Data,USD,2026-01-29,Electronic Fund Transfer,100\n"
+        "Deposits & Withdrawals,Data,Total,,,4100\n"
+        "Deposits & Withdrawals,Data,Total in EUR,,,3520.07\n"
+        "Deposits & Withdrawals,Data,Total Deposits & Withdrawals in EUR,,,4220.14\n"
+    )
+    statement = parse_activity_statement_csv(csv_text)
+    monthly = build_monthly_deposits(statement)
+    may = next(item for item in monthly if item.month == 5)
+    assert may.deposit_usd == 4000.0
+    fx = statement.deposits_fx_eur_per_usd
+    assert fx is not None
+    assert may.deposit_eur == pytest.approx(700.07 + 4000 * fx, rel=1e-4)
+
+
 def test_statement_deposit_period_falls_back_to_transfer_dates() -> None:
     csv_text = (
         "Statement,Data,Title,Activity Statement\n"

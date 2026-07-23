@@ -315,6 +315,51 @@ class DepositsStore:
                 return deposit
         raise RuntimeError(f"Failed to save deposit for {period_key}")
 
+    def sync_deposit(
+        self,
+        *,
+        year: int,
+        month: int,
+        label: str,
+        deposit_eur: float,
+        deposit_usd: float,
+        portfolio_eur: float,
+    ) -> str:
+        """Insert or update one month. Returns ``added``, ``updated``, or ``unchanged``."""
+        period_key = f"{year:04d}-{month:02d}"
+        existing = next(
+            (item for item in self.list_deposits() if item.period_key == period_key),
+            None,
+        )
+        if existing is None:
+            self.upsert_deposit(
+                year=year,
+                month=month,
+                label=label,
+                deposit_eur=deposit_eur,
+                deposit_usd=deposit_usd,
+                portfolio_eur=portfolio_eur,
+            )
+            return "added"
+
+        if (
+            existing.label == label
+            and abs(existing.deposit_eur - deposit_eur) < 0.01
+            and abs(existing.deposit_usd - deposit_usd) < 0.01
+            and abs(existing.portfolio_eur - portfolio_eur) < 0.01
+        ):
+            return "unchanged"
+
+        self.upsert_deposit(
+            year=year,
+            month=month,
+            label=label,
+            deposit_eur=deposit_eur,
+            deposit_usd=deposit_usd,
+            portfolio_eur=portfolio_eur,
+        )
+        return "updated"
+
     def delete_deposit(self, period_key: str) -> bool:
         with self._connect() as connection:
             if connection.is_postgres:

@@ -431,8 +431,9 @@ def _render_ibkr_import_tab() -> None:
         ["Merge with existing", "Full replace"],
         key="pm_ibkr_mode",
         help=(
-            "**Merge** updates only symbols in the file (prior IBKR rows for those symbols are "
-            "replaced). **Full replace** deletes all portfolio data first."
+            "**Merge** appends new IBKR rows and refreshes only matching trades, "
+            "dividends, and deposit months (same date/key). Symbols not in the file "
+            "are left unchanged. **Full replace** deletes all portfolio data first."
         ),
     )
     replace_mode = mode_label == "Full replace"

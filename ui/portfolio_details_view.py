@@ -58,6 +58,7 @@ from ui.theme import (
     PORTFOLIO_TAB_SCOPES,
     current_portfolio_section_key,
     portfolio_data_ready,
+    portfolio_section_ready,
     render_portfolio_status_line,
 )
 from ui.views import SingleStockView
@@ -1703,10 +1704,16 @@ class PortfolioDetailsView:
         )
 
         st.markdown("##### Acquisition split (estimated)")
-        st.caption(
-            "Shares per buy are split evenly across journal lines; "
-            "values scale to portfolio acquisition cost."
-        )
+        if service.uses_share_aware_lots(records):
+            st.caption(
+                "Share counts come from IBKR trades and opening-balance rows; "
+                "values reflect recorded buy/sell prices."
+            )
+        else:
+            st.caption(
+                "Legacy rows without share counts are split evenly across journal lines; "
+                "values scale to portfolio acquisition cost."
+            )
         split_df = service.acquisition_split_dataframe(records)
         if not split_df.empty:
             total_val = split_df["Journal value $"].sum()
@@ -1757,7 +1764,7 @@ class PortfolioDetailsView:
 
             with st.expander("Per-transaction detail (estimated shares & value)"):
                 st.dataframe(
-                    service.lot_estimates_dataframe(records),
+                    service.lot_estimates_dataframe(records, include_closed=True),
                     use_container_width=True,
                     hide_index=True,
                 )
@@ -2497,7 +2504,11 @@ class PortfolioDetailsView:
                 return
         else:
             render_portfolio_workspace_nav()
-            if not portfolio_data_ready() or not rows_loaded:
+            rows_loaded = st.session_state.get("portfolio_details_rows")
+            section_ready = portfolio_section_ready(section_key) or (
+                portfolio_data_ready() and rows_loaded
+            )
+            if not section_ready:
                 from services.portfolio_session import user_has_holdings_in_db
 
                 st.divider()

@@ -433,6 +433,19 @@ def portfolio_data_ready() -> bool:
     return rows
 
 
+def portfolio_section_ready(section_key: str) -> bool:
+    """True when a portfolio section can render from DB without a holdings snapshot."""
+    if section_key == "journal":
+        from services.portfolio_purchase_journal_service import PortfolioPurchaseJournalService
+
+        return bool(PortfolioPurchaseJournalService().list_purchases())
+    if section_key == "deposits":
+        from services.portfolio_deposits_service import PortfolioDepositsService
+
+        return bool(PortfolioDepositsService().list_deposits())
+    return portfolio_data_ready()
+
+
 def render_portfolio_status_line() -> None:
     """One-line snapshot status under the section picker."""
     if not portfolio_data_ready():

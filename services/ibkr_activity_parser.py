@@ -106,6 +106,7 @@ class IBKRActivityStatement:
     nav_total: float | None = None
     deposits_fx_eur_per_usd: float | None = None
     deposits_inflow_total_base: float | None = None
+    deposits_inflow_total_all_base: float | None = None
     issues: list[ImportIssue] = field(default_factory=list)
     forex_trades_skipped: int = 0
 
@@ -296,31 +297,75 @@ def _parse_deposits_withdrawals_data_row(
     )
 
 
+def _monthly_deposit_amounts(
+    bucket: dict[str, float],
+    *,
+    eur_per_usd: float | None,
+) -> tuple[float, float]:
+    """Combine native EUR and USD inflows into display EUR/USD pair for one month."""
+    eur_native = float(bucket.get("EUR", 0.0))
+    usd_native = float(bucket.get("USD", 0.0))
+    deposit_eur = eur_native
+    if usd_native > 0 and eur_per_usd:
+        deposit_eur = round(eur_native + usd_native * eur_per_usd, 2)
+    else:
+        deposit_eur = round(eur_native, 2)
+    deposit_usd = round(usd_native, 2)
+    if deposit_usd == 0.0 and deposit_eur > 0 and eur_per_usd:
+        deposit_usd = round(deposit_eur / eur_per_usd, 2)
+    return deposit_eur, deposit_usd
+
+
+def _has_external_usd_deposits(statement: IBKRActivityStatement) -> bool:
+    return any(
+        transfer.currency == "USD" and not _is_internal_transfer(transfer.description)
+        for transfer in statement.cash_transfers
+    )
+
+
+def _expected_deposit_inflow_total(statement: IBKRActivityStatement) -> float | None:
+    """Statement total to reconcile against — grand total when USD EFT rows are present."""
+    if _has_external_usd_deposits(statement) and statement.deposits_inflow_total_all_base:
+        return statement.deposits_inflow_total_all_base
+    return statement.deposits_inflow_total_base
+
+
 def _sum_deposit_inflows_base(statement: IBKRActivityStatement) -> float:
     """Sum positive deposit inflows converted to the account base currency."""
     base = (statement.meta.base_currency or "USD").strip().upper()
-    total = 0.0
     eur_per_usd = _statement_eur_per_usd(statement)
+    month_totals: dict[tuple[int, int], dict[str, float]] = defaultdict(
+        lambda: {"USD": 0.0, "EUR": 0.0}
+    )
     for transfer in statement.cash_transfers:
         if transfer.amount <= 0:
             continue
-        if transfer.currency == base:
-            total += transfer.amount
-        elif base == "EUR" and transfer.currency == "USD" and eur_per_usd:
-            total += transfer.amount * eur_per_usd
-        elif base == "USD" and transfer.currency == "EUR" and eur_per_usd:
-            total += transfer.amount / eur_per_usd
+        key = (transfer.transfer_date.year, transfer.transfer_date.month)
+        month_totals[key][transfer.currency] = (
+            month_totals[key].get(transfer.currency, 0.0) + transfer.amount
+        )
+    total = 0.0
+    for bucket in month_totals.values():
+        deposit_eur, _ = _monthly_deposit_amounts(bucket, eur_per_usd=eur_per_usd)
+        if base == "EUR":
+            total += deposit_eur
+        elif base == "USD":
+            total += bucket.get("USD", 0.0)
+            if bucket.get("EUR", 0.0) > 0 and eur_per_usd:
+                total += bucket["EUR"] / eur_per_usd
+        else:
+            total += deposit_eur
     return round(total, 2)
 
 
 def _reconcile_deposit_parsing(statement: IBKRActivityStatement) -> None:
-    if not statement.cash_transfers or statement.deposits_inflow_total_base is None:
+    if not statement.cash_transfers:
+        return
+    expected = _expected_deposit_inflow_total(statement)
+    if expected is None or expected <= 0:
         return
     base = (statement.meta.base_currency or "USD").strip().upper()
     parsed_total = _sum_deposit_inflows_base(statement)
-    expected = statement.deposits_inflow_total_base
-    if expected <= 0:
-        return
     tolerance = max(0.05, expected * 0.001)
     if abs(parsed_total - expected) > tolerance:
         statement.issues.append(
@@ -436,16 +481,10 @@ def build_monthly_deposits(statement: IBKRActivityStatement) -> list[IBKRMonthly
     last_month = month_keys[-1]
     rows: list[IBKRMonthlyDeposit] = []
     eur_per_usd = _statement_eur_per_usd(statement)
-    usd_per_eur = (1.0 / eur_per_usd) if eur_per_usd and eur_per_usd > 0 else None
 
     for year, month in month_keys:
         bucket = totals.get((year, month), {})
-        deposit_usd = round(bucket.get("USD", 0.0), 2)
-        deposit_eur = round(bucket.get("EUR", 0.0), 2)
-        if deposit_eur == 0.0 and deposit_usd > 0 and eur_per_usd:
-            deposit_eur = round(deposit_usd * eur_per_usd, 2)
-        elif deposit_usd == 0.0 and deposit_eur > 0 and usd_per_eur:
-            deposit_usd = round(deposit_eur * usd_per_eur, 2)
+        deposit_eur, deposit_usd = _monthly_deposit_amounts(bucket, eur_per_usd=eur_per_usd)
         portfolio_eur = nav_eur if (year, month) == last_month and nav_eur > 0 else 0.0
         rows.append(
             IBKRMonthlyDeposit(
@@ -656,6 +695,16 @@ def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:
                     and deposits_subsection == base
                 ):
                     statement.deposits_inflow_total_base = total_amount
+                if (
+                    total_amount
+                    and total_amount > 0
+                    and row_label == "Total Deposits & Withdrawals in EUR"
+                ) or (
+                    total_amount
+                    and total_amount > 0
+                    and row_label == "Total Deposits & Withdrawals in USD"
+                ):
+                    statement.deposits_inflow_total_all_base = total_amount
                 continue
 
             transfer = _parse_deposits_withdrawals_data_row(row, deposits_header_map)

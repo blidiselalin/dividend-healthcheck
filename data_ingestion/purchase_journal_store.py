@@ -219,6 +219,156 @@ class PurchaseJournalStore:
             )
         return records
 
+    def _find_purchase(
+        self,
+        symbol: str,
+        purchase_date: date,
+        price_usd: float,
+        side: str,
+    ) -> PurchaseRecord | None:
+        symbol = symbol.strip().upper()
+        side_value = side.strip().lower() or "buy"
+        with self._connect() as connection:
+            if connection.is_postgres:
+                row = connection.execute(
+                    """
+                    SELECT id, symbol, purchase_date, price_usd, shares, commission_usd,
+                           side, source
+                    FROM purchase_journal
+                    WHERE user_id = ? AND symbol = ? AND purchase_date = ?
+                      AND price_usd = ? AND side = ?
+                    LIMIT 1
+                    """,
+                    (
+                        connection.user_id,
+                        symbol,
+                        purchase_date.isoformat(),
+                        price_usd,
+                        side_value,
+                    ),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    """
+                    SELECT id, symbol, purchase_date, price_usd, shares, commission_usd,
+                           side, source
+                    FROM purchase_journal
+                    WHERE symbol = ? AND purchase_date = ? AND price_usd = ? AND side = ?
+                    LIMIT 1
+                    """,
+                    (symbol, purchase_date.isoformat(), price_usd, side_value),
+                ).fetchone()
+        if row is None:
+            return None
+        return PurchaseRecord(
+            id=int(row["id"]),
+            symbol=row["symbol"],
+            purchase_date=parse_date(row["purchase_date"]),
+            price_usd=float(row["price_usd"]),
+            shares=float(row["shares"]) if row["shares"] is not None else None,
+            commission_usd=float(row["commission_usd"] or 0.0),
+            side=str(row["side"] or "buy"),
+            source=str(row["source"] or "manual"),
+        )
+
+    def update_purchase(
+        self,
+        purchase_id: int,
+        *,
+        shares: float | None,
+        commission_usd: float,
+        source: str,
+    ) -> bool:
+        with self._connect() as connection:
+            if connection.is_postgres:
+                cursor = connection.execute(
+                    """
+                    UPDATE purchase_journal
+                    SET shares = ?, commission_usd = ?, source = ?
+                    WHERE user_id = ? AND id = ?
+                    """,
+                    (
+                        shares,
+                        commission_usd,
+                        source.strip().lower() or "manual",
+                        connection.user_id,
+                        purchase_id,
+                    ),
+                )
+            else:
+                cursor = connection.execute(
+                    """
+                    UPDATE purchase_journal
+                    SET shares = ?, commission_usd = ?, source = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        shares,
+                        commission_usd,
+                        source.strip().lower() or "manual",
+                        purchase_id,
+                    ),
+                )
+            return int(getattr(cursor, "rowcount", 0) or 0) > 0
+
+    def sync_purchase(
+        self,
+        symbol: str,
+        purchase_date: date,
+        price_usd: float,
+        *,
+        shares: float | None = None,
+        commission_usd: float = 0.0,
+        side: str = "buy",
+        source: str = "ibkr",
+    ) -> str:
+        """
+        Insert or refresh a journal lot keyed by (symbol, date, price, side).
+
+        Returns ``added``, ``updated``, or ``unchanged``. Manual rows are never
+        overwritten by broker imports.
+        """
+        symbol = symbol.strip().upper()
+        side_value = side.strip().lower() or "buy"
+        source_value = source.strip().lower() or "manual"
+        existing = self._find_purchase(symbol, purchase_date, price_usd, side_value)
+        if existing is None:
+            self.add_purchase(
+                symbol,
+                purchase_date,
+                price_usd,
+                shares=shares,
+                commission_usd=commission_usd,
+                side=side_value,
+                source=source_value,
+            )
+            return "added"
+
+        if existing.source not in ("ibkr", "ibkr-open") and source_value == "ibkr":
+            return "unchanged"
+
+        shares_match = existing.shares is None and shares is None
+        if not shares_match and existing.shares is not None and shares is not None:
+            shares_match = abs(float(existing.shares) - float(shares)) < 0.0001
+        if (
+            shares_match
+            and abs(existing.commission_usd - commission_usd) < 0.0001
+            and existing.source == source_value
+        ):
+            return "unchanged"
+
+        if source_value != "ibkr" or existing.source not in ("ibkr", "ibkr-open"):
+            return "unchanged"
+
+        if existing.id is not None and self.update_purchase(
+            existing.id,
+            shares=shares,
+            commission_usd=commission_usd,
+            source=source_value,
+        ):
+            return "updated"
+        return "unchanged"
+
     def add_purchase(
         self,
         symbol: str,
@@ -379,6 +529,39 @@ class PurchaseJournalStore:
                 cursor = connection.execute(
                     "DELETE FROM purchase_journal WHERE symbol = ? AND source = ?",
                     (symbol, source),
+                )
+            return int(cursor.rowcount or 0)
+
+    def delete_for_symbol_in_date_range(
+        self,
+        symbol: str,
+        *,
+        source: str,
+        start: date,
+        end: date,
+    ) -> int:
+        """Delete journal rows for one symbol, source, and inclusive date range."""
+        symbol = symbol.strip().upper()
+        start_text = start.isoformat()
+        end_text = end.isoformat()
+        with self._connect() as connection:
+            if connection.is_postgres:
+                cursor = connection.execute(
+                    """
+                    DELETE FROM purchase_journal
+                    WHERE user_id = ? AND symbol = ? AND source = ?
+                      AND purchase_date >= ? AND purchase_date <= ?
+                    """,
+                    (connection.user_id, symbol, source, start_text, end_text),
+                )
+            else:
+                cursor = connection.execute(
+                    """
+                    DELETE FROM purchase_journal
+                    WHERE symbol = ? AND source = ?
+                      AND purchase_date >= ? AND purchase_date <= ?
+                    """,
+                    (symbol, source, start_text, end_text),
                 )
             return int(cursor.rowcount or 0)
 

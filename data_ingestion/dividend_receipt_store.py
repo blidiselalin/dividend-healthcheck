@@ -448,6 +448,39 @@ class DividendReceiptStore:
                 )
             return int(cursor.rowcount or 0)
 
+    def delete_for_symbol_in_date_range(
+        self,
+        symbol: str,
+        *,
+        source: str,
+        start: date,
+        end: date,
+    ) -> int:
+        """Delete receipts for one symbol, source, and pay dates in range."""
+        symbol = symbol.strip().upper()
+        start_text = start.isoformat()
+        end_text = end.isoformat()
+        with self._connect() as connection:
+            if connection.is_postgres:
+                cursor = connection.execute(
+                    """
+                    DELETE FROM dividend_receipts
+                    WHERE user_id = ? AND symbol = ? AND source = ?
+                      AND pay_date >= ? AND pay_date <= ?
+                    """,
+                    (connection.user_id, symbol, source, start_text, end_text),
+                )
+            else:
+                cursor = connection.execute(
+                    """
+                    DELETE FROM dividend_receipts
+                    WHERE symbol = ? AND source = ?
+                      AND pay_date >= ? AND pay_date <= ?
+                    """,
+                    (symbol, source, start_text, end_text),
+                )
+            return int(cursor.rowcount or 0)
+
     def delete_all(self) -> int:
         with self._connect() as connection:
             if connection.is_postgres:

@@ -8,6 +8,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 from enum import Enum
 from pathlib import Path
 
@@ -128,12 +129,6 @@ def apply_import(  # noqa: C901
     open_symbols = {pos.symbol for pos in statement.open_positions}
     scope_symbols = statement_symbol_scope(statement)
 
-    if mode == ImportMode.MERGE:
-        _report(progress, "Replacing prior IBKR rows for file symbols…", 0.22)
-        for symbol in scope_symbols:
-            ctx.journal.delete_for_symbol(symbol, source="ibkr")
-            ctx.receipts.delete_for_symbol(symbol, source="ibkr")
-
     commission_by_symbol = _commission_totals(statement)
     holdings_upserted = 0
     trades_imported = 0
@@ -171,19 +166,34 @@ def apply_import(  # noqa: C901
     for index, trade in enumerate(trades, start=1):
         if mode == ImportMode.MERGE and trade.symbol not in scope_symbols:
             continue
-        ctx.journal.add_purchase(
-            trade.symbol,
-            trade.trade_date,
-            trade.price_usd,
-            shares=trade.quantity,
-            commission_usd=trade.commission_usd,
-            side=trade.side,
-            source="ibkr",
-        )
-        trades_imported += 1
+        if mode == ImportMode.MERGE:
+            outcome = ctx.journal.sync_purchase(
+                trade.symbol,
+                trade.trade_date,
+                trade.price_usd,
+                shares=trade.quantity,
+                commission_usd=trade.commission_usd,
+                side=trade.side,
+                source="ibkr",
+            )
+            if outcome in {"added", "updated"}:
+                trades_imported += 1
+        else:
+            ctx.journal.add_purchase(
+                trade.symbol,
+                trade.trade_date,
+                trade.price_usd,
+                shares=trade.quantity,
+                commission_usd=trade.commission_usd,
+                side=trade.side,
+                source="ibkr",
+            )
+            trades_imported += 1
         if trades:
             fraction = 0.48 + (0.15 * index / len(trades))
             _report(progress, f"Importing trades ({index}/{len(trades)})…", fraction)
+
+    _sync_opening_balance_lots(ctx, statement)
 
     dividends = statement.dividends
     _report(progress, "Importing dividends…", 0.65)
@@ -218,24 +228,28 @@ def apply_import(  # noqa: C901
     monthly_deposits = build_monthly_deposits(statement)
     _report(progress, "Importing monthly deposits…", 0.82)
     if monthly_deposits:
-        period = statement_deposit_period(statement)
-        if period:
-            ctx.deposits.delete_deposits_in_range(
-                period[0].year,
-                period[0].month,
-                period[1].year,
-                period[1].month,
-            )
         for index, month_deposit in enumerate(monthly_deposits, start=1):
-            ctx.deposits.upsert_deposit(
-                year=month_deposit.year,
-                month=month_deposit.month,
-                label=month_deposit.label,
-                deposit_eur=month_deposit.deposit_eur,
-                deposit_usd=month_deposit.deposit_usd,
-                portfolio_eur=month_deposit.portfolio_eur,
-            )
-            deposits_imported += 1
+            if mode == ImportMode.MERGE:
+                outcome = ctx.deposits.sync_deposit(
+                    year=month_deposit.year,
+                    month=month_deposit.month,
+                    label=month_deposit.label,
+                    deposit_eur=month_deposit.deposit_eur,
+                    deposit_usd=month_deposit.deposit_usd,
+                    portfolio_eur=month_deposit.portfolio_eur,
+                )
+                if outcome in {"added", "updated"}:
+                    deposits_imported += 1
+            else:
+                ctx.deposits.upsert_deposit(
+                    year=month_deposit.year,
+                    month=month_deposit.month,
+                    label=month_deposit.label,
+                    deposit_eur=month_deposit.deposit_eur,
+                    deposit_usd=month_deposit.deposit_usd,
+                    portfolio_eur=month_deposit.portfolio_eur,
+                )
+                deposits_imported += 1
             fraction = 0.82 + (0.08 * index / len(monthly_deposits))
             _report(
                 progress,
@@ -275,6 +289,57 @@ def apply_import(  # noqa: C901
     )
 
 
+def _journal_net_shares(journal: object, symbol: str) -> float:
+    purchases = [
+        row
+        for row in journal.list_purchases(portfolio_only=False)
+        if row.symbol == symbol and row.source != "ibkr-open"
+    ]
+    buy = sum(float(row.shares or 0.0) for row in purchases if row.side != "sell")
+    sell = sum(float(row.shares or 0.0) for row in purchases if row.side == "sell")
+    return round(buy - sell, 4)
+
+
+def _sync_opening_balance_lots(ctx: object, statement: IBKRActivityStatement) -> None:
+    """
+    Add pre-period share balance when IBKR open positions exceed net imported trades.
+
+    Activity statements list in-period trades only; the open-position snapshot can
+    include shares bought before the statement window. Stale ``ibkr-open`` rows for
+    symbols touched by this statement are cleared first so merge re-imports do not
+    keep opening lots from an earlier file.
+    """
+    journal = getattr(ctx, "journal", None)
+    if journal is None:
+        return
+
+    scope_symbols = statement_symbol_scope(statement)
+    for symbol in scope_symbols:
+        journal.delete_for_symbol(symbol, source="ibkr-open")
+
+    if not statement.open_positions:
+        return
+
+    period = statement_deposit_period(statement)
+    lot_date = period[0] if period else date.today()
+
+    for position in statement.open_positions:
+        symbol = position.symbol
+        net = _journal_net_shares(journal, symbol)
+        diff = round(position.shares - net, 4)
+        if diff <= 0.01:
+            continue
+        journal.add_purchase(
+            symbol,
+            lot_date,
+            position.cost_price,
+            shares=diff,
+            commission_usd=0.0,
+            side="buy",
+            source="ibkr-open",
+        )
+
+
 def _holdings_journal_consistency_issues(ctx: object, open_symbols: set[str]) -> list[ImportIssue]:
     """Warn when IBKR open positions disagree with net shares from imported trades."""
     from services.ibkr_activity_parser import ImportIssue, ImportIssueLevel
@@ -286,14 +351,7 @@ def _holdings_journal_consistency_issues(ctx: object, open_symbols: set[str]) ->
 
     net_by_symbol: dict[str, float] = {}
     for symbol in open_symbols:
-        purchases = [
-            row
-            for row in journal_service.journal.list_purchases(portfolio_only=False)
-            if row.symbol == symbol
-        ]
-        buy = sum(float(row.shares or 0.0) for row in purchases if row.side != "sell")
-        sell = sum(float(row.shares or 0.0) for row in purchases if row.side == "sell")
-        net_by_symbol[symbol] = round(buy - sell, 4)
+        net_by_symbol[symbol] = _journal_net_shares(journal_service.journal, symbol)
 
     issues: list[ImportIssue] = []
     for symbol in sorted(open_symbols):

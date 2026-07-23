@@ -93,20 +93,24 @@ class PortfolioPurchaseJournalService:
 
     def chronological_dataframe(self, records: list[PurchaseRecord] | None = None) -> pd.DataFrame:
         items = records if records is not None else self.list_purchases()
-        return pd.DataFrame(
-            [
+        rows = []
+        for item in items:
+            shares = item.shares
+            if shares is not None and item.side == "sell":
+                shares = -abs(shares)
+            rows.append(
                 {
                     "Date": item.label,
                     "Ticker": item.symbol,
                     "Side": item.side.title(),
-                    "Shares": item.shares,
+                    "Source": item.source,
+                    "Shares": shares,
                     "Price $": item.price_usd,
                     "Commission $": item.commission_usd,
                     "Cost $": item.lot_cost_usd,
                 }
-                for item in items
-            ]
-        )
+            )
+        return pd.DataFrame(rows)
 
     def by_symbol_dataframe(
         self,
@@ -152,6 +156,10 @@ class PortfolioPurchaseJournalService:
         return pd.DataFrame(
             [{"Year": year, "Purchases": count} for year, count in sorted(counts.items())]
         )
+
+    def uses_share_aware_lots(self, records: list[PurchaseRecord] | None = None) -> bool:
+        items = records if records is not None else self.list_purchases()
+        return any(item.shares is not None and item.shares > 0 for item in items)
 
     def symbols_without_journal(self) -> list[str]:
         purchases = {item.symbol for item in self.list_purchases(portfolio_only=True)}
@@ -294,8 +302,13 @@ class PortfolioPurchaseJournalService:
             ]
         )
 
-    def lot_estimates_dataframe(self, records: list[PurchaseRecord] | None = None) -> pd.DataFrame:
-        estimates = self.build_estimated_lots(records)
+    def lot_estimates_dataframe(
+        self,
+        records: list[PurchaseRecord] | None = None,
+        *,
+        include_closed: bool = True,
+    ) -> pd.DataFrame:
+        estimates = self.build_estimated_lots(records, include_closed=include_closed)
         return pd.DataFrame(
             [
                 {
