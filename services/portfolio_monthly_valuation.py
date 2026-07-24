@@ -98,18 +98,44 @@ def valuation_as_of(deposit_period: date, *, reference: date | None = None) -> d
     return end
 
 
+def _is_current_month(period: date, *, reference: date | None = None) -> bool:
+    today = reference or date.today()
+    return period.year == today.year and period.month == today.month
+
+
 def fx_rates_carry_forward(
     deposits: list[MonthlyDeposit],
     *,
     default_fx: float = 0.92,
 ) -> dict[str, float]:
-    """Map each deposit month to EUR/USD using the latest known rate at or before that month."""
+    """Map each deposit month to EUR/USD using deposit-implied rates (legacy helper)."""
     running = default_fx
     rates: dict[str, float] = {}
     for deposit in deposits:
         if deposit.deposit_eur > 0 and deposit.deposit_usd > 0:
             running = deposit.deposit_eur / deposit.deposit_usd
         rates[deposit.period_key] = running
+    return rates
+
+
+def fx_eur_per_usd_by_month(
+    deposits: list[MonthlyDeposit],
+    *,
+    reference: date | None = None,
+) -> dict[str, float]:
+    """EUR-per-USD for each month using the FX rate on that month's valuation date."""
+    from services.fx_rate_service import load_eur_usd_market_series, resolve_eur_per_usd
+
+    today = reference or date.today()
+    market_series = load_eur_usd_market_series()
+    rates: dict[str, float] = {}
+    for deposit in deposits:
+        as_of = valuation_as_of(deposit.period, reference=today)
+        rates[deposit.period_key] = resolve_eur_per_usd(
+            as_of,
+            deposits,
+            market_series=market_series,
+        )
     return rates
 
 
@@ -180,27 +206,49 @@ def _mark_price_for_date(
     as_of: date,
     *,
     snapshot_price: float | None = None,
+    live_price: float | None = None,
     reference: date | None = None,
 ) -> float | None:
     """
     Latest available price for portfolio marks on ``as_of``.
 
-    Past months use the last library close on or before month-end. The current
-    month uses the freshest library bar through today, falling back to the
-    document snapshot (hourly-refreshed library price) when history lags.
+    Past months use the last historical close on or before month-end. The current
+    month uses the best of library history, document snapshot, and live quote.
     """
     today = reference or date.today()
     history_close = _close_for_month_end(series, as_of)
-    if as_of.year != today.year or as_of.month != today.month:
-        return history_close
-    if snapshot_price is None or snapshot_price <= 0:
-        return history_close
-    last_bar = _last_bar_date_on_or_before(series, as_of)
-    if last_bar is None or last_bar < today:
-        return snapshot_price
-    if history_close is None:
-        return snapshot_price
-    return history_close
+
+    if not _is_current_month(as_of.replace(day=1), reference=today):
+        if history_close is not None:
+            return history_close
+        if snapshot_price is not None and snapshot_price > 0:
+            return snapshot_price
+        return None
+
+    candidates = [
+        price
+        for price in (history_close, snapshot_price, live_price)
+        if price is not None and price > 0
+    ]
+    return max(candidates) if candidates else None
+
+
+def _load_live_prices(symbols: list[str]) -> dict[str, float]:
+    """Fetch latest trade prices for current-month marks."""
+    if not symbols:
+        return {}
+    try:
+        from services.live_price import fetch_latest_market_price
+    except ImportError:
+        return {}
+
+    out: dict[str, float] = {}
+    for symbol in symbols:
+        sym = symbol.strip().upper()
+        price = fetch_latest_market_price(sym)
+        if price is not None and price > 0:
+            out[sym] = float(price)
+    return out
 
 
 def _price_series(document: Any) -> list[tuple[date, float]]:
@@ -301,7 +349,12 @@ def compute_monthly_portfolio_valuations(
             portfolio_store=PortfolioStore(db_path=db_path, seed=False),
         )
     records = journal_service.journal.list_purchases(portfolio_only=False)
-    if not records:
+    open_holdings = {
+        holding.symbol.strip().upper(): holding
+        for holding in journal_service.portfolio.list_open_holdings()
+        if holding.shares > 0
+    }
+    if not records and not open_holdings:
         return {}
 
     records_by_symbol: dict[str, list[PurchaseRecord]] = {}
@@ -310,21 +363,28 @@ def compute_monthly_portfolio_valuations(
         records_by_symbol.setdefault(sym, []).append(record)
 
     symbols = sorted(records_by_symbol)
-    price_series, snapshot_prices = _load_price_series(symbols)
-    fx_by_month = fx_rates_carry_forward(deposits)
-    values: dict[str, MonthPortfolioValuation] = {}
+    all_symbols = sorted(set(symbols) | set(open_holdings))
+    price_series, snapshot_prices = _load_price_series(all_symbols)
     today = date.today()
+    fx_by_month = fx_eur_per_usd_by_month(deposits, reference=today)
+    values: dict[str, MonthPortfolioValuation] = {}
+    live_prices = _load_live_prices(all_symbols) if open_holdings else {}
 
     for deposit in deposits:
         as_of = valuation_as_of(deposit.period, reference=today)
+        current_month = _is_current_month(deposit.period, reference=today)
         total_usd = 0.0
         symbols_held = 0
         symbols_priced = 0
         missing_symbols: list[str] = []
 
-        for symbol in symbols:
-            symbol_records = records_by_symbol.get(symbol, [])
-            shares = shares_from_records(symbol_records, as_of)
+        symbol_iter = sorted(open_holdings) if current_month and open_holdings else all_symbols
+
+        for symbol in symbol_iter:
+            if current_month and open_holdings:
+                shares = open_holdings[symbol].shares
+            else:
+                shares = shares_from_records(records_by_symbol.get(symbol, []), as_of)
             if shares <= 0:
                 continue
             symbols_held += 1
@@ -332,6 +392,7 @@ def compute_monthly_portfolio_valuations(
                 price_series.get(symbol, []),
                 as_of,
                 snapshot_price=snapshot_prices.get(symbol),
+                live_price=live_prices.get(symbol) if current_month else None,
                 reference=today,
             )
             if close is None:
@@ -345,7 +406,7 @@ def compute_monthly_portfolio_valuations(
 
         if missing_symbols:
             logger.debug(
-                "Month %s missing in-month closes for: %s",
+                "Month %s missing closes for: %s",
                 deposit.period_key,
                 ", ".join(missing_symbols[:8]) + ("…" if len(missing_symbols) > 8 else ""),
             )
@@ -359,6 +420,23 @@ def compute_monthly_portfolio_valuations(
         )
 
     return values
+
+
+def portfolio_eur_to_store(
+    *,
+    stored: float | None,
+    valuation: MonthPortfolioValuation | None,
+) -> float | None:
+    """
+    Decide the portfolio € to persist on ``monthly_deposits``.
+
+    Only persists when every held symbol is priced (coverage 100%).
+    """
+    if valuation is not None and valuation.portfolio_eur > 0 and valuation.coverage >= 1.0:
+        return valuation.portfolio_eur
+    if stored is not None and stored > 0:
+        return stored
+    return None
 
 
 def compute_monthly_portfolio_eur(

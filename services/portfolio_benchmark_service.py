@@ -79,10 +79,14 @@ def _month_end(day: date) -> date:
     return date(day.year, day.month, last)
 
 
-def _eur_usd_rate(deposit: MonthlyDeposit) -> float:
-    if deposit.deposit_usd and deposit.deposit_usd > 0 and deposit.deposit_eur > 0:
-        return deposit.deposit_eur / deposit.deposit_usd
-    return 0.92
+def _eur_usd_rate(
+    deposit: MonthlyDeposit, *, deposits: list[MonthlyDeposit] | None = None
+) -> float:
+    from services.fx_rate_service import resolve_eur_per_usd
+    from services.portfolio_monthly_valuation import valuation_as_of
+
+    as_of = valuation_as_of(deposit.period)
+    return resolve_eur_per_usd(as_of, deposits or [deposit])
 
 
 class PortfolioBenchmarkService:
@@ -261,7 +265,7 @@ class PortfolioBenchmarkService:
             for key, shares in purchases.items():
                 cumulative[key] = cumulative.get(key, 0.0) + shares
 
-            fx = _eur_usd_rate(deposit)
+            fx = _eur_usd_rate(deposit, deposits=records)
             month_prices = prices.get(deposit.period_key, {})
             row = {
                 "Year": deposit.period.year,

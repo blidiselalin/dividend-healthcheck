@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from datetime import date
+from unittest.mock import patch
 
 import pytest
 
@@ -170,16 +171,25 @@ def test_estimate_portfolio_eur_from_usd_uses_deposit_fx() -> None:
         portfolio_eur=0.0,
         sort_order=1,
     )
-    estimated = PortfolioManagementService.estimate_portfolio_eur_from_usd(
-        100_000.0,
-        deposit,
-    )
+    with patch(
+        "services.fx_rate_service.load_eur_usd_market_series",
+        return_value=[],
+    ):
+        estimated = PortfolioManagementService.estimate_portfolio_eur_from_usd(
+            100_000.0,
+            deposit,
+            as_of=date(2026, 5, 31),
+        )
     expected = round(100_000.0 * (4111.6 / 4821.01), 2)
     assert estimated == expected
 
 
 def test_estimate_portfolio_eur_from_usd_default_fx() -> None:
-    estimated = PortfolioManagementService.estimate_portfolio_eur_from_usd(1000.0)
+    with patch(
+        "services.fx_rate_service.load_eur_usd_market_series",
+        return_value=[],
+    ):
+        estimated = PortfolioManagementService.estimate_portfolio_eur_from_usd(1000.0)
     assert estimated == 920.0
 
 

@@ -16,12 +16,15 @@ from data_ingestion.purchase_journal_store import PurchaseJournalStore
 from services.portfolio_dashboard_service import PortfolioDashboardService
 from services.portfolio_deposits_service import PortfolioDepositsService
 from services.portfolio_monthly_valuation import (
+    MonthPortfolioValuation,
     _close_for_month_end,
     _mark_price_for_date,
     compute_monthly_portfolio_eur,
+    compute_monthly_portfolio_valuations,
     continuous_monthly_deposits,
     fx_rates_carry_forward,
     pick_portfolio_eur_for_month,
+    portfolio_eur_to_store,
     shares_from_records,
     valuation_as_of,
 )
@@ -153,10 +156,22 @@ def test_evolution_includes_zero_deposit_months_with_portfolio(tmp_path: Path) -
         ],
     )
 
+    fx_market = [
+        (date(2025, 1, 31), 1000 / 1100),
+        (date(2025, 2, 28), 500 / 550),
+        (date(2025, 3, 31), 500 / 550),
+    ]
+
     dashboard = PortfolioDashboardService(deposits_service=PortfolioDepositsService(store=deposits))
-    with patch(
-        "services.shared_market_db.load_documents",
-        return_value={"KO": ko_prices},
+    with (
+        patch(
+            "services.shared_market_db.load_documents",
+            return_value={"KO": ko_prices},
+        ),
+        patch(
+            "services.fx_rate_service.load_eur_usd_market_series",
+            return_value=fx_market,
+        ),
     ):
         df = dashboard.evolution_dataframe(db_path=db, include_current_month=False)
 
@@ -210,9 +225,21 @@ def test_compute_monthly_portfolio_eur_from_journal_and_prices(tmp_path: Path) -
         ],
     )
 
-    with patch(
-        "services.shared_market_db.load_documents",
-        return_value={"KO": ko_prices},
+    fx_market = [
+        (date(2025, 1, 31), 1000 / 1100),
+        (date(2025, 2, 28), 500 / 550),
+        (date(2025, 3, 31), 500 / 550),
+    ]
+
+    with (
+        patch(
+            "services.shared_market_db.load_documents",
+            return_value={"KO": ko_prices},
+        ),
+        patch(
+            "services.fx_rate_service.load_eur_usd_market_series",
+            return_value=fx_market,
+        ),
     ):
         values = compute_monthly_portfolio_eur(deposits.list_deposits(), db_path=db)
 
@@ -245,9 +272,79 @@ def test_shares_from_records_accounts_for_sells(
     assert shares_from_records(records, date(2025, 7, 31)) == pytest.approx(6.0)
 
 
-def test_pick_portfolio_prefers_stored_when_price_coverage_incomplete() -> None:
-    from services.portfolio_monthly_valuation import MonthPortfolioValuation
+def test_mark_price_for_current_month_uses_max_of_history_snapshot_live() -> None:
+    series = [(date(2026, 7, 22), 50.0)]
+    today = date(2026, 7, 23)
+    assert _mark_price_for_date(
+        series,
+        today,
+        snapshot_price=55.0,
+        live_price=58.0,
+        reference=today,
+    ) == pytest.approx(58.0)
 
+
+def test_portfolio_eur_to_store_requires_full_coverage() -> None:
+    partial = MonthPortfolioValuation(
+        portfolio_usd=1000.0,
+        portfolio_eur=900.0,
+        symbols_held=3,
+        symbols_priced=2,
+    )
+    assert portfolio_eur_to_store(stored=1200.0, valuation=partial) == 1200.0
+    assert portfolio_eur_to_store(stored=None, valuation=partial) is None
+    full = MonthPortfolioValuation(
+        portfolio_usd=1000.0,
+        portfolio_eur=900.0,
+        symbols_held=2,
+        symbols_priced=2,
+    )
+    assert portfolio_eur_to_store(stored=1200.0, valuation=full) == 900.0
+
+
+def test_current_month_uses_open_holding_shares(tmp_path: Path) -> None:
+    db = tmp_path / "portfolio.db"
+    portfolio = PortfolioStore(db_path=db, seed=False)
+    journal = PurchaseJournalStore(db_path=db, seed=False)
+    deposits = DepositsStore(db_path=db, seed=False)
+
+    journal.add_purchase("KO", date(2026, 1, 10), 50.0, shares=10.0, side="buy")
+    portfolio.upsert_holding("KO", shares=15, avg_cost_per_share=50.0)
+    portfolio.upsert_holding("PEP", shares=5, avg_cost_per_share=80.0)
+    deposits.upsert_deposit(
+        year=2026,
+        month=7,
+        label="July 2026",
+        deposit_eur=0.0,
+        deposit_usd=0.0,
+        portfolio_eur=0.0,
+    )
+
+    docs = {
+        "KO": _price_doc("KO", [(date(2026, 7, 22), 60.0)]),
+        "PEP": _price_doc("PEP", [(date(2026, 7, 22), 100.0)]),
+    }
+    timeline = continuous_monthly_deposits(
+        deposits.list_deposits(),
+        include_current_month=True,
+        reference=date(2026, 7, 23),
+    )
+    with (
+        patch("services.shared_market_db.load_documents", return_value=docs),
+        patch(
+            "services.portfolio_monthly_valuation._load_live_prices",
+            return_value={"KO": 62.0, "PEP": 101.0},
+        ),
+    ):
+        values = compute_monthly_portfolio_valuations(timeline, db_path=db)
+
+    july = values["2026-07"]
+    assert july.symbols_held == 2
+    assert july.symbols_priced == 2
+    assert july.portfolio_usd == pytest.approx(15 * 62.0 + 5 * 101.0)
+
+
+def test_pick_portfolio_prefers_stored_when_price_coverage_incomplete() -> None:
     partial = MonthPortfolioValuation(
         portfolio_usd=1000.0,
         portfolio_eur=900.0,

@@ -12,7 +12,7 @@ from services.ibkr_activity_parser import ImportIssue, ImportIssueLevel
 from services.portfolio_monthly_valuation import (
     compute_monthly_portfolio_valuations,
     continuous_monthly_deposits,
-    pick_portfolio_eur_for_month,
+    portfolio_eur_to_store,
 )
 
 if TYPE_CHECKING:
@@ -73,7 +73,7 @@ def backfill_monthly_portfolio_eur(
     for deposit in timeline:
         valuation = valuations.get(deposit.period_key)
         stored = deposit.portfolio_eur if deposit.portfolio_eur > 0 else None
-        target = pick_portfolio_eur_for_month(stored=stored, valuation=valuation)
+        target = portfolio_eur_to_store(stored=stored, valuation=valuation)
         if target is None:
             continue
         if abs(deposit.portfolio_eur - target) < 0.01:

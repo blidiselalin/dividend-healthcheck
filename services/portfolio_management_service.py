@@ -404,15 +404,19 @@ class PortfolioManagementService:
         value_usd: float,
         deposit: MonthlyDeposit | None = None,
         *,
+        as_of: date | None = None,
         default_fx: float = 0.92,
     ) -> float:
-        """Convert a USD portfolio total to EUR using the month's deposit FX when available."""
+        """Convert USD portfolio total to EUR using the FX rate on ``as_of`` (today by default)."""
+        from datetime import date as date_cls
+
+        from services.fx_rate_service import resolve_eur_per_usd
+
         if value_usd <= 0:
             return 0.0
-        if deposit is not None and deposit.deposit_eur > 0 and deposit.deposit_usd > 0:
-            fx = deposit.deposit_eur / deposit.deposit_usd
-        else:
-            fx = default_fx
+        check_date = as_of or date_cls.today()
+        deposits = [deposit] if deposit is not None else None
+        fx = resolve_eur_per_usd(check_date, deposits, default=default_fx)
         return round(value_usd * fx, 2)
 
     def list_holdings(self) -> list[PortfolioHolding]:
