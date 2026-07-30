@@ -67,7 +67,7 @@ class PortfolioDividendStatus:
                 "No dividend payment history in exposed sources "
                 f"({self._checked_label()}); using annual dividend estimate from stock metadata."
             )
-        return "No dividend history found in exposed sources " f"({self._checked_label()})."
+        return f"No dividend history found in exposed sources ({self._checked_label()})."
 
     @property
     def sources_summary(self) -> str | None:
@@ -113,10 +113,21 @@ def _records_from_yfinance(symbol: str) -> list[DividendRecord]:
 def _merge_dividend_records(
     primary: list[DividendRecord],
     supplemental: list[DividendRecord],
+    *,
+    prefer_supplemental_amount: bool = False,
 ) -> list[DividendRecord]:
     by_ex: dict[date, DividendRecord] = {record.ex_date: record for record in primary}
     for record in supplemental:
-        by_ex.setdefault(record.ex_date, record)
+        existing = by_ex.get(record.ex_date)
+        if existing is None:
+            by_ex[record.ex_date] = record
+            continue
+        if prefer_supplemental_amount and record.amount > 0:
+            by_ex[record.ex_date] = DividendRecord(
+                ex_date=record.ex_date,
+                payment_date=existing.payment_date or record.payment_date,
+                amount=record.amount,
+            )
     return sorted(by_ex.values(), key=lambda item: item.ex_date)
 
 
@@ -162,12 +173,16 @@ def resolve_dividend_document(
         sources_found.append("Postgres history")
 
     yf_records: list[DividendRecord] = []
-    if fetch_remote and len(library_records) < 4:
+    if fetch_remote:
         yf_records = _records_from_yfinance(sym)
         if yf_records and "Yahoo Finance" not in sources_found:
             sources_found.append("Yahoo Finance")
 
-    merged = _merge_dividend_records(library_records, yf_records)
+    merged = _merge_dividend_records(
+        library_records,
+        yf_records,
+        prefer_supplemental_amount=bool(yf_records),
+    )
     uses_metadata = False
     if not merged:
         annual = resolve_annual_dividend_per_share([], doc, stock)

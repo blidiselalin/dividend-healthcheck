@@ -52,15 +52,21 @@ def month_label_for(day: date) -> str:
 def _resolve_vector_docs(
     holdings: list[PortfolioHolding],
     preload: PortfolioAnalysisPreload | None,
+    *,
+    fetch_remote: bool = False,
 ) -> dict[str, StockDocument]:
     if preload and preload.vector_docs:
         return preload.vector_docs
     if not holdings:
         return {}
-    from services.shared_market_db import load_documents
+    from services.portfolio_dividend_resolve import load_resolved_portfolio_documents
 
     symbols = [holding.symbol for holding in holdings]
-    return load_documents(symbols)
+    resolved, _statuses = load_resolved_portfolio_documents(
+        symbols,
+        fetch_remote=fetch_remote,
+    )
+    return {symbol: document for symbol, document in resolved.items() if document is not None}
 
 
 def compute_month_received_from_holdings(
@@ -240,8 +246,8 @@ def current_month_paid_dividends(
     """
     Paid dividend cash for the current month through `reference_date` (default today).
 
-    Prefers a live recompute from holdings + dividend history (Yahoo-aligned).
-    Falls back to the dividend calendar or synced receipts when documents are unavailable.
+    Prefers a live recompute from resolved holdings + dividend history (Yahoo-aligned).
+    Falls back to synced receipts or the dividend calendar when documents are unavailable.
     Always returns a snapshot when the portfolio has rows (including $0.00).
     """
     today = reference_date or date.today()
@@ -259,28 +265,25 @@ def current_month_paid_dividends(
     )
 
     vector_docs = _resolve_vector_docs(holdings, preload) if holdings else {}
-    computed_gross = 0.0
-    computed_count = 0
+
     if holdings and vector_docs:
         computed_gross, computed_count = compute_month_received_from_holdings(
             holdings,
             vector_docs,
             reference_date=today,
         )
-
-    if db_count > 0:
+        gross, payer_count = computed_gross, computed_count
+        net = net_received_through(gross, year=today.year) if gross > 0 else None
+    elif db_count > 0:
         gross, payer_count, net = _resolve_month_gross_and_net(
             year=today.year,
             month=today.month,
             through=today,
             db_gross=db_gross,
             db_count=db_count,
-            computed_gross=computed_gross,
-            computed_count=computed_count,
+            computed_gross=0.0,
+            computed_count=0,
         )
-    elif computed_count > 0:
-        gross, payer_count = computed_gross, computed_count
-        net = net_received_through(gross, year=today.year)
     elif rows and preload and holdings:
         row_dates = {row.ticker: (row.ex_dividend_date, row.dividend_pay_date) for row in rows}
         calendar = build_portfolio_dividend_calendar(
@@ -301,8 +304,8 @@ def current_month_paid_dividends(
             through=today,
             db_gross=db_gross,
             db_count=db_count,
-            computed_gross=computed_gross,
-            computed_count=computed_count,
+            computed_gross=0.0,
+            computed_count=0,
         )
 
     return CurrentMonthPaidDividends(

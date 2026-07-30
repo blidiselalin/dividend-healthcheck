@@ -72,6 +72,40 @@ def test_resolve_merges_yahoo_when_library_is_thin() -> None:
     assert "Yahoo Finance" in status.sources_found
 
 
+def test_resolve_merges_yahoo_when_library_already_has_history() -> None:
+    document = StockDocument(
+        symbol="KO",
+        name="Coca-Cola",
+        dividend_history=[
+            DividendRecord(ex_date=date(2025, 11, 15), payment_date=date(2025, 12, 1), amount=0.48),
+            DividendRecord(ex_date=date(2025, 8, 15), payment_date=date(2025, 9, 1), amount=0.47),
+            DividendRecord(ex_date=date(2025, 5, 15), payment_date=date(2025, 6, 1), amount=0.46),
+            DividendRecord(ex_date=date(2025, 2, 14), payment_date=date(2025, 3, 1), amount=0.45),
+        ],
+    )
+    yahoo_records = [
+        DividendRecord(ex_date=date(2026, 2, 14), payment_date=None, amount=0.49),
+    ]
+
+    with (
+        patch(
+            "services.portfolio_dividend_resolve._records_from_yfinance",
+            return_value=yahoo_records,
+        ) as yahoo_fetch,
+        patch(
+            "services.portfolio_dividend_resolve.enrich_document_payment_dates",
+            side_effect=lambda _sym, doc, fetch_nasdaq=False: doc,
+        ),
+    ):
+        resolved, status = resolve_dividend_document("KO", document, fetch_remote=True)
+
+    yahoo_fetch.assert_called_once()
+    assert resolved is not None
+    assert len(resolved.dividend_history or []) == 5
+    assert resolved.dividend_history[-1].ex_date == date(2026, 2, 14)
+    assert "Yahoo Finance" in status.sources_found
+
+
 def test_resolve_skips_yahoo_when_remote_fetch_disabled() -> None:
     document = StockDocument(
         symbol="XYZ",

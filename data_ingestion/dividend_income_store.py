@@ -107,9 +107,13 @@ class MonthlyNetDividend:
         return self.period.strftime("%Y-%m")
 
 
+DIVIDEND_WITHHOLDING_RATE = 0.10
+
+
 def dividend_tax_rate(year: int) -> float:
-    """Withholding tax rate (fraction). 10% through 2025, 16% from 2026."""
-    return 0.10 if year <= 2025 else 0.16
+    """Provider withholding tax (fraction). Currently 10% on US dividend cash."""
+    del year
+    return DIVIDEND_WITHHOLDING_RATE
 
 
 def net_to_gross(net_usd: float, year: int) -> float:

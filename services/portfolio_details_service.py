@@ -118,7 +118,10 @@ class PortfolioDetailsService:
             )
         elif not symbols:
             logger.info("Portfolio empty (no holdings in database)")
-        documents, dividend_statuses = self._load_documents(symbols)
+        documents, dividend_statuses = self._load_documents(
+            symbols,
+            fetch_remote=use_live_prices,
+        )
         stats_cache: dict[str, StockData | None] = {}
         live_prices: dict[str, float | None] = {}
         previous_closes: dict[str, float | None] = {}
@@ -304,11 +307,17 @@ class PortfolioDetailsService:
         return rows, preload
 
     def _load_documents(
-        self, symbols: list[str]
+        self,
+        symbols: list[str],
+        *,
+        fetch_remote: bool = False,
     ) -> tuple[dict[str, StockDocument | None], dict[str, Any]]:
         from services.portfolio_dividend_resolve import load_resolved_portfolio_documents
 
-        docs, statuses = load_resolved_portfolio_documents(symbols, fetch_remote=False)
+        docs, statuses = load_resolved_portfolio_documents(
+            symbols,
+            fetch_remote=fetch_remote,
+        )
         return docs, statuses
 
     @staticmethod

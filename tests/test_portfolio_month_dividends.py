@@ -106,7 +106,7 @@ def test_portfolio_section_labels_renamed() -> None:
 
 def test_net_received_through_applies_withholding() -> None:
     assert net_received_through(100.0, year=2025) == 90.0
-    assert net_received_through(100.0, year=2026) == 84.0
+    assert net_received_through(100.0, year=2026) == 90.0
     assert net_received_through(0.0, year=2026) is None
 
 
@@ -169,7 +169,7 @@ def test_compute_month_received_uses_journal_shares_and_pay_date(
     assert gross == pytest.approx(31.95, rel=0.01)
 
 
-def test_current_month_paid_prefers_synced_receipts_over_live_compute(
+def test_current_month_paid_prefers_live_compute_over_stale_receipts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from data_ingestion.models import DividendRecord, StockDocument
@@ -209,15 +209,7 @@ def test_current_month_paid_prefers_synced_receipts_over_live_compute(
     )
     monkeypatch.setattr(
         "services.portfolio_month_dividends.compute_month_received_from_holdings",
-        lambda *args, **kwargs: (316.0, 8),
-    )
-    monkeypatch.setattr(
-        "services.portfolio_month_dividends.net_paid_in_calendar_month",
-        lambda *args, **kwargs: 410.94,
-    )
-    monkeypatch.setattr(
-        "services.portfolio_month_dividends.gross_paid_in_synced_month",
-        lambda *args, **kwargs: 489.22,
+        lambda *args, **kwargs: (4.85, 1),
     )
 
     snapshot = current_month_paid_dividends(
@@ -230,9 +222,9 @@ def test_current_month_paid_prefers_synced_receipts_over_live_compute(
     )
 
     assert snapshot is not None
-    assert snapshot.gross_usd == 489.22
-    assert snapshot.payer_count == 12
-    assert snapshot.net_usd == pytest.approx(410.94, rel=0.01)
+    assert snapshot.gross_usd == 4.85
+    assert snapshot.payer_count == 1
+    assert snapshot.net_usd == pytest.approx(4.37, rel=0.01)
 
 
 def test_sync_stores_gross_and_net_monthly_totals(tmp_path: Path) -> None:

@@ -1232,14 +1232,16 @@ class PortfolioDetailsView:
                     f"{month_paid.payer_count} payment{'s' if month_paid.payer_count != 1 else ''}"
                     if month_paid.payer_count
                     else "None yet",
+                    help="Gross received minus 10% provider withholding on US dividends.",
                 )
             with paid_row1_c:
                 if month_paid.net_usd is not None and month_paid.gross_usd > 0:
                     tax = round(month_paid.gross_usd - month_paid.net_usd, 2)
                     st.metric(
-                        "Tax (est.)",
+                        "Withholding (est.)",
                         f"${tax:,.2f}",
-                        help=f"Withholding estimate for {month_paid.through_label}",
+                        "10%",
+                        help=f"Estimated tax retained at broker for {month_paid.through_label}",
                     )
                 else:
                     st.metric(
@@ -1957,15 +1959,15 @@ class PortfolioDetailsView:
         detail = service.detail_dataframe(records)
 
         st.caption(
-            "Cash received **after tax**, auto-calculated from your holdings' dividend history. "
-            "**10%** withholding through end of 2025, **16%** from 2026."
+            "Gross cash from dividend payments, with **net after 10% provider withholding** "
+            "(US dividend tax retained at broker)."
         )
 
         c1, c2, c3, c4, c5, c6 = st.columns(6)
         with c1:
-            st.metric("Total net", f"${summary.total_net_usd:,.2f}")
+            st.metric("Total gross", f"${summary.total_gross_usd:,.2f}")
         with c2:
-            st.metric("Total gross (est.)", f"${summary.total_gross_usd:,.2f}")
+            st.metric("Total net (est.)", f"${summary.total_net_usd:,.2f}")
         with c3:
             st.metric("Total tax (est.)", f"${summary.total_tax_usd:,.2f}")
         with c4:

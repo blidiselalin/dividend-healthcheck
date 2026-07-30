@@ -34,6 +34,18 @@ def _doc_with_dividends() -> StockDocument:
     )
 
 
+def test_forced_sync_enables_remote_fetch() -> None:
+    with patch(
+        "services.portfolio_dividend_sync_service.sync_received_dividends",
+        return_value=None,
+    ) as sync:
+        from services.portfolio_dividend_sync_service import maybe_sync_received_dividends
+
+        maybe_sync_received_dividends(force=True)
+
+    assert sync.call_args.kwargs.get("fetch_remote") is True
+
+
 def test_sync_uses_library_only_by_default(tmp_path: Path) -> None:
     db = tmp_path / "portfolio.db"
     portfolio = PortfolioStore(db_path=db, seed=False)

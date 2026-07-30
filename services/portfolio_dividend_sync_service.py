@@ -42,7 +42,8 @@ def maybe_sync_received_dividends(
     force: bool = False,
     db_path: Path | None = None,
     symbols: list[str] | None = None,
-    fetch_nasdaq: bool = False,
+    fetch_nasdaq: bool | None = None,
+    fetch_remote: bool | None = None,
 ) -> DividendSyncStats | None:
     """
     Sync paid dividends when stale or forced (skips work on every app rerun).
@@ -58,10 +59,12 @@ def maybe_sync_received_dividends(
                 return None
         except Exception:  # noqa: S110
             pass
+    if fetch_remote is None:
+        fetch_remote = fetch_nasdaq if fetch_nasdaq is not None else force
     stats = sync_received_dividends(
         db_path=db_path,
         symbols=symbols,
-        fetch_nasdaq=fetch_nasdaq,
+        fetch_remote=fetch_remote,
     )
     try:
         from services.portfolio_ui_cache import mark_dividend_sync_completed
@@ -118,7 +121,7 @@ def sync_received_dividends(
         ctx,
         holdings,
         documents,
-        fetch_nasdaq=False,
+        fetch_nasdaq=fetch_remote,
         reference_date=today,
     )
 
