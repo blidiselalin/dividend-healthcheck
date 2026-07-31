@@ -338,6 +338,26 @@ class PortfolioDetailsView:
         preload: PortfolioAnalysisPreload,
     ) -> None:
         """Warn when holdings lack dividend history from exposed data sources."""
+        from services.portfolio_dividend_cash import (
+            collect_dividend_data_warnings,
+            render_dividend_data_warnings_streamlit,
+            resolve_dividend_documents,
+        )
+
+        holdings = PortfolioStore().list_open_holdings()
+        if not holdings:
+            return
+        vector_docs, statuses = resolve_dividend_documents(holdings, preload)
+        warnings = collect_dividend_data_warnings(
+            holdings,
+            vector_docs,
+            statuses,
+            rows=rows,
+        )
+        if warnings:
+            render_dividend_data_warnings_streamlit(warnings)
+            return
+
         not_found: list[tuple[str, str]] = []
         metadata_only: list[tuple[str, str]] = []
         for row in rows:
@@ -381,10 +401,13 @@ class PortfolioDetailsView:
         if not holdings:
             return
 
+        from services.portfolio_dividend_cash import resolve_dividend_documents
+
+        vector_docs, _statuses = resolve_dividend_documents(holdings, preload)
         row_dates = {row.ticker: (row.ex_dividend_date, row.dividend_pay_date) for row in rows}
         calendar = build_portfolio_dividend_calendar(
             holdings,
-            vector_docs=preload.vector_docs,
+            vector_docs=vector_docs,
             stock_data=preload.stock_data,
             row_dates=row_dates,
         )
@@ -1923,12 +1946,23 @@ class PortfolioDetailsView:
         preload: PortfolioAnalysisPreload | None = None,
     ) -> None:
         """Monthly dividend calendar plus net cash received (after tax)."""
+        from services.portfolio_dividend_cash import ensure_dividend_cash_materialized
         from ui.beta_disclaimer import render_research_disclaimer
         from ui.beta_feedback import render_beta_feedback
-        from ui.portfolio_summary import render_portfolio_dividend_income_strip
+
+        if ensure_dividend_cash_materialized():
+            st.info(
+                "Syncing dividend receipts from your holdings in the background. "
+                "Refresh in a few seconds if totals still show $0.",
+                icon="⏳",
+            )
 
         if rows:
-            render_portfolio_dividend_income_strip(rows)
+            from services.portfolio_month_dividends import cached_current_month_paid_dividends
+            from ui.portfolio_summary import render_dividend_focus_block
+
+            month_paid = cached_current_month_paid_dividends(rows=rows, preload=preload)
+            render_dividend_focus_block(rows, month_paid=month_paid)
             st.divider()
 
         if rows and preload:
@@ -1943,17 +1977,28 @@ class PortfolioDetailsView:
 
         st.divider()
         st.markdown("##### 2. Net dividends received")
-        cls._render_dividend_income_page()
+        cls._render_dividend_income_page(rows=rows, preload=preload)
         st.divider()
         render_research_disclaimer(compact=True)
         render_beta_feedback(page="Dividend income", key_suffix="dividend_income")
 
     @classmethod
-    def _render_dividend_income_page(cls) -> None:
+    def _render_dividend_income_page(
+        cls,
+        *,
+        rows: list[PortfolioDetailRow] | None = None,
+        preload: PortfolioAnalysisPreload | None = None,
+    ) -> None:
         """Net dividend cash received (after withholding tax)."""
+        from data_ingestion.portfolio_store import PortfolioStore
+
         service = PortfolioDividendIncomeService()
-        records = service.list_dividends()
-        summary = service.summarize(records)
+        holdings = PortfolioStore().list_open_holdings()
+        records = service.list_dividends_for_display(holdings=holdings, preload=preload)
+        summary = service.summarize(records, rows=rows)
+
+        if rows and preload:
+            cls._render_missing_dividend_sources(rows, preload)
         pivot = service.pivot_net_dataframe(records)
         yearly = service.yearly_summary(records)
         detail = service.detail_dataframe(records)

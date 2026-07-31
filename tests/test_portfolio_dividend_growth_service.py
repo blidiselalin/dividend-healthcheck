@@ -305,7 +305,27 @@ def test_build_symbol_growth_uses_journal_for_first_owned_year() -> None:
     assert results[0].first_owned_year == 2022  # earliest purchase year
 
 
-def test_build_symbol_growth_falls_back_to_tracking_since() -> None:
+def _patch_resolve_docs(monkeypatch: pytest.MonkeyPatch, docs: dict[str, StockDocument]) -> None:
+    normalized = {symbol.strip().upper(): doc for symbol, doc in docs.items()}
+
+    def _fake(
+        holdings: list[PortfolioHolding],
+        preload: Any | None = None,
+        *,
+        fetch_remote: bool = False,
+    ) -> tuple[dict[str, StockDocument], dict[str, Any]]:
+        del preload, fetch_remote
+        return dict(normalized), {}
+
+    monkeypatch.setattr(
+        "services.portfolio_dividend_cash.resolve_dividend_documents",
+        _fake,
+    )
+
+
+def test_build_symbol_growth_falls_back_to_tracking_since(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """When journal is empty, first_owned_year falls back to dividend_tracking_since."""
     records = [
         DividendRecord(ex_date=date(2021, 3, 1), payment_date=None, amount=0.44),
@@ -317,6 +337,7 @@ def test_build_symbol_growth_falls_back_to_tracking_since() -> None:
     holding = _make_holding("MSFT", shares=5.0, tracking_since=date(2022, 4, 1))
     portfolio = _MockPortfolio([holding])
     vector_store = _MockVectorStore({"MSFT": doc})
+    _patch_resolve_docs(monkeypatch, {"MSFT": doc})
 
     service = PortfolioDividendGrowthService(
         vector_store=vector_store,
@@ -329,7 +350,9 @@ def test_build_symbol_growth_falls_back_to_tracking_since() -> None:
     assert results[0].first_owned_year == 2022
 
 
-def test_build_symbol_growth_no_filter_when_no_tracking_info() -> None:
+def test_build_symbol_growth_no_filter_when_no_tracking_info(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """first_owned_year is None when neither journal nor tracking_since is available."""
     records = [
         DividendRecord(ex_date=date(2021, 3, 1), payment_date=None, amount=0.44),
@@ -341,6 +364,7 @@ def test_build_symbol_growth_no_filter_when_no_tracking_info() -> None:
     holding = _make_holding("T", shares=20.0, tracking_since=None)
     portfolio = _MockPortfolio([holding])
     vector_store = _MockVectorStore({"T": doc})
+    _patch_resolve_docs(monkeypatch, {"T": doc})
 
     service = PortfolioDividendGrowthService(
         vector_store=vector_store,
@@ -379,8 +403,8 @@ def test_vector_store_get_by_symbols_empty_input() -> None:
     assert store.get_by_symbols([]) == {}
 
 
-def test_build_symbol_growth_uses_batch_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
-    """build_symbol_growth calls get_by_symbols (not get_by_symbol per holding)."""
+def test_build_symbol_growth_uses_resolved_documents(monkeypatch: pytest.MonkeyPatch) -> None:
+    """build_symbol_growth loads dividend history via resolve_dividend_documents."""
     records = [
         DividendRecord(ex_date=date(2023, 3, 1), payment_date=None, amount=0.44),
         DividendRecord(ex_date=date(2024, 3, 1), payment_date=None, amount=0.46),
@@ -389,29 +413,34 @@ def test_build_symbol_growth_uses_batch_fetch(monkeypatch: pytest.MonkeyPatch) -
         "KO": _make_doc("KO", records),
         "AAPL": _make_doc("AAPL", records),
     }
-    vector_store = _MockVectorStore(docs)
     portfolio = _MockPortfolio(
         [_make_holding("KO", shares=10.0), _make_holding("AAPL", shares=5.0)]
     )
     journal = _MockJournal([])
 
-    batch_calls: list[list[str]] = []
-    original_get_by_symbols = vector_store.get_by_symbols
+    resolve_calls: list[int] = []
 
-    def spy_get_by_symbols(symbols: list[str]) -> dict[str, Any]:
-        batch_calls.append(list(symbols))
-        return original_get_by_symbols(symbols)
+    def _fake(
+        holdings: list[PortfolioHolding],
+        preload: Any | None = None,
+        *,
+        fetch_remote: bool = False,
+    ) -> tuple[dict[str, StockDocument], dict[str, Any]]:
+        del preload, fetch_remote
+        resolve_calls.append(len(holdings))
+        return docs, {}
 
-    monkeypatch.setattr(vector_store, "get_by_symbols", spy_get_by_symbols)
+    monkeypatch.setattr(
+        "services.portfolio_dividend_cash.resolve_dividend_documents",
+        _fake,
+    )
 
     service = PortfolioDividendGrowthService(
-        vector_store=vector_store,
+        vector_store=_MockVectorStore({}),
         portfolio_store=portfolio,  # type: ignore[arg-type]
         journal_store=journal,  # type: ignore[arg-type]
     )
     results = service.build_symbol_growth(since_year=2023)
 
-    # Exactly one batch call was made (not one per symbol)
-    assert len(batch_calls) == 1
-    assert set(batch_calls[0]) == {"AAPL", "KO"}
+    assert resolve_calls == [2]
     assert len(results) == 2

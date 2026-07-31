@@ -220,6 +220,11 @@ def _holding_payments_for_month(  # noqa: C901
 
     for record in records:
         pay_date = _cash_date(record)
+        if (
+            holding.dividend_tracking_since is not None
+            and pay_date < holding.dividend_tracking_since
+        ):
+            continue
         if not _in_month(pay_date, target_month):
             continue
         amount = normalize_payment_amount(float(record.amount), records, document, stock)

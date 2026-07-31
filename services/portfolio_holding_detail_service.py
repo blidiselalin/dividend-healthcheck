@@ -161,9 +161,9 @@ class PortfolioHoldingDetailService:
 
         rows: list[HoldingDividendRow] = []
         for record in sorted(records, key=lambda r: r.ex_date):
-            if not lots and tracking_since and record.ex_date < tracking_since:
-                continue
             pay = _cash_date(record)
+            if not lots and tracking_since and pay < tracking_since:
+                continue
             held = shares_as_of(lots, record.ex_date, fallback_shares=fallback)
             if held <= 0:
                 continue
@@ -246,7 +246,7 @@ class PortfolioHoldingDetailService:
             document,
             current_shares=current_shares,
             tracking_since=tracking_since,
-            prefer_stored=True,
+            prefer_stored=False,
         )
         if not rows:
             return pd.DataFrame(

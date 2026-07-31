@@ -151,8 +151,9 @@ class PortfolioDividendGrowthService:
         if not holdings:
             return []
 
-        # Batch-fetch all documents in one query instead of N individual round-trips.
-        docs = self.vector_store.get_by_symbols(list(holdings.keys()))
+        from services.portfolio_dividend_cash import resolve_dividend_documents
+
+        docs, _statuses = resolve_dividend_documents(list(holdings.values()))
 
         # Determine first year each symbol was owned from the purchase journal,
         # falling back to the holding's dividend_tracking_since date.
@@ -160,7 +161,8 @@ class PortfolioDividendGrowthService:
 
         results: list[SymbolDividendGrowth] = []
         for symbol, holding in sorted(holdings.items()):
-            doc = docs.get(symbol.upper())
+            sym = symbol.strip().upper()
+            doc = docs.get(sym) or docs.get(symbol)
             if not doc or not doc.dividend_history:
                 continue
             annual = self._annual_dividends_from_history(

@@ -226,7 +226,7 @@ class PortfolioStore:
 
         acquisition_value = round(shares * avg_cost_per_share, 2)
         est = estimated_avg_price if estimated_avg_price is not None else avg_cost_per_share
-        tracking_since = date.today().isoformat()
+        tracking_since = None
 
         with self._connect() as connection:
             if connection.is_postgres:

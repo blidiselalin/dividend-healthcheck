@@ -52,6 +52,21 @@ class PortfolioDividendIncomeService:
     def list_dividends(self) -> list[MonthlyNetDividend]:
         return self.store.list_dividends()
 
+    def list_dividends_for_display(
+        self,
+        *,
+        holdings: list[Any] | None = None,
+        preload: Any | None = None,
+    ) -> list[MonthlyNetDividend]:
+        """Stored monthly income merged with receipts and recent live computes."""
+        from services.portfolio_dividend_cash import build_merged_dividend_income_records
+
+        return build_merged_dividend_income_records(
+            store=self.store,
+            holdings=holdings,
+            preload=preload,
+        )
+
     def detail_dataframe(self, records: list[MonthlyNetDividend] | None = None) -> pd.DataFrame:
         items = records if records is not None else self.list_dividends()
         return pd.DataFrame(

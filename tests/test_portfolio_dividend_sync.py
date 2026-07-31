@@ -138,7 +138,7 @@ def test_delete_holding_removes_dividend_receipts(tmp_path: Path) -> None:
     assert DividendReceiptStore(db_path=db).list_for_symbol("KO") == []
 
 
-def test_tracking_since_limits_history_without_journal(tmp_path: Path) -> None:
+def test_sync_records_dividends_without_journal_when_no_tracking_since(tmp_path: Path) -> None:
     db = tmp_path / "portfolio.db"
     portfolio = PortfolioStore(db_path=db, seed=False)
     portfolio.upsert_holding("KO", shares=10, avg_cost_per_share=50.0)
@@ -149,5 +149,4 @@ def test_tracking_since_limits_history_without_journal(tmp_path: Path) -> None:
     ):
         stats = sync_received_dividends(db_path=db)
 
-    # Only dividends on/after tracking start (today) — historical rows skipped.
-    assert stats.receipts_added == 0
+    assert stats.receipts_added == 2
