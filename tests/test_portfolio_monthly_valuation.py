@@ -299,7 +299,8 @@ def test_portfolio_eur_to_store_requires_full_coverage() -> None:
         symbols_held=2,
         symbols_priced=2,
     )
-    assert portfolio_eur_to_store(stored=1200.0, valuation=full) == 900.0
+    assert portfolio_eur_to_store(stored=1200.0, valuation=full) == 1200.0
+    assert portfolio_eur_to_store(stored=None, valuation=full) == 900.0
 
 
 def test_current_month_uses_open_holding_shares(tmp_path: Path) -> None:
@@ -352,14 +353,16 @@ def test_pick_portfolio_prefers_stored_when_price_coverage_incomplete() -> None:
         symbols_priced=2,
     )
     assert pick_portfolio_eur_for_month(stored=1200.0, valuation=partial) == 1200.0
-    assert pick_portfolio_eur_for_month(stored=None, valuation=partial) == 900.0
+    assert pick_portfolio_eur_for_month(stored=None, valuation=partial) is None
     full = MonthPortfolioValuation(
         portfolio_usd=1000.0,
         portfolio_eur=900.0,
         symbols_held=2,
         symbols_priced=2,
     )
-    assert pick_portfolio_eur_for_month(stored=1200.0, valuation=full) == 900.0
+    assert pick_portfolio_eur_for_month(stored=1200.0, valuation=full) == 1200.0
+    assert pick_portfolio_eur_for_month(stored=None, valuation=full) == 900.0
+    assert pick_portfolio_eur_for_month(stored=None, valuation=partial) is None
 
 
 def test_close_for_month_end_prefers_in_month_then_falls_back() -> None:

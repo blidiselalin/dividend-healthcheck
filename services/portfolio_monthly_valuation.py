@@ -430,12 +430,13 @@ def portfolio_eur_to_store(
     """
     Decide the portfolio € to persist on ``monthly_deposits``.
 
-    Only persists when every held symbol is priced (coverage 100%).
+    Broker/imported month-end NAV is never replaced by journal estimates.
+    Computed marks are saved only when no NAV exists and every holding is priced.
     """
-    if valuation is not None and valuation.portfolio_eur > 0 and valuation.coverage >= 1.0:
-        return valuation.portfolio_eur
     if stored is not None and stored > 0:
         return stored
+    if valuation is not None and valuation.portfolio_eur > 0 and valuation.coverage >= 1.0:
+        return valuation.portfolio_eur
     return None
 
 
@@ -456,12 +457,14 @@ def pick_portfolio_eur_for_month(
     stored: float | None,
     valuation: MonthPortfolioValuation | None,
 ) -> float | None:
-    """Prefer journal-based marks; fall back to stored IBKR/manual NAV when incomplete."""
-    if valuation is not None and valuation.portfolio_eur > 0:
-        if valuation.coverage >= 1.0:
-            return valuation.portfolio_eur
-        if stored is None or stored <= 0:
-            return valuation.portfolio_eur
+    """
+    Portfolio € for evolution charts and KPIs.
+
+    Prefer broker/imported month-end NAV. Use journal-based marks only when NAV is
+    missing and every held symbol has a price (avoids partial-coverage spikes).
+    """
     if stored is not None and stored > 0:
         return stored
+    if valuation is not None and valuation.portfolio_eur > 0 and valuation.coverage >= 1.0:
+        return valuation.portfolio_eur
     return None
