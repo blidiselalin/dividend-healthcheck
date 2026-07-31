@@ -74,34 +74,47 @@ def compute_month_received_from_holdings(
     """
     Gross cash received this month through `reference_date`.
 
-    Matches Yahoo-style portfolio dividends: pay date in month, shares held on ex-date,
-    normalized per-payment amounts, purchase journal when available.
+    Per holding: imported ``dividend_receipts`` for the month win; otherwise library
+    history with journal share counts.
     """
     from services.portfolio_holding_detail_service import PortfolioHoldingDetailService
 
     detail = PortfolioHoldingDetailService()
     total = 0.0
     count = 0
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, float]] = set()
 
     for holding in holdings:
         document = vector_docs.get(holding.symbol.upper()) or vector_docs.get(holding.symbol)
-        if not document:
+        stored = detail.stored_dividend_history(holding.symbol)
+        month_stored = [
+            row
+            for row in stored
+            if row.pay_date.year == reference_date.year
+            and row.pay_date.month == reference_date.month
+            and row.pay_date <= reference_date
+        ]
+        if month_stored:
+            rows = month_stored
+        elif document and document.dividend_history:
+            rows = detail.dividend_history(
+                holding.symbol,
+                document,
+                current_shares=holding.shares,
+                tracking_since=holding.dividend_tracking_since,
+                prefer_stored=False,
+            )
+            rows = [
+                row
+                for row in rows
+                if row.pay_date.year == reference_date.year
+                and row.pay_date.month == reference_date.month
+                and row.pay_date <= reference_date
+            ]
+        else:
             continue
-        rows = detail.dividend_history(
-            holding.symbol,
-            document,
-            current_shares=holding.shares,
-            tracking_since=holding.dividend_tracking_since,
-            prefer_stored=False,
-        )
+
         for row in rows:
-            if row.pay_date.year != reference_date.year:
-                continue
-            if row.pay_date.month != reference_date.month:
-                continue
-            if row.pay_date > reference_date:
-                continue
             key = (
                 holding.symbol.upper(),
                 row.ex_date.isoformat(),

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -206,3 +207,26 @@ def test_last_month_uses_actual_history_only() -> None:
     )
     assert calendar.last_month.payer_count == 0
     assert calendar.last_month.total_cash == 0.0
+
+
+def test_enrich_calendar_overlays_imported_receipts(tmp_path: Path) -> None:
+    from services.portfolio_broker_import_service import ImportMode, apply_import
+    from services.portfolio_context import create_portfolio_context
+    from services.portfolio_dividend_calendar import enrich_calendar_with_receipts
+
+    fixture = Path(__file__).resolve().parents[0] / "fixtures" / "ibkr_activity_sample.csv"
+    db = tmp_path / "portfolio.db"
+    apply_import(fixture.read_text(encoding="utf-8"), mode=ImportMode.REPLACE, db_path=db)
+    ctx = create_portfolio_context(db_path=db)
+    holdings = ctx.portfolio.list_open_holdings()
+    calendar = build_portfolio_dividend_calendar(
+        holdings,
+        vector_docs={},
+        stock_data={},
+        reference_date=date(2025, 4, 15),
+    )
+    assert calendar.last_month.total_cash == 0.0
+
+    enrich_calendar_with_receipts(calendar, holdings, receipt_store=ctx.receipts)
+    assert calendar.last_month.received_cash == pytest.approx(2.50)
+    assert calendar.current_month.received_cash == 0.0

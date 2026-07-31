@@ -4,6 +4,7 @@ Persistent storage for dividend cash received per portfolio holding.
 
 from __future__ import annotations
 
+import calendar
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -452,6 +453,96 @@ class DividendReceiptStore:
         for row in rows:
             totals[(int(row["year"]), int(row["month"]))] = round(float(row["gross"]), 2)
         return totals
+
+    def list_for_month(
+        self,
+        year: int,
+        month: int,
+        *,
+        through: date | None = None,
+        symbols: set[str] | None = None,
+    ) -> list[DividendReceipt]:
+        """Receipts with pay_date in the month, capped at ``through`` (default month-end)."""
+        through = through or date.today()
+        if (year, month) > (through.year, through.month):
+            return []
+
+        last_day = calendar.monthrange(year, month)[1]
+        month_end = date(year, month, last_day)
+        cutoff = month_end if (year, month) < (through.year, through.month) else through
+        start = date(year, month, 1).isoformat()
+        end = cutoff.isoformat()
+
+        with self._connect() as connection:
+            if connection.is_postgres:
+                if symbols:
+                    placeholders = ", ".join("?" for _ in symbols)
+                    rows = connection.execute(
+                        f"""
+                        SELECT id, symbol, ex_date, pay_date, per_share_usd,
+                               shares_held, gross_usd, source
+                        FROM dividend_receipts
+                        WHERE user_id = ?
+                          AND pay_date >= ?
+                          AND pay_date <= ?
+                          AND symbol IN ({placeholders})
+                        ORDER BY pay_date, symbol, ex_date
+                        """,
+                        (connection.user_id, start, end, *sorted(symbols)),
+                    ).fetchall()
+                else:
+                    rows = connection.execute(
+                        """
+                        SELECT id, symbol, ex_date, pay_date, per_share_usd,
+                               shares_held, gross_usd, source
+                        FROM dividend_receipts
+                        WHERE user_id = ?
+                          AND pay_date >= ?
+                          AND pay_date <= ?
+                        ORDER BY pay_date, symbol, ex_date
+                        """,
+                        (connection.user_id, start, end),
+                    ).fetchall()
+            elif symbols:
+                placeholders = ", ".join("?" for _ in symbols)
+                rows = connection.execute(
+                    f"""
+                    SELECT id, symbol, ex_date, pay_date, per_share_usd,
+                           shares_held, gross_usd, source
+                    FROM dividend_receipts
+                    WHERE pay_date >= ?
+                      AND pay_date <= ?
+                      AND symbol IN ({placeholders})
+                    ORDER BY pay_date, symbol, ex_date
+                    """,
+                    (start, end, *sorted(symbols)),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT id, symbol, ex_date, pay_date, per_share_usd,
+                           shares_held, gross_usd, source
+                    FROM dividend_receipts
+                    WHERE pay_date >= ?
+                      AND pay_date <= ?
+                    ORDER BY pay_date, symbol, ex_date
+                    """,
+                    (start, end),
+                ).fetchall()
+
+        return [
+            DividendReceipt(
+                id=int(row["id"]),
+                symbol=row["symbol"],
+                ex_date=parse_date(row["ex_date"]),
+                pay_date=parse_date(row["pay_date"]),
+                per_share_usd=float(row["per_share_usd"]),
+                shares_held=float(row["shares_held"]),
+                gross_usd=float(row["gross_usd"]),
+                source=str(row["source"] or "computed"),
+            )
+            for row in rows
+        ]
 
     def delete_for_symbol(self, symbol: str, *, source: str | None = None) -> int:
         symbol = symbol.strip().upper()

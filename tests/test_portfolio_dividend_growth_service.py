@@ -277,7 +277,9 @@ class _MockPortfolio:
         return [holding for holding in self._holdings if holding.shares > 0]
 
 
-def test_build_symbol_growth_uses_journal_for_first_owned_year() -> None:
+def test_build_symbol_growth_uses_journal_for_first_owned_year(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """first_owned_year is taken from the earliest purchase in the journal."""
     records = [
         DividendRecord(ex_date=date(2021, 3, 1), payment_date=None, amount=0.44),
@@ -293,6 +295,7 @@ def test_build_symbol_growth_uses_journal_for_first_owned_year() -> None:
     journal = _MockJournal(purchases)
     portfolio = _MockPortfolio([_make_holding("KO", shares=10.0)])
     vector_store = _MockVectorStore({"KO": doc})
+    _patch_resolve_docs(monkeypatch, {"KO": doc})
 
     service = PortfolioDividendGrowthService(
         vector_store=vector_store,

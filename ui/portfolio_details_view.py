@@ -27,6 +27,8 @@ from services.portfolio_dividend_calendar import (
     build_portfolio_dividend_calendar,
     create_month_comparison_chart,
     create_month_payers_chart,
+    enrich_calendar_with_receipts,
+    month_comparison_change_pct,
 )
 from services.portfolio_dividend_growth_service import (
     SINCE_YEAR,
@@ -414,18 +416,31 @@ class PortfolioDetailsView:
             stock_data=preload.stock_data,
             row_dates=row_dates,
         )
+        from services.portfolio_context import create_portfolio_context
+
+        enrich_calendar_with_receipts(
+            calendar,
+            holdings,
+            receipt_store=create_portfolio_context().receipts,
+        )
         cls._render_missing_dividend_sources(rows, preload)
         current = calendar.current_month
         last = calendar.last_month
         next_month = calendar.next_month
 
         st.caption(
-            "Last month uses **actual cash dates** from dividend history. "
-            "This month shows **received + scheduled** payments; projections are listed separately in the table."
+            "Last month and **paid so far** use **imported broker receipts** when available. "
+            "Scheduled/projected rows use market-library payment dates."
         )
 
-        delta_vs_next = next_month.confirmed_cash - current.confirmed_cash
-        this_month_display = current.confirmed_cash or current.total_cash
+        delta_vs_last = None
+        if last.received_cash > 0:
+            delta_vs_last = month_comparison_change_pct(
+                current.received_cash,
+                last.received_cash,
+            )
+        delta_vs_next = next_month.confirmed_cash - current.received_cash
+        this_month_display = current.received_cash or current.confirmed_cash or current.total_cash
 
         col1, col2, col3 = st.columns(3)
         col4, col5 = st.columns(2)
@@ -448,14 +463,18 @@ class PortfolioDetailsView:
             st.metric(
                 "Paid so far",
                 f"${current.received_cash:,.2f}",
-                f"{current.received_payer_count} received",
-                help="Dividends with pay date on or before today",
+                f"{delta_vs_last:+.1f}% vs last month"
+                if delta_vs_last is not None
+                else f"{current.received_payer_count} received",
+                delta_color="normal" if (delta_vs_last or 0) >= 0 else "inverse",
+                help="Imported broker receipts with pay date on or before today",
             )
         with col3:
             st.metric(
                 "Last month",
-                f"${last.total_cash:,.2f}",
-                f"{last.payer_count} payers · {last.label}",
+                f"${last.received_cash:,.2f}",
+                f"{last.received_payer_count} received · {last.label}",
+                help="Full-month cash from imported receipts (or library history when no import)",
             )
         with col4:
             st.metric(

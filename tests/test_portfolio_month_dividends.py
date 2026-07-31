@@ -159,6 +159,10 @@ def test_compute_month_received_uses_journal_shares_and_pay_date(
         "services.portfolio_holding_detail_service.PortfolioHoldingDetailService.estimated_lots_for_symbol",
         lambda self, symbol: lots if symbol == "KO" else [],
     )
+    monkeypatch.setattr(
+        "services.portfolio_holding_detail_service.PortfolioHoldingDetailService.stored_dividend_history",
+        lambda self, symbol: [],
+    )
 
     gross, count = compute_month_received_from_holdings(
         [holding],

@@ -349,6 +349,128 @@ def _summarize_month(
     )
 
 
+def build_month_exposure_from_receipts(
+    holdings: Sequence[PortfolioHolding],
+    target_month: date,
+    receipts: Sequence[Any],
+    *,
+    reference_date: date,
+) -> MonthDividendExposure:
+    """Build month exposure from imported/synced ``dividend_receipts`` rows."""
+    holding_by_symbol = {holding.symbol.strip().upper(): holding for holding in holdings}
+    payments: list[HoldingMonthDividend] = []
+
+    for receipt in receipts:
+        sym = receipt.symbol.strip().upper()
+        holding = holding_by_symbol.get(sym)
+        company = holding.company_name if holding and holding.company_name else receipt.symbol
+        status = "received" if receipt.pay_date <= reference_date else "scheduled"
+        payments.append(
+            HoldingMonthDividend(
+                symbol=receipt.symbol,
+                company=company,
+                shares=round(receipt.shares_held, 4),
+                expected_cash=round(receipt.gross_usd, 2),
+                per_share=round(receipt.per_share_usd, 4),
+                payment_date=receipt.pay_date,
+                ex_date=receipt.ex_date,
+                status=status,
+            )
+        )
+
+    payments.sort(key=lambda item: item.expected_cash, reverse=True)
+    return MonthDividendExposure(
+        month_start=target_month,
+        label=target_month.strftime("%B %Y"),
+        total_cash=round(sum(item.expected_cash for item in payments), 2),
+        holdings=payments,
+    )
+
+
+def merge_current_month_with_receipts(
+    library_month: MonthDividendExposure,
+    receipt_month: MonthDividendExposure,
+    *,
+    reference_date: date,
+) -> MonthDividendExposure:
+    """
+    Prefer imported receipt cash for received payments; keep library scheduled/projected rows.
+    """
+    receipt_symbols = {item.symbol.strip().upper() for item in receipt_month.holdings}
+    supplemental = [
+        item
+        for item in library_month.holdings
+        if item.symbol.strip().upper() not in receipt_symbols
+        and item.status in {"scheduled", "projected"}
+        and item.payment_date is not None
+        and item.payment_date > reference_date
+    ]
+    holdings = list(receipt_month.holdings) + supplemental
+    holdings.sort(key=lambda item: item.expected_cash, reverse=True)
+    return MonthDividendExposure(
+        month_start=library_month.month_start,
+        label=library_month.label,
+        total_cash=round(sum(item.expected_cash for item in holdings), 2),
+        holdings=holdings,
+    )
+
+
+def enrich_calendar_with_receipts(
+    calendar: PortfolioDividendCalendar,
+    holdings: Sequence[PortfolioHolding],
+    receipt_store: Any | None = None,
+) -> PortfolioDividendCalendar:
+    """
+    Overlay broker-imported receipts on last/current months.
+
+    Library history drives forward projections; receipts are authoritative for paid cash.
+    """
+    from data_ingestion.dividend_receipt_store import DividendReceiptStore
+
+    if not holdings:
+        return calendar
+
+    store = receipt_store or DividendReceiptStore()
+    symbols = {holding.symbol.strip().upper() for holding in holdings}
+    today = calendar.reference_date
+
+    last_end = month_end(calendar.last_month.month_start)
+    last_receipts = store.list_for_month(
+        calendar.last_month.month_start.year,
+        calendar.last_month.month_start.month,
+        through=last_end,
+        symbols=symbols,
+    )
+    if last_receipts:
+        calendar.last_month = build_month_exposure_from_receipts(
+            holdings,
+            calendar.last_month.month_start,
+            last_receipts,
+            reference_date=last_end,
+        )
+
+    current_receipts = store.list_for_month(
+        calendar.current_month.month_start.year,
+        calendar.current_month.month_start.month,
+        through=today,
+        symbols=symbols,
+    )
+    if current_receipts:
+        receipt_current = build_month_exposure_from_receipts(
+            holdings,
+            calendar.current_month.month_start,
+            current_receipts,
+            reference_date=today,
+        )
+        calendar.current_month = merge_current_month_with_receipts(
+            calendar.current_month,
+            receipt_current,
+            reference_date=today,
+        )
+
+    return calendar
+
+
 def build_portfolio_dividend_calendar(
     holdings: Sequence[PortfolioHolding],
     *,
@@ -419,7 +541,9 @@ def create_month_comparison_chart(calendar: PortfolioDividendCalendar) -> Any:
 
     months = [calendar.last_month, calendar.current_month, calendar.next_month]
     labels = [month.label for month in months]
-    totals = [month.total_cash for month in months]
+    totals = [month.received_cash or month.total_cash for month in months[:2]] + [
+        months[2].confirmed_cash or months[2].total_cash
+    ]
     colors = ["#90a4ae", "#1976d2", "#43a047"]
 
     fig = go.Figure(
@@ -435,8 +559,8 @@ def create_month_comparison_chart(calendar: PortfolioDividendCalendar) -> Any:
         ]
     )
     fig.update_layout(
-        title="Monthly Dividend Cash — Previous / Current / Next Month",
-        yaxis_title="Expected Cash (USD)",
+        title="Monthly Dividend Cash — Previous / Current (paid) / Next",
+        yaxis_title="Cash (USD)",
         height=360,
         margin={"t": 60, "b": 40},
     )

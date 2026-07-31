@@ -114,7 +114,7 @@ def resolve_month_dividend_cash(
     db_gross, db_count = gross_paid_in_calendar_month(year, month, through=through)
     computed_gross = 0.0
     computed_count = 0
-    if holdings and vector_docs:
+    if holdings:
         computed_gross, computed_count = compute_month_received_from_holdings(
             holdings,
             vector_docs,
