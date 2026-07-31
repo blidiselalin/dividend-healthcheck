@@ -58,11 +58,14 @@ class PortfolioDividendIncomeService:
         holdings: list[Any] | None = None,
         preload: Any | None = None,
     ) -> list[MonthlyNetDividend]:
-        """Stored monthly income merged with receipts and recent live computes."""
+        """Stored monthly income merged with IBKR receipts and recent live computes."""
+        from services.portfolio_context import create_portfolio_context
         from services.portfolio_dividend_cash import build_merged_dividend_income_records
 
+        ctx = create_portfolio_context()
         return build_merged_dividend_income_records(
             store=self.store,
+            receipt_store=ctx.receipts,
             holdings=holdings,
             preload=preload,
         )

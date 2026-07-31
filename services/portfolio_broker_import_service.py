@@ -19,6 +19,7 @@ from services.ibkr_activity_parser import (
     build_monthly_deposits,
     deposit_months_with_inflows,
     has_blocking_errors,
+    normalize_symbol,
     statement_deposit_period,
     statement_symbol_scope,
 )
@@ -204,6 +205,7 @@ def apply_import(  # noqa: C901
             continue
         if dividend.gross_usd == 0:
             continue
+        symbol = normalize_symbol(dividend.symbol) or dividend.symbol.strip().upper()
         shares_held = (
             round(abs(dividend.gross_usd) / dividend.per_share_usd, 4)
             if dividend.per_share_usd > 0

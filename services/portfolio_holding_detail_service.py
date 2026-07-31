@@ -145,8 +145,15 @@ class PortfolioHoldingDetailService:
         *,
         current_shares: float,
         tracking_since: date | None = None,
-        prefer_stored: bool = False,
+        prefer_stored: bool = True,
     ) -> list[HoldingDividendRow]:
+        """
+        Paid dividend rows for one holding.
+
+        When ``prefer_stored`` is True (default for UI), broker-imported and synced
+        ``dividend_receipts`` are authoritative. Market-library history is used only
+        when no stored receipts exist (estimates / pre-import gaps).
+        """
         if prefer_stored:
             stored = self.stored_dividend_history(symbol)
             if stored:
@@ -195,7 +202,11 @@ class PortfolioHoldingDetailService:
     ) -> HoldingDetailSummary:
         purchases = self.purchase_history(symbol)
         dividends = self.dividend_history(
-            symbol, document, current_shares=current_shares, tracking_since=tracking_since
+            symbol,
+            document,
+            current_shares=current_shares,
+            tracking_since=tracking_since,
+            prefer_stored=True,
         )
         return HoldingDetailSummary(
             symbol=symbol,
@@ -246,7 +257,7 @@ class PortfolioHoldingDetailService:
             document,
             current_shares=current_shares,
             tracking_since=tracking_since,
-            prefer_stored=False,
+            prefer_stored=True,
         )
         if not rows:
             return pd.DataFrame(

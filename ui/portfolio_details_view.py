@@ -33,7 +33,6 @@ from services.portfolio_dividend_growth_service import (
     PortfolioDividendGrowthService,
 )
 from services.portfolio_dividend_income_service import PortfolioDividendIncomeService
-from services.portfolio_holding_detail_service import PortfolioHoldingDetailService
 from services.portfolio_purchase_journal_service import PortfolioPurchaseJournalService
 from services.portfolio_zone_overview import (
     ZONE_CATEGORY_META,
@@ -122,12 +121,16 @@ def _resolve_holding_analysis(
     Uses session preload when available; falls back to independent library analysis
     so charts and data-exposure panels work before background preload finishes.
     """
-    from data_ingestion.models import StockDocument
-    from services.shared_market_db import get_document
+    from services.portfolio_dividend_resolve import load_resolved_portfolio_documents
     from services.stock_analysis_service import load_independent_stock_analysis
 
     sym = symbol.upper()
-    vector_doc: StockDocument | None = preload.vector_docs.get(sym) or get_document(sym)
+    resolved, _statuses = load_resolved_portfolio_documents(
+        [sym],
+        documents=preload.vector_docs or None,
+        stock_data=preload.stock_data,
+    )
+    vector_doc = resolved.get(sym) or preload.vector_docs.get(sym)
     stock_data = preload.stock_data.get(sym)
     yield_channel = preload.yield_channels.get(sym)
 
@@ -1990,12 +1993,20 @@ class PortfolioDetailsView:
         preload: PortfolioAnalysisPreload | None = None,
     ) -> None:
         """Net dividend cash received (after withholding tax)."""
-        from data_ingestion.portfolio_store import PortfolioStore
+        from services.portfolio_context import create_portfolio_context
 
-        service = PortfolioDividendIncomeService()
-        holdings = PortfolioStore().list_open_holdings()
+        ctx = create_portfolio_context()
+        service = PortfolioDividendIncomeService(store=ctx.dividends)
+        holdings = ctx.portfolio.list_open_holdings()
         records = service.list_dividends_for_display(holdings=holdings, preload=preload)
         summary = service.summarize(records, rows=rows)
+
+        receipt_months = len(ctx.receipts.monthly_gross_totals())
+        if records and receipt_months:
+            st.caption(
+                f"Showing **{len(records)}** monthly totals "
+                f"({receipt_months} from imported/synced dividend receipts)."
+            )
 
         if rows and preload:
             cls._render_missing_dividend_sources(rows, preload)
@@ -2211,9 +2222,19 @@ class PortfolioDetailsView:
         nav_tickers: list[str],
     ) -> None:
         """Inline purchase journal and dividend cash history for one holding."""
-        detail_svc = PortfolioHoldingDetailService()
-        document = preload.vector_docs.get(symbol)
-        holding = detail_svc.portfolio.get_holding(symbol)
+        from services.portfolio_context import create_portfolio_context
+        from services.portfolio_dividend_resolve import load_resolved_portfolio_documents
+
+        ctx = create_portfolio_context()
+        detail_svc = ctx.detail
+        sym = symbol.upper()
+        resolved, _dividend_statuses = load_resolved_portfolio_documents(
+            [sym],
+            documents=preload.vector_docs or None,
+            stock_data=preload.stock_data,
+        )
+        document = resolved.get(sym)
+        holding = ctx.portfolio.get_holding(symbol)
         tracking_since = holding.dividend_tracking_since if holding is not None else None
         summary = detail_svc.summarize(
             symbol,
@@ -2279,18 +2300,35 @@ class PortfolioDetailsView:
                 )
 
         with div_col:
-            st.markdown("**Dividends received (from analysed stocks history)**")
+            st.markdown("**Dividends received (import / sync)**")
             if dividends_df.empty:
+                stored_count = len(detail_svc.stored_dividend_history(symbol))
                 status_msg = row.dividend_data_status
                 if not status_msg:
-                    status = (preload.dividend_statuses or {}).get(symbol)
+                    status = (preload.dividend_statuses or {}).get(symbol) or (
+                        preload.dividend_statuses or {}
+                    ).get(sym)
                     status_msg = getattr(status, "missing_message", None) if status else None
-                if status_msg and "annual dividend estimate" in status_msg.lower():
+                if stored_count == 0 and not status_msg:
+                    st.info(
+                        "No dividend payments imported for this ticker yet. "
+                        "Paid cash from IBKR/broker import appears here; "
+                        "market-library history is used for upcoming payments only.",
+                        icon="ℹ️",
+                    )
+                elif status_msg and "annual dividend estimate" in status_msg.lower():
                     st.info(status_msg, icon="ℹ️")
                 elif status_msg:
-                    st.warning(status_msg, icon="⚠️")
+                    st.warning(
+                        f"{status_msg} " "Imported broker payments are shown when available.",
+                        icon="⚠️",
+                    )
                 else:
-                    st.info("No dividend payment history in the database for this ticker.")
+                    st.info(
+                        "No imported dividend payments for this ticker. "
+                        "Use **Import IBKR** or **Sync dividends** to load paid cash.",
+                        icon="ℹ️",
+                    )
             else:
                 st.dataframe(
                     dividends_df,

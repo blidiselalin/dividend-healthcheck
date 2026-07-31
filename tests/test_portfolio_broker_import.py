@@ -65,6 +65,24 @@ def test_apply_import_without_open_positions(tmp_path: Path) -> None:
     assert len(inflow_months) == 1
 
 
+def test_imported_dividends_visible_without_market_library(tmp_path: Path, sample_csv: str) -> None:
+    """IBKR receipts must display without relying on shared market library history."""
+    db = tmp_path / "portfolio.db"
+    result = apply_import(sample_csv, mode=ImportMode.REPLACE, db_path=db)
+    assert result.dividends_imported >= 1
+
+    ctx = create_portfolio_context(db_path=db)
+    stored = ctx.detail.dividend_history(
+        "AAPL",
+        None,
+        current_shares=10.0,
+        prefer_stored=True,
+    )
+    assert len(stored) >= 1
+    assert stored[0].cash_usd > 0
+    assert len(ctx.dividends.list_dividends()) >= 1
+
+
 def test_apply_import_reports_progress(sample_csv: str, tmp_path: Path) -> None:
     db = tmp_path / "portfolio.db"
     steps: list[tuple[str, float]] = []

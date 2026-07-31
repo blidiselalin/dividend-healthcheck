@@ -185,3 +185,53 @@ def test_load_resolved_portfolio_documents_batch() -> None:
 
     assert "KO" in resolved
     assert statuses["KO"].has_dividend_history
+
+
+def test_load_resolved_always_fetches_library_and_prefers_it_over_empty_seed() -> None:
+    seed = {
+        "KO": StockDocument(symbol="KO", name="KO", dividend_history=[]),
+    }
+    library = {
+        "KO": StockDocument(
+            symbol="KO",
+            name="Coca-Cola",
+            dividend_history=[
+                DividendRecord(ex_date=date(2025, 11, 15), payment_date=None, amount=0.48),
+            ],
+        )
+    }
+
+    with (
+        patch("services.shared_market_db.load_documents", return_value=library) as load_mock,
+        patch(
+            "services.portfolio_dividend_resolve.enrich_document_payment_dates",
+            side_effect=lambda _sym, doc, fetch_nasdaq=False: doc,
+        ),
+    ):
+        resolved, statuses = load_resolved_portfolio_documents(["KO"], documents=seed)
+
+    load_mock.assert_called_once_with(["KO"])
+    assert resolved["KO"] is not None
+    assert len(resolved["KO"].dividend_history or []) == 1
+    assert statuses["KO"].has_dividend_history
+
+
+def test_attach_postgres_history_builds_document_from_tables() -> None:
+    from services.portfolio_dividend_resolve import _attach_postgres_history
+
+    table_rows = [
+        DividendRecord(ex_date=date(2025, 11, 15), payment_date=date(2025, 12, 1), amount=0.48),
+    ]
+
+    with (
+        patch("db.connection.use_cloud_sql", return_value=True),
+        patch(
+            "db.postgres_market_history_store.PostgresMarketHistoryStore.load_dividend_history",
+            return_value=table_rows,
+        ),
+    ):
+        doc = _attach_postgres_history(None, symbol="KO")
+
+    assert doc is not None
+    assert doc.symbol == "KO"
+    assert len(doc.dividend_history or []) == 1

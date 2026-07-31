@@ -45,22 +45,24 @@ class PortfolioAnalysisPreload:
         allowed = {symbol.upper() for symbol in symbols}
         return PortfolioAnalysisPreload(
             stock_data={
-                symbol: data for symbol, data in self.stock_data.items() if symbol in allowed
+                symbol: data
+                for symbol, data in self.stock_data.items()
+                if symbol.upper() in allowed
             },
             yield_channels={
                 symbol: channel
                 for symbol, channel in self.yield_channels.items()
-                if symbol in allowed
+                if symbol.upper() in allowed
             },
             vector_docs={
                 symbol: document
                 for symbol, document in self.vector_docs.items()
-                if symbol in allowed
+                if symbol.upper() in allowed
             },
             dividend_statuses={
                 symbol: status
                 for symbol, status in (self.dividend_statuses or {}).items()
-                if symbol in allowed
+                if symbol.upper() in allowed
             },
         )
 

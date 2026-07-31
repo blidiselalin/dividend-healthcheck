@@ -151,26 +151,31 @@ def resolve_month_dividend_cash(
 def build_merged_dividend_income_records(
     *,
     store: Any | None = None,
+    receipt_store: Any | None = None,
     holdings: list[PortfolioHolding] | None = None,
     preload: PortfolioAnalysisPreload | None = None,
 ) -> list[Any]:
     """
     Monthly dividend income for display: stored ``net_dividends`` merged with
-    receipt aggregates and live month-end computes for recent months.
+    broker-imported receipt aggregates.
+
+    IBKR import populates ``dividend_receipts`` and ``net_dividends`` directly —
+    those rows are authoritative. Market-library recompute only fills recent months
+    that are still missing after import/sync.
     """
     import calendar as cal
 
     from data_ingestion.dividend_income_store import (
         MONTH_LABELS,
-        DividendIncomeStore,
         MonthlyNetDividend,
         dividend_tax_rate,
     )
-    from data_ingestion.dividend_receipt_store import DividendReceiptStore
-    from data_ingestion.portfolio_store import PortfolioStore
+    from services.portfolio_context import create_portfolio_context
 
-    income_store = store or DividendIncomeStore()
-    holdings = holdings if holdings is not None else PortfolioStore().list_open_holdings()
+    ctx = create_portfolio_context()
+    income_store = store or ctx.dividends
+    receipts = receipt_store or ctx.receipts
+    holdings = holdings if holdings is not None else ctx.portfolio.list_open_holdings()
     by_key: dict[str, MonthlyNetDividend] = {
         item.period_key: item for item in income_store.list_dividends()
     }
@@ -195,7 +200,7 @@ def build_merged_dividend_income_records(
             tax_withheld_usd=round(gross - net, 2),
         )
 
-    for (year, month), gross in DividendReceiptStore().monthly_gross_totals().items():
+    for (year, month), gross in receipts.monthly_gross_totals().items():
         _upsert_month(year, month, gross)
 
     if holdings:
@@ -208,6 +213,10 @@ def build_merged_dividend_income_records(
             recent_months.append((today.year, today.month - 1))
 
         for year, month in recent_months:
+            key = f"{year:04d}-{month:02d}"
+            existing = by_key.get(key)
+            if existing is not None and existing.gross_usd > 0:
+                continue
             last_day = cal.monthrange(year, month)[1]
             through = (
                 today if (year, month) == (today.year, today.month) else date(year, month, last_day)
@@ -229,22 +238,27 @@ def ensure_dividend_cash_materialized(*, force_sync: bool = False) -> bool:
     Populate ``dividend_receipts`` / ``net_dividends`` when recent months are empty.
 
     Returns True when a background sync was scheduled or ran inline.
+    Skips when IBKR import or a prior sync already stored receipts or monthly totals.
     """
-    from data_ingestion.dividend_income_store import DividendIncomeStore
-    from data_ingestion.portfolio_store import PortfolioStore
+    from services.portfolio_context import create_portfolio_context
     from services.portfolio_month_dividends import gross_paid_in_calendar_month
 
-    holdings = PortfolioStore().list_open_holdings()
+    ctx = create_portfolio_context()
+    holdings = ctx.portfolio.list_open_holdings()
     if not holdings:
         return False
 
     today = date.today()
-    _, receipt_count = gross_paid_in_calendar_month(today.year, today.month, through=today)
-    has_stored = any(item.gross_usd > 0 for item in DividendIncomeStore().list_dividends())
+    _, receipt_count = gross_paid_in_calendar_month(
+        today.year,
+        today.month,
+        through=today,
+        store=ctx.receipts,
+    )
+    has_receipt_history = bool(ctx.receipts.monthly_gross_totals())
+    has_stored = any(item.gross_usd > 0 for item in ctx.dividends.list_dividends())
 
-    if not force_sync and receipt_count > 0:
-        return False
-    if not force_sync and has_stored:
+    if not force_sync and (receipt_count > 0 or has_receipt_history or has_stored):
         return False
 
     try:
@@ -351,9 +365,9 @@ def render_dividend_data_warnings_streamlit(warnings: list[DividendDataWarning])
         suffix = f" (+{len(missing) - 10} more)" if len(missing) > 10 else ""
         st.warning(
             f"**Missing dividend history:** {tickers}{suffix}. "
-            "Monthly received cash may show **$0** until the market library is populated "
-            "or you run **Sync dividends** (Yahoo/Nasdaq). "
-            "Future integrations can fill gaps for these symbols.",
+            "Upcoming ex-dates and monthly **estimates** may show **$0** until the market "
+            "library is populated or you run **Sync dividends**. "
+            "**Imported broker payments** are shown separately from receipts.",
             icon="⚠️",
         )
         with st.expander("Details — symbols without payment history"):

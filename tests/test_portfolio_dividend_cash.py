@@ -114,8 +114,18 @@ def test_resolve_month_dividend_cash_prefers_receipts() -> None:
 def test_build_merged_dividend_income_records_fills_current_month_from_compute() -> None:
     today = date.today()
     store = SimpleNamespace(list_dividends=lambda: [])
+    receipts = SimpleNamespace(monthly_gross_totals=lambda: {})
+    ctx = SimpleNamespace(
+        dividends=store,
+        receipts=receipts,
+        portfolio=SimpleNamespace(list_open_holdings=lambda: [_holding()]),
+    )
 
     with (
+        patch(
+            "services.portfolio_context.create_portfolio_context",
+            return_value=ctx,
+        ),
         patch(
             "services.portfolio_dividend_cash.resolve_dividend_documents",
             return_value=({}, {}),
@@ -126,13 +136,10 @@ def test_build_merged_dividend_income_records_fills_current_month_from_compute()
                 gross_usd=42.0, net_usd=37.8, payer_count=2, source="computed"
             ),
         ),
-        patch(
-            "data_ingestion.dividend_receipt_store.DividendReceiptStore.monthly_gross_totals",
-            return_value={},
-        ),
     ):
         records = build_merged_dividend_income_records(
             store=store,
+            receipt_store=receipts,
             holdings=[_holding()],
             preload=None,
         )

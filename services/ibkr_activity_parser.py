@@ -202,13 +202,18 @@ def _parse_activity_date(value: str | None) -> date | None:
     return None
 
 
-def _normalize_symbol(symbol: str) -> str | None:
+def normalize_symbol(symbol: str) -> str | None:
+    """Normalize a ticker from IBKR CSV rows to portfolio symbol form."""
     sym = symbol.strip().upper()
     if not sym or sym in {"TOTAL", "SUBTOTAL"}:
         return None
     if _SYMBOL_RE.match(sym):
         return sym
     return None
+
+
+def _normalize_symbol(symbol: str) -> str | None:
+    return normalize_symbol(symbol)
 
 
 def _normalize_currency(value: str) -> str | None:

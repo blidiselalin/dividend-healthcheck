@@ -81,7 +81,7 @@ def test_dividend_cash_uses_shares_at_ex_date() -> None:
         ),
     ]
     service.estimated_lots_for_symbol = lambda symbol: lots if symbol == "KO" else []
-    rows = service.dividend_history("KO", doc, current_shares=10.0)
+    rows = service.dividend_history("KO", doc, current_shares=10.0, prefer_stored=False)
     assert len(rows) == 1
     assert rows[0].shares_held == 10.0
     assert rows[0].cash_usd == 10.0
@@ -121,7 +121,7 @@ def test_dividend_history_uses_shares_after_partial_sell() -> None:
         ),
     ]
     service.estimated_lots_for_symbol = lambda symbol: lots if symbol == "AAPL" else []
-    rows = service.dividend_history("AAPL", doc, current_shares=7.0)
+    rows = service.dividend_history("AAPL", doc, current_shares=7.0, prefer_stored=False)
     assert [row.shares_held for row in rows] == [10.0, 7.0]
     assert [row.cash_usd for row in rows] == [2.5, 1.75]
 
@@ -183,3 +183,51 @@ def test_dividends_dataframe_passes_tracking_since() -> None:
     assert captured["tracking_since"] == date(2024, 1, 1)
     assert captured["prefer_stored"] is True
     assert frame.empty
+
+
+def test_dividend_history_prefers_imported_receipts_over_library() -> None:
+    service = PortfolioHoldingDetailService()
+    service.stored_dividend_history = lambda symbol: [
+        HoldingDividendRow(
+            ex_date=date(2025, 2, 14),
+            pay_date=date(2025, 3, 1),
+            per_share_usd=0.48,
+            shares_held=100.0,
+            cash_usd=48.0,
+        )
+    ]
+    doc = StockDocument(
+        symbol="KO",
+        name="Coca-Cola",
+        dividend_history=[
+            DividendRecord(
+                ex_date=date(2025, 5, 15),
+                payment_date=date(2025, 6, 1),
+                amount=0.49,
+            ),
+        ],
+    )
+    rows = service.dividend_history("KO", doc, current_shares=100.0, prefer_stored=True)
+    assert len(rows) == 1
+    assert rows[0].cash_usd == 48.0
+    assert rows[0].pay_date == date(2025, 3, 1)
+
+
+def test_dividend_history_falls_back_to_library_when_no_receipts() -> None:
+    service = PortfolioHoldingDetailService()
+    service.stored_dividend_history = lambda symbol: []
+    service.estimated_lots_for_symbol = lambda symbol: []
+    doc = StockDocument(
+        symbol="KO",
+        name="Coca-Cola",
+        dividend_history=[
+            DividendRecord(
+                ex_date=date(2025, 5, 15),
+                payment_date=date(2025, 6, 1),
+                amount=0.49,
+            ),
+        ],
+    )
+    rows = service.dividend_history("KO", doc, current_shares=10.0, prefer_stored=True)
+    assert len(rows) == 1
+    assert rows[0].cash_usd == 4.9

@@ -131,8 +131,33 @@ def _merge_dividend_records(
     return sorted(by_ex.values(), key=lambda item: item.ex_date)
 
 
-def _attach_postgres_history(document: StockDocument | None) -> StockDocument | None:
-    if document is None:
+def _dividend_history_count(document: StockDocument | None) -> int:
+    if document is None or not document.dividend_history:
+        return 0
+    return len(document.dividend_history)
+
+
+def _merge_library_and_seed(
+    library: StockDocument | None,
+    seed: StockDocument | None,
+) -> StockDocument | None:
+    """Prefer the document with richer dividend history; library wins on ties."""
+    if library is None:
+        return seed
+    if seed is None:
+        return library
+    if _dividend_history_count(library) >= _dividend_history_count(seed):
+        return library
+    return seed
+
+
+def _attach_postgres_history(
+    document: StockDocument | None,
+    *,
+    symbol: str | None = None,
+) -> StockDocument | None:
+    sym = (getattr(document, "symbol", None) or symbol or "").strip().upper()
+    if not sym:
         return document
     try:
         from db.connection import use_cloud_sql
@@ -141,7 +166,13 @@ def _attach_postgres_history(document: StockDocument | None) -> StockDocument | 
             return document
         from db.postgres_market_history_store import PostgresMarketHistoryStore
 
-        return PostgresMarketHistoryStore().attach_history_to_document(document)
+        store = PostgresMarketHistoryStore()
+        if document is None:
+            table_divs = store.load_dividend_history(sym)
+            if not table_divs:
+                return None
+            return StockDocument(symbol=sym, name=sym, dividend_history=table_divs)
+        return store.attach_history_to_document(document)
     except Exception as exc:  # noqa: BLE001
         logger.debug("Postgres dividend history attach failed: %s", exc)
         return document
@@ -164,7 +195,7 @@ def resolve_dividend_document(
     sources_checked: list[str] = ["market library", "Postgres history", "Yahoo Finance"]
     sources_found: list[str] = []
 
-    doc = _attach_postgres_history(document)
+    doc = _attach_postgres_history(document, symbol=sym)
     before_count = len(document.dividend_history) if document and document.dividend_history else 0
     library_records = list(doc.dividend_history) if doc and doc.dividend_history else []
     if library_records:
@@ -233,23 +264,28 @@ def load_resolved_portfolio_documents(
     """Load and resolve dividend documents for all portfolio symbols."""
     from services.shared_market_db import load_documents
 
-    raw = dict(documents) if documents is not None else load_documents(symbols)
+    library = load_documents(symbols)
     stock_data = stock_data or {}
     resolved: dict[str, StockDocument | None] = {}
     statuses: dict[str, PortfolioDividendStatus] = {}
 
     for symbol in symbols:
         sym = symbol.strip().upper()
+        lib_doc = library.get(sym) or library.get(symbol)
+        seed_doc = None
+        if documents is not None:
+            seed_doc = documents.get(sym) or documents.get(symbol)
+        raw_doc = _merge_library_and_seed(lib_doc, seed_doc)
         try:
             doc, status = resolve_dividend_document(
                 sym,
-                raw.get(sym) or raw.get(symbol),
+                raw_doc,
                 stock=stock_data.get(sym) or stock_data.get(symbol),
                 fetch_remote=fetch_remote,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Dividend resolve failed for %s: %s", sym, exc)
-            doc = raw.get(sym) or raw.get(symbol)
+            doc = raw_doc
             status = PortfolioDividendStatus(
                 symbol=sym,
                 history_count=len(doc.dividend_history) if doc and doc.dividend_history else 0,
