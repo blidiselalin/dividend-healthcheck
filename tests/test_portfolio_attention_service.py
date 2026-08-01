@@ -4,12 +4,28 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 from typing import Any
+
+import pytest
 
 from services.portfolio_analysis_preload import PortfolioAnalysisPreload
 from services.portfolio_attention_service import PortfolioAttentionService
+from services.portfolio_context import create_portfolio_context
 from services.portfolio_details_service import PortfolioDetailRow
 from services.yield_channel_chart import YieldChannelData
+
+
+@pytest.fixture(autouse=True)
+def _empty_portfolio_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep attention tests independent of the developer's local portfolio DB."""
+    db = tmp_path / "attention.db"
+    ctx = create_portfolio_context(db_path=db)
+
+    def _context(*_args: object, **_kwargs: object) -> object:
+        return ctx
+
+    monkeypatch.setattr("services.portfolio_context.create_portfolio_context", _context)
 
 
 def _row(**overrides: Any) -> PortfolioDetailRow:

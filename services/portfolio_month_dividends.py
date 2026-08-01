@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING
 
 from data_ingestion.dividend_income_store import MONTH_LABELS, DividendIncomeStore
 from data_ingestion.dividend_receipt_store import DividendReceiptStore
-from data_ingestion.portfolio_store import PortfolioHolding, PortfolioStore
+from data_ingestion.portfolio_store import PortfolioHolding
+from services.portfolio_context import create_portfolio_context
 from services.portfolio_dividend_calendar import build_portfolio_dividend_calendar
 
 if TYPE_CHECKING:
@@ -269,7 +270,8 @@ def current_month_paid_dividends(
     )
 
     today = reference_date or date.today()
-    holdings = PortfolioStore().list_open_holdings()
+    ctx = create_portfolio_context()
+    holdings = ctx.portfolio.list_open_holdings()
 
     if rows is None:
         if not holdings:

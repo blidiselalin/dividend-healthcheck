@@ -15,8 +15,13 @@ from services.portfolio_import_pipeline import (
     detect_in_statement_duplicates,
     normalize_statement,
     prepare_statement,
+    validate_stored_deposit_currency_pairs,
+    validate_stored_deposits_against_statement,
 )
-from services.portfolio_timeline_service import fill_missing_deposit_months
+from services.portfolio_timeline_service import (
+    fill_missing_deposit_months,
+    trim_pre_inception_deposits,
+)
 
 
 def test_content_fingerprint_is_stable() -> None:
@@ -96,8 +101,116 @@ def test_import_fills_calendar_gaps_after_replace(tmp_path: Path, sample_csv: st
     keys = [item.period_key for item in ctx.deposits.list_deposits()]
     assert keys == sorted(keys)
     assert len(keys) == len(set(keys))
-    assert "2025-01" in keys
+    assert "2025-01" not in keys
+    assert "2025-02" in keys
     assert "2025-12" in keys
+
+
+def test_validate_stored_deposits_allows_merge_accumulation(tmp_path: Path) -> None:
+    db = tmp_path / "portfolio.db"
+    ctx = create_portfolio_context(db_path=db)
+    ctx.deposits.upsert_deposit(
+        year=2026,
+        month=5,
+        label="May 2026",
+        deposit_eur=17452.07,
+        deposit_usd=4169.35,
+        portfolio_eur=0.0,
+    )
+    csv_text = (
+        "Statement,Data,Title,Activity Statement\n"
+        'Statement,Data,Period,"May 1, 2026 - May 31, 2026"\n'
+        "Account Information,Data,Base Currency,EUR\n"
+        "Deposits & Withdrawals,Header,Currency,Settle Date,Description,Amount\n"
+        "Deposits & Withdrawals,Data,USD,2026-05-06,Electronic Fund Transfer,4000\n"
+        "Deposits & Withdrawals,Data,Total,,,4000\n"
+        "Deposits & Withdrawals,Data,Total in EUR,,,16752\n"
+    )
+    statement = parse_activity_statement_csv(csv_text)
+    issues = validate_stored_deposits_against_statement(
+        ctx.deposits.list_deposits(),
+        statement,
+        merge_mode=True,
+    )
+    assert issues == []
+
+
+def test_validate_stored_deposits_flags_under_import_on_replace(tmp_path: Path) -> None:
+    db = tmp_path / "portfolio.db"
+    ctx = create_portfolio_context(db_path=db)
+    ctx.deposits.upsert_deposit(
+        year=2026,
+        month=5,
+        label="May 2026",
+        deposit_eur=100.0,
+        deposit_usd=110.0,
+        portfolio_eur=0.0,
+    )
+    csv_text = (
+        "Statement,Data,Title,Activity Statement\n"
+        "Account Information,Data,Base Currency,EUR\n"
+        "Deposits & Withdrawals,Header,Currency,Settle Date,Description,Amount\n"
+        "Deposits & Withdrawals,Data,EUR,2026-05-11,Electronic Fund Transfer,700.07\n"
+        "Deposits & Withdrawals,Data,Total,,,700.07\n"
+    )
+    statement = parse_activity_statement_csv(csv_text)
+    issues = validate_stored_deposits_against_statement(
+        ctx.deposits.list_deposits(),
+        statement,
+        merge_mode=False,
+    )
+    assert any("stored deposit €" in issue.message for issue in issues)
+
+
+def test_trim_pre_inception_deposits_removes_zero_deposit_leadin(tmp_path: Path) -> None:
+    db = tmp_path / "portfolio.db"
+    ctx = create_portfolio_context(db_path=db)
+    ctx.deposits.upsert_deposit(
+        year=2025,
+        month=1,
+        label="January 2025",
+        deposit_eur=0.0,
+        deposit_usd=0.0,
+        portfolio_eur=0.0,
+    )
+    ctx.deposits.upsert_deposit(
+        year=2025,
+        month=2,
+        label="February 2025",
+        deposit_eur=1000.0,
+        deposit_usd=1100.0,
+        portfolio_eur=0.0,
+    )
+    removed, issues = trim_pre_inception_deposits(ctx)
+    assert removed == 1
+    keys = [item.period_key for item in ctx.deposits.list_deposits()]
+    assert keys == ["2025-02"]
+    assert any("Removed 1 month" in issue.message for issue in issues)
+
+
+def test_validate_stored_deposit_currency_pairs_flags_mismatch() -> None:
+    from data_ingestion.deposits_store import MonthlyDeposit
+
+    rows = [
+        MonthlyDeposit(
+            period=date(2025, 1, 1),
+            label="January 2025",
+            deposit_eur=1000.0,
+            deposit_usd=500.0,
+            portfolio_eur=0.0,
+            sort_order=1,
+        ),
+        MonthlyDeposit(
+            period=date(2025, 2, 1),
+            label="February 2025",
+            deposit_eur=920.0,
+            deposit_usd=1000.0,
+            portfolio_eur=0.0,
+            sort_order=2,
+        ),
+    ]
+    issues = validate_stored_deposit_currency_pairs(rows)
+    assert any("FX-consistent" in issue.message for issue in issues)
 
 
 @pytest.fixture

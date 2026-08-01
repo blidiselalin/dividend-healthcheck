@@ -11,14 +11,16 @@ from __future__ import annotations
 import hashlib
 from dataclasses import replace
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from services.ibkr_activity_parser import (
     IBKRActivityStatement,
     ImportIssue,
     ImportIssueLevel,
     build_monthly_deposits,
+    expected_deposit_inflow_total,
     parse_statement_period,
+    sum_deposit_inflows_base,
 )
 from utils.import_money import round_money, round_rate, round_shares
 
@@ -226,6 +228,112 @@ def validate_extreme_values(statement: IBKRActivityStatement) -> list[ImportIssu
     return issues
 
 
+def validate_stored_deposits_against_statement(
+    deposits: list,
+    statement: IBKRActivityStatement,
+    *,
+    merge_mode: bool = False,
+) -> list[ImportIssue]:
+    """Compare persisted monthly rows with freshly parsed IBKR deposit totals."""
+    issues: list[ImportIssue] = []
+    incoming = build_monthly_deposits(statement, include_zero_months=True)
+    stored_by_key = {item.period_key: item for item in deposits}
+    for item in incoming:
+        if item.deposit_eur <= 0.01 and item.deposit_usd <= 0.01:
+            continue
+        period_key = f"{item.year:04d}-{item.month:02d}"
+        stored = stored_by_key.get(period_key)
+        if stored is None:
+            issues.append(
+                ImportIssue(
+                    ImportIssueLevel.WARNING,
+                    f"{item.label}: deposit month missing after import.",
+                    section="Deposits & Withdrawals",
+                )
+            )
+            continue
+        eur_ok = (
+            stored.deposit_eur + 0.05 >= item.deposit_eur
+            if merge_mode
+            else abs(stored.deposit_eur - item.deposit_eur) <= 0.05
+        )
+        usd_ok = (
+            stored.deposit_usd + 0.05 >= item.deposit_usd
+            if merge_mode
+            else abs(stored.deposit_usd - item.deposit_usd) <= 0.05
+        )
+        if not eur_ok:
+            issues.append(
+                ImportIssue(
+                    ImportIssueLevel.WARNING,
+                    (
+                        f"{item.label}: stored deposit €{stored.deposit_eur:,.2f} differs from "
+                        f"parsed €{item.deposit_eur:,.2f}."
+                    ),
+                    section="Deposits & Withdrawals",
+                )
+            )
+        if not usd_ok:
+            issues.append(
+                ImportIssue(
+                    ImportIssueLevel.WARNING,
+                    (
+                        f"{item.label}: stored deposit ${stored.deposit_usd:,.2f} differs from "
+                        f"parsed ${item.deposit_usd:,.2f}."
+                    ),
+                    section="Deposits & Withdrawals",
+                )
+            )
+    return issues
+
+
+def validate_stored_deposit_currency_pairs(deposits: list) -> list[ImportIssue]:
+    """Ensure stored EUR and USD totals represent the same value month-by-month."""
+    issues: list[ImportIssue] = []
+    fx_samples: list[float] = []
+    for item in deposits:
+        if item.deposit_eur > 0.01 and item.deposit_usd > 0.01:
+            fx_samples.append(item.deposit_eur / item.deposit_usd)
+    if not fx_samples:
+        return issues
+
+    ref_fx = sorted(fx_samples)[len(fx_samples) // 2]
+    tolerance = max(0.02, ref_fx * 0.01)
+    for item in deposits:
+        if item.deposit_eur <= 0.01 or item.deposit_usd <= 0.01:
+            continue
+        implied = item.deposit_eur / item.deposit_usd
+        if abs(implied - ref_fx) > tolerance:
+            issues.append(
+                ImportIssue(
+                    ImportIssueLevel.WARNING,
+                    (
+                        f"{item.label}: deposit €{item.deposit_eur:,.2f} and "
+                        f"${item.deposit_usd:,.2f} are not FX-consistent "
+                        f"(implied {implied:.4f}, portfolio median {ref_fx:.4f})."
+                    ),
+                    section="Deposits & Withdrawals",
+                )
+            )
+
+    total_eur = round(sum(item.deposit_eur for item in deposits), 2)
+    total_usd = round(sum(item.deposit_usd for item in deposits), 2)
+    if total_usd > 0.01:
+        implied_total_fx = total_eur / total_usd
+        if abs(implied_total_fx - ref_fx) > tolerance:
+            issues.append(
+                ImportIssue(
+                    ImportIssueLevel.WARNING,
+                    (
+                        f"Portfolio deposit totals (€{total_eur:,.2f}, ${total_usd:,.2f}) "
+                        f"do not represent the same value at FX {ref_fx:.4f}."
+                    ),
+                    section="Deposits & Withdrawals",
+                )
+            )
+    return issues
+
+
 def _iter_calendar_months(start: date, end: date) -> list[tuple[int, int]]:
     months: list[tuple[int, int]] = []
     year, month = start.year, start.month
@@ -241,9 +349,12 @@ def _iter_calendar_months(start: date, end: date) -> list[tuple[int, int]]:
 def run_post_import_checks(
     ctx: PortfolioContext,
     statement: IBKRActivityStatement,
+    *,
+    import_mode: Any = None,
 ) -> list[ImportIssue]:
     """Reconcile imported data against holdings and monthly evolution."""
     issues: list[ImportIssue] = []
+    merge_mode = getattr(import_mode, "value", import_mode) == "merge"
     deposits = ctx.deposits.list_deposits()
     if not deposits:
         return issues
@@ -320,20 +431,31 @@ def run_post_import_checks(
                     )
                 )
 
-    parsed_inflows = round_money(sum(t.amount for t in statement.cash_transfers if t.amount > 0))
-    if parsed_inflows > 0 and statement.deposits_inflow_total_base is not None:
-        expected_inflows = round_money(statement.deposits_inflow_total_base)
-        if expected_inflows > 0 and abs(parsed_inflows - expected_inflows) > 0.02:
+    parsed_inflows = round_money(sum_deposit_inflows_base(statement))
+    expected_total = expected_deposit_inflow_total(statement)
+    if parsed_inflows > 0 and expected_total is not None:
+        expected_inflows = round_money(expected_total)
+        tolerance = max(0.05, expected_inflows * 0.001)
+        if expected_inflows > 0 and abs(parsed_inflows - expected_inflows) > tolerance:
             issues.append(
                 ImportIssue(
                     ImportIssueLevel.WARNING,
                     (
                         f"Parsed deposit inflows ({parsed_inflows:,.2f}) differ from "
-                        f"statement total ({expected_inflows:,.2f})."
+                        f"statement total ({expected_inflows:,.2f}) in account base currency."
                     ),
                     section="Deposits & Withdrawals",
                 )
             )
+
+    issues.extend(
+        validate_stored_deposits_against_statement(
+            deposits,
+            statement,
+            merge_mode=merge_mode,
+        )
+    )
+    issues.extend(validate_stored_deposit_currency_pairs(deposits))
 
     return issues
 

@@ -106,7 +106,7 @@ def test_replace_import_loads_holdings_and_receipts(tmp_path: Path, sample_csv: 
     assert result.holdings_upserted == 2
     assert result.trades_imported == 3
     assert result.dividends_imported == 2
-    assert result.deposits_imported == 12
+    assert result.deposits_imported == 11
 
     ctx = create_portfolio_context(db_path=db)
     symbols = {h.symbol for h in ctx.portfolio.list_holdings()}
@@ -119,7 +119,8 @@ def test_replace_import_loads_holdings_and_receipts(tmp_path: Path, sample_csv: 
     assert receipts[0].gross_usd == 2.50
     deposits = ctx.deposits.list_deposits()
     keys_2025 = [item.period_key for item in deposits if item.period.year == 2025]
-    assert len(keys_2025) == 12
+    assert len(keys_2025) == 11
+    assert "2025-01" not in keys_2025
     march = next(item for item in deposits if item.period_key == "2025-03")
     assert march.deposit_usd == 1500.0
     december = next(item for item in deposits if item.period_key == "2025-12")
@@ -162,6 +163,44 @@ def test_computed_sync_does_not_overwrite_ibkr_receipts(tmp_path: Path, sample_c
     after = ctx.receipts.list_for_symbol("AAPL")[0]
     assert after.gross_usd == before.gross_usd
     assert after.source == "ibkr"
+
+
+def test_computed_sync_does_not_duplicate_ibkr_when_ex_date_differs(
+    tmp_path: Path,
+    sample_csv: str,
+) -> None:
+    db = tmp_path / "portfolio.db"
+    apply_import(sample_csv, mode=ImportMode.REPLACE, db_path=db)
+    ctx = create_portfolio_context(db_path=db)
+    before = ctx.receipts.list_for_symbol("AAPL")[0]
+
+    outcome = ctx.receipts.sync_receipt(
+        "AAPL",
+        ex_date=date(2020, 1, 1),
+        pay_date=before.pay_date,
+        per_share_usd=before.per_share_usd,
+        shares_held=before.shares_held,
+        gross_usd=before.gross_usd,
+        source="computed",
+    )
+    assert outcome == "unchanged"
+    assert len(ctx.receipts.list_for_symbol("AAPL")) == 1
+
+
+def test_import_skips_dividend_reversals(tmp_path: Path) -> None:
+    csv_text = (
+        "Statement,Data,Title,Activity Statement\n"
+        "Open Positions,Data,Summary,Stocks,USD,KO,10,60,60,600\n"
+        'Dividends,Data,USD,2025-06-15,"AAPL(US0378331005) Cash Dividend USD 0.25 per Share",2.50\n'
+        "Dividends,Data,USD,2025-06-20,"
+        '"AAPL(US0378331005) Cash Dividend Reversal USD 0.25 per Share",-2.50\n'
+    )
+    db = tmp_path / "portfolio.db"
+    result = apply_import(csv_text, mode=ImportMode.REPLACE, db_path=db)
+    ctx = create_portfolio_context(db_path=db)
+    assert result.dividends_imported == 1
+    assert len(ctx.receipts.list_for_symbol("AAPL")) == 1
+    assert ctx.receipts.list_for_symbol("AAPL")[0].gross_usd == 2.50
 
 
 def test_sell_lots_produce_negative_estimated_shares(tmp_path: Path, sample_csv: str) -> None:
@@ -422,7 +461,7 @@ def test_merge_accumulates_complementary_deposits_same_month(tmp_path: Path) -> 
     ctx = create_portfolio_context(db_path=db)
     may = next(item for item in ctx.deposits.list_deposits() if item.period_key == "2026-05")
     assert may.deposit_eur == pytest.approx(17452.07)
-    assert may.deposit_usd == pytest.approx(4000.0)
+    assert may.deposit_usd == pytest.approx(17452.07 / (16752.0 / 4000.0))
 
 
 def test_merge_same_file_twice_is_idempotent(tmp_path: Path, sample_csv: str) -> None:

@@ -520,6 +520,8 @@ def reconcile_receipt_dates(
         stored = ctx.receipts.list_for_symbol(symbol)
 
         for receipt in stored:
+            if receipt.source == "ibkr":
+                continue
             key = (receipt.ex_date, round(receipt.per_share_usd, 6))
             expected = by_key.get(key) or _fuzzy_match_row(
                 receipt.ex_date,

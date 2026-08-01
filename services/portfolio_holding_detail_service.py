@@ -157,7 +157,10 @@ class PortfolioHoldingDetailService:
         if prefer_stored:
             stored = self.stored_dividend_history(symbol)
             if stored:
-                return stored
+                if tracking_since is not None:
+                    stored = [row for row in stored if row.pay_date >= tracking_since]
+                if stored:
+                    return stored
 
         if not document or not document.dividend_history:
             return []

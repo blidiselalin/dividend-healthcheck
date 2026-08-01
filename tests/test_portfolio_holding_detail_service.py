@@ -213,6 +213,35 @@ def test_dividend_history_prefers_imported_receipts_over_library() -> None:
     assert rows[0].pay_date == date(2025, 3, 1)
 
 
+def test_dividend_history_filters_stored_receipts_by_tracking_since() -> None:
+    service = PortfolioHoldingDetailService()
+    service.stored_dividend_history = lambda symbol: [
+        HoldingDividendRow(
+            ex_date=date(2023, 2, 14),
+            pay_date=date(2023, 3, 1),
+            per_share_usd=0.46,
+            shares_held=100.0,
+            cash_usd=46.0,
+        ),
+        HoldingDividendRow(
+            ex_date=date(2025, 2, 14),
+            pay_date=date(2025, 3, 1),
+            per_share_usd=0.48,
+            shares_held=100.0,
+            cash_usd=48.0,
+        ),
+    ]
+    rows = service.dividend_history(
+        "KO",
+        None,
+        current_shares=100.0,
+        tracking_since=date(2024, 1, 1),
+        prefer_stored=True,
+    )
+    assert len(rows) == 1
+    assert rows[0].cash_usd == 48.0
+
+
 def test_dividend_history_falls_back_to_library_when_no_receipts() -> None:
     service = PortfolioHoldingDetailService()
     service.stored_dividend_history = lambda symbol: []

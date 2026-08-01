@@ -203,3 +203,48 @@ def test_reconcile_fixes_stale_pay_dates(tmp_path: Path) -> None:
     assert stats.pay_dates_corrected >= 1
     fixed = receipt_store.list_for_symbol("KO")[0]
     assert fixed.pay_date == date(2026, 6, 28)
+
+
+def test_reconcile_skips_ibkr_receipts(tmp_path: Path) -> None:
+    db = tmp_path / "portfolio.db"
+    portfolio = PortfolioStore(db_path=db, seed=False)
+    portfolio.upsert_holding("KO", shares=10, avg_cost_per_share=50.0)
+
+    doc = StockDocument(
+        symbol="KO",
+        name="Coca-Cola",
+        dividend_history=[
+            DividendRecord(
+                ex_date=date(2026, 6, 10),
+                payment_date=date(2026, 6, 28),
+                amount=0.485,
+            ),
+        ],
+        payment_frequency=4,
+        annual_dividend=1.94,
+    )
+
+    ctx = create_portfolio_context(db_path=db)
+    receipt_store = DividendReceiptStore(db)
+    receipt_store.sync_receipt(
+        "KO",
+        ex_date=date(2026, 6, 10),
+        pay_date=date(2026, 6, 24),
+        per_share_usd=0.485,
+        shares_held=10.0,
+        gross_usd=4.85,
+        source="ibkr",
+    )
+
+    stats = reconcile_receipt_dates(
+        ctx,
+        portfolio.list_holdings(),
+        {"KO": doc},
+        fetch_nasdaq=False,
+        reference_date=date(2026, 6, 30),
+    )
+
+    assert stats.receipts_updated == 0
+    unchanged = receipt_store.list_for_symbol("KO")[0]
+    assert unchanged.pay_date == date(2026, 6, 24)
+    assert unchanged.source == "ibkr"

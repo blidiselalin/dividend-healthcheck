@@ -200,24 +200,32 @@ def apply_import(  # noqa: C901
 
     dividends = statement.dividends
     _report(progress, "Importing dividends…", 0.65)
+    base_currency = (statement.meta.base_currency or "USD").strip().upper()
+    dividend_fx = statement.deposits_fx_eur_per_usd
+    if not dividend_fx and base_currency == "USD":
+        dividend_fx = statement.fx_rates.get("EUR")
     for index, dividend in enumerate(dividends, start=1):
         if mode == ImportMode.MERGE and dividend.symbol not in scope_symbols:
             continue
-        if dividend.gross_usd == 0:
+        if dividend.kind in {"reversal", "withholding", "accrual"}:
+            continue
+        if dividend.gross_usd <= 0:
             continue
         symbol = normalize_symbol(dividend.symbol) or dividend.symbol.strip().upper()
-        shares_held = (
-            round(abs(dividend.gross_usd) / dividend.per_share_usd, 4)
-            if dividend.per_share_usd > 0
-            else 0.0
-        )
+        gross_usd = float(dividend.gross_usd)
+        per_share_usd = float(dividend.per_share_usd)
+        if dividend.currency == "EUR" and dividend_fx and dividend_fx > 0:
+            gross_usd = round(gross_usd / dividend_fx, 2)
+            if per_share_usd > 0:
+                per_share_usd = round(per_share_usd / dividend_fx, 6)
+        shares_held = round(gross_usd / per_share_usd, 4) if per_share_usd > 0 else 0.0
         outcome = ctx.receipts.sync_receipt(
-            dividend.symbol,
+            symbol,
             ex_date=dividend.pay_date,
             pay_date=dividend.pay_date,
-            per_share_usd=dividend.per_share_usd,
+            per_share_usd=per_share_usd,
             shares_held=shares_held,
-            gross_usd=dividend.gross_usd,
+            gross_usd=gross_usd,
             source="ibkr",
         )
         if outcome in {"added", "updated"}:
@@ -235,6 +243,10 @@ def apply_import(  # noqa: C901
         statement,
         include_zero_months=(mode == ImportMode.REPLACE),
     )
+    base_currency = (statement.meta.base_currency or "USD").strip().upper()
+    statement_fx = statement.deposits_fx_eur_per_usd
+    if not statement_fx and base_currency == "USD":
+        statement_fx = statement.fx_rates.get("EUR")
     if mode == ImportMode.MERGE:
         issues.extend(_deposit_overlap_issues(ctx, monthly_deposits))
     _report(progress, "Importing monthly deposits…", 0.82)
@@ -250,6 +262,7 @@ def apply_import(  # noqa: C901
                     portfolio_eur=month_deposit.portfolio_eur,
                     native_eur=month_deposit.native_eur,
                     native_usd=month_deposit.native_usd,
+                    eur_per_usd=statement_fx,
                 )
                 if outcome in {"added", "updated"}:
                     deposits_imported += 1
@@ -285,7 +298,7 @@ def apply_import(  # noqa: C901
 
     reconcile_closed_holdings(db_path=db_path)
     issues.extend(_holdings_journal_consistency_issues(ctx, open_symbols))
-    issues.extend(run_post_import_checks(ctx, statement))
+    issues.extend(run_post_import_checks(ctx, statement, import_mode=mode))
     _report(progress, "Finalizing import…", 0.96)
     _finalize_broker_import(ctx, db_path=db_path)
     _report(progress, "Import complete", 1.0)

@@ -54,7 +54,7 @@ def test_statement_symbol_scope_includes_trades_and_dividends(sample_csv: str) -
 def test_build_monthly_deposits_aggregates_inflows(sample_csv: str) -> None:
     statement = parse_activity_statement_csv(sample_csv)
     monthly = build_monthly_deposits(statement)
-    assert len(monthly) == 12
+    assert len(monthly) == 11
     assert deposit_months_with_inflows(monthly) == 2
     feb = next(item for item in monthly if item.month == 2)
     mar = next(item for item in monthly if item.month == 3)
@@ -210,6 +210,10 @@ def test_parse_all_2025_deposit_fixture() -> None:
     assert len(monthly) == 12
     assert deposit_months_with_inflows(monthly) == 11
     assert sum(item.deposit_eur for item in monthly) == pytest.approx(34460.79)
+    fx = statement.deposits_fx_eur_per_usd or statement.fx_rates.get("EUR")
+    if fx:
+        total_usd = sum(item.deposit_usd for item in monthly)
+        assert total_usd == pytest.approx(34460.79 / fx, rel=1e-3)
     assert next(item for item in monthly if item.month == 11).deposit_eur == 0.0
     feb = next(item for item in monthly if item.month == 2)
     assert feb.deposit_eur == pytest.approx(11800.0)
@@ -250,10 +254,39 @@ def test_dual_currency_deposits_in_same_month_are_combined() -> None:
     statement = parse_activity_statement_csv(csv_text)
     monthly = build_monthly_deposits(statement)
     may = next(item for item in monthly if item.month == 5)
-    assert may.deposit_usd == 4000.0
     fx = statement.deposits_fx_eur_per_usd
     assert fx is not None
     assert may.deposit_eur == pytest.approx(700.07 + 4000 * fx, rel=1e-4)
+    assert may.deposit_usd == pytest.approx(may.deposit_eur / fx, rel=1e-4)
+
+
+def test_validate_deposit_import_flags_inconsistent_currency_pair() -> None:
+    from services.ibkr_activity_parser import IBKRMonthlyDeposit, validate_deposit_import
+
+    csv_text = (
+        "Statement,Data,Title,Activity Statement\n"
+        "Account Information,Data,Base Currency,EUR\n"
+        "Deposits & Withdrawals,Header,Currency,Settle Date,Description,Amount\n"
+        "Deposits & Withdrawals,Data,EUR,2025-02-01,Electronic Fund Transfer,1000\n"
+        "Deposits & Withdrawals,Data,Total,,,1000\n"
+        "Deposits & Withdrawals,Data,USD,2025-02-02,Electronic Fund Transfer,100\n"
+        "Deposits & Withdrawals,Data,Total,,,100\n"
+        "Deposits & Withdrawals,Data,Total in EUR,,,90\n"
+    )
+    statement = parse_activity_statement_csv(csv_text)
+    monthly = [
+        IBKRMonthlyDeposit(
+            year=2025,
+            month=2,
+            label="February 2025",
+            deposit_usd=500.0,
+            deposit_eur=1000.0,
+            native_eur=1000.0,
+            native_usd=0.0,
+        )
+    ]
+    issues = validate_deposit_import(statement, monthly=monthly)
+    assert any("imply FX" in issue.message for issue in issues)
 
 
 def test_statement_deposit_period_falls_back_to_transfer_dates() -> None:

@@ -25,6 +25,7 @@ from services.portfolio_monthly_valuation import (
     fx_rates_carry_forward,
     pick_portfolio_eur_for_month,
     portfolio_eur_to_store,
+    portfolio_inception_period,
     shares_from_records,
     valuation_as_of,
 )
@@ -93,6 +94,56 @@ def test_mark_price_for_past_month_uses_last_in_month_close() -> None:
         snapshot_price=99.0,
         reference=date(2026, 7, 23),
     ) == pytest.approx(50.0)
+
+
+def test_continuous_monthly_deposits_trims_pre_inception() -> None:
+    from data_ingestion.deposits_store import MonthlyDeposit
+
+    rows = [
+        MonthlyDeposit(
+            period=date(2025, 1, 1),
+            label="January 2025",
+            deposit_eur=0.0,
+            deposit_usd=0.0,
+            portfolio_eur=0.0,
+            sort_order=1,
+        ),
+        MonthlyDeposit(
+            period=date(2025, 2, 1),
+            label="February 2025",
+            deposit_eur=1000.0,
+            deposit_usd=1100.0,
+            portfolio_eur=0.0,
+            sort_order=2,
+        ),
+        MonthlyDeposit(
+            period=date(2025, 3, 1),
+            label="March 2025",
+            deposit_eur=500.0,
+            deposit_usd=550.0,
+            portfolio_eur=0.0,
+            sort_order=3,
+        ),
+    ]
+    expanded = continuous_monthly_deposits(rows, include_current_month=False)
+    assert [item.period.month for item in expanded] == [2, 3]
+    assert portfolio_inception_period(rows) == date(2025, 2, 1)
+
+
+def test_portfolio_inception_period_none_without_inflows() -> None:
+    from data_ingestion.deposits_store import MonthlyDeposit
+
+    rows = [
+        MonthlyDeposit(
+            period=date(2025, 1, 1),
+            label="January 2025",
+            deposit_eur=0.0,
+            deposit_usd=0.0,
+            portfolio_eur=1000.0,
+            sort_order=1,
+        ),
+    ]
+    assert portfolio_inception_period(rows) is None
 
 
 def test_continuous_monthly_deposits_fills_gaps() -> None:
@@ -330,13 +381,17 @@ def test_current_month_uses_open_holding_shares(tmp_path: Path) -> None:
         include_current_month=True,
         reference=date(2026, 7, 23),
     )
+    reference = date(2026, 7, 23)
     with (
         patch("services.shared_market_db.load_documents", return_value=docs),
         patch(
             "services.portfolio_monthly_valuation._load_live_prices",
             return_value={"KO": 62.0, "PEP": 101.0},
         ),
+        patch("services.portfolio_monthly_valuation.date") as mock_date,
     ):
+        mock_date.today.return_value = reference
+        mock_date.side_effect = lambda *args, **kw: date(*args, **kw)
         values = compute_monthly_portfolio_valuations(timeline, db_path=db)
 
     july = values["2026-07"]

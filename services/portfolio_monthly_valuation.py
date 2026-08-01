@@ -38,11 +38,32 @@ def month_end(day: date) -> date:
     return date(day.year, day.month, last)
 
 
+def _month_start(day: date) -> date:
+    return date(day.year, day.month, 1)
+
+
+def portfolio_inception_period(deposits: list[MonthlyDeposit]) -> date | None:
+    """
+    First calendar month with a positive deposit inflow.
+
+    Used to hide pre-inception placeholder months (e.g. IBKR statement period
+    starting before the first cash transfer).
+    """
+    inception: date | None = None
+    for item in deposits:
+        if item.deposit_eur > 0.01 or item.deposit_usd > 0.01:
+            candidate = _month_start(item.period)
+            if inception is None or candidate < inception:
+                inception = candidate
+    return inception
+
+
 def continuous_monthly_deposits(
     deposits: list[MonthlyDeposit],
     *,
     include_current_month: bool = True,
     reference: date | None = None,
+    trim_before_inception: bool = True,
 ) -> list[MonthlyDeposit]:
     """
     Expand sparse deposit history into every calendar month from first to last.
@@ -54,8 +75,12 @@ def continuous_monthly_deposits(
         return []
     ordered = sorted(deposits, key=lambda item: (item.period.year, item.period.month))
     by_key = {item.period_key: item for item in ordered}
-    start = ordered[0].period
-    end = ordered[-1].period
+    start = _month_start(ordered[0].period)
+    if trim_before_inception:
+        inception = portfolio_inception_period(deposits)
+        if inception is not None and inception > start:
+            start = inception
+    end = _month_start(ordered[-1].period)
     if include_current_month:
         today = reference or date.today()
         current_month = date(today.year, today.month, 1)

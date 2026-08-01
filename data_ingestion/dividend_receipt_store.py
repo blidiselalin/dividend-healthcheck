@@ -136,6 +136,15 @@ class DividendReceiptStore:
             fallback = self._find_receipt(symbol, ex_date, per_share_usd, gross_usd=None)
             if fallback is not None and fallback.source == "ibkr":
                 return "unchanged"
+            if fallback is None:
+                fallback = self._find_ibkr_receipt_by_pay_date(
+                    symbol,
+                    pay_date=pay_date,
+                    per_share_usd=per_share_usd,
+                    gross_usd=gross_usd,
+                )
+            if fallback is not None and fallback.source == "ibkr":
+                return "unchanged"
             existing = fallback
         if existing is None:
             inserted = self._insert_receipt(
@@ -159,6 +168,9 @@ class DividendReceiptStore:
             and existing.gross_usd == gross_usd
             and existing.source == source
         ):
+            return "unchanged"
+
+        if existing.id is not None and existing.source == "ibkr" and source != "ibkr":
             return "unchanged"
 
         if existing.id is not None and self.update_receipt(
@@ -300,6 +312,58 @@ class DividendReceiptStore:
             shares_held=float(row["shares_held"]),
             gross_usd=float(row["gross_usd"]),
             source=str(row["source"] or "computed"),
+        )
+
+    def _find_ibkr_receipt_by_pay_date(
+        self,
+        symbol: str,
+        *,
+        pay_date: date,
+        per_share_usd: float,
+        gross_usd: float,
+    ) -> DividendReceipt | None:
+        """Match broker receipts when library sync uses a different ex-date."""
+        symbol = symbol.strip().upper()
+        per = round(float(per_share_usd), 6)
+        gross = round(float(gross_usd), 2)
+        with self._connect() as connection:
+            if connection.is_postgres:
+                row = connection.execute(
+                    """
+                    SELECT id, symbol, ex_date, pay_date, per_share_usd,
+                           shares_held, gross_usd, source
+                    FROM dividend_receipts
+                    WHERE user_id = ? AND symbol = ? AND pay_date = ? AND source = 'ibkr'
+                      AND ABS(per_share_usd - ?) < 0.000001
+                      AND ABS(gross_usd - ?) < 0.05
+                    LIMIT 1
+                    """,
+                    (connection.user_id, symbol, pay_date.isoformat(), per, gross),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    """
+                    SELECT id, symbol, ex_date, pay_date, per_share_usd,
+                           shares_held, gross_usd, source
+                    FROM dividend_receipts
+                    WHERE symbol = ? AND pay_date = ? AND source = 'ibkr'
+                      AND ABS(per_share_usd - ?) < 0.000001
+                      AND ABS(gross_usd - ?) < 0.05
+                    LIMIT 1
+                    """,
+                    (symbol, pay_date.isoformat(), per, gross),
+                ).fetchone()
+        if not row:
+            return None
+        return DividendReceipt(
+            id=int(row["id"]),
+            symbol=row["symbol"],
+            ex_date=parse_date(row["ex_date"]),
+            pay_date=parse_date(row["pay_date"]),
+            per_share_usd=float(row["per_share_usd"]),
+            shares_held=float(row["shares_held"]),
+            gross_usd=float(row["gross_usd"]),
+            source=str(row["source"] or "ibkr"),
         )
 
     def _insert_receipt(

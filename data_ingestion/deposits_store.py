@@ -92,6 +92,17 @@ class MonthlyDeposit:
         return self.period.strftime("%Y-%m")
 
 
+def _deposit_inception_period(deposits: list[MonthlyDeposit]) -> date | None:
+    """First calendar month with a positive deposit inflow."""
+    inception: date | None = None
+    for item in deposits:
+        if item.deposit_eur > 0.01 or item.deposit_usd > 0.01:
+            candidate = date(item.period.year, item.period.month, 1)
+            if inception is None or candidate < inception:
+                inception = candidate
+    return inception
+
+
 def _merge_deposit_totals(
     existing: MonthlyDeposit,
     *,
@@ -136,10 +147,30 @@ def _merge_deposit_totals(
     if incoming_dominates:
         return round(deposit_eur, 2), round(deposit_usd, 2)
 
+    if existing_has_eur and existing_has_usd and deposit_eur > 0.01 and deposit_usd > 0.01:
+        return (
+            round(max(existing.deposit_eur, deposit_eur), 2),
+            round(max(existing.deposit_usd, deposit_usd), 2),
+        )
+
     return (
         round(existing.deposit_eur + deposit_eur, 2),
         round(existing.deposit_usd + deposit_usd, 2),
     )
+
+
+def _align_deposit_currency_pair(
+    deposit_eur: float,
+    deposit_usd: float,
+    *,
+    eur_per_usd: float | None,
+) -> tuple[float, float]:
+    """Keep EUR/USD totals representing the same month amount when FX is known."""
+    if deposit_eur > 0.01 and eur_per_usd and eur_per_usd > 0:
+        return round(deposit_eur, 2), round(deposit_eur / eur_per_usd, 2)
+    if deposit_usd > 0.01 and eur_per_usd and eur_per_usd > 0:
+        return round(deposit_usd * eur_per_usd, 2), round(deposit_usd, 2)
+    return round(deposit_eur, 2), round(deposit_usd, 2)
 
 
 class DepositsStore:
@@ -422,6 +453,7 @@ class DepositsStore:
         portfolio_eur: float,
         native_eur: float = 0.0,
         native_usd: float = 0.0,
+        eur_per_usd: float | None = None,
     ) -> str:
         """
         Merge one month's IBKR deposit totals into storage.
@@ -506,6 +538,11 @@ class DepositsStore:
             deposit_usd=deposit_usd,
             native_eur=native_eur,
             native_usd=native_usd,
+        )
+        combined_eur, combined_usd = _align_deposit_currency_pair(
+            combined_eur,
+            combined_usd,
+            eur_per_usd=eur_per_usd,
         )
 
         if (
@@ -595,7 +632,8 @@ class DepositsStore:
             return 0
 
         existing = {(item.period.year, item.period.month) for item in deposits}
-        start = range_start or min(item.period for item in deposits)
+        inception = _deposit_inception_period(deposits)
+        start = range_start or inception or min(item.period for item in deposits)
         stored_end = max(item.period for item in deposits)
         today_month = date.today().replace(day=1)
         end = range_end or max(stored_end, today_month)

@@ -111,8 +111,9 @@ def test_dashboard_evolution_skips_zero_portfolio(tmp_path: Path) -> None:
         portfolio_eur=0.0,
     )
     dashboard = PortfolioDashboardService(deposits_service=PortfolioDepositsService(store=store))
-    df = dashboard.evolution_dataframe()
-    may = df.iloc[1]
+    df = dashboard.evolution_dataframe(include_current_month=False)
+    assert list(df["period_key"]) == ["2026-05"]
+    may = df.iloc[0]
     assert may["deposit_eur"] == 4111.6
     assert may["cumulative_deposits_eur"] == pytest.approx(4111.6)
     assert pd.isna(may["portfolio_eur"])

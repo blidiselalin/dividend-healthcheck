@@ -13,6 +13,7 @@ from services.portfolio_monthly_valuation import (
     compute_monthly_portfolio_valuations,
     continuous_monthly_deposits,
     portfolio_eur_to_store,
+    portfolio_inception_period,
 )
 
 if TYPE_CHECKING:
@@ -46,6 +47,39 @@ def fill_missing_deposit_months(
             )
         )
     return added, issues
+
+
+def trim_pre_inception_deposits(
+    ctx: PortfolioContext,
+) -> tuple[int, list[ImportIssue]]:
+    """Remove monthly rows that fall before the first positive deposit month."""
+    issues: list[ImportIssue] = []
+    deposits = ctx.deposits.list_deposits()
+    inception = portfolio_inception_period(deposits)
+    if inception is None:
+        return 0, issues
+
+    removed = 0
+    for item in deposits:
+        if _month_start(item.period) < inception and ctx.deposits.delete_deposit(item.period_key):
+            removed += 1
+
+    if removed:
+        issues.append(
+            ImportIssue(
+                ImportIssueLevel.INFO,
+                (
+                    f"Removed {removed} month(s) before portfolio inception "
+                    f"({inception.strftime('%B %Y')})."
+                ),
+                section="Deposits & Withdrawals",
+            )
+        )
+    return removed, issues
+
+
+def _month_start(day: date) -> date:
+    return date(day.year, day.month, 1)
 
 
 def backfill_monthly_portfolio_eur(
@@ -111,9 +145,12 @@ def sync_monthly_portfolio_timeline(
 ) -> tuple[int, int, list[ImportIssue]]:
     """Ensure a continuous monthly timeline and computed portfolio € on every row."""
     issues: list[ImportIssue] = []
+    _trimmed, trim_issues = trim_pre_inception_deposits(ctx)
+    issues.extend(trim_issues)
+    inception = portfolio_inception_period(ctx.deposits.list_deposits())
     months_filled, fill_issues = fill_missing_deposit_months(
         ctx,
-        range_start=range_start,
+        range_start=range_start or inception,
         range_end=range_end,
     )
     issues.extend(fill_issues)

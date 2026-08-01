@@ -388,17 +388,22 @@ def _monthly_deposit_amounts(
     *,
     eur_per_usd: float | None,
 ) -> tuple[float, float]:
-    """Combine native EUR and USD inflows into display EUR/USD pair for one month."""
+    """
+    Combine native EUR and USD inflows into paired display totals for one month.
+
+    ``deposit_eur`` is always the month total expressed in EUR. When FX is known,
+    ``deposit_usd`` is the same economic amount in USD (not native USD only).
+    """
     eur_native = float(bucket.get("EUR", 0.0))
     usd_native = float(bucket.get("USD", 0.0))
-    deposit_eur = eur_native
     if usd_native > 0 and eur_per_usd:
         deposit_eur = round(eur_native + usd_native * eur_per_usd, 2)
     else:
         deposit_eur = round(eur_native, 2)
-    deposit_usd = round(usd_native, 2)
-    if deposit_usd == 0.0 and deposit_eur > 0 and eur_per_usd:
+    if deposit_eur > 0 and eur_per_usd:
         deposit_usd = round(deposit_eur / eur_per_usd, 2)
+    else:
+        deposit_usd = round(usd_native, 2)
     return deposit_eur, deposit_usd
 
 
@@ -409,11 +414,21 @@ def _has_external_usd_deposits(statement: IBKRActivityStatement) -> bool:
     )
 
 
+def expected_deposit_inflow_total(statement: IBKRActivityStatement) -> float | None:
+    """Statement total to reconcile against — grand total when USD EFT rows are present."""
+    return _expected_deposit_inflow_total(statement)
+
+
 def _expected_deposit_inflow_total(statement: IBKRActivityStatement) -> float | None:
     """Statement total to reconcile against — grand total when USD EFT rows are present."""
     if _has_external_usd_deposits(statement) and statement.deposits_inflow_total_all_base:
         return statement.deposits_inflow_total_all_base
     return statement.deposits_inflow_total_base
+
+
+def sum_deposit_inflows_base(statement: IBKRActivityStatement) -> float:
+    """Sum positive deposit inflows converted to the account base currency."""
+    return _sum_deposit_inflows_base(statement)
 
 
 def _sum_deposit_inflows_base(statement: IBKRActivityStatement) -> float:
@@ -445,25 +460,114 @@ def _sum_deposit_inflows_base(statement: IBKRActivityStatement) -> float:
 
 
 def _reconcile_deposit_parsing(statement: IBKRActivityStatement) -> None:
+    for issue in validate_deposit_import(statement):
+        statement.issues.append(issue)
+
+
+def validate_deposit_import(
+    statement: IBKRActivityStatement,
+    *,
+    monthly: list[IBKRMonthlyDeposit] | None = None,
+) -> list[ImportIssue]:
+    """
+    Validate IBKR deposit parsing: statement totals, native splits, and EUR/USD pairs.
+
+    Each month with inflows should have ``deposit_eur ≈ deposit_usd × fx`` when FX is
+    available from the statement.
+    """
+    issues: list[ImportIssue] = []
     if not statement.cash_transfers:
-        return
-    expected = _expected_deposit_inflow_total(statement)
-    if expected is None or expected <= 0:
-        return
+        return issues
+
+    rows = monthly if monthly is not None else build_monthly_deposits(statement)
+    eur_per_usd = _statement_eur_per_usd(statement)
     base = (statement.meta.base_currency or "USD").strip().upper()
-    parsed_total = _sum_deposit_inflows_base(statement)
-    tolerance = max(0.05, expected * 0.001)
-    if abs(parsed_total - expected) > tolerance:
-        statement.issues.append(
-            ImportIssue(
-                ImportIssueLevel.WARNING,
-                (
-                    f"Parsed deposit inflows ({parsed_total:,.2f} {base}) do not match "
-                    f"statement total ({expected:,.2f} {base}) — review Deposits & Withdrawals."
-                ),
-                section="Deposits & Withdrawals",
+
+    for item in rows:
+        if item.deposit_eur <= 0.01 and item.deposit_usd <= 0.01:
+            continue
+        if eur_per_usd and item.deposit_eur > 0.01 and item.deposit_usd > 0.01:
+            implied_fx = item.deposit_eur / item.deposit_usd
+            tolerance = max(0.02, eur_per_usd * 0.005)
+            if abs(implied_fx - eur_per_usd) > tolerance:
+                issues.append(
+                    ImportIssue(
+                        ImportIssueLevel.WARNING,
+                        (
+                            f"{item.label}: deposit €{item.deposit_eur:,.2f} and "
+                            f"${item.deposit_usd:,.2f} imply FX {implied_fx:.4f}, "
+                            f"but statement FX is {eur_per_usd:.4f}."
+                        ),
+                        section="Deposits & Withdrawals",
+                    )
+                )
+        if item.native_eur > 0.01 or item.native_usd > 0.01:
+            expected_eur, expected_usd = _monthly_deposit_amounts(
+                {"EUR": item.native_eur, "USD": item.native_usd},
+                eur_per_usd=eur_per_usd,
             )
-        )
+            if (
+                abs(expected_eur - item.deposit_eur) > 0.05
+                or abs(expected_usd - item.deposit_usd) > 0.05
+            ):
+                issues.append(
+                    ImportIssue(
+                        ImportIssueLevel.WARNING,
+                        (
+                            f"{item.label}: parsed totals (€{item.deposit_eur:,.2f}, "
+                            f"${item.deposit_usd:,.2f}) do not match native inflows "
+                            f"(€{item.native_eur:,.2f}, ${item.native_usd:,.2f})."
+                        ),
+                        section="Deposits & Withdrawals",
+                    )
+                )
+
+    expected = _expected_deposit_inflow_total(statement)
+    if expected is not None and expected > 0:
+        parsed_total = _sum_deposit_inflows_base(statement)
+        tolerance = max(0.05, expected * 0.001)
+        if abs(parsed_total - expected) > tolerance:
+            issues.append(
+                ImportIssue(
+                    ImportIssueLevel.WARNING,
+                    (
+                        f"Parsed deposit inflows ({parsed_total:,.2f} {base}) do not match "
+                        f"statement total ({expected:,.2f} {base}) — review Deposits & Withdrawals."
+                    ),
+                    section="Deposits & Withdrawals",
+                )
+            )
+
+        monthly_total = round(sum(item.deposit_eur for item in rows if item.deposit_eur > 0), 2)
+        if base == "EUR" and abs(monthly_total - expected) > tolerance:
+            issues.append(
+                ImportIssue(
+                    ImportIssueLevel.WARNING,
+                    (
+                        f"Monthly deposit € totals ({monthly_total:,.2f}) do not match "
+                        f"statement total ({expected:,.2f} EUR)."
+                    ),
+                    section="Deposits & Withdrawals",
+                )
+            )
+        if base == "USD" and eur_per_usd:
+            monthly_usd = round(
+                sum(item.deposit_usd for item in rows if item.deposit_usd > 0),
+                2,
+            )
+            if abs(monthly_usd - expected) > tolerance:
+                issues.append(
+                    ImportIssue(
+                        ImportIssueLevel.WARNING,
+                        (
+                            f"Monthly deposit $ totals ({monthly_usd:,.2f}) do not match "
+                            f"statement total ({expected:,.2f} USD)."
+                        ),
+                        section="Deposits & Withdrawals",
+                    )
+                )
+
+    return issues
 
 
 def _statement_eur_per_usd(statement: IBKRActivityStatement) -> float | None:
@@ -596,8 +700,14 @@ def build_monthly_deposits(
         bucket[transfer.currency] = bucket.get(transfer.currency, 0.0) + transfer.amount
 
     period = parse_statement_period(statement.meta.period or "")
+    inception_key: tuple[int, int] | None = min(totals) if totals else None
     if period:
-        month_keys = set(_iter_calendar_months(period[0], period[1]))
+        range_start = date(period[0].year, period[0].month, 1)
+        if inception_key is not None:
+            inception_date = date(inception_key[0], inception_key[1], 1)
+            if inception_date > range_start:
+                range_start = inception_date
+        month_keys = set(_iter_calendar_months(range_start, period[1]))
         month_keys.update(totals)
         month_keys = sorted(month_keys)
     elif totals:
