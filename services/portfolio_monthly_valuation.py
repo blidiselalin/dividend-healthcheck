@@ -123,11 +123,6 @@ def valuation_as_of(deposit_period: date, *, reference: date | None = None) -> d
     return end
 
 
-def _is_current_month(period: date, *, reference: date | None = None) -> bool:
-    today = reference or date.today()
-    return period.year == today.year and period.month == today.month
-
-
 def fx_rates_carry_forward(
     deposits: list[MonthlyDeposit],
     *,
@@ -235,45 +230,18 @@ def _mark_price_for_date(
     reference: date | None = None,
 ) -> float | None:
     """
-    Latest available price for portfolio marks on ``as_of``.
+    Month-end mark: last in-month close on or before ``as_of``, else latest prior close.
 
-    Past months use the last historical close on or before month-end. The current
-    month uses the best of library history, document snapshot, and live quote.
+    Snapshot price is used only when history has no bar yet (e.g. newly added symbol).
+    Live quotes are ignored so evolution charts reflect month-end holding values.
     """
-    today = reference or date.today()
+    _ = live_price, reference
     history_close = _close_for_month_end(series, as_of)
-
-    if not _is_current_month(as_of.replace(day=1), reference=today):
-        if history_close is not None:
-            return history_close
-        if snapshot_price is not None and snapshot_price > 0:
-            return snapshot_price
-        return None
-
-    candidates = [
-        price
-        for price in (history_close, snapshot_price, live_price)
-        if price is not None and price > 0
-    ]
-    return max(candidates) if candidates else None
-
-
-def _load_live_prices(symbols: list[str]) -> dict[str, float]:
-    """Fetch latest trade prices for current-month marks."""
-    if not symbols:
-        return {}
-    try:
-        from services.live_price import fetch_latest_market_price
-    except ImportError:
-        return {}
-
-    out: dict[str, float] = {}
-    for symbol in symbols:
-        sym = symbol.strip().upper()
-        price = fetch_latest_market_price(sym)
-        if price is not None and price > 0:
-            out[sym] = float(price)
-    return out
+    if history_close is not None:
+        return history_close
+    if snapshot_price is not None and snapshot_price > 0:
+        return snapshot_price
+    return None
 
 
 def _price_series(document: Any) -> list[tuple[date, float]]:
@@ -393,23 +361,16 @@ def compute_monthly_portfolio_valuations(
     today = date.today()
     fx_by_month = fx_eur_per_usd_by_month(deposits, reference=today)
     values: dict[str, MonthPortfolioValuation] = {}
-    live_prices = _load_live_prices(all_symbols) if open_holdings else {}
 
     for deposit in deposits:
         as_of = valuation_as_of(deposit.period, reference=today)
-        current_month = _is_current_month(deposit.period, reference=today)
         total_usd = 0.0
         symbols_held = 0
         symbols_priced = 0
         missing_symbols: list[str] = []
 
-        symbol_iter = sorted(open_holdings) if current_month and open_holdings else all_symbols
-
-        for symbol in symbol_iter:
-            if current_month and open_holdings:
-                shares = open_holdings[symbol].shares
-            else:
-                shares = shares_from_records(records_by_symbol.get(symbol, []), as_of)
+        for symbol in all_symbols:
+            shares = shares_from_records(records_by_symbol.get(symbol, []), as_of)
             if shares <= 0:
                 continue
             symbols_held += 1
@@ -417,8 +378,6 @@ def compute_monthly_portfolio_valuations(
                 price_series.get(symbol, []),
                 as_of,
                 snapshot_price=snapshot_prices.get(symbol),
-                live_price=live_prices.get(symbol) if current_month else None,
-                reference=today,
             )
             if close is None:
                 missing_symbols.append(symbol)
@@ -455,13 +414,14 @@ def portfolio_eur_to_store(
     """
     Decide the portfolio € to persist on ``monthly_deposits``.
 
-    Broker/imported month-end NAV is never replaced by journal estimates.
-    Computed marks are saved only when no NAV exists and every holding is priced.
+    Fully covered journal marks (shares × month-end closes) replace broker NAV so
+    each month reflects equity holding value. Stored NAV is kept only when marks
+    are missing or price coverage is incomplete.
     """
-    if stored is not None and stored > 0:
-        return stored
     if valuation is not None and valuation.portfolio_eur > 0 and valuation.coverage >= 1.0:
         return valuation.portfolio_eur
+    if stored is not None and stored > 0:
+        return stored
     return None
 
 
@@ -485,11 +445,11 @@ def pick_portfolio_eur_for_month(
     """
     Portfolio € for evolution charts and KPIs.
 
-    Prefer broker/imported month-end NAV. Use journal-based marks only when NAV is
-    missing and every held symbol has a price (avoids partial-coverage spikes).
+    Prefer journal-based month-end marks (shares × closes) when every held symbol
+    is priced. Fall back to broker/imported NAV when price coverage is incomplete.
     """
-    if stored is not None and stored > 0:
-        return stored
     if valuation is not None and valuation.portfolio_eur > 0 and valuation.coverage >= 1.0:
         return valuation.portfolio_eur
+    if stored is not None and stored > 0:
+        return stored
     return None

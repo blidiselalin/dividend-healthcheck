@@ -1389,9 +1389,9 @@ class PortfolioDetailsView:
 
         st.markdown("##### Portfolio evolution (€)")
         st.caption(
-            "Green line = month-end stock value (journal shares × library closes, converted at "
-            "deposit FX). Uses the last in-month close when available, otherwise the latest "
-            "prior mark. Falls back to IBKR/manual Portfolio € when pricing is incomplete."
+            "Green line = month-end stock value (journal shares × library month-end closes, "
+            "converted at market FX). Computed marks are preferred over IBKR/manual Portfolio € "
+            "when every held symbol is priced; broker NAV is used only as fallback."
         )
         evolution_chart = service.create_evolution_chart(deposits)
         if evolution_chart:
@@ -2208,8 +2208,8 @@ class PortfolioDetailsView:
 
         st.markdown("##### Account deposits & portfolio value")
         st.caption(
-            "Monthly deposits (€ and $) and portfolio value at each month end. "
-            "Portfolio € uses the same computed/stored blend as the Dashboard."
+            "Monthly deposits (€ and $) and portfolio € at each month end "
+            "(journal shares × month-end closes; IBKR NAV only when pricing is incomplete)."
         )
 
         col1, col2, col3, col4, col5 = st.columns(5)

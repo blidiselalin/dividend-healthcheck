@@ -79,8 +79,21 @@ def test_mark_price_for_current_month_uses_snapshot_when_history_stale() -> None
         series,
         today,
         snapshot_price=55.0,
+        live_price=99.0,
         reference=today,
-    ) == pytest.approx(55.0)
+    ) == pytest.approx(50.0)
+
+
+def test_mark_price_for_current_month_ignores_live_quotes() -> None:
+    series = [(date(2026, 7, 22), 50.0)]
+    today = date(2026, 7, 23)
+    assert _mark_price_for_date(
+        series,
+        today,
+        snapshot_price=55.0,
+        live_price=58.0,
+        reference=today,
+    ) == pytest.approx(50.0)
 
 
 def test_mark_price_for_past_month_uses_last_in_month_close() -> None:
@@ -323,19 +336,7 @@ def test_shares_from_records_accounts_for_sells(
     assert shares_from_records(records, date(2025, 7, 31)) == pytest.approx(6.0)
 
 
-def test_mark_price_for_current_month_uses_max_of_history_snapshot_live() -> None:
-    series = [(date(2026, 7, 22), 50.0)]
-    today = date(2026, 7, 23)
-    assert _mark_price_for_date(
-        series,
-        today,
-        snapshot_price=55.0,
-        live_price=58.0,
-        reference=today,
-    ) == pytest.approx(58.0)
-
-
-def test_portfolio_eur_to_store_requires_full_coverage() -> None:
+def test_portfolio_eur_to_store_prefers_computed_when_fully_covered() -> None:
     partial = MonthPortfolioValuation(
         portfolio_usd=1000.0,
         portfolio_eur=900.0,
@@ -350,11 +351,11 @@ def test_portfolio_eur_to_store_requires_full_coverage() -> None:
         symbols_held=2,
         symbols_priced=2,
     )
-    assert portfolio_eur_to_store(stored=1200.0, valuation=full) == 1200.0
+    assert portfolio_eur_to_store(stored=1200.0, valuation=full) == 900.0
     assert portfolio_eur_to_store(stored=None, valuation=full) == 900.0
 
 
-def test_current_month_uses_open_holding_shares(tmp_path: Path) -> None:
+def test_current_month_uses_journal_shares_not_open_holdings(tmp_path: Path) -> None:
     db = tmp_path / "portfolio.db"
     portfolio = PortfolioStore(db_path=db, seed=False)
     journal = PurchaseJournalStore(db_path=db, seed=False)
@@ -363,6 +364,7 @@ def test_current_month_uses_open_holding_shares(tmp_path: Path) -> None:
     journal.add_purchase("KO", date(2026, 1, 10), 50.0, shares=10.0, side="buy")
     portfolio.upsert_holding("KO", shares=15, avg_cost_per_share=50.0)
     portfolio.upsert_holding("PEP", shares=5, avg_cost_per_share=80.0)
+    journal.add_purchase("PEP", date(2026, 2, 1), 80.0, shares=5.0, side="buy")
     deposits.upsert_deposit(
         year=2026,
         month=7,
@@ -384,10 +386,6 @@ def test_current_month_uses_open_holding_shares(tmp_path: Path) -> None:
     reference = date(2026, 7, 23)
     with (
         patch("services.shared_market_db.load_documents", return_value=docs),
-        patch(
-            "services.portfolio_monthly_valuation._load_live_prices",
-            return_value={"KO": 62.0, "PEP": 101.0},
-        ),
         patch("services.portfolio_monthly_valuation.date") as mock_date,
     ):
         mock_date.today.return_value = reference
@@ -397,10 +395,10 @@ def test_current_month_uses_open_holding_shares(tmp_path: Path) -> None:
     july = values["2026-07"]
     assert july.symbols_held == 2
     assert july.symbols_priced == 2
-    assert july.portfolio_usd == pytest.approx(15 * 62.0 + 5 * 101.0)
+    assert july.portfolio_usd == pytest.approx(10 * 60.0 + 5 * 100.0)
 
 
-def test_pick_portfolio_prefers_stored_when_price_coverage_incomplete() -> None:
+def test_pick_portfolio_prefers_computed_when_fully_covered() -> None:
     partial = MonthPortfolioValuation(
         portfolio_usd=1000.0,
         portfolio_eur=900.0,
@@ -415,7 +413,7 @@ def test_pick_portfolio_prefers_stored_when_price_coverage_incomplete() -> None:
         symbols_held=2,
         symbols_priced=2,
     )
-    assert pick_portfolio_eur_for_month(stored=1200.0, valuation=full) == 1200.0
+    assert pick_portfolio_eur_for_month(stored=1200.0, valuation=full) == 900.0
     assert pick_portfolio_eur_for_month(stored=None, valuation=full) == 900.0
     assert pick_portfolio_eur_for_month(stored=None, valuation=partial) is None
 
