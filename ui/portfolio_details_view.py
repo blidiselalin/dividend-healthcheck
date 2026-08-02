@@ -2093,6 +2093,58 @@ class PortfolioDetailsView:
                 key="motion_dividend_heatmap",
             )
 
+        st.markdown("#### Gross dividends — quarterly pivot")
+        from services.portfolio_dividend_quarters import (
+            compare_quarterly_gross,
+            pivot_quarterly_gross_dataframe,
+            quarterly_gross_from_monthly_records,
+            quarterly_gross_from_receipt_store,
+        )
+
+        receipt_quarters = quarterly_gross_from_receipt_store(ctx.receipts)
+        monthly_quarters = quarterly_gross_from_monthly_records(records)
+        quarter_pivot = pivot_quarterly_gross_dataframe(receipt_quarters or monthly_quarters)
+        if not quarter_pivot.empty:
+            q_year_cols = [column for column in quarter_pivot.columns if column != "Quarter"]
+            st.dataframe(
+                quarter_pivot,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    col: st.column_config.NumberColumn(format="$%.2f") for col in q_year_cols
+                },
+            )
+            comparisons = compare_quarterly_gross(receipt_quarters or monthly_quarters)
+            mismatches = [row for row in comparisons if row.status == "mismatch"]
+            if mismatches:
+                st.warning(
+                    f"**{len(mismatches)} quarter(s)** differ from IBKR reference by more than $1. "
+                    "Re-import IBKR activity or check sold-ticker receipts.",
+                    icon="⚠️",
+                )
+                with st.expander("Quarterly validation vs IBKR reference"):
+                    st.dataframe(
+                        pd.DataFrame(
+                            [
+                                {
+                                    "Year": row.year,
+                                    "Quarter": f"Q{row.quarter}",
+                                    "IBKR ref $": row.reference_usd,
+                                    "Computed $": row.computed_usd,
+                                    "Delta $": row.delta_usd,
+                                    "Status": row.status,
+                                }
+                                for row in comparisons
+                            ]
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+            else:
+                st.caption(
+                    "Quarterly gross totals match IBKR reference within $1 (partial quarters excluded)."
+                )
+
         st.markdown("#### Net dividends — annual pivot")
         year_cols = [column for column in pivot.columns if column != "Month"]
         st.dataframe(

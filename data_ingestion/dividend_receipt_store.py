@@ -533,6 +533,20 @@ class DividendReceiptStore:
             totals[(int(row["year"]), int(row["month"]))] = round(float(row["gross"]), 2)
         return totals
 
+    def quarterly_gross_totals(
+        self,
+        *,
+        symbols: set[str] | None = None,
+    ) -> dict[tuple[int, int], float]:
+        """Aggregate gross cash by (year, calendar quarter) of payment date."""
+        monthly = self.monthly_gross_totals(symbols=symbols)
+        totals: dict[tuple[int, int], float] = {}
+        for (year, month), gross in monthly.items():
+            quarter = (month - 1) // 3 + 1
+            key = (year, quarter)
+            totals[key] = round(totals.get(key, 0.0) + gross, 2)
+        return totals
+
     def list_for_month(
         self,
         year: int,

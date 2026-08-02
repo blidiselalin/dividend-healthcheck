@@ -214,10 +214,7 @@ def build_merged_dividend_income_records(
             tax_withheld_usd=round(gross - net, 2),
         )
 
-    open_symbols = {holding.symbol.strip().upper() for holding in holdings}
-    for (year, month), gross in receipts.monthly_gross_totals(
-        symbols=open_symbols or None,
-    ).items():
+    for (year, month), gross in receipts.monthly_gross_totals().items():
         _upsert_month(year, month, gross)
 
     if holdings:
