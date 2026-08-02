@@ -111,7 +111,13 @@ def resolve_month_dividend_cash(
         gross_paid_in_calendar_month,
     )
 
-    db_gross, db_count = gross_paid_in_calendar_month(year, month, through=through)
+    open_symbols = {holding.symbol.strip().upper() for holding in holdings}
+    db_gross, db_count = gross_paid_in_calendar_month(
+        year,
+        month,
+        through=through,
+        symbols=open_symbols or None,
+    )
     computed_gross = 0.0
     computed_count = 0
     if holdings:
@@ -131,11 +137,19 @@ def resolve_month_dividend_cash(
         computed_count=computed_count,
     )
 
-    if db_count > 0:
-        source = "receipts"
-    elif computed_count > 0:
+    if (
+        computed_count > 0
+        and computed_gross > 0
+        and db_count > 0
+        and db_gross > 0
+        and gross == computed_gross
+    ):
         source = "computed"
-    elif gross > 0:
+    elif db_count > 0 and gross == db_gross:
+        source = "receipts"
+    elif computed_count > 0 and computed_gross > 0:
+        source = "computed"
+    elif db_count > 0 or gross > 0:
         source = "receipts"
     else:
         source = "none"
@@ -200,7 +214,10 @@ def build_merged_dividend_income_records(
             tax_withheld_usd=round(gross - net, 2),
         )
 
-    for (year, month), gross in receipts.monthly_gross_totals().items():
+    open_symbols = {holding.symbol.strip().upper() for holding in holdings}
+    for (year, month), gross in receipts.monthly_gross_totals(
+        symbols=open_symbols or None,
+    ).items():
         _upsert_month(year, month, gross)
 
     if holdings:
@@ -249,13 +266,17 @@ def ensure_dividend_cash_materialized(*, force_sync: bool = False) -> bool:
         return False
 
     today = date.today()
+    open_symbols = {holding.symbol.strip().upper() for holding in holdings}
     _, receipt_count = gross_paid_in_calendar_month(
         today.year,
         today.month,
         through=today,
         store=ctx.receipts,
+        symbols=open_symbols or None,
     )
-    has_receipt_history = bool(ctx.receipts.monthly_gross_totals())
+    has_receipt_history = bool(
+        ctx.receipts.monthly_gross_totals(symbols=open_symbols or None),
+    )
     has_stored = any(item.gross_usd > 0 for item in ctx.dividends.list_dividends())
 
     if not force_sync and (receipt_count > 0 or has_receipt_history or has_stored):

@@ -182,7 +182,10 @@ def sync_received_dividends(
 def _sync_monthly_net_from_receipts(ctx: Any) -> int:
     from data_ingestion.dividend_income_store import dividend_tax_rate
 
-    totals = ctx.receipts.monthly_gross_totals()
+    open_symbols = {
+        holding.symbol.strip().upper() for holding in ctx.portfolio.list_open_holdings()
+    }
+    totals = ctx.receipts.monthly_gross_totals(symbols=open_symbols or None)
     if not totals:
         return 0
 

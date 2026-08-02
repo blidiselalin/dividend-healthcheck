@@ -72,7 +72,7 @@ def test_collect_warnings_flags_missing_history() -> None:
     assert warnings[0].symbol == "XYZ"
 
 
-def test_resolve_month_dividend_cash_prefers_receipts() -> None:
+def test_resolve_month_dividend_cash_prefers_holdings_scoped_compute_when_higher() -> None:
     holding = _holding()
     doc = StockDocument(
         symbol="KO",
@@ -84,7 +84,46 @@ def test_resolve_month_dividend_cash_prefers_receipts() -> None:
     with (
         patch(
             "services.portfolio_month_dividends.gross_paid_in_calendar_month",
-            return_value=(100.0, 2),
+            return_value=(50.0, 1),
+        ),
+        patch(
+            "services.portfolio_month_dividends.compute_month_received_from_holdings",
+            return_value=(100.0, 3),
+        ),
+        patch(
+            "services.portfolio_month_dividends.net_paid_in_calendar_month",
+            return_value=None,
+        ),
+        patch(
+            "services.portfolio_month_dividends.gross_paid_in_synced_month",
+            return_value=None,
+        ),
+    ):
+        cash = resolve_month_dividend_cash(
+            year=2026,
+            month=6,
+            through=date(2026, 6, 19),
+            holdings=[holding],
+            vector_docs={"KO": doc},
+        )
+    assert cash.gross_usd == 100.0
+    assert cash.payer_count == 3
+    assert cash.source == "computed"
+
+
+def test_resolve_month_dividend_cash_prefers_receipts_when_compute_incomplete() -> None:
+    holding = _holding()
+    doc = StockDocument(
+        symbol="KO",
+        name="KO",
+        dividend_history=[
+            DividendRecord(ex_date=date(2026, 6, 10), payment_date=date(2026, 6, 15), amount=0.5),
+        ],
+    )
+    with (
+        patch(
+            "services.portfolio_month_dividends.gross_paid_in_calendar_month",
+            return_value=(489.22, 10),
         ),
         patch(
             "services.portfolio_month_dividends.compute_month_received_from_holdings",
@@ -106,15 +145,15 @@ def test_resolve_month_dividend_cash_prefers_receipts() -> None:
             holdings=[holding],
             vector_docs={"KO": doc},
         )
-    assert cash.gross_usd == 100.0
-    assert cash.payer_count == 2
+    assert cash.gross_usd == 489.22
+    assert cash.payer_count == 10
     assert cash.source == "receipts"
 
 
 def test_build_merged_dividend_income_records_fills_current_month_from_compute() -> None:
     today = date.today()
     store = SimpleNamespace(list_dividends=lambda: [])
-    receipts = SimpleNamespace(monthly_gross_totals=lambda: {})
+    receipts = SimpleNamespace(monthly_gross_totals=lambda **kwargs: {})
     ctx = SimpleNamespace(
         dividends=store,
         receipts=receipts,

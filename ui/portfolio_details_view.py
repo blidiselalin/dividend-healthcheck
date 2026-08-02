@@ -11,7 +11,6 @@ import pandas as pd
 import streamlit as st
 
 from data_ingestion.deposits_store import MonthlyDeposit
-from data_ingestion.portfolio_store import PortfolioStore
 from models.stock import StockData
 from services.dividend_timing import classify_dividend_timing
 from services.portfolio_allocation_service import PortfolioAllocationService
@@ -343,13 +342,14 @@ class PortfolioDetailsView:
         preload: PortfolioAnalysisPreload,
     ) -> None:
         """Warn when holdings lack dividend history from exposed data sources."""
+        from services.portfolio_context import create_portfolio_context
         from services.portfolio_dividend_cash import (
             collect_dividend_data_warnings,
             render_dividend_data_warnings_streamlit,
             resolve_dividend_documents,
         )
 
-        holdings = PortfolioStore().list_open_holdings()
+        holdings = create_portfolio_context().portfolio.list_open_holdings()
         if not holdings:
             return
         vector_docs, statuses = resolve_dividend_documents(holdings, preload)
@@ -402,11 +402,13 @@ class PortfolioDetailsView:
         preload: PortfolioAnalysisPreload,
     ) -> None:
         """Monthly dividend cash forecast and payer chart with drill-down."""
-        holdings = PortfolioStore().list_open_holdings()
+        from services.portfolio_context import create_portfolio_context
+        from services.portfolio_dividend_cash import resolve_dividend_documents
+
+        ctx = create_portfolio_context()
+        holdings = ctx.portfolio.list_open_holdings()
         if not holdings:
             return
-
-        from services.portfolio_dividend_cash import resolve_dividend_documents
 
         vector_docs, _statuses = resolve_dividend_documents(holdings, preload)
         row_dates = {row.ticker: (row.ex_dividend_date, row.dividend_pay_date) for row in rows}
@@ -416,12 +418,11 @@ class PortfolioDetailsView:
             stock_data=preload.stock_data,
             row_dates=row_dates,
         )
-        from services.portfolio_context import create_portfolio_context
 
         enrich_calendar_with_receipts(
             calendar,
             holdings,
-            receipt_store=create_portfolio_context().receipts,
+            receipt_store=ctx.receipts,
         )
         cls._render_missing_dividend_sources(rows, preload)
         current = calendar.current_month
@@ -865,7 +866,6 @@ class PortfolioDetailsView:
         preload: PortfolioAnalysisPreload,
     ) -> None:
         """Load and display analysis for a symbol chosen from the S&P list (not necessarily held)."""
-        from data_ingestion.portfolio_store import PortfolioStore
         from services.shared_market_db import get_document
         from services.sp500_peers_service import find_sector_peers
 
@@ -903,8 +903,11 @@ class PortfolioDetailsView:
             vector_doc=vector_doc,
         )
 
+        from services.portfolio_context import create_portfolio_context
+
         portfolio_symbols = {
-            holding.symbol.upper() for holding in PortfolioStore(seed=False).list_open_holdings()
+            holding.symbol.upper()
+            for holding in create_portfolio_context().portfolio.list_open_holdings()
         }
         if symbol in portfolio_symbols:
             st.info(

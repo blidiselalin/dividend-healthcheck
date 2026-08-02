@@ -138,13 +138,15 @@ def _shares_for_payment(
     *,
     as_of: date,
     detail_service: Any,
+    allow_current_fallback: bool = True,
 ) -> float:
     """Shares held on the payment date (journal lots when available)."""
     from services.portfolio_holding_detail_service import shares_as_of
 
     lots = detail_service.estimated_lots_for_symbol(holding.symbol)
-    fallback = holding.shares if not lots else 0.0
-    return shares_as_of(lots, as_of, fallback_shares=fallback)
+    if not lots:
+        return holding.shares if allow_current_fallback else 0.0
+    return shares_as_of(lots, as_of, fallback_shares=0.0)
 
 
 def _collapse_symbol_payments(
@@ -228,7 +230,12 @@ def _holding_payments_for_month(  # noqa: C901
         if not _in_month(pay_date, target_month):
             continue
         amount = normalize_payment_amount(float(record.amount), records, document, stock)
-        shares = _shares_for_payment(holding, as_of=record.ex_date, detail_service=detail_service)
+        shares = _shares_for_payment(
+            holding,
+            as_of=record.ex_date,
+            detail_service=detail_service,
+            allow_current_fallback=not is_past_month,
+        )
         status = "received" if is_past_month or pay_date <= reference_date else "scheduled"
         _add(
             ex_date=record.ex_date,
@@ -323,9 +330,10 @@ def _summarize_month(
     payments: list[HoldingMonthDividend] = []
 
     for holding in holdings:
-        doc = vector_docs.get(holding.symbol)
-        stock = stock_data.get(holding.symbol)
-        ex_date, pay_date = row_dates.get(holding.symbol, (None, None))
+        sym = holding.symbol.strip().upper()
+        doc = vector_docs.get(sym) or vector_docs.get(holding.symbol)
+        stock = stock_data.get(sym) or stock_data.get(holding.symbol)
+        ex_date, pay_date = row_dates.get(holding.symbol, row_dates.get(sym, (None, None)))
         payments.extend(
             _holding_payments_for_month(
                 holding,
@@ -363,7 +371,9 @@ def build_month_exposure_from_receipts(
     for receipt in receipts:
         sym = receipt.symbol.strip().upper()
         holding = holding_by_symbol.get(sym)
-        company = holding.company_name if holding and holding.company_name else receipt.symbol
+        if holding is None:
+            continue
+        company = holding.company_name if holding.company_name else receipt.symbol
         status = "received" if receipt.pay_date <= reference_date else "scheduled"
         payments.append(
             HoldingMonthDividend(
@@ -384,6 +394,29 @@ def build_month_exposure_from_receipts(
         label=target_month.strftime("%B %Y"),
         total_cash=round(sum(item.expected_cash for item in payments), 2),
         holdings=payments,
+    )
+
+
+def merge_last_month_with_receipts(
+    library_month: MonthDividendExposure,
+    receipt_month: MonthDividendExposure,
+) -> MonthDividendExposure:
+    """
+    Prefer imported receipt cash per symbol; keep library rows for symbols without receipts.
+    """
+    receipt_symbols = {item.symbol.strip().upper() for item in receipt_month.holdings}
+    supplemental = [
+        item
+        for item in library_month.holdings
+        if item.symbol.strip().upper() not in receipt_symbols
+    ]
+    holdings = list(receipt_month.holdings) + supplemental
+    holdings.sort(key=lambda item: item.expected_cash, reverse=True)
+    return MonthDividendExposure(
+        month_start=library_month.month_start,
+        label=library_month.label,
+        total_cash=round(sum(item.expected_cash for item in holdings), 2),
+        holdings=holdings,
     )
 
 
@@ -442,11 +475,15 @@ def enrich_calendar_with_receipts(
         symbols=symbols,
     )
     if last_receipts:
-        calendar.last_month = build_month_exposure_from_receipts(
+        receipt_last = build_month_exposure_from_receipts(
             holdings,
             calendar.last_month.month_start,
             last_receipts,
             reference_date=last_end,
+        )
+        calendar.last_month = merge_last_month_with_receipts(
+            calendar.last_month,
+            receipt_last,
         )
 
     current_receipts = store.list_for_month(

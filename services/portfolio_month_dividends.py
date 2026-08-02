@@ -94,6 +94,10 @@ def compute_month_received_from_holdings(
             if row.pay_date.year == reference_date.year
             and row.pay_date.month == reference_date.month
             and row.pay_date <= reference_date
+            and (
+                holding.dividend_tracking_since is None
+                or row.pay_date >= holding.dividend_tracking_since
+            )
         ]
         if month_stored:
             rows = month_stored
@@ -136,6 +140,7 @@ def gross_paid_in_calendar_month(
     *,
     through: date | None = None,
     store: DividendReceiptStore | None = None,
+    symbols: set[str] | None = None,
 ) -> tuple[float, int]:
     """Sum gross receipts with pay_date in the month, capped at `through` (default today)."""
     through = through or date.today()
@@ -148,30 +153,39 @@ def gross_paid_in_calendar_month(
     start = date(year, month, 1).isoformat()
     end = cutoff.isoformat()
 
+    symbol_filter = ""
+    symbol_params: tuple[str, ...] = ()
+    if symbols:
+        normalized = sorted({symbol.strip().upper() for symbol in symbols if symbol.strip()})
+        if normalized:
+            placeholders = ",".join("?" * len(normalized))
+            symbol_filter = f" AND symbol IN ({placeholders})"
+            symbol_params = tuple(normalized)
+
     receipt_store = store or DividendReceiptStore()
     with receipt_store._connect() as connection:
         if connection.is_postgres:
             row = connection.execute(
-                """
+                f"""
                 SELECT COALESCE(SUM(gross_usd), 0) AS gross,
                        COUNT(*) AS receipt_count
                 FROM dividend_receipts
                 WHERE user_id = ?
                   AND pay_date >= ?
-                  AND pay_date <= ?
+                  AND pay_date <= ?{symbol_filter}
                 """,
-                (connection.user_id, start, end),
+                (connection.user_id, start, end, *symbol_params),
             ).fetchone()
         else:
             row = connection.execute(
-                """
+                f"""
                 SELECT COALESCE(SUM(gross_usd), 0) AS gross,
                        COUNT(*) AS receipt_count
                 FROM dividend_receipts
                 WHERE pay_date >= ?
-                  AND pay_date <= ?
+                  AND pay_date <= ?{symbol_filter}
                 """,
-                (start, end),
+                (start, end, *symbol_params),
             ).fetchone()
 
     if not row:
@@ -219,14 +233,18 @@ def _resolve_month_gross_and_net(
     """
     Choose gross payer count and net for the month.
 
-    Synced ``dividend_receipts`` are authoritative once any rows exist for the
-    month; live recompute is used only before the first sync.
+    When both filtered receipts and holdings-scoped recompute exist, prefer the
+    larger total (library fill for partial imports; synced receipts when recompute
+    is incomplete).
     """
-    if db_count > 0 and db_gross > 0:
-        gross, payer_count = db_gross, db_count
+    if computed_count > 0 and computed_gross > 0 and db_count > 0 and db_gross > 0:
+        if computed_gross >= db_gross - 0.01:
+            gross, payer_count = computed_gross, computed_count
+        else:
+            gross, payer_count = db_gross, db_count
     elif computed_count > 0 and computed_gross > 0:
         gross, payer_count = computed_gross, computed_count
-    elif db_count > 0:
+    elif db_count > 0 and db_gross > 0 or db_count > 0:
         gross, payer_count = db_gross, db_count
     else:
         gross, payer_count = db_gross, db_count
@@ -340,10 +358,12 @@ def current_month_paid_dividends(
         payer_count = current.received_payer_count
         net = net_received_through(gross, year=today.year)
     else:
+        open_symbols = {holding.symbol.strip().upper() for holding in holdings}
         db_gross, db_count = gross_paid_in_calendar_month(
             today.year,
             today.month,
             through=today,
+            symbols=open_symbols or None,
         )
         gross, payer_count, net = _resolve_month_gross_and_net(
             year=today.year,

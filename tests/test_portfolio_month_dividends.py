@@ -84,6 +84,50 @@ def test_gross_paid_in_calendar_month_empty_db(tmp_path: Path) -> None:
     assert count == 0
 
 
+def test_gross_paid_in_calendar_month_filters_to_open_symbols(tmp_path: Path) -> None:
+    from data_ingestion.dividend_receipt_store import DividendReceiptStore
+
+    db = tmp_path / "portfolio.db"
+    store = DividendReceiptStore(db)
+    store.sync_receipt(
+        "KO",
+        ex_date=date(2026, 4, 28),
+        pay_date=date(2026, 5, 10),
+        per_share_usd=0.5,
+        shares_held=10.0,
+        gross_usd=5.0,
+        source="ibkr",
+    )
+    store.sync_receipt(
+        "VZ",
+        ex_date=date(2026, 4, 28),
+        pay_date=date(2026, 5, 12),
+        per_share_usd=0.67,
+        shares_held=8.0,
+        gross_usd=5.36,
+        source="ibkr",
+    )
+
+    gross_all, count_all = gross_paid_in_calendar_month(
+        2026,
+        5,
+        through=date(2026, 5, 31),
+        store=store,
+    )
+    gross_open, count_open = gross_paid_in_calendar_month(
+        2026,
+        5,
+        through=date(2026, 5, 31),
+        store=store,
+        symbols={"KO"},
+    )
+
+    assert gross_all == pytest.approx(10.36)
+    assert count_all == 2
+    assert gross_open == pytest.approx(5.0)
+    assert count_open == 1
+
+
 def test_net_paid_in_calendar_month_from_seed(tmp_path: Path) -> None:
     from data_ingestion.dividend_income_store import DividendIncomeStore
 

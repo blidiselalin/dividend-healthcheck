@@ -483,34 +483,49 @@ class DividendReceiptStore:
                 ).fetchone()
         return round(float(row["total"]), 2) if row else 0.0
 
-    def monthly_gross_totals(self) -> dict[tuple[int, int], float]:
+    def monthly_gross_totals(
+        self,
+        *,
+        symbols: set[str] | None = None,
+    ) -> dict[tuple[int, int], float]:
         """Aggregate gross cash by (year, month) of payment date."""
+        symbol_filter = ""
+        symbol_params: tuple[str, ...] = ()
+        if symbols:
+            normalized = sorted({symbol.strip().upper() for symbol in symbols if symbol.strip()})
+            if normalized:
+                placeholders = ",".join("?" * len(normalized))
+                symbol_filter = f" AND symbol IN ({placeholders})"
+                symbol_params = tuple(normalized)
+
         with self._connect() as connection:
             if connection.is_postgres:
                 rows = connection.execute(
-                    """
+                    f"""
                     SELECT
                       EXTRACT(YEAR FROM pay_date)::INTEGER AS year,
                       EXTRACT(MONTH FROM pay_date)::INTEGER AS month,
                       SUM(gross_usd) AS gross
                     FROM dividend_receipts
-                    WHERE user_id = ?
+                    WHERE user_id = ?{symbol_filter}
                     GROUP BY 1, 2
                     ORDER BY 1, 2
                     """,
-                    (connection.user_id,),
+                    (connection.user_id, *symbol_params),
                 ).fetchall()
             else:
                 rows = connection.execute(
-                    """
+                    f"""
                     SELECT
                       CAST(strftime('%Y', pay_date) AS INTEGER) AS year,
                       CAST(strftime('%m', pay_date) AS INTEGER) AS month,
                       SUM(gross_usd) AS gross
                     FROM dividend_receipts
+                    WHERE 1=1{symbol_filter}
                     GROUP BY 1, 2
                     ORDER BY 1, 2
-                    """
+                    """,
+                    symbol_params,
                 ).fetchall()
 
         totals: dict[tuple[int, int], float] = {}

@@ -230,3 +230,106 @@ def test_enrich_calendar_overlays_imported_receipts(tmp_path: Path) -> None:
     enrich_calendar_with_receipts(calendar, holdings, receipt_store=ctx.receipts)
     assert calendar.last_month.received_cash == pytest.approx(2.50)
     assert calendar.current_month.received_cash == 0.0
+
+
+def test_merge_last_month_keeps_library_symbols_without_receipts() -> None:
+    from services.portfolio_dividend_calendar import (
+        HoldingMonthDividend,
+        MonthDividendExposure,
+        merge_last_month_with_receipts,
+        month_start,
+    )
+
+    month = month_start(date(2026, 5, 1))
+    library = MonthDividendExposure(
+        month_start=month,
+        label="May 2026",
+        total_cash=15.0,
+        holdings=[
+            HoldingMonthDividend(
+                symbol="KO",
+                company="Coca-Cola",
+                shares=10.0,
+                expected_cash=5.0,
+                per_share=0.5,
+                payment_date=date(2026, 5, 10),
+                ex_date=date(2026, 4, 28),
+                status="received",
+            ),
+            HoldingMonthDividend(
+                symbol="PEP",
+                company="Pepsi",
+                shares=8.0,
+                expected_cash=10.0,
+                per_share=1.25,
+                payment_date=date(2026, 5, 25),
+                ex_date=date(2026, 5, 12),
+                status="received",
+            ),
+        ],
+    )
+    receipts = MonthDividendExposure(
+        month_start=month,
+        label="May 2026",
+        total_cash=5.25,
+        holdings=[
+            HoldingMonthDividend(
+                symbol="KO",
+                company="Coca-Cola",
+                shares=10.0,
+                expected_cash=5.25,
+                per_share=0.525,
+                payment_date=date(2026, 5, 10),
+                ex_date=date(2026, 4, 28),
+                status="received",
+            ),
+        ],
+    )
+
+    merged = merge_last_month_with_receipts(library, receipts)
+    assert {item.symbol for item in merged.holdings} == {"KO", "PEP"}
+    assert merged.received_cash == pytest.approx(15.25)
+    ko = next(item for item in merged.holdings if item.symbol == "KO")
+    assert ko.expected_cash == pytest.approx(5.25)
+
+
+def test_build_month_exposure_from_receipts_skips_sold_symbols() -> None:
+    from dataclasses import dataclass
+
+    from services.portfolio_dividend_calendar import (
+        build_month_exposure_from_receipts,
+        month_start,
+    )
+
+    @dataclass
+    class _Receipt:
+        symbol: str
+        pay_date: date
+        ex_date: date
+        per_share_usd: float
+        shares_held: float
+        gross_usd: float
+
+    holdings = [
+        PortfolioHolding(
+            symbol="KO",
+            shares=10.0,
+            avg_cost_per_share=50.0,
+            acquisition_value=500.0,
+            commission=0.0,
+            dividends_paid=0.0,
+            estimated_avg_price=50.0,
+            sort_order=0,
+        ),
+    ]
+    exposure = build_month_exposure_from_receipts(
+        holdings,
+        month_start(date(2026, 5, 1)),
+        [
+            _Receipt("KO", date(2026, 5, 10), date(2026, 4, 28), 0.5, 10.0, 5.0),
+            _Receipt("VZ", date(2026, 5, 12), date(2026, 4, 28), 0.67, 8.0, 5.36),
+        ],
+        reference_date=date(2026, 5, 31),
+    )
+    assert exposure.payer_count == 1
+    assert exposure.received_cash == pytest.approx(5.0)
