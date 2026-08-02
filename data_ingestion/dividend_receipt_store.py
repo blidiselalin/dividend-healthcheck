@@ -734,7 +734,7 @@ class DividendReceiptStore:
                       source_file_hash, source_row_number, dedup_key, transaction_status,
                       dividend_type, withholding_usd, net_usd, currency, description
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?)
-                    ON CONFLICT (user_id, dedup_key) DO NOTHING
+                    ON CONFLICT (user_id, dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING
                     RETURNING id
                     """,
                     (
