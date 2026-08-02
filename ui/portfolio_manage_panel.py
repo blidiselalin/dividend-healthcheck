@@ -507,6 +507,14 @@ def _render_ibkr_import_tab() -> None:
             f"{result.trades_imported} stock trades, {result.dividends_imported} dividends, "
             f"{result.deposits_imported} deposit months."
         )
+        if result.dividend_rows_processed:
+            msg += (
+                f" Dividend rows: {result.dividend_rows_processed} processed, "
+                f"{result.dividend_rows_inserted} inserted, "
+                f"{result.dividend_rows_updated} updated, "
+                f"{result.dividend_rows_duplicates} duplicates, "
+                f"{result.dividend_rows_rejected} rejected."
+            )
         st.success(msg)
         st.rerun()
 

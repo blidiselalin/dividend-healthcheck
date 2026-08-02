@@ -9,7 +9,9 @@ from pathlib import Path
 from data_ingestion.dividend_income_store import MONTH_LABELS, MonthlyNetDividend
 from data_ingestion.dividend_receipt_store import DividendReceiptStore
 from services.portfolio_dividend_quarters import (
+    IBKR_REFERENCE_ANNUAL_NET,
     IBKR_REFERENCE_QUARTERLY_GROSS,
+    compare_annual_net,
     compare_quarterly_gross,
     pivot_quarterly_gross_dataframe,
     quarter_for_month,
@@ -125,3 +127,17 @@ def test_reference_quarterly_totals_sum_sensibly() -> None:
         gross for (year, _quarter), gross in IBKR_REFERENCE_QUARTERLY_GROSS.items() if year == 2023
     )
     assert y2025 > y2023
+
+
+def test_compare_annual_net_matches_reference() -> None:
+    rows = compare_annual_net(IBKR_REFERENCE_ANNUAL_NET, IBKR_REFERENCE_ANNUAL_NET)
+    assert all(row.status in {"match", "partial"} for row in rows)
+
+
+def test_compare_annual_net_detects_mismatch() -> None:
+    computed = {2024: 2000.0, 2025: 3340.20}
+    rows = compare_annual_net(computed, tolerance_usd=1.0)
+    y2024 = next(row for row in rows if row.year == 2024)
+    y2025 = next(row for row in rows if row.year == 2025)
+    assert y2024.status == "mismatch"
+    assert y2025.status == "match"

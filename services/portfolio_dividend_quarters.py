@@ -7,13 +7,26 @@ Used to validate imported IBKR receipts against broker reference statements.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 import pandas as pd
 
 from data_ingestion.dividend_income_store import MonthlyNetDividend
 
-# IBKR-style quarterly gross dividends (USD) — broker reference for validation.
+# IBKR-style annual net dividends (USD) — broker reference for validation.
+IBKR_REFERENCE_ANNUAL_NET: dict[int, float] = {
+    2022: 3.24,
+    2023: 975.09,
+    2024: 2021.15,
+    2025: 3340.20,
+    2026: 2268.52,
+}
+
+# Broker report cutoff for partial-year reference totals (must match export date).
+IBKR_REFERENCE_THROUGH_DATE = date(2026, 7, 20)
+
+# Quarterly gross reference (legacy spreadsheet export).
 IBKR_REFERENCE_QUARTERLY_GROSS: dict[tuple[int, int], float] = {
     (2022, 4): 3.24,
     (2023, 1): 95.62,
@@ -136,6 +149,66 @@ def compare_quarterly_gross(
             QuarterComparisonRow(
                 year=year,
                 quarter=quarter,
+                reference_usd=ref,
+                computed_usd=comp,
+                delta_usd=delta,
+                status=status,
+            )
+        )
+    return rows
+
+
+@dataclass(frozen=True)
+class AnnualNetComparisonRow:
+    year: int
+    reference_usd: float
+    computed_usd: float
+    delta_usd: float
+    status: str  # match | mismatch | partial
+
+
+def compare_annual_net(
+    computed: dict[int, float],
+    reference: dict[int, float] | None = None,
+    *,
+    tolerance_usd: float = 1.0,
+    through: date | None = None,
+) -> list[AnnualNetComparisonRow]:
+    """Compare computed annual net dividends against IBKR reference values."""
+    reference = reference or IBKR_REFERENCE_ANNUAL_NET
+    through = through or IBKR_REFERENCE_THROUGH_DATE
+    keys = sorted(set(reference) | set(computed))
+    rows: list[AnnualNetComparisonRow] = []
+
+    for year in keys:
+        ref = reference.get(year)
+        comp = computed.get(year, 0.0)
+        if ref is None:
+            if comp <= 0:
+                continue
+            rows.append(
+                AnnualNetComparisonRow(
+                    year=year,
+                    reference_usd=0.0,
+                    computed_usd=comp,
+                    delta_usd=comp,
+                    status="extra",
+                )
+            )
+            continue
+
+        delta = round(comp - ref, 2)
+        partial_year = year == through.year
+        if partial_year:
+            status = "partial" if comp + tolerance_usd >= ref else "mismatch"
+        elif abs(delta) <= tolerance_usd or (comp <= 0 and ref <= 0):
+            status = "match"
+        else:
+            status = "mismatch"
+
+        rows.append(
+            AnnualNetComparisonRow(
+                year=year,
                 reference_usd=ref,
                 computed_usd=comp,
                 delta_usd=delta,

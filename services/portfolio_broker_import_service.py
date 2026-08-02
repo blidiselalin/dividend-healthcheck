@@ -16,10 +16,10 @@ from services.ibkr_activity_parser import (
     IBKRActivityStatement,
     IBKRStatementMeta,
     ImportIssue,
+    build_canonical_dividends,
     build_monthly_deposits,
     deposit_months_with_inflows,
     has_blocking_errors,
-    normalize_symbol,
     statement_deposit_period,
     statement_symbol_scope,
 )
@@ -73,6 +73,12 @@ class ImportApplyResult:
     issues: list[ImportIssue]
     cleared: int | None = None
     months_filled: int = 0
+    dividend_rows_processed: int = 0
+    dividend_rows_inserted: int = 0
+    dividend_rows_updated: int = 0
+    dividend_rows_duplicates: int = 0
+    dividend_rows_rejected: int = 0
+    dividend_net_imported_usd: float = 0.0
 
     @property
     def wrote_data(self) -> bool:
@@ -137,6 +143,14 @@ def apply_import(  # noqa: C901
     trades_imported = 0
     dividends_imported = 0
     deposits_imported = 0
+    dividend_stats = {
+        "processed": 0,
+        "inserted": 0,
+        "updated": 0,
+        "duplicates": 0,
+        "rejected": 0,
+        "net_usd": 0.0,
+    }
 
     positions = statement.open_positions
     _report(progress, "Importing open positions…", 0.25)
@@ -198,41 +212,64 @@ def apply_import(  # noqa: C901
 
     _sync_opening_balance_lots(ctx, statement)
 
-    dividends = statement.dividends
     _report(progress, "Importing dividends…", 0.65)
+    from services.portfolio_import_pipeline import content_fingerprint
+
     base_currency = (statement.meta.base_currency or "USD").strip().upper()
     dividend_fx = statement.deposits_fx_eur_per_usd
     if not dividend_fx and base_currency == "USD":
         dividend_fx = statement.fx_rates.get("EUR")
-    for index, dividend in enumerate(dividends, start=1):
+
+    source_file_hash = content_fingerprint(content)
+
+    canonical_dividends, rejected_rows = build_canonical_dividends(
+        statement,
+        eur_per_usd=dividend_fx,
+    )
+    dividend_stats["rejected"] = rejected_rows
+
+    for index, dividend in enumerate(canonical_dividends, start=1):
         if mode == ImportMode.MERGE and dividend.symbol not in scope_symbols:
             continue
-        if dividend.kind in {"reversal", "withholding", "accrual"}:
-            continue
-        if dividend.gross_usd <= 0:
-            continue
-        symbol = normalize_symbol(dividend.symbol) or dividend.symbol.strip().upper()
-        gross_usd = float(dividend.gross_usd)
-        per_share_usd = float(dividend.per_share_usd)
-        if dividend.currency == "EUR" and dividend_fx and dividend_fx > 0:
-            gross_usd = round(gross_usd / dividend_fx, 2)
-            if per_share_usd > 0:
-                per_share_usd = round(per_share_usd / dividend_fx, 6)
-        shares_held = round(gross_usd / per_share_usd, 4) if per_share_usd > 0 else 0.0
-        outcome = ctx.receipts.sync_receipt(
-            symbol,
+        dividend_stats["processed"] += 1
+        outcome = ctx.receipts.upsert_broker_receipt(
+            symbol=dividend.symbol,
             ex_date=dividend.pay_date,
             pay_date=dividend.pay_date,
-            per_share_usd=per_share_usd,
-            shares_held=shares_held,
-            gross_usd=gross_usd,
-            source="ibkr",
+            per_share_usd=dividend.per_share_usd,
+            shares_held=dividend.shares_held,
+            gross_usd=dividend.gross_usd,
+            withholding_usd=dividend.withholding_usd,
+            net_usd=dividend.net_usd,
+            dedup_key=dividend.dedup_key,
+            broker_account=dividend.broker_account,
+            broker_transaction_id=dividend.broker_transaction_id,
+            source_file_hash=source_file_hash,
+            source_row_number=dividend.source_row_number,
+            dividend_type=dividend.dividend_type,
+            description=dividend.description,
+            currency=dividend.currency,
         )
-        if outcome in {"added", "updated"}:
+        if outcome == "added":
             dividends_imported += 1
-        if dividends:
-            fraction = 0.65 + (0.10 * index / len(dividends))
-            _report(progress, f"Importing dividends ({index}/{len(dividends)})…", fraction)
+            dividend_stats["inserted"] += 1
+            dividend_stats["net_usd"] += dividend.net_usd
+        elif outcome == "updated":
+            dividends_imported += 1
+            dividend_stats["updated"] += 1
+        elif outcome == "duplicate":
+            dividend_stats["duplicates"] += 1
+        if canonical_dividends:
+            fraction = 0.65 + (0.10 * index / len(canonical_dividends))
+            _report(
+                progress,
+                f"Importing dividends ({index}/{len(canonical_dividends)})…",
+                fraction,
+            )
+
+    from services.dividend_receipt_dedup_service import reconcile_dividend_receipts
+
+    reconcile_dividend_receipts(ctx.receipts)
 
     _report(progress, "Updating dividend totals on holdings…", 0.78)
     for symbol in open_symbols:
@@ -322,6 +359,12 @@ def apply_import(  # noqa: C901
         issues=issues,
         cleared=cleared,
         months_filled=months_filled,
+        dividend_rows_processed=dividend_stats["processed"],
+        dividend_rows_inserted=dividend_stats["inserted"],
+        dividend_rows_updated=dividend_stats["updated"],
+        dividend_rows_duplicates=dividend_stats["duplicates"],
+        dividend_rows_rejected=dividend_stats["rejected"],
+        dividend_net_imported_usd=round(dividend_stats["net_usd"], 2),
     )
 
 

@@ -182,12 +182,30 @@ def sync_received_dividends(
 def _sync_monthly_net_from_receipts(ctx: Any) -> int:
     from data_ingestion.dividend_income_store import dividend_tax_rate
 
-    totals = ctx.receipts.monthly_gross_totals()
-    if not totals:
+    broker_gross = ctx.receipts.monthly_gross_totals(posted_cash_only=True)
+    broker_net = ctx.receipts.monthly_net_totals(posted_cash_only=True)
+    computed_gross = ctx.receipts.monthly_gross_totals(computed_only=True)
+    keys = sorted(set(broker_gross) | set(broker_net) | set(computed_gross))
+    if not keys:
         return 0
 
-    for (year, month), gross in totals.items():
-        rate = dividend_tax_rate(year)
-        net = round(gross * (1.0 - rate), 2)
+    for year, month in keys:
+        key = (year, month)
+        if key in broker_gross or key in broker_net:
+            gross = broker_gross.get(key, 0.0)
+            net = broker_net.get(key)
+        else:
+            gross = computed_gross.get(key, 0.0)
+            net = None
+            if gross > 0:
+                rate = dividend_tax_rate(year)
+                net = round(gross * (1.0 - rate), 2)
+        if net is None and gross > 0:
+            rate = dividend_tax_rate(year)
+            net = round(gross * (1.0 - rate), 2)
+        if gross <= 0 and (net is None or net <= 0):
+            continue
+        if net is None:
+            net = 0.0
         ctx.dividends.upsert_monthly_total(year, month, gross_usd=gross, net_usd=net)
-    return len(totals)
+    return len(keys)

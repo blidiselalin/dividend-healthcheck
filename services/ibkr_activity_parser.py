@@ -26,8 +26,6 @@ _OPTIONAL_SECTIONS = frozenset(
         "Corporate Actions",
         "Fees",
         "Interest",
-        "Withholding Tax",
-        "Withholding",
         "Change in Dividend Accruals",
         "Stock Yield Enhancement Program Securities Lent",
         "Stock Yield Enhancement Program Collaterals",
@@ -94,7 +92,40 @@ class IBKRDividend:
     currency: str = "USD"
     description: str = ""
     kind: str = "ordinary"
+    source_row_number: int = 0
     raw_row: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class IBKRWithholding:
+    symbol: str
+    pay_date: date
+    amount_usd: float
+    currency: str = "USD"
+    description: str = ""
+    source_row_number: int = 0
+    raw_row: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class CanonicalIBKRDividend:
+    """One posted cash dividend payment ready for idempotent storage."""
+
+    symbol: str
+    pay_date: date
+    per_share_usd: float
+    gross_usd: float
+    withholding_usd: float
+    net_usd: float
+    currency: str
+    dividend_type: str
+    transaction_status: str
+    description: str
+    broker_account: str | None
+    broker_transaction_id: str | None
+    source_row_number: int
+    dedup_key: str
+    shares_held: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -128,6 +159,7 @@ class IBKRActivityStatement:
     open_positions: list[IBKROpenPosition] = field(default_factory=list)
     trades: list[IBKRTrade] = field(default_factory=list)
     dividends: list[IBKRDividend] = field(default_factory=list)
+    withholdings: list[IBKRWithholding] = field(default_factory=list)
     cash_transfers: list[IBKRCashTransfer] = field(default_factory=list)
     fx_rates: dict[str, float] = field(default_factory=dict)
     nav_total: float | None = None
@@ -138,6 +170,7 @@ class IBKRActivityStatement:
     forex_trades_skipped: int = 0
     internal_transfers_skipped: int = 0
     optional_sections_seen: set[str] = field(default_factory=set)
+    _source_row_counter: int = 0
 
 
 def _parse_float(value: str | None) -> float | None:
@@ -297,6 +330,8 @@ def _is_ignored_section(section: str) -> bool:
 
 def _classify_dividend(description: str, gross: float) -> str:
     lowered = description.lower()
+    if "forecast" in lowered or "expected dividend" in lowered:
+        return "forecast"
     if "payment in lieu" in lowered:
         return "payment_in_lieu"
     if gross < 0:
@@ -889,6 +924,7 @@ def _parse_dividend_row(row: list[str], statement: IBKRActivityStatement) -> Non
     per_share = float(per_share_match.group(1)) if per_share_match else 0.0
     if per_share <= 0:
         per_share = round(abs(gross), 6)
+    statement._source_row_counter += 1
     statement.dividends.append(
         IBKRDividend(
             symbol=symbol,
@@ -898,9 +934,138 @@ def _parse_dividend_row(row: list[str], statement: IBKRActivityStatement) -> Non
             currency=currency,
             description=description,
             kind=_classify_dividend(description, gross),
+            source_row_number=statement._source_row_counter,
             raw_row=_raw_row_tuple(row),
         )
     )
+
+
+def _parse_withholding_row(row: list[str], statement: IBKRActivityStatement) -> None:
+    if len(row) < 6 or row[1] != "Data":
+        return
+    currency = row[2].strip()
+    if currency not in {"USD", "EUR"}:
+        return
+    if _is_skip_data_label(currency):
+        return
+    pay_date = _parse_activity_date(row[3])
+    description = row[4].strip()
+    amount = _parse_float(row[5])
+    if pay_date is None or amount is None or amount == 0:
+        return
+    sym_match = _DIVIDEND_SYMBOL_RE.match(description)
+    if not sym_match:
+        return
+    symbol = sym_match.group(1)
+    statement._source_row_counter += 1
+    statement.withholdings.append(
+        IBKRWithholding(
+            symbol=symbol,
+            pay_date=pay_date,
+            amount_usd=abs(amount),
+            currency=currency,
+            description=description,
+            source_row_number=statement._source_row_counter,
+            raw_row=_raw_row_tuple(row),
+        )
+    )
+
+
+def build_canonical_dividends(
+    statement: IBKRActivityStatement,
+    *,
+    eur_per_usd: float | None = None,
+) -> tuple[list[CanonicalIBKRDividend], int]:
+    """
+    Normalize IBKR dividend and withholding rows into canonical posted payments.
+
+    Returns canonical rows and a count of rejected raw dividend rows.
+    """
+    from collections import defaultdict
+
+    from data_ingestion.dividend_transaction import (
+        DIVIDEND_TYPE_ACTUAL,
+        DIVIDEND_TYPE_PAYMENT_IN_LIEU,
+        TRANSACTION_STATUS_POSTED,
+        DividendDedupInput,
+        build_dedup_key,
+        extract_isin,
+        net_from_gross_and_withholding,
+    )
+
+    withholding_by_key: dict[tuple[str, date], float] = defaultdict(float)
+    for row in statement.withholdings:
+        symbol = normalize_symbol(row.symbol) or row.symbol.strip().upper()
+        amount = float(row.amount_usd)
+        if row.currency == "EUR" and eur_per_usd and eur_per_usd > 0:
+            amount = round(amount / eur_per_usd, 2)
+        withholding_by_key[(symbol, row.pay_date)] += amount
+
+    account = (statement.meta.account or "").strip() or None
+    canonical: list[CanonicalIBKRDividend] = []
+    rejected = 0
+
+    for dividend in statement.dividends:
+        if dividend.kind in {"reversal", "withholding", "accrual", "forecast"}:
+            rejected += 1
+            continue
+        if dividend.gross_usd <= 0:
+            rejected += 1
+            continue
+
+        symbol = normalize_symbol(dividend.symbol) or dividend.symbol.strip().upper()
+        gross_usd = float(dividend.gross_usd)
+        per_share_usd = float(dividend.per_share_usd)
+        if dividend.currency == "EUR" and eur_per_usd and eur_per_usd > 0:
+            gross_usd = round(gross_usd / eur_per_usd, 2)
+            if per_share_usd > 0:
+                per_share_usd = round(per_share_usd / eur_per_usd, 6)
+
+        withholding_usd = round(withholding_by_key.get((symbol, dividend.pay_date), 0.0), 2)
+        net_usd = net_from_gross_and_withholding(
+            gross_usd=gross_usd,
+            withholding_usd=withholding_usd,
+        )
+        dividend_type = (
+            DIVIDEND_TYPE_PAYMENT_IN_LIEU
+            if dividend.kind == "payment_in_lieu"
+            else DIVIDEND_TYPE_ACTUAL
+        )
+        shares_held = round(gross_usd / per_share_usd, 4) if per_share_usd > 0 else 0.0
+        dedup_key = build_dedup_key(
+            DividendDedupInput(
+                broker_account=account,
+                broker_transaction_id=None,
+                symbol=symbol,
+                isin=extract_isin(dividend.description),
+                pay_date=dividend.pay_date,
+                currency="USD",
+                gross_usd=gross_usd,
+                withholding_usd=withholding_usd,
+                net_usd=net_usd,
+            )
+        )
+        canonical.append(
+            CanonicalIBKRDividend(
+                symbol=symbol,
+                pay_date=dividend.pay_date,
+                per_share_usd=per_share_usd,
+                gross_usd=gross_usd,
+                withholding_usd=withholding_usd,
+                net_usd=net_usd,
+                currency="USD",
+                dividend_type=dividend_type,
+                transaction_status=TRANSACTION_STATUS_POSTED,
+                description=dividend.description,
+                broker_account=account,
+                broker_transaction_id=None,
+                source_row_number=dividend.source_row_number,
+                dedup_key=dedup_key,
+                shares_held=shares_held,
+            )
+        )
+
+    return canonical, rejected
 
 
 def _parse_transfer_row(row: list[str], statement: IBKRActivityStatement) -> None:
@@ -1034,6 +1199,8 @@ def parse_activity_statement_csv(content: str | bytes) -> IBKRActivityStatement:
                 _parse_trade_order_row(row, trades_header_map, statement)
         elif section == "Dividends" and len(row) >= 4:
             _parse_dividend_row(row, statement)
+        elif section in {"Withholding Tax", "Withholding"} and len(row) >= 4:
+            _parse_withholding_row(row, statement)
         elif section == "Transfers" and len(row) >= 4:
             _parse_transfer_row(row, statement)
         elif section == "Deposits & Withdrawals" and len(row) >= 4:
