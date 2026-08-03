@@ -523,6 +523,13 @@ def _finalize_broker_import(ctx: object, *, db_path: Path | None) -> None:
         pass
 
     try:
+        import streamlit as st
+
+        st.session_state.pop("portfolio_timeline_synced", None)
+    except Exception:  # noqa: S110
+        pass
+
+    try:
         from services.portfolio_vector_sync import sync_portfolio_to_vector_db
 
         sync_portfolio_to_vector_db(enrich_missing=False, db_path=db_path)

@@ -1299,17 +1299,26 @@ class PortfolioDetailsView:
                     )
             st.divider()
 
-        if not st.session_state.get("portfolio_timeline_synced"):
+        try:
+            from services.portfolio_management_service import PortfolioManagementService
+
+            if not st.session_state.get("portfolio_timeline_synced"):
+                PortfolioManagementService().sync_monthly_portfolio_timeline()
+                st.session_state["portfolio_timeline_synced"] = True
+        except Exception:  # noqa: S110
+            pass
+
+        service = PortfolioDashboardService()
+        deposits = service.list_deposits()
+        if any(item.portfolio_eur <= 0 for item in deposits):
             try:
                 from services.portfolio_management_service import PortfolioManagementService
 
                 PortfolioManagementService().sync_monthly_portfolio_timeline()
+                deposits = service.list_deposits()
                 st.session_state["portfolio_timeline_synced"] = True
             except Exception:  # noqa: S110
                 pass
-
-        service = PortfolioDashboardService()
-        deposits = service.list_deposits()
         holdings_snapshot = PortfolioDashboardService.holdings_from_rows(rows) if rows else None
         metrics = service.build_metrics(deposits, holdings=holdings_snapshot)
         summary = metrics.deposits
@@ -2191,17 +2200,27 @@ class PortfolioDetailsView:
     @classmethod
     def _render_deposits_page(cls) -> None:
         """Monthly deposits and portfolio value history."""
-        if not st.session_state.get("portfolio_timeline_synced"):
+        try:
+            from services.portfolio_management_service import PortfolioManagementService
+
+            if not st.session_state.get("portfolio_timeline_synced"):
+                PortfolioManagementService().sync_monthly_portfolio_timeline()
+                st.session_state["portfolio_timeline_synced"] = True
+        except Exception:  # noqa: S110
+            pass
+
+        dashboard = PortfolioDashboardService()
+        deposits = dashboard.list_deposits()
+        # Persist any months still missing portfolio € (e.g. after deploy before re-import).
+        if any(item.portfolio_eur <= 0 for item in deposits):
             try:
                 from services.portfolio_management_service import PortfolioManagementService
 
                 PortfolioManagementService().sync_monthly_portfolio_timeline()
+                deposits = dashboard.list_deposits()
                 st.session_state["portfolio_timeline_synced"] = True
             except Exception:  # noqa: S110
                 pass
-
-        dashboard = PortfolioDashboardService()
-        deposits = dashboard.list_deposits()
         metrics = dashboard.build_metrics(deposits)
         summary = metrics.deposits
         evolution = dashboard.evolution_dataframe(deposits)
@@ -2209,7 +2228,8 @@ class PortfolioDetailsView:
         st.markdown("##### Account deposits & portfolio value")
         st.caption(
             "Monthly deposits (€ and $) and portfolio € at each month end "
-            "(journal shares × month-end closes; IBKR NAV only when pricing is incomplete)."
+            "(journal shares × month-end closes; trade price used when library "
+            "history is incomplete)."
         )
 
         col1, col2, col3, col4, col5 = st.columns(5)

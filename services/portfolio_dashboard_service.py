@@ -115,7 +115,14 @@ class PortfolioDashboardService:
         valuation_path = self._valuation_db_path(db_path)
         if use_computed_portfolio:
             try:
-                computed = compute_monthly_portfolio_valuations(records, db_path=valuation_path)
+                from services.portfolio_context import create_portfolio_context
+
+                journal_service = create_portfolio_context(db_path=valuation_path).journal_service
+                computed = compute_monthly_portfolio_valuations(
+                    records,
+                    db_path=valuation_path,
+                    journal_service=journal_service,
+                )
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Monthly portfolio valuation skipped: %s", exc)
 

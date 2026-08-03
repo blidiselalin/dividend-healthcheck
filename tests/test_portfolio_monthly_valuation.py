@@ -23,6 +23,7 @@ from services.portfolio_monthly_valuation import (
     compute_monthly_portfolio_valuations,
     continuous_monthly_deposits,
     fx_rates_carry_forward,
+    journal_mark_price,
     pick_portfolio_eur_for_month,
     portfolio_eur_to_store,
     portfolio_inception_period,
@@ -336,15 +337,23 @@ def test_shares_from_records_accounts_for_sells(
     assert shares_from_records(records, date(2025, 7, 31)) == pytest.approx(6.0)
 
 
-def test_portfolio_eur_to_store_prefers_computed_when_fully_covered() -> None:
+def test_portfolio_eur_to_store_prefers_computed_when_usable() -> None:
+    thin = MonthPortfolioValuation(
+        portfolio_usd=1000.0,
+        portfolio_eur=900.0,
+        symbols_held=5,
+        symbols_priced=1,
+    )
+    assert portfolio_eur_to_store(stored=1200.0, valuation=thin) == 1200.0
+    assert portfolio_eur_to_store(stored=None, valuation=thin) is None
     partial = MonthPortfolioValuation(
         portfolio_usd=1000.0,
         portfolio_eur=900.0,
         symbols_held=3,
         symbols_priced=2,
     )
-    assert portfolio_eur_to_store(stored=1200.0, valuation=partial) == 1200.0
-    assert portfolio_eur_to_store(stored=None, valuation=partial) is None
+    assert portfolio_eur_to_store(stored=1200.0, valuation=partial) == 900.0
+    assert portfolio_eur_to_store(stored=None, valuation=partial) == 900.0
     full = MonthPortfolioValuation(
         portfolio_usd=1000.0,
         portfolio_eur=900.0,
@@ -399,6 +408,12 @@ def test_current_month_uses_journal_shares_not_open_holdings(tmp_path: Path) -> 
 
 
 def test_pick_portfolio_prefers_stored_then_computed() -> None:
+    thin = MonthPortfolioValuation(
+        portfolio_usd=1000.0,
+        portfolio_eur=900.0,
+        symbols_held=5,
+        symbols_priced=1,
+    )
     partial = MonthPortfolioValuation(
         portfolio_usd=1000.0,
         portfolio_eur=900.0,
@@ -406,7 +421,8 @@ def test_pick_portfolio_prefers_stored_then_computed() -> None:
         symbols_priced=2,
     )
     assert pick_portfolio_eur_for_month(stored=1200.0, valuation=partial) == 1200.0
-    assert pick_portfolio_eur_for_month(stored=None, valuation=partial) is None
+    assert pick_portfolio_eur_for_month(stored=None, valuation=thin) is None
+    assert pick_portfolio_eur_for_month(stored=None, valuation=partial) == 900.0
     full = MonthPortfolioValuation(
         portfolio_usd=1000.0,
         portfolio_eur=900.0,
@@ -415,7 +431,49 @@ def test_pick_portfolio_prefers_stored_then_computed() -> None:
     )
     assert pick_portfolio_eur_for_month(stored=1200.0, valuation=full) == 1200.0
     assert pick_portfolio_eur_for_month(stored=None, valuation=full) == 900.0
-    assert pick_portfolio_eur_for_month(stored=None, valuation=partial) is None
+
+
+def test_journal_mark_price_uses_last_trade_on_or_before() -> None:
+    from data_ingestion.purchase_journal_store import PurchaseRecord
+
+    records = [
+        PurchaseRecord("KO", date(2025, 1, 10), 50.0, shares=10.0, side="buy"),
+        PurchaseRecord("KO", date(2025, 3, 5), 55.0, shares=5.0, side="buy"),
+    ]
+    assert journal_mark_price(records, date(2025, 2, 28)) == pytest.approx(50.0)
+    assert journal_mark_price(records, date(2025, 3, 31)) == pytest.approx(55.0)
+
+
+def test_compute_uses_journal_price_when_library_history_missing(tmp_path: Path) -> None:
+    db = tmp_path / "portfolio.db"
+    portfolio = PortfolioStore(db_path=db, seed=False)
+    journal = PurchaseJournalStore(db_path=db, seed=False)
+    deposits = DepositsStore(db_path=db, seed=False)
+
+    journal.add_purchase("KO", date(2025, 1, 10), 50.0, shares=10.0, side="buy")
+    journal.add_purchase("KO", date(2025, 3, 5), 55.0, shares=5.0, side="buy")
+    portfolio.upsert_holding("KO", shares=15, avg_cost_per_share=51.67)
+    for month, deposit_eur, deposit_usd in (
+        (1, 1000.0, 1100.0),
+        (2, 500.0, 550.0),
+        (3, 0.0, 0.0),
+    ):
+        deposits.upsert_deposit(
+            year=2025,
+            month=month,
+            label=f"Month {month}",
+            deposit_eur=deposit_eur,
+            deposit_usd=deposit_usd,
+            portfolio_eur=0.0,
+        )
+
+    with patch("services.shared_market_db.load_documents", return_value={}):
+        values = compute_monthly_portfolio_valuations(deposits.list_deposits(), db_path=db)
+
+    assert values["2025-01"].portfolio_usd == pytest.approx(10 * 50.0)
+    assert values["2025-02"].portfolio_usd == pytest.approx(10 * 50.0)
+    assert values["2025-03"].portfolio_usd == pytest.approx(15 * 55.0)
+    assert values["2025-01"].coverage == pytest.approx(1.0)
 
 
 def test_backfill_persists_month_end_portfolio_for_each_month(tmp_path: Path) -> None:

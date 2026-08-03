@@ -179,6 +179,25 @@ def shares_from_records(records: list[PurchaseRecord], as_of: date) -> float:
     return max(total, 0.0)
 
 
+def journal_mark_price(records: list[PurchaseRecord], as_of: date) -> float | None:
+    """Last trade price on or before ``as_of`` — fallback when library history is missing."""
+    price: float | None = None
+    for record in sorted(records, key=lambda item: item.purchase_date):
+        if record.purchase_date > as_of:
+            break
+        if record.price_usd > 0:
+            price = float(record.price_usd)
+    return price
+
+
+def _usable_month_valuation(valuation: MonthPortfolioValuation | None) -> bool:
+    """True when a computed mark is good enough to show or persist."""
+    if valuation is None or valuation.portfolio_eur <= 0 or valuation.symbols_priced <= 0:
+        return False
+    # Full coverage is ideal; allow partial books when most held symbols are priced.
+    return valuation.coverage >= 0.5
+
+
 def _last_bar_date_on_or_before(series: list[tuple[date, float]], as_of: date) -> date | None:
     last: date | None = None
     for point_date, _close in series:
@@ -226,19 +245,22 @@ def _mark_price_for_date(
     as_of: date,
     *,
     snapshot_price: float | None = None,
+    fallback_price: float | None = None,
     live_price: float | None = None,
     reference: date | None = None,
 ) -> float | None:
     """
     Month-end mark: last in-month close on or before ``as_of``, else latest prior close.
 
-    Snapshot price is used only when history has no bar yet (e.g. newly added symbol).
-    Live quotes are ignored so evolution charts reflect month-end holding values.
+    When library history is missing, use the latest journal trade price on or before
+    ``as_of``, then the document snapshot price. Live quotes are ignored.
     """
     _ = live_price, reference
     history_close = _close_for_month_end(series, as_of)
     if history_close is not None:
         return history_close
+    if fallback_price is not None and fallback_price > 0:
+        return fallback_price
     if snapshot_price is not None and snapshot_price > 0:
         return snapshot_price
     return None
@@ -373,7 +395,8 @@ def compute_monthly_portfolio_valuations(
         missing_symbols: list[str] = []
 
         for symbol in all_symbols:
-            shares = shares_from_records(records_by_symbol.get(symbol, []), as_of)
+            symbol_records = records_by_symbol.get(symbol, [])
+            shares = shares_from_records(symbol_records, as_of)
             if shares <= 0:
                 continue
             symbols_held += 1
@@ -381,6 +404,7 @@ def compute_monthly_portfolio_valuations(
                 price_series.get(symbol, []),
                 as_of,
                 snapshot_price=snapshot_prices.get(symbol),
+                fallback_price=journal_mark_price(symbol_records, as_of),
             )
             if close is None:
                 missing_symbols.append(symbol)
@@ -417,10 +441,11 @@ def portfolio_eur_to_store(
     """
     Decide the portfolio € to persist on ``monthly_deposits``.
 
-    Journal marks (shares × month-end closes) are saved for every month with full
-    price coverage. Broker NAV is kept only when marks are unavailable.
+    Journal marks (shares × month-end closes, with trade-price fallback) are saved
+    for every month that can be priced. Broker NAV is kept only when marks fail.
     """
-    if valuation is not None and valuation.portfolio_eur > 0 and valuation.coverage >= 1.0:
+    if _usable_month_valuation(valuation):
+        assert valuation is not None
         return valuation.portfolio_eur
     if stored is not None and stored > 0:
         return stored
@@ -447,11 +472,12 @@ def pick_portfolio_eur_for_month(
     """
     Portfolio € for evolution charts, KPIs, and monthly detail tables.
 
-    Prefer persisted month-end values (import backfill or manual entry). Recompute
-    from the journal only when nothing is stored yet but full price coverage exists.
+    Prefer persisted month-end values. When a month has no stored value, use the
+    computed journal mark (including trade-price fallbacks).
     """
     if stored is not None and stored > 0:
         return stored
-    if valuation is not None and valuation.portfolio_eur > 0 and valuation.coverage >= 1.0:
+    if _usable_month_valuation(valuation):
+        assert valuation is not None
         return valuation.portfolio_eur
     return None
