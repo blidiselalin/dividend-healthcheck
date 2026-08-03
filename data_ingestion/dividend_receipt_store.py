@@ -21,7 +21,7 @@ from data_ingestion.dividend_transaction import (
     build_dedup_key,
     net_from_gross_and_withholding,
 )
-from db.connection import open_portfolio_db, use_cloud_sql
+from db.connection import is_unique_violation, open_portfolio_db, use_cloud_sql
 from db.parsing import parse_date
 
 _POSTED_CASH_WHERE = """
@@ -726,38 +726,42 @@ class DividendReceiptStore:
             )
         with self._connect() as connection:
             if connection.is_postgres:
-                row = connection.execute(
-                    """
-                    INSERT INTO dividend_receipts (
-                      user_id, symbol, ex_date, pay_date, per_share_usd, shares_held,
-                      gross_usd, source, broker_account, broker_transaction_id,
-                      source_file_hash, source_row_number, dedup_key, transaction_status,
-                      dividend_type, withholding_usd, net_usd, currency, description
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?)
-                    ON CONFLICT (user_id, dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING
-                    RETURNING id
-                    """,
-                    (
-                        connection.user_id,
-                        symbol,
-                        ex_date.isoformat(),
-                        pay_date.isoformat(),
-                        per_share_usd,
-                        shares_held,
-                        gross_usd,
-                        source,
-                        broker_account,
-                        broker_transaction_id,
-                        source_file_hash,
-                        source_row_number,
-                        dedup_key,
-                        dtype,
-                        withholding_usd,
-                        net,
-                        currency,
-                        description,
-                    ),
-                ).fetchone()
+                try:
+                    row = connection.execute(
+                        """
+                        INSERT INTO dividend_receipts (
+                          user_id, symbol, ex_date, pay_date, per_share_usd, shares_held,
+                          gross_usd, source, broker_account, broker_transaction_id,
+                          source_file_hash, source_row_number, dedup_key, transaction_status,
+                          dividend_type, withholding_usd, net_usd, currency, description
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?)
+                        RETURNING id
+                        """,
+                        (
+                            connection.user_id,
+                            symbol,
+                            ex_date.isoformat(),
+                            pay_date.isoformat(),
+                            per_share_usd,
+                            shares_held,
+                            gross_usd,
+                            source,
+                            broker_account,
+                            broker_transaction_id,
+                            source_file_hash,
+                            source_row_number,
+                            dedup_key,
+                            dtype,
+                            withholding_usd,
+                            net,
+                            currency,
+                            description,
+                        ),
+                    ).fetchone()
+                except Exception as exc:
+                    if is_unique_violation(exc):
+                        return False
+                    raise
                 return row is not None
 
             cursor = connection.execute(
@@ -970,13 +974,15 @@ class DividendReceiptStore:
             if connection.is_postgres:
                 rows = connection.execute(
                     f"{self._RECEIPT_SELECT} FROM dividend_receipts "
-                    "WHERE user_id = ? AND (dedup_key IS NULL OR dedup_key = '')",
+                    "WHERE user_id = ? AND (dedup_key IS NULL OR dedup_key = '') "
+                    "AND COALESCE(is_excluded, false) = false",
                     (connection.user_id,),
                 ).fetchall()
             else:
                 rows = connection.execute(
                     f"{self._RECEIPT_SELECT} FROM dividend_receipts "
-                    "WHERE dedup_key IS NULL OR dedup_key = ''",
+                    "WHERE (dedup_key IS NULL OR dedup_key = '') "
+                    "AND COALESCE(is_excluded, 0) = 0",
                 ).fetchall()
         for row in rows:
             receipt = self._row_to_receipt(row)
@@ -1048,7 +1054,8 @@ class DividendReceiptStore:
                         """
                         UPDATE dividend_receipts
                         SET is_excluded = TRUE,
-                            exclusion_reason = 'duplicate_dedup_key'
+                            exclusion_reason = 'duplicate_dedup_key',
+                            dedup_key = NULL
                         WHERE user_id = ? AND dedup_key = ? AND id != ?
                           AND COALESCE(is_excluded, false) = false
                         """,
@@ -1059,7 +1066,8 @@ class DividendReceiptStore:
                         """
                         UPDATE dividend_receipts
                         SET is_excluded = 1,
-                            exclusion_reason = 'duplicate_dedup_key'
+                            exclusion_reason = 'duplicate_dedup_key',
+                            dedup_key = NULL
                         WHERE dedup_key = ? AND id != ?
                           AND COALESCE(is_excluded, 0) = 0
                         """,

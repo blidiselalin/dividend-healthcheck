@@ -158,6 +158,21 @@ def adapt_sql(sql: str, is_postgres: bool = True) -> str:
     return sql.replace("?", "%s")
 
 
+def is_unique_violation(exc: BaseException) -> bool:
+    """True when ``exc`` is a PostgreSQL unique-constraint violation."""
+    try:
+        from psycopg.errors import UniqueViolation
+
+        if isinstance(exc, UniqueViolation):
+            return True
+    except ImportError:
+        pass
+    cause = exc.__cause__
+    if cause is not None and cause is not exc:
+        return is_unique_violation(cause)
+    return getattr(exc, "sqlstate", None) == "23505"
+
+
 def portfolio_user_id() -> str:
     try:
         from auth.user_context import current_user_id
