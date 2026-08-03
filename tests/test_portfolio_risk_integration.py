@@ -198,6 +198,23 @@ def test_apply_yield_preload_rebuilds_risk_watchlist(monkeypatch: pytest.MonkeyP
     assert cached.total >= 1
 
 
+def test_get_cached_attention_summary_accepts_attention_summary_object(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.portfolio_attention_service import AttentionSummary
+
+    session = {
+        SESSION_SUMMARY_KEY: AttentionSummary(reference_date=date(2026, 5, 13)),
+        "portfolio_details_rows": [_row()],
+    }
+    monkeypatch.setattr("streamlit.session_state", session, raising=False)
+
+    cached = get_cached_attention_summary()
+
+    assert cached is not None
+    assert cached.reference_date == date(2026, 5, 13)
+
+
 def test_portfolio_details_view_imports_refresh_portfolio_risks() -> None:
     import ui.portfolio_details_view as view
 

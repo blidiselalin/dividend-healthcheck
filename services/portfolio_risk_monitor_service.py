@@ -90,6 +90,8 @@ class PortfolioRiskMonitorService:
     def summary_from_store(
         data: dict[str, Any] | None,
     ) -> AttentionSummary | None:
+        if not isinstance(data, dict):
+            return None
         if not data:
             return None
         ref_raw = data.get("reference_date")

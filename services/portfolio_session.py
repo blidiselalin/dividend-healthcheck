@@ -165,12 +165,15 @@ def _prune_stale_session_symbols() -> None:
     cached_summary = st.session_state.get(SESSION_SUMMARY_KEY)
     if cached_summary:
         from services.portfolio_attention_service import normalize_attention_summary
+        from services.portfolio_risk_monitor_service import PortfolioRiskMonitorService
 
         summary = normalize_attention_summary(cached_summary)
         if summary is not None:
-            st.session_state[SESSION_SUMMARY_KEY] = filter_attention_summary(
-                summary,
-                allowed_symbols=db_symbols,
+            st.session_state[SESSION_SUMMARY_KEY] = PortfolioRiskMonitorService.summary_to_store(
+                filter_attention_summary(
+                    summary,
+                    allowed_symbols=db_symbols,
+                )
             )
 
     try:

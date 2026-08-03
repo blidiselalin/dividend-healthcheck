@@ -48,3 +48,9 @@ def test_summary_round_trip() -> None:
     assert restored.items[0].symbol == "ARE"
     assert restored.items[0].categories == ("Exposure", "Estimates")
     assert restored.reference_date == date(2026, 5, 13)
+
+
+def test_summary_from_store_rejects_non_dict() -> None:
+    summary = AttentionSummary(reference_date=date(2026, 5, 13))
+    assert PortfolioRiskMonitorService.summary_from_store(summary) is None
+    assert PortfolioRiskMonitorService.summary_from_store([]) is None

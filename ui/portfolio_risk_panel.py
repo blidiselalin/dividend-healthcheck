@@ -70,9 +70,7 @@ def _session_rows_and_preload() -> (
 def get_cached_attention_summary() -> AttentionSummary | None:
     from services.portfolio_open_holdings import filter_attention_summary, open_portfolio_symbols
 
-    summary = normalize_attention_summary(
-        PortfolioRiskMonitorService.summary_from_store(st.session_state.get(SESSION_SUMMARY_KEY))
-    )
+    summary = normalize_attention_summary(st.session_state.get(SESSION_SUMMARY_KEY))
     if summary is None:
         return None
     session_rows = st.session_state.get("portfolio_details_rows")
