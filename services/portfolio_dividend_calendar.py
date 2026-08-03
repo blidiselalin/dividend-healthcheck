@@ -572,15 +572,15 @@ except ImportError:
 
 
 def create_month_comparison_chart(calendar: PortfolioDividendCalendar) -> Any:
-    """Grouped bar chart: last vs current vs next month total dividend cash."""
+    """Grouped bar chart: last vs current vs next month estimated dividend cash."""
     if not PLOTLY_AVAILABLE:
         return None
 
     months = [calendar.last_month, calendar.current_month, calendar.next_month]
     labels = [month.label for month in months]
-    totals = [month.received_cash or month.total_cash for month in months[:2]] + [
-        months[2].confirmed_cash or months[2].total_cash
-    ]
+    # Always show full-month estimates (received + scheduled + projected).
+    # Paid-to-date belongs in the key metrics, not this comparison.
+    totals = [month.total_cash for month in months]
     colors = ["#90a4ae", "#1976d2", "#43a047"]
 
     fig = go.Figure(
@@ -590,14 +590,14 @@ def create_month_comparison_chart(calendar: PortfolioDividendCalendar) -> Any:
                 y=totals,
                 marker_color=colors,
                 text=[f"${value:,.0f}" for value in totals],
-                hovertemplate="%{x}<br>$%{y:,.2f}<extra></extra>",
+                hovertemplate="%{x}<br>Estimated $%{y:,.2f}<extra></extra>",
                 **outside_bar_text(),
             )
         ]
     )
     fig.update_layout(
-        title="Monthly Dividend Cash — Previous / Current (paid) / Next",
-        yaxis_title="Cash (USD)",
+        title="Monthly Dividend Cash — Previous / Current / Next",
+        yaxis_title="Estimated cash (USD)",
         height=360,
         margin={"t": 60, "b": 40},
     )

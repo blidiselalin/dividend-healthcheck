@@ -59,6 +59,80 @@ def test_month_dividend_exposure_received_cash() -> None:
     )
     assert exposure.received_cash == 50.0
     assert exposure.received_payer_count == 1
+    assert exposure.total_cash == pytest.approx(120.0)
+
+
+def test_month_comparison_chart_uses_estimated_totals_not_paid_only() -> None:
+    from services.portfolio_dividend_calendar import (
+        PortfolioDividendCalendar,
+        create_month_comparison_chart,
+    )
+
+    last = MonthDividendExposure(
+        month_start=date(2026, 4, 1),
+        label="April 2026",
+        total_cash=200.0,
+        holdings=[
+            HoldingMonthDividend(
+                symbol="KO",
+                company="Coca-Cola",
+                shares=10,
+                expected_cash=200.0,
+                per_share=20.0,
+                payment_date=date(2026, 4, 15),
+                ex_date=date(2026, 4, 1),
+                status="received",
+            ),
+        ],
+    )
+    current = MonthDividendExposure(
+        month_start=date(2026, 5, 1),
+        label="May 2026",
+        total_cash=120.0,
+        holdings=[
+            HoldingMonthDividend(
+                symbol="KO",
+                company="Coca-Cola",
+                shares=10,
+                expected_cash=50.0,
+                per_share=5.0,
+                payment_date=date(2026, 5, 10),
+                ex_date=date(2026, 4, 28),
+                status="received",
+            ),
+            HoldingMonthDividend(
+                symbol="O",
+                company="Realty Income",
+                shares=20,
+                expected_cash=70.0,
+                per_share=3.5,
+                payment_date=date(2026, 5, 25),
+                ex_date=date(2026, 5, 12),
+                status="scheduled",
+            ),
+        ],
+    )
+    nxt = MonthDividendExposure(
+        month_start=date(2026, 6, 1),
+        label="June 2026",
+        total_cash=90.0,
+        holdings=[],
+    )
+    # paid-only for current would be $50; chart must use full estimate $120
+    assert current.received_cash == pytest.approx(50.0)
+    assert current.total_cash == pytest.approx(120.0)
+
+    calendar = PortfolioDividendCalendar(
+        last_month=last,
+        current_month=current,
+        next_month=nxt,
+        reference_date=date(2026, 5, 19),
+    )
+    fig = create_month_comparison_chart(calendar)
+    if fig is None:
+        pytest.skip("plotly unavailable")
+    assert "Current (paid)" not in fig.layout.title.text
+    assert fig.data[0].y == (200.0, 120.0, 90.0)
 
 
 def test_month_label_for_may_2026() -> None:

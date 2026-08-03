@@ -430,66 +430,71 @@ class PortfolioDetailsView:
         next_month = calendar.next_month
 
         st.caption(
-            "Last month and **paid so far** use **imported broker receipts** when available. "
-            "Scheduled/projected rows use market-library payment dates."
+            "Previous / current / next show **estimated** month totals "
+            "(scheduled + projected + already paid). "
+            "**Paid so far** is the only paid figure — from imported broker receipts when available."
         )
 
-        delta_vs_last = None
-        if last.received_cash > 0:
-            delta_vs_last = month_comparison_change_pct(
+        this_month_estimate = current.total_cash
+        last_month_estimate = last.total_cash
+        next_month_estimate = next_month.total_cash
+        delta_paid_vs_last = None
+        if last_month_estimate > 0:
+            delta_paid_vs_last = month_comparison_change_pct(
                 current.received_cash,
-                last.received_cash,
+                last_month_estimate,
             )
-        delta_vs_next = next_month.confirmed_cash - current.received_cash
-        this_month_display = current.received_cash or current.confirmed_cash or current.total_cash
+        delta_vs_next = next_month_estimate - this_month_estimate
 
         col1, col2, col3 = st.columns(3)
         col4, col5 = st.columns(2)
         with col1:
             st.metric(
-                "This month",
-                f"${this_month_display:,.2f}",
-                f"{current.confirmed_payer_count} payers · {current.label}",
+                "This month (est.)",
+                f"${this_month_estimate:,.2f}",
+                f"{current.payer_count} payers · {current.label}",
                 help=(
-                    f"Received ${current.received_cash:,.2f} · "
-                    f"scheduled ${current.scheduled_cash:,.2f}"
+                    f"Estimated total for {current.label}. "
+                    f"Scheduled ${current.scheduled_cash:,.2f}"
                     + (
                         f" · projected ${current.projected_cash:,.2f}"
                         if current.projected_cash
                         else ""
                     )
+                    + f" · paid so far ${current.received_cash:,.2f}"
                 ),
             )
         with col2:
             st.metric(
                 "Paid so far",
                 f"${current.received_cash:,.2f}",
-                f"{delta_vs_last:+.1f}% vs last month"
-                if delta_vs_last is not None
+                f"{delta_paid_vs_last:+.1f}% of last month est."
+                if delta_paid_vs_last is not None
                 else f"{current.received_payer_count} received",
-                delta_color="normal" if (delta_vs_last or 0) >= 0 else "inverse",
-                help="Imported broker receipts with pay date on or before today",
+                delta_color="normal" if (delta_paid_vs_last or 0) >= 0 else "inverse",
+                help="Cash already received this month (imported broker receipts)",
             )
         with col3:
             st.metric(
-                "Last month",
-                f"${last.received_cash:,.2f}",
-                f"{last.received_payer_count} received · {last.label}",
-                help="Full-month cash from imported receipts (or library history when no import)",
+                "Last month (est.)",
+                f"${last_month_estimate:,.2f}",
+                f"{last.payer_count} payers · {last.label}",
+                help="Full-month estimated cash (receipts when imported, else library history)",
             )
         with col4:
             st.metric(
-                "Next month",
-                f"${next_month.confirmed_cash or next_month.total_cash:,.2f}",
-                f"{next_month.label}",
+                "Next month (est.)",
+                f"${next_month_estimate:,.2f}",
+                f"{next_month.payer_count} payers · {next_month.label}",
+                help="Estimated cash from scheduled and projected payments",
             )
         with col5:
             monthly_income = sum(row.annual_income or 0.0 for row in rows) / 12.0
-            run_rate = monthly_income if monthly_income > 0 else (this_month_display * 12)
+            run_rate = monthly_income if monthly_income > 0 else (this_month_estimate * 12)
             st.metric(
                 "Monthly income",
                 f"${run_rate:,.2f}",
-                f"${delta_vs_next:+,.0f} vs this month",
+                f"${delta_vs_next:+,.0f} vs this month est.",
                 delta_color="normal" if delta_vs_next >= 0 else "inverse",
                 help="Portfolio annual dividend income ÷ 12 (same basis as holdings table)",
             )
@@ -541,9 +546,9 @@ class PortfolioDetailsView:
                     nav_tickers=[item.symbol for item in current.holdings],
                 )
 
-        with st.expander(f"Last month detail — {last.label} (actual received)"):
+        with st.expander(f"Last month detail — {last.label} (estimated)"):
             if not last.holdings:
-                st.write("No dividend payments recorded for this month in the database.")
+                st.write("No dividend payments estimated for this month.")
             else:
                 detail = pd.DataFrame(
                     [
@@ -554,12 +559,12 @@ class PortfolioDetailsView:
                                 today=calendar.reference_date,
                                 ex_date=item.ex_date,
                                 pay_date=item.payment_date,
-                                status="received",
+                                status=item.status,
                             ),
                             "Pay Date": item.payment_date,
                             "Per Share": item.per_share,
                             "Shares": item.shares,
-                            "Received": item.expected_cash,
+                            "Expected Cash": item.expected_cash,
                         }
                         for item in last.holdings
                     ]
