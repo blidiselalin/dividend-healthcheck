@@ -99,7 +99,11 @@ def backfill_monthly_portfolio_eur(
         return 0, issues
 
     timeline = continuous_monthly_deposits(deposits, include_current_month=True)
-    valuations = compute_monthly_portfolio_valuations(timeline, db_path=db_path)
+    valuations = compute_monthly_portfolio_valuations(
+        timeline,
+        db_path=db_path,
+        journal_service=ctx.journal_service,
+    )
     if not valuations and not any(item.portfolio_eur > 0 for item in deposits):
         return 0, issues
 

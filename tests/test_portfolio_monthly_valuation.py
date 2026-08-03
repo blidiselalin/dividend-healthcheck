@@ -398,7 +398,7 @@ def test_current_month_uses_journal_shares_not_open_holdings(tmp_path: Path) -> 
     assert july.portfolio_usd == pytest.approx(10 * 60.0 + 5 * 100.0)
 
 
-def test_pick_portfolio_prefers_computed_when_fully_covered() -> None:
+def test_pick_portfolio_prefers_stored_then_computed() -> None:
     partial = MonthPortfolioValuation(
         portfolio_usd=1000.0,
         portfolio_eur=900.0,
@@ -413,9 +413,76 @@ def test_pick_portfolio_prefers_computed_when_fully_covered() -> None:
         symbols_held=2,
         symbols_priced=2,
     )
-    assert pick_portfolio_eur_for_month(stored=1200.0, valuation=full) == 900.0
+    assert pick_portfolio_eur_for_month(stored=1200.0, valuation=full) == 1200.0
     assert pick_portfolio_eur_for_month(stored=None, valuation=full) == 900.0
     assert pick_portfolio_eur_for_month(stored=None, valuation=partial) is None
+
+
+def test_backfill_persists_month_end_portfolio_for_each_month(tmp_path: Path) -> None:
+    from services.portfolio_context import create_portfolio_context
+    from services.portfolio_timeline_service import backfill_monthly_portfolio_eur
+
+    db = tmp_path / "portfolio.db"
+    ctx = create_portfolio_context(db_path=db)
+    ctx.journal.add_purchase("KO", date(2025, 1, 10), 50.0, shares=10.0, side="buy")
+    ctx.journal.add_purchase("KO", date(2025, 3, 5), 55.0, shares=5.0, side="buy")
+    ctx.portfolio.upsert_holding("KO", shares=15, avg_cost_per_share=51.67)
+    ctx.deposits.upsert_deposit(
+        year=2025,
+        month=1,
+        label="January 2025",
+        deposit_eur=1000.0,
+        deposit_usd=1100.0,
+        portfolio_eur=0.0,
+    )
+    ctx.deposits.upsert_deposit(
+        year=2025,
+        month=2,
+        label="February 2025",
+        deposit_eur=500.0,
+        deposit_usd=550.0,
+        portfolio_eur=0.0,
+    )
+    ctx.deposits.upsert_deposit(
+        year=2025,
+        month=3,
+        label="March 2025",
+        deposit_eur=0.0,
+        deposit_usd=0.0,
+        portfolio_eur=0.0,
+    )
+
+    ko_prices = _price_doc(
+        "KO",
+        [
+            (date(2025, 1, 31), 50.0),
+            (date(2025, 2, 28), 52.0),
+            (date(2025, 3, 31), 60.0),
+        ],
+    )
+    fx_market = [
+        (date(2025, 1, 31), 1000 / 1100),
+        (date(2025, 2, 28), 500 / 550),
+        (date(2025, 3, 31), 500 / 550),
+    ]
+
+    with (
+        patch(
+            "services.shared_market_db.load_documents",
+            return_value={"KO": ko_prices},
+        ),
+        patch(
+            "services.fx_rate_service.load_eur_usd_market_series",
+            return_value=fx_market,
+        ),
+    ):
+        updated, _issues = backfill_monthly_portfolio_eur(ctx, db_path=db)
+
+    assert updated >= 3
+    by_key = {item.period_key: item for item in ctx.deposits.list_deposits()}
+    assert by_key["2025-01"].portfolio_eur == pytest.approx(10 * 50.0 * (1000 / 1100), rel=0.01)
+    assert by_key["2025-02"].portfolio_eur == pytest.approx(10 * 52.0 * (500 / 550), rel=0.01)
+    assert by_key["2025-03"].portfolio_eur == pytest.approx(15 * 60.0 * (500 / 550), rel=0.01)
 
 
 def test_close_for_month_end_prefers_in_month_then_falls_back() -> None:

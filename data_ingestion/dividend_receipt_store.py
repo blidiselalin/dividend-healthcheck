@@ -24,14 +24,16 @@ from data_ingestion.dividend_transaction import (
 from db.connection import is_unique_violation, open_portfolio_db, use_cloud_sql
 from db.parsing import parse_date
 
-_POSTED_CASH_WHERE = """
-  AND COALESCE(is_excluded, 0) = 0
+_NOT_EXCLUDED_SQL = "is_excluded IS NOT TRUE"
+
+_POSTED_CASH_WHERE = f"""
+  AND {_NOT_EXCLUDED_SQL}
   AND COALESCE(transaction_status, 'posted') = 'posted'
   AND COALESCE(dividend_type, 'actual') IN ('actual', 'payment_in_lieu')
 """
 
-_COMPUTED_ONLY_WHERE = """
-  AND COALESCE(is_excluded, 0) = 0
+_COMPUTED_ONLY_WHERE = f"""
+  AND {_NOT_EXCLUDED_SQL}
   AND COALESCE(dividend_type, 'actual') = 'computed'
 """
 
@@ -41,7 +43,7 @@ def _receipt_totals_filter(*, posted_cash_only: bool, computed_only: bool) -> st
         return _COMPUTED_ONLY_WHERE
     if posted_cash_only:
         return _POSTED_CASH_WHERE
-    return " AND COALESCE(is_excluded, 0) = 0"
+    return f" AND {_NOT_EXCLUDED_SQL}"
 
 
 def _default_db_path() -> Path:
@@ -634,7 +636,7 @@ class DividendReceiptStore:
             )
         )
         with self._connect() as connection:
-            params = (
+            shared_params = (
                 ex_date.isoformat(),
                 pay_date.isoformat(),
                 per_share_usd,
@@ -647,7 +649,6 @@ class DividendReceiptStore:
                 description,
                 source_file_hash,
                 source_row_number,
-                int(is_excluded),
                 exclusion_reason,
                 receipt_id,
             )
@@ -661,7 +662,13 @@ class DividendReceiptStore:
                         source_row_number = ?, is_excluded = ?, exclusion_reason = ?
                     WHERE user_id = ? AND id = ?
                     """,
-                    (*params[:-1], connection.user_id, receipt_id),
+                    (
+                        *shared_params[:12],
+                        is_excluded,
+                        *shared_params[12:13],
+                        connection.user_id,
+                        receipt_id,
+                    ),
                 )
             else:
                 cursor = connection.execute(
@@ -673,7 +680,11 @@ class DividendReceiptStore:
                         source_row_number = ?, is_excluded = ?, exclusion_reason = ?
                     WHERE id = ?
                     """,
-                    params,
+                    (
+                        *shared_params[:12],
+                        int(is_excluded),
+                        *shared_params[12:],
+                    ),
                 )
             return int(getattr(cursor, "rowcount", 0) or 0) > 0
 
@@ -975,14 +986,13 @@ class DividendReceiptStore:
                 rows = connection.execute(
                     f"{self._RECEIPT_SELECT} FROM dividend_receipts "
                     "WHERE user_id = ? AND (dedup_key IS NULL OR dedup_key = '') "
-                    "AND COALESCE(is_excluded, false) = false",
+                    f"AND {_NOT_EXCLUDED_SQL}",
                     (connection.user_id,),
                 ).fetchall()
             else:
                 rows = connection.execute(
                     f"{self._RECEIPT_SELECT} FROM dividend_receipts "
-                    "WHERE (dedup_key IS NULL OR dedup_key = '') "
-                    "AND COALESCE(is_excluded, 0) = 0",
+                    f"WHERE (dedup_key IS NULL OR dedup_key = '') AND {_NOT_EXCLUDED_SQL}",
                 ).fetchall()
         for row in rows:
             receipt = self._row_to_receipt(row)
@@ -1023,11 +1033,11 @@ class DividendReceiptStore:
         with self._connect() as connection:
             if connection.is_postgres:
                 rows = connection.execute(
-                    """
+                    f"""
                     SELECT dedup_key, MIN(id) AS keep_id, COUNT(*) AS cnt
                     FROM dividend_receipts
                     WHERE user_id = ? AND dedup_key IS NOT NULL AND dedup_key != ''
-                      AND COALESCE(is_excluded, false) = false
+                      AND {_NOT_EXCLUDED_SQL}
                     GROUP BY dedup_key
                     HAVING COUNT(*) > 1
                     """,
@@ -1035,11 +1045,11 @@ class DividendReceiptStore:
                 ).fetchall()
             else:
                 rows = connection.execute(
-                    """
+                    f"""
                     SELECT dedup_key, MIN(id) AS keep_id, COUNT(*) AS cnt
                     FROM dividend_receipts
                     WHERE dedup_key IS NOT NULL AND dedup_key != ''
-                      AND COALESCE(is_excluded, 0) = 0
+                      AND {_NOT_EXCLUDED_SQL}
                     GROUP BY dedup_key
                     HAVING COUNT(*) > 1
                     """,
@@ -1057,19 +1067,19 @@ class DividendReceiptStore:
                             exclusion_reason = 'duplicate_dedup_key',
                             dedup_key = NULL
                         WHERE user_id = ? AND dedup_key = ? AND id != ?
-                          AND COALESCE(is_excluded, false) = false
+                          AND {_NOT_EXCLUDED_SQL}
                         """,
                         (connection.user_id, dedup_key, keep_id),
                     )
                 else:
                     cursor = connection.execute(
-                        """
+                        f"""
                         UPDATE dividend_receipts
                         SET is_excluded = 1,
                             exclusion_reason = 'duplicate_dedup_key',
                             dedup_key = NULL
                         WHERE dedup_key = ? AND id != ?
-                          AND COALESCE(is_excluded, 0) = 0
+                          AND {_NOT_EXCLUDED_SQL}
                         """,
                         (dedup_key, keep_id),
                     )

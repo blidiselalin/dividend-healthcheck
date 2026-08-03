@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -125,6 +126,70 @@ def test_replace_import_loads_holdings_and_receipts(tmp_path: Path, sample_csv: 
     assert march.deposit_usd == 1500.0
     december = next(item for item in deposits if item.period_key == "2025-12")
     assert december.portfolio_eur == pytest.approx(3220.0)
+
+
+def test_import_backfills_month_end_portfolio_each_month(tmp_path: Path, sample_csv: str) -> None:
+    import calendar
+
+    from data_ingestion.models import PriceHistory, StockDocument
+
+    def _month_end(year: int, month: int) -> date:
+        last_day = calendar.monthrange(year, month)[1]
+        return date(year, month, last_day)
+
+    def _price_doc(symbol: str, points: list[tuple[date, float]]) -> StockDocument:
+        return StockDocument(
+            symbol=symbol,
+            name=symbol,
+            price_history=[
+                PriceHistory(
+                    date=point_date,
+                    open=close,
+                    high=close,
+                    low=close,
+                    close=close,
+                    volume=1_000,
+                    adjusted_close=close,
+                )
+                for point_date, close in points
+            ],
+        )
+
+    aapl_prices = _price_doc(
+        "AAPL",
+        [(_month_end(2025, month), 150.0) for month in range(1, 13)],
+    )
+    msft_prices = _price_doc(
+        "MSFT",
+        [(_month_end(2025, month), 400.0) for month in range(1, 13)],
+    )
+    fx_market = [(_month_end(2025, month), 0.92) for month in range(1, 13)]
+
+    db = tmp_path / "portfolio.db"
+    with (
+        patch(
+            "services.shared_market_db.load_documents",
+            return_value={"AAPL": aapl_prices, "MSFT": msft_prices},
+        ),
+        patch(
+            "services.fx_rate_service.load_eur_usd_market_series",
+            return_value=fx_market,
+        ),
+    ):
+        apply_import(sample_csv, mode=ImportMode.REPLACE, db_path=db)
+
+    ctx = create_portfolio_context(db_path=db)
+    by_key = {item.period_key: item for item in ctx.deposits.list_deposits()}
+    assert by_key["2025-02"].portfolio_eur == pytest.approx(13 * 150.0 * 0.92, rel=0.01)
+    assert by_key["2025-03"].portfolio_eur == pytest.approx(
+        (13 * 150.0 + 5 * 400.0) * 0.92, rel=0.01
+    )
+    assert by_key["2025-06"].portfolio_eur == pytest.approx(
+        (10 * 150.0 + 5 * 400.0) * 0.92, rel=0.01
+    )
+    assert by_key["2025-12"].portfolio_eur == pytest.approx(
+        (10 * 150.0 + 5 * 400.0) * 0.92, rel=0.01
+    )
 
 
 def test_merge_leaves_untouched_symbols(tmp_path: Path, sample_csv: str) -> None:

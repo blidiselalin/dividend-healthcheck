@@ -323,6 +323,7 @@ def compute_monthly_portfolio_valuations(
     deposits: list[MonthlyDeposit],
     *,
     db_path: Path | None = None,
+    journal_service: PortfolioPurchaseJournalService | None = None,
 ) -> dict[str, MonthPortfolioValuation]:
     """
     Estimate end-of-month portfolio value from journal share counts and library closes.
@@ -334,17 +335,19 @@ def compute_monthly_portfolio_valuations(
     if not deposits:
         return {}
 
-    if db_path is None:
-        journal_service = PortfolioPurchaseJournalService()
+    if journal_service is not None:
+        js = journal_service
+    elif db_path is None:
+        js = PortfolioPurchaseJournalService()
     else:
-        journal_service = PortfolioPurchaseJournalService(
+        js = PortfolioPurchaseJournalService(
             journal_store=PurchaseJournalStore(db_path=db_path, seed=False),
             portfolio_store=PortfolioStore(db_path=db_path, seed=False),
         )
-    records = journal_service.journal.list_purchases(portfolio_only=False)
+    records = js.journal.list_purchases(portfolio_only=False)
     open_holdings = {
         holding.symbol.strip().upper(): holding
-        for holding in journal_service.portfolio.list_open_holdings()
+        for holding in js.portfolio.list_open_holdings()
         if holding.shares > 0
     }
     if not records and not open_holdings:
@@ -414,9 +417,8 @@ def portfolio_eur_to_store(
     """
     Decide the portfolio € to persist on ``monthly_deposits``.
 
-    Fully covered journal marks (shares × month-end closes) replace broker NAV so
-    each month reflects equity holding value. Stored NAV is kept only when marks
-    are missing or price coverage is incomplete.
+    Journal marks (shares × month-end closes) are saved for every month with full
+    price coverage. Broker NAV is kept only when marks are unavailable.
     """
     if valuation is not None and valuation.portfolio_eur > 0 and valuation.coverage >= 1.0:
         return valuation.portfolio_eur
@@ -443,13 +445,13 @@ def pick_portfolio_eur_for_month(
     valuation: MonthPortfolioValuation | None,
 ) -> float | None:
     """
-    Portfolio € for evolution charts and KPIs.
+    Portfolio € for evolution charts, KPIs, and monthly detail tables.
 
-    Prefer journal-based month-end marks (shares × closes) when every held symbol
-    is priced. Fall back to broker/imported NAV when price coverage is incomplete.
+    Prefer persisted month-end values (import backfill or manual entry). Recompute
+    from the journal only when nothing is stored yet but full price coverage exists.
     """
-    if valuation is not None and valuation.portfolio_eur > 0 and valuation.coverage >= 1.0:
-        return valuation.portfolio_eur
     if stored is not None and stored > 0:
         return stored
+    if valuation is not None and valuation.portfolio_eur > 0 and valuation.coverage >= 1.0:
+        return valuation.portfolio_eur
     return None
