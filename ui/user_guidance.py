@@ -40,16 +40,19 @@ HELP_SECTIONS: tuple[tuple[str, str, str], ...] = (
     (
         "getting_started",
         "Getting started",
-        "Add a ticker or import an IBKR activity statement from **Manage portfolio**. "
-        "Home fills in after the background load finishes. "
-        "Use the Getting started checklist for the next required step.",
+        "Open **Getting started — step-by-step guide** at the top of Home. "
+        "Preferred path: sidebar **Manage portfolio** → **Import IBKR** → upload an "
+        "Activity Statement CSV (AS_Fv2) → preview → **Apply import**. "
+        "You can also add a ticker manually under **Add ticker**.",
     ),
     (
         "importing",
         "Importing broker data",
-        "Upload an Interactive Brokers Activity Statement CSV (AS_Fv2). "
-        "Merge keeps existing data; Full replace clears the portfolio first. "
-        "Import oldest statements before newest when covering multiple periods.",
+        "In IBKR, download an Activity Statement CSV (AS_Fv2). In DividendScope open "
+        "**Manage portfolio** → **Import IBKR**. Upload the file, choose **Merge** "
+        "(keep existing data) or **Full replace**, review positions/trades/dividends, "
+        "then **Apply import**. Import oldest statements before newest when covering "
+        "multiple periods.",
     ),
     (
         "dividends",

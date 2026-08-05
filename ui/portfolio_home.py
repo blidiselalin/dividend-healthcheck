@@ -260,8 +260,19 @@ def render_compact_summary(rows: list[PortfolioDetailRow]) -> None:
 def render_portfolio_home_header(
     rows: list[PortfolioDetailRow] | None,
 ) -> bool:
+    from ui.portfolio_onboarding import (
+        render_onboarding_banner_if_needed,
+        render_onboarding_checklist,
+    )
+    from ui.user_guidance import render_next_best_action_card
+
+    # Getting started first — before summary, research, and section nav.
     render_app_about(expanded=False)
     render_test_user_banner()
+    if not is_demo_session():
+        render_onboarding_checklist(expanded=True)
+        render_next_best_action_card(key_prefix="nba_home")
+        st.divider()
 
     from ui.sp500_research_picker import render_sp500_research_picker
 
@@ -272,17 +283,9 @@ def render_portfolio_home_header(
         render_empty_home()
         return False
 
-    from ui.portfolio_onboarding import (
-        render_onboarding_banner_if_needed,
-        render_onboarding_checklist,
-    )
-    from ui.user_guidance import render_next_best_action_card
-
     render_onboarding_banner_if_needed()
-    render_next_best_action_card(key_prefix="nba_home")
     st.divider()
     render_compact_summary(rows)
-    render_onboarding_checklist(expanded=False)
     render_portfolio_section_nav()
     render_try_it_examples(expanded=is_demo_session())
     st.divider()

@@ -17,7 +17,7 @@ def test_no_portfolio_adds_portfolio() -> None:
         )
     )
     assert action.id == "add_portfolio"
-    assert action.primary_action_route == "manage"
+    assert action.primary_action_route == "manage:import"
 
 
 def test_portfolio_without_data_imports() -> None:

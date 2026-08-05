@@ -74,29 +74,34 @@ REAL_USER_ONBOARDING_STEPS: tuple[OnboardingStep, ...] = (
         id=ChecklistStepId.ADD_PORTFOLIO,
         title="Add your portfolio",
         detail=(
-            "Open **Manage portfolio** in the sidebar. Add a ticker manually or import "
-            "an Interactive Brokers activity statement."
+            "Preferred: **Manage portfolio** → **Import IBKR** with an Activity Statement CSV. "
+            "Or add a single ticker under **Add ticker** if you only need a quick start."
         ),
-        sidebar_hint="Open **Manage portfolio** and add a ticker or import a statement.",
-        action_label="Add portfolio",
-        action_route="manage",
+        sidebar_hint="Open **Manage portfolio** → **Import IBKR** (or Add ticker).",
+        action_label="Import from IBKR",
+        action_route="manage:import",
     ),
     OnboardingStep(
         id=ChecklistStepId.IMPORT_DATA,
-        title="Import broker data",
+        title="Import from IBKR",
         detail=(
-            "Upload an IBKR Activity Statement CSV to load trades, dividends, deposits, "
-            "and positions when available."
+            "Download an **Activity Statement** CSV (AS_Fv2) from IBKR, then use "
+            "**Manage portfolio** → **Import IBKR**: upload → choose Merge or Full replace → "
+            "review preview → **Apply import**. Loads trades, dividends, withholding, "
+            "deposits, fees, and positions when available."
         ),
-        sidebar_hint="Import an IBKR activity statement from **Manage portfolio**.",
-        action_label="Import broker data",
+        sidebar_hint="Sidebar → **Manage portfolio** → **Import IBKR** → upload AS_Fv2 CSV.",
+        action_label="Open Import IBKR",
         action_route="manage:import",
     ),
     OnboardingStep(
         id=ChecklistStepId.VERIFY_DATA,
         title="Verify imported data",
-        detail=("Confirm the latest import has no blocking validation or reconciliation issues."),
-        sidebar_hint="Review import warnings under **Manage portfolio** → Import.",
+        detail=(
+            "After Apply import, check warnings on the **Import IBKR** tab. "
+            "Fix the source file or re-import if validation or reconciliation issues remain."
+        ),
+        sidebar_hint="Review import warnings under **Manage portfolio** → **Import IBKR**.",
         action_label="Review import issues",
         action_route="manage:import_issues",
     ),

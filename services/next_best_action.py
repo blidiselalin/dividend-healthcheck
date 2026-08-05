@@ -50,13 +50,13 @@ def resolve_next_best_action(context: NextBestActionContext) -> NextBestAction:
             id="add_portfolio",
             title="Add your first portfolio",
             description=(
-                "Connect a broker statement or add a ticker so we can track "
-                "holdings and dividend income."
+                "Import an Interactive Brokers Activity Statement CSV, or add a ticker "
+                "manually, so we can track holdings and dividend income."
             ),
-            primary_action_label="Add portfolio",
-            primary_action_route="manage",
-            secondary_action_label="Open help",
-            secondary_action_route="help:getting_started",
+            primary_action_label="Import from IBKR",
+            primary_action_route="manage:import",
+            secondary_action_label="Add ticker manually",
+            secondary_action_route="manage",
             severity="info",
         )
 

@@ -54,7 +54,7 @@ def test_primary_action_routes_for_key_states() -> None:
                 has_upcoming_dividends=False,
                 session={},
             ),
-            "manage",
+            "manage:import",
         ),
         (
             build_guidance_context(

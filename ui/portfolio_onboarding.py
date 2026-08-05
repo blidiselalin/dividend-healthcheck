@@ -35,6 +35,35 @@ def _render_workspace_overview() -> None:
     )
 
 
+def _render_ibkr_import_howto() -> None:
+    """Explicit IBKR import walkthrough inside Getting started."""
+    from ui.user_guidance import IMPORT_CAPABILITIES
+
+    st.markdown("##### How to import from Interactive Brokers")
+    st.markdown(
+        """
+1. In IBKR Portal / Client Portal, download an **Activity Statement** CSV (**AS_Fv2**).
+2. Open the sidebar → **Manage portfolio** → **Import IBKR**.
+3. Upload the CSV, choose **Merge** (keep existing data) or **Full replace**.
+4. Review the preview (positions, trades, dividends, deposits) and any warnings.
+5. Click **Apply import** — Home refreshes from the shared library in the background.
+        """.strip()
+    )
+    st.caption("This import can include: " + "; ".join(IMPORT_CAPABILITIES) + ".")
+    if st.button(
+        "Open Import IBKR",
+        key="onboarding_open_ibkr_import",
+        type="primary",
+        use_container_width=True,
+    ):
+        track_guidance_event(
+            "getting_started_step_clicked",
+            session=st.session_state,
+            properties={"step_id": "IMPORT_DATA", "which": "ibkr_howto"},
+        )
+        navigate_guidance_route("manage:import")
+
+
 def _status_icon(status: StepStatus) -> str:
     if status == StepStatus.COMPLETED:
         return "✅"
@@ -136,8 +165,11 @@ def render_onboarding_checklist(*, expanded: bool | None = None) -> None:
     with st.expander("Getting started — step-by-step guide", expanded=expand):
         st.caption(
             "Your portfolio is private in PostgreSQL. Market history comes from the "
-            "shared S&P library. Heavy work runs in **Background tasks** so the UI stays responsive."
+            "shared S&P library. Heavy work runs in **Background tasks** so the UI stays responsive. "
+            "The fastest path is **Import IBKR** below."
         )
+        _render_ibkr_import_howto()
+        st.divider()
         _render_workspace_overview()
         st.progress(
             done_count / total if total else 0.0, text=f"{done_count} of {total} steps done"
@@ -225,42 +257,42 @@ def render_demo_onboarding_checklist(*, expanded: bool = True) -> None:
 
 
 def render_real_user_getting_started() -> None:
-    """Welcome panel when the portfolio snapshot is not ready yet."""
+    """Welcome panel when the portfolio snapshot is not ready yet.
+
+    Checklist / next-best action already render at the top of Home — keep this
+    panel focused on empty-state actions and load prompts.
+    """
     st.markdown("### Welcome to DividendScope")
     st.write(
         "Track dividend holdings, income, and risk in one workspace. "
-        "Follow the guide below — each step matches how the app loads data in the background."
+        "Start with **Import IBKR** in the Getting started guide above, "
+        "or add a ticker manually from **Manage portfolio**."
     )
     with st.expander("What is DividendScope?", expanded=False):
         from ui.app_about import render_about_body
 
         render_about_body()
 
-    from ui.user_guidance import render_actionable_empty_state, render_next_best_action_card
+    from ui.user_guidance import render_actionable_empty_state
 
     if not user_has_holdings_in_db():
         render_actionable_empty_state(
             title="Add your first portfolio",
             description=(
-                "Connect a broker account or import a statement to calculate holdings, "
-                "dividend income and upcoming payments."
+                "Import an Interactive Brokers activity statement (recommended) "
+                "or add a ticker manually to calculate holdings and dividend income."
             ),
             icon="📁",
-            primary_action_label="Add portfolio",
-            primary_action_route="manage",
-            secondary_action_label="Open help",
-            secondary_action_route="help:getting_started",
+            primary_action_label="Import from IBKR",
+            primary_action_route="manage:import",
+            secondary_action_label="Add ticker manually",
+            secondary_action_route="manage",
             key_prefix="empty_home_portfolio",
         )
-    else:
-        render_next_best_action_card(key_prefix="nba_empty_home")
-
-    render_onboarding_checklist(expanded=True)
-
-    if not user_has_holdings_in_db():
         render_notice(
-            "<strong>Tip:</strong> **Manage portfolio** in the sidebar is expanded automatically "
-            "until you add your first ticker.",
+            "<strong>Tip:</strong> In the sidebar open **Manage portfolio** → "
+            "**Import IBKR**, upload an Activity Statement CSV (AS_Fv2), preview, "
+            "then **Apply import**.",
             kind="info",
         )
     elif not st.session_state.get("portfolio_details_rows"):
