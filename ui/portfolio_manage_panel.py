@@ -179,15 +179,25 @@ def render_portfolio_manage_sidebar() -> None:
     """Portfolio management expander in the sidebar."""
     service = PortfolioManagementService()
 
-    expand_manage = is_demo_session() or not user_has_holdings_in_db()
+    expand_manage = (
+        is_demo_session()
+        or not user_has_holdings_in_db()
+        or bool(st.session_state.pop("portfolio_manage_expand", False))
+        or bool(st.session_state.get("portfolio_onboarding_show_manage_tip"))
+    )
     with st.sidebar.expander("Manage portfolio", expanded=expand_manage):
         if (
             st.session_state.get("portfolio_onboarding_show_manage_tip")
             and not user_has_holdings_in_db()
         ):
             st.info(
-                "**Step 1:** Add ticker tab below — symbol, shares, average cost, then "
-                "**Add to portfolio**. Views refresh in the background automatically."
+                "**Step 1:** Add a ticker below, or open **Import IBKR** for a broker "
+                "statement. Views refresh in the background automatically."
+            )
+        elif st.session_state.pop("portfolio_manage_focus_import", False):
+            st.info(
+                "Use the **Import IBKR** tab to upload an Activity Statement CSV "
+                "(trades, dividends, deposits, and positions when available)."
             )
         tab_add, tab_edit, tab_buy, tab_evolution, tab_ibkr = st.tabs(
             ["Add ticker", "Edit position", "Purchase", "Monthly evolution", "Import IBKR"]
@@ -399,10 +409,27 @@ def render_portfolio_manage_sidebar() -> None:
             _render_ibkr_import_tab()
 
 
+def _mask_broker_account(account: str | None) -> str:
+    text = (account or "").strip()
+    if not text:
+        return ""
+    if len(text) <= 4:
+        return "••••"
+    return f"••••{text[-4:]}"
+
+
 def _render_ibkr_import_tab() -> None:
     """Upload IBKR Activity Statement CSV and merge or replace portfolio data."""
+    from services.guidance_analytics import track_guidance_event
     from services.ibkr_activity_parser import ImportIssueLevel, has_blocking_errors
+    from services.next_best_action import ReconciliationStatus
     from services.portfolio_broker_import_service import ImportMode, apply_import, preview_import
+    from services.portfolio_onboarding import LAST_IMPORT_SUMMARY_KEY
+    from ui.user_guidance import (
+        persist_import_apply_guidance,
+        render_import_capabilities_caption,
+        render_import_result_guidance,
+    )
 
     if is_demo_session():
         st.info("IBKR import is disabled for the demo account.")
@@ -413,6 +440,10 @@ def _render_ibkr_import_tab() -> None:
         "Holdings, trades, and cash dividends are loaded from Open Positions, Trades, "
         "and Dividends sections."
     )
+    render_import_capabilities_caption()
+    last_summary = st.session_state.get(LAST_IMPORT_SUMMARY_KEY)
+    if isinstance(last_summary, dict) and last_summary.get("successful"):
+        render_import_result_guidance(last_summary)
     uploaded = st.file_uploader(
         "Activity Statement CSV",
         type=["csv"],
@@ -481,14 +512,47 @@ def _render_ibkr_import_tab() -> None:
     )
     if st.button("Apply import", type="primary", key="pm_ibkr_apply", disabled=apply_disabled):
         mode = ImportMode.REPLACE if replace_mode else ImportMode.MERGE
+        track_guidance_event("broker_import_started", session=st.session_state)
         try:
             with inline_operation_progress("Importing IBKR statement") as progress:
                 result = apply_import(content, mode=mode, progress=progress)
                 if has_blocking_errors(result.issues):
                     st.error("Import blocked by validation errors.")
+                    persist_import_apply_guidance(
+                        successful=False,
+                        failed=True,
+                        imported_records=0,
+                        skipped_duplicates=0,
+                        updated_records=0,
+                        warning_count=sum(
+                            1 for issue in result.issues if issue.level == ImportIssueLevel.WARNING
+                        ),
+                        blocking_error_count=sum(
+                            1 for issue in result.issues if issue.level == ImportIssueLevel.ERROR
+                        ),
+                        reconciliation_status=ReconciliationStatus.FAILED,
+                        date_range=meta.period,
+                        currencies=[meta.base_currency] if meta.base_currency else [],
+                        broker_account_masked=_mask_broker_account(meta.account),
+                    )
                     raise RuntimeError("import blocked")
                 if not result.wrote_data:
                     st.error("Import did not write any portfolio data.")
+                    persist_import_apply_guidance(
+                        successful=False,
+                        failed=True,
+                        imported_records=0,
+                        skipped_duplicates=result.dividend_rows_duplicates,
+                        updated_records=0,
+                        warning_count=sum(
+                            1 for issue in result.issues if issue.level == ImportIssueLevel.WARNING
+                        ),
+                        blocking_error_count=0,
+                        reconciliation_status=ReconciliationStatus.FAILED,
+                        date_range=meta.period,
+                        currencies=[meta.base_currency] if meta.base_currency else [],
+                        broker_account_masked=_mask_broker_account(meta.account),
+                    )
                     raise RuntimeError("import empty")
                 progress("Loading portfolio from library…", 0.98)
                 from services.portfolio_refresh import reload_portfolio_after_data_import
@@ -499,9 +563,45 @@ def _render_ibkr_import_tab() -> None:
             return
         except Exception as exc:
             st.error(f"Import failed: {exc}")
+            persist_import_apply_guidance(
+                successful=False,
+                failed=True,
+                imported_records=0,
+                skipped_duplicates=0,
+                updated_records=0,
+                warning_count=0,
+                blocking_error_count=1,
+                reconciliation_status=ReconciliationStatus.FAILED,
+            )
             return
         st.session_state.pop("pm_ibkr_file_content", None)
         st.session_state.pop("pm_ibkr_file_name", None)
+        warning_count = sum(1 for issue in result.issues if issue.level == ImportIssueLevel.WARNING)
+        rejected = int(result.dividend_rows_rejected or 0)
+        reconciliation = (
+            ReconciliationStatus.WARNING
+            if warning_count or rejected
+            else ReconciliationStatus.SUCCESS
+        )
+        imported_records = (
+            result.holdings_upserted
+            + result.trades_imported
+            + result.dividends_imported
+            + result.deposits_imported
+        )
+        summary = persist_import_apply_guidance(
+            successful=True,
+            failed=False,
+            imported_records=imported_records,
+            skipped_duplicates=result.dividend_rows_duplicates,
+            updated_records=result.dividend_rows_updated,
+            warning_count=warning_count + rejected,
+            blocking_error_count=0,
+            reconciliation_status=reconciliation,
+            date_range=meta.period,
+            currencies=[meta.base_currency] if meta.base_currency else [],
+            broker_account_masked=_mask_broker_account(meta.account),
+        )
         msg = (
             f"IBKR import ({result.mode.value}): {result.holdings_upserted} holdings, "
             f"{result.trades_imported} stock trades, {result.dividends_imported} dividends, "
@@ -516,6 +616,7 @@ def _render_ibkr_import_tab() -> None:
                 f"{result.dividend_rows_rejected} rejected."
             )
         st.success(msg)
+        st.session_state[LAST_IMPORT_SUMMARY_KEY] = summary
         st.rerun()
 
 

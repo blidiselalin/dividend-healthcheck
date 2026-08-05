@@ -79,10 +79,10 @@ _APP_FAQ: Sequence[tuple[tuple[str, ...], str]] = (
     ),
     (
         ("help", "how to use", "getting started", "onboarding", "new user"),
-        "Open **Getting started — step-by-step guide** on Home (4 steps): "
-        "**Manage portfolio** → wait for **Background tasks** → **Reload live data** → "
-        "explore **Holdings** / **Dividend income**. Expand **What is DividendScope?** for "
-        "what each section contains.",
+        "On Home, follow **Getting started** and the **Next** card: add a portfolio, "
+        "import an IBKR statement, verify import warnings, then open **Dividend income**. "
+        "Use sidebar **Help & guidance** anytime (dismissed checklists reopen there). "
+        "Received, accrued, and estimated dividends stay separate.",
     ),
     (
         ("risk", "watchlist", "attention", "buy zone"),

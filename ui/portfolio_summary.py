@@ -17,6 +17,7 @@ from ui.design_system import (
 if TYPE_CHECKING:
     from services.portfolio_month_dividends import CurrentMonthPaidDividends
 
+from services.dividend_terminology import term_help
 from services.portfolio_details_service import PortfolioDetailsService
 
 
@@ -145,6 +146,12 @@ def render_holdings_summary(
     metric_columns[index].metric(
         "Total value",
         f"${metrics.total_value_usd:,.2f}",
+        help=(
+            "Open equity positions × Yahoo regular-session price "
+            "(library snapshot if a live quote fails). Cash and pending "
+            "settlements are not included — Yahoo Finance portfolios that "
+            "include cash will read slightly higher."
+        ),
     )
     index += 1
 
@@ -166,7 +173,9 @@ def render_holdings_summary(
             value,
             f"{received.through_label} · {payer_delta}{net_hint}",
             help=(
-                f"Gross cash received with pay date in {received.month_label}, "
+                f"{term_help('received_dividend')} "
+                f"{term_help('gross_dividend')} "
+                f"Pay date in {received.month_label}, "
                 f"on or before {received.through_date.strftime('%d %b %Y')}."
             ),
         )

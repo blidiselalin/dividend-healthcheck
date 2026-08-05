@@ -246,6 +246,9 @@ def main() -> None:
     st.session_state["analysis_type"] = NAV_PORTFOLIO
     render_sidebar_progress()
     render_portfolio_sidebar()
+    from ui.user_guidance import render_sidebar_help_entry
+
+    render_sidebar_help_entry()
     render_account_sidebar()
     render_admin_sidebar_entry()
     render_chatbot_widget()
@@ -254,6 +257,11 @@ def main() -> None:
         _render_sidebar_footer()
         return
     PortfolioDetailsView.render()
+    from ui.session_keys import HELP_DRAWER_OPEN_KEY
+    from ui.user_guidance import render_help_drawer
+
+    if st.session_state.get(HELP_DRAWER_OPEN_KEY):
+        render_help_drawer(force_open=True)
     from ui.design_system import render_app_footer
 
     render_app_footer()

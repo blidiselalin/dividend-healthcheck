@@ -1098,13 +1098,28 @@ class PortfolioDetailsView:
             st.warning("Attention data is not available yet. Refresh the risk scan in the sidebar.")
             return
 
+        from ui.user_guidance import mark_upcoming_dividends_viewed, render_actionable_empty_state
+
+        mark_upcoming_dividends_viewed()
         st.markdown("##### Dividend calendar (upcoming)")
         st.caption(
             "Ex-dividend and payment dates coming up — informational only, not a risk score."
         )
         dividend_df = service.to_dataframe(summary, list_kind="dividend")
         if summary.dividend_total == 0:
-            st.success("No upcoming ex-dates or payments in the next few weeks.")
+            render_actionable_empty_state(
+                title="No upcoming dividends available",
+                description=(
+                    "Upcoming payments appear after dividend declarations or estimates "
+                    "are available for your current holdings."
+                ),
+                icon="📅",
+                primary_action_label="Review holdings",
+                primary_action_route="holdings",
+                secondary_action_label="Dividend terms",
+                secondary_action_route="help:dividends",
+                key_prefix="empty_upcoming_divs",
+            )
         else:
             d1, d2 = st.columns(2)
             d1.metric("Upcoming events", summary.dividend_total)
@@ -1261,6 +1276,7 @@ class PortfolioDetailsView:
         if preload is None or st.session_state.get("portfolio_fast_loaded"):
             preload = _preload_from_session()
 
+        from services.dividend_terminology import term_help
         from services.portfolio_month_dividends import cached_current_month_paid_dividends
 
         month_paid = cached_current_month_paid_dividends(rows=rows, preload=preload)
@@ -1273,9 +1289,10 @@ class PortfolioDetailsView:
                     f"${month_paid.gross_usd:,.2f}",
                     month_paid.through_label,
                     help=(
-                        f"Gross cash with pay date in {month_paid.month_label}, "
-                        f"on or before {month_paid.through_date.strftime('%d %b %Y')}. "
-                        "Recomputed from holdings and dividend history (Yahoo-aligned)."
+                        f"{term_help('gross_dividend')} "
+                        f"{term_help('received_dividend')} "
+                        f"Pay date in {month_paid.month_label}, "
+                        f"on or before {month_paid.through_date.strftime('%d %b %Y')}."
                     ),
                 )
             with paid_row1_b:
@@ -1285,7 +1302,10 @@ class PortfolioDetailsView:
                     f"{month_paid.payer_count} payment{'s' if month_paid.payer_count != 1 else ''}"
                     if month_paid.payer_count
                     else "None yet",
-                    help="Gross received minus 10% provider withholding on US dividends.",
+                    help=(
+                        f"{term_help('net_dividend')} "
+                        "Estimated as gross minus typical US provider withholding."
+                    ),
                 )
             with paid_row1_c:
                 if month_paid.net_usd is not None and month_paid.gross_usd > 0:
@@ -1294,7 +1314,10 @@ class PortfolioDetailsView:
                         "Withholding (est.)",
                         f"${tax:,.2f}",
                         "10%",
-                        help=f"Estimated tax retained at broker for {month_paid.through_label}",
+                        help=(
+                            f"{term_help('withholding_tax')} "
+                            f"Estimate for {month_paid.through_label}."
+                        ),
                     )
                 else:
                     st.metric(
@@ -1985,9 +2008,18 @@ class PortfolioDetailsView:
         preload: PortfolioAnalysisPreload | None = None,
     ) -> None:
         """Monthly dividend calendar plus net cash received (after tax)."""
+        from services.dividend_terminology import term_help
         from services.portfolio_dividend_cash import ensure_dividend_cash_materialized
         from ui.beta_disclaimer import render_research_disclaimer
         from ui.beta_feedback import render_beta_feedback
+        from ui.user_guidance import (
+            mark_dividend_dashboard_viewed,
+            portfolio_has_dividend_transactions,
+            render_actionable_empty_state,
+            render_dividend_terms_help,
+        )
+
+        mark_dividend_dashboard_viewed()
 
         if ensure_dividend_cash_materialized():
             st.info(
@@ -2002,7 +2034,28 @@ class PortfolioDetailsView:
 
             month_paid = cached_current_month_paid_dividends(rows=rows, preload=preload)
             render_dividend_focus_block(rows, month_paid=month_paid)
+            st.caption(
+                f"**Received** — {term_help('received_dividend')} "
+                f"**Estimated** — {term_help('estimated_dividend')} "
+                "These stay separate and are never combined into one unlabeled total."
+            )
+            render_dividend_terms_help(expanded=False)
             st.divider()
+
+        if not portfolio_has_dividend_transactions():
+            render_actionable_empty_state(
+                title="No received dividends found",
+                description=(
+                    "Dividend history is calculated from broker cash transactions, "
+                    "not from current holdings alone."
+                ),
+                icon="💸",
+                primary_action_label="Import dividend transactions",
+                primary_action_route="manage:import",
+                secondary_action_label="How dividends are calculated",
+                secondary_action_route="help:dividends",
+                key_prefix="empty_div_history",
+            )
 
         if rows and preload:
             st.markdown("##### 1. Monthly dividend calendar")

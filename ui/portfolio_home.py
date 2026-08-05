@@ -272,13 +272,16 @@ def render_portfolio_home_header(
         render_empty_home()
         return False
 
-    from ui.portfolio_onboarding import render_onboarding_banner_if_needed
+    from ui.portfolio_onboarding import (
+        render_onboarding_banner_if_needed,
+        render_onboarding_checklist,
+    )
+    from ui.user_guidance import render_next_best_action_card
 
     render_onboarding_banner_if_needed()
+    render_next_best_action_card(key_prefix="nba_home")
     st.divider()
     render_compact_summary(rows)
-    from ui.portfolio_onboarding import render_onboarding_checklist
-
     render_onboarding_checklist(expanded=False)
     render_portfolio_section_nav()
     render_try_it_examples(expanded=is_demo_session())

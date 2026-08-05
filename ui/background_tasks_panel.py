@@ -19,7 +19,8 @@ def render_background_tasks_panel() -> None:
     from ui.sidebar_progress_panel import render_background_tasks_progress
 
     busy = has_active_jobs()
-    with st.sidebar.expander("Background tasks", expanded=busy):
+    expand = busy or bool(st.session_state.pop("background_tasks_expand", False))
+    with st.sidebar.expander("Background tasks", expanded=expand):
         st.caption(
             "Automatic enrichment is **off by default** for faster startup. "
             "Use the buttons below to refresh data when you want it, or enable "
@@ -36,6 +37,14 @@ def render_background_tasks_panel() -> None:
         )
         if auto_enabled != auto_background_tasks_enabled():
             set_auto_background_tasks_enabled(auto_enabled)
+            from ui.user_guidance import mark_preferences_configured
+
+            mark_preferences_configured()
+        if st.button("Keep defaults (done)", key="background_tasks_keep_defaults"):
+            from ui.user_guidance import mark_preferences_configured
+
+            mark_preferences_configured()
+            st.rerun()
 
         has_rows = bool(st.session_state.get("portfolio_details_rows"))
         busy = has_active_jobs()

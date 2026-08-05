@@ -125,7 +125,10 @@ def test_replace_import_loads_holdings_and_receipts(tmp_path: Path, sample_csv: 
     march = next(item for item in deposits if item.period_key == "2025-03")
     assert march.deposit_usd == 1500.0
     december = next(item for item in deposits if item.period_key == "2025-12")
-    assert december.portfolio_eur == pytest.approx(3220.0)
+    # Without library/remote closes, import backfill marks Dec from journal
+    # trade prices (AAPL 10×160 + MSFT 5×400) × statement EUR/USD 0.92.
+    # Broker NAV (3500×0.92=3220) is only kept when marks cannot be computed.
+    assert december.portfolio_eur == pytest.approx((10 * 160.0 + 5 * 400.0) * 0.92)
 
 
 def test_import_backfills_month_end_portfolio_each_month(tmp_path: Path, sample_csv: str) -> None:

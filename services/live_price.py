@@ -29,11 +29,23 @@ def _read_fast_info_value(fast_info: Any, key: str) -> float | None:
     return price if price > 0 else None
 
 
+def _yahoo_symbol(symbol: str) -> str:
+    try:
+        from data_ingestion.sp500_universe import yahoo_ticker
+
+        return yahoo_ticker(symbol)
+    except Exception:
+        return symbol.strip().upper().replace(".", "-")
+
+
 def fetch_latest_market_price(symbol: str) -> float | None:
     """
-    Fetch the latest trade price from Yahoo Finance.
+    Fetch the quote Yahoo Finance portfolios use for market value.
 
-    Tries fast_info first, then recent daily history as fallback.
+    Preference matches Yahoo's portfolio tracker:
+    1. regularMarketPrice (session last)
+    2. lastPrice / post-market when regular is unavailable
+    3. Unadjusted recent daily close (same basis as Yahoo charts)
     """
     symbol = (symbol or "").strip().upper()
     if not symbol:
@@ -46,21 +58,29 @@ def fetch_latest_market_price(symbol: str) -> float | None:
         from utils.yfinance_history import suppress_yfinance_noise
 
         configure_yfinance()
-        ticker = yf.Ticker(symbol)
+        yahoo_sym = _yahoo_symbol(symbol)
+        ticker = yf.Ticker(yahoo_sym)
         with suppress_yfinance_noise():
             fast_info = getattr(ticker, "fast_info", None)
             if fast_info:
                 for key in (
-                    "lastPrice",
-                    "last_price",
+                    # Yahoo portfolio market value uses the regular-session print.
                     "regularMarketPrice",
                     "regular_market_price",
+                    "lastPrice",
+                    "last_price",
+                    "postMarketPrice",
+                    "post_market_price",
+                    "preMarketPrice",
+                    "pre_market_price",
                 ):
                     price = _read_fast_info_value(fast_info, key)
                     if price is not None:
                         return price
 
-            history = ticker.history(period="5d", auto_adjust=True)
+            # Unadjusted close aligns with Yahoo's displayed last price better than
+            # auto-adjusted history after dividends/splits.
+            history = ticker.history(period="5d", auto_adjust=False)
             if history is not None and not history.empty and "Close" in history.columns:
                 closes = history["Close"].dropna()
                 if not closes.empty:
@@ -83,7 +103,8 @@ def fetch_previous_close(symbol: str) -> float | None:
         from utils.yfinance_history import suppress_yfinance_noise
 
         configure_yfinance()
-        ticker = yf.Ticker(symbol)
+        yahoo_sym = _yahoo_symbol(symbol)
+        ticker = yf.Ticker(yahoo_sym)
         with suppress_yfinance_noise():
             fast_info = getattr(ticker, "fast_info", None)
             if fast_info:
@@ -97,7 +118,7 @@ def fetch_previous_close(symbol: str) -> float | None:
                     if price is not None:
                         return price
 
-            history = ticker.history(period="5d", auto_adjust=True)
+            history = ticker.history(period="5d", auto_adjust=False)
             if history is not None and not history.empty and "Close" in history.columns:
                 closes = history["Close"].dropna()
                 if len(closes) >= 2:

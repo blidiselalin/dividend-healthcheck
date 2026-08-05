@@ -6,8 +6,11 @@ from __future__ import annotations
 
 import streamlit as st
 
+from services.guidance_analytics import track_guidance_event
 from services.portfolio_onboarding import (
     ONBOARDING_DISMISSED_KEY,
+    StepStatus,
+    checklist_states,
     completed_step_count,
     current_sidebar_hint,
     should_show_onboarding,
@@ -15,6 +18,11 @@ from services.portfolio_onboarding import (
 )
 from services.portfolio_session import is_demo_session, user_has_holdings_in_db
 from ui.theme import PORTFOLIO_NAV, render_notice
+from ui.user_guidance import (
+    mark_preferences_configured,
+    navigate_guidance_route,
+    resolve_dashboard_next_best_action,
+)
 
 
 def _render_workspace_overview() -> None:
@@ -27,6 +35,31 @@ def _render_workspace_overview() -> None:
     )
 
 
+def _status_icon(status: StepStatus) -> str:
+    if status == StepStatus.COMPLETED:
+        return "✅"
+    if status == StepStatus.NEEDS_ATTENTION:
+        return "⚠️"
+    if status == StepStatus.IN_PROGRESS:
+        return "▶️"
+    return "⬜"
+
+
+def _guidance_counts() -> tuple[bool, bool, bool]:
+    """Best-effort derived flags for checklist completion."""
+    from ui.user_guidance import (
+        portfolio_has_broker_data,
+        portfolio_has_dividend_transactions,
+        portfolio_has_upcoming_dividends,
+    )
+
+    return (
+        portfolio_has_broker_data(),
+        portfolio_has_dividend_transactions(),
+        portfolio_has_upcoming_dividends(),
+    )
+
+
 def mark_onboarding_live_reload_requested() -> None:
     """Call when the user clicks Reload live data during onboarding."""
     st.session_state["portfolio_onboarding_live_reload"] = True
@@ -34,16 +67,21 @@ def mark_onboarding_live_reload_requested() -> None:
 
 def dismiss_onboarding() -> None:
     st.session_state[ONBOARDING_DISMISSED_KEY] = True
+    track_guidance_event("getting_started_dismissed", session=st.session_state)
 
 
 def render_onboarding_sidebar_hint() -> None:
     """Compact next-step hint under the Portfolio sidebar heading."""
     if is_demo_session():
         return
+    has_broker, has_divs, has_upcoming = _guidance_counts()
     hint = current_sidebar_hint(
         has_holdings=user_has_holdings_in_db(),
         session=st.session_state,
         is_demo=False,
+        has_dividend_transactions=has_divs,
+        has_upcoming_dividends=has_upcoming,
+        has_successful_import=has_broker,
     )
     if not hint:
         return
@@ -53,30 +91,49 @@ def render_onboarding_sidebar_hint() -> None:
     )
 
 
-def render_onboarding_checklist(*, expanded: bool = True) -> None:
+def render_onboarding_checklist(*, expanded: bool | None = None) -> None:
     """Step-by-step guide for real users (empty or partially set-up portfolio)."""
     if is_demo_session():
         return
-    if not should_show_onboarding(
+
+    force = bool(st.session_state.pop("portfolio_onboarding_force_expand", False))
+    has_broker, has_divs, has_upcoming = _guidance_counts()
+    show = should_show_onboarding(
         has_holdings=user_has_holdings_in_db(),
         session=st.session_state,
         is_demo=False,
-    ):
+        has_dividend_transactions=has_divs,
+        has_upcoming_dividends=has_upcoming,
+        has_successful_import=has_broker,
+    )
+    if not show and not force:
         return
 
     has_holdings = user_has_holdings_in_db()
-    progress = step_progress(
+    states = checklist_states(
         has_holdings=has_holdings,
         session=st.session_state,
         is_demo=False,
+        has_dividend_transactions=has_divs,
+        has_upcoming_dividends=has_upcoming,
+        has_successful_import=has_broker,
     )
     done_count, total = completed_step_count(
         has_holdings=has_holdings,
         session=st.session_state,
         is_demo=False,
+        has_dividend_transactions=has_divs,
+        has_upcoming_dividends=has_upcoming,
+        has_successful_import=has_broker,
     )
 
-    with st.expander("Getting started — step-by-step guide", expanded=expanded):
+    expand = force if expanded is None else expanded
+    if expanded is None and not force:
+        expand = done_count < total
+
+    track_guidance_event("getting_started_viewed", session=st.session_state)
+
+    with st.expander("Getting started — step-by-step guide", expanded=expand):
         st.caption(
             "Your portfolio is private in PostgreSQL. Market history comes from the "
             "shared S&P library. Heavy work runs in **Background tasks** so the UI stays responsive."
@@ -86,11 +143,25 @@ def render_onboarding_checklist(*, expanded: bool = True) -> None:
             done_count / total if total else 0.0, text=f"{done_count} of {total} steps done"
         )
 
-        for step, complete in progress:
-            icon = "✅" if complete else "⬜"
-            st.markdown(f"{icon} **{step.title}**")
-            if not complete:
-                st.markdown(step.detail)
+        for state in states:
+            icon = _status_icon(state.status)
+            required = "" if state.is_required else " _(optional)_"
+            st.markdown(f"{icon} **{state.title}**{required}")
+            if state.status != StepStatus.COMPLETED:
+                st.markdown(state.description)
+                can_act = bool(state.action_label and state.action_route)
+                if can_act and st.button(
+                    state.action_label,
+                    key=f"onboarding_step_{state.id}",
+                ):
+                    track_guidance_event(
+                        "getting_started_step_clicked",
+                        session=st.session_state,
+                        properties={"step_id": state.id},
+                    )
+                    if state.action_route == "preferences":
+                        mark_preferences_configured()
+                    navigate_guidance_route(state.action_route)
 
         st.markdown("##### Optional next")
         st.markdown(
@@ -102,7 +173,7 @@ def render_onboarding_checklist(*, expanded: bool = True) -> None:
             """
         )
 
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         with c1:
             if st.button("Got it — hide guide", key="portfolio_onboarding_dismiss"):
                 dismiss_onboarding()
@@ -110,6 +181,12 @@ def render_onboarding_checklist(*, expanded: bool = True) -> None:
         with c2:
             if st.button("Open Manage portfolio tips", key="portfolio_onboarding_manage_tip"):
                 st.session_state["portfolio_onboarding_show_manage_tip"] = True
+                st.rerun()
+        with c3:
+            if st.button("Open help", key="portfolio_onboarding_open_help"):
+                from ui.user_guidance import open_help_drawer
+
+                open_help_drawer("getting_started")
                 st.rerun()
 
 
@@ -158,6 +235,26 @@ def render_real_user_getting_started() -> None:
         from ui.app_about import render_about_body
 
         render_about_body()
+
+    from ui.user_guidance import render_actionable_empty_state, render_next_best_action_card
+
+    if not user_has_holdings_in_db():
+        render_actionable_empty_state(
+            title="Add your first portfolio",
+            description=(
+                "Connect a broker account or import a statement to calculate holdings, "
+                "dividend income and upcoming payments."
+            ),
+            icon="📁",
+            primary_action_label="Add portfolio",
+            primary_action_route="manage",
+            secondary_action_label="Open help",
+            secondary_action_route="help:getting_started",
+            key_prefix="empty_home_portfolio",
+        )
+    else:
+        render_next_best_action_card(key_prefix="nba_empty_home")
+
     render_onboarding_checklist(expanded=True)
 
     if not user_has_holdings_in_db():
@@ -176,19 +273,34 @@ def render_onboarding_banner_if_needed() -> None:
     """Compact reminder on Home when the user has rows but has not finished onboarding."""
     if is_demo_session():
         return
+    has_broker, has_divs, has_upcoming = _guidance_counts()
     if not should_show_onboarding(
         has_holdings=user_has_holdings_in_db(),
         session=st.session_state,
         is_demo=False,
+        has_dividend_transactions=has_divs,
+        has_upcoming_dividends=has_upcoming,
+        has_successful_import=has_broker,
     ):
         return
     if not st.session_state.get("portfolio_details_rows"):
+        return
+
+    action = resolve_dashboard_next_best_action()
+    if action is not None:
+        render_notice(
+            f"<strong>Next:</strong> {action.title}",
+            kind="info",
+        )
         return
 
     done_count, total = completed_step_count(
         has_holdings=user_has_holdings_in_db(),
         session=st.session_state,
         is_demo=False,
+        has_dividend_transactions=has_divs,
+        has_upcoming_dividends=has_upcoming,
+        has_successful_import=has_broker,
     )
     remaining = [
         step.title
@@ -196,6 +308,9 @@ def render_onboarding_banner_if_needed() -> None:
             has_holdings=user_has_holdings_in_db(),
             session=st.session_state,
             is_demo=False,
+            has_dividend_transactions=has_divs,
+            has_upcoming_dividends=has_upcoming,
+            has_successful_import=has_broker,
         )
         if not done
     ]

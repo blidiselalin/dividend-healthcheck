@@ -73,10 +73,20 @@ def test_fetch_previous_close_falls_back_to_history(mock_ticker_cls: Any) -> Non
 @patch("yfinance.Ticker")
 def test_fetch_latest_market_price_reads_fast_info(mock_ticker_cls: Any) -> None:
     fast_info = MagicMock()
-    fast_info.get.side_effect = lambda key: 307.07 if key == "lastPrice" else None
+    fast_info.get.side_effect = lambda key: 307.07 if key == "regularMarketPrice" else None
     mock_ticker_cls.return_value.fast_info = fast_info
 
     assert fetch_latest_market_price("INTU") == 307.07
+
+
+@patch("yfinance.Ticker")
+def test_fetch_latest_market_price_uses_yahoo_ticker(mock_ticker_cls: Any) -> None:
+    fast_info = MagicMock()
+    fast_info.get.side_effect = lambda key: 400.0 if key == "regularMarketPrice" else None
+    mock_ticker_cls.return_value.fast_info = fast_info
+
+    assert fetch_latest_market_price("BRK.B") == 400.0
+    mock_ticker_cls.assert_called_with("BRK-B")
 
 
 @patch("services.stock_analysis_service.load_independent_stock_analysis")

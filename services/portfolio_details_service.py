@@ -165,6 +165,17 @@ class PortfolioDetailsService:
                         previous_closes[symbol] = future.result()
                     except Exception:  # noqa: BLE001
                         previous_closes[symbol] = None
+                # Never drop a holding from totals when Yahoo is briefly unavailable —
+                # fall back to library/snapshot so MTM stays comparable to Yahoo.
+                for symbol in symbols:
+                    if live_prices.get(symbol) is not None:
+                        continue
+                    document = documents.get(symbol)
+                    stats = stats_cache.get(symbol)
+                    if document is not None and document.current_price is not None:
+                        live_prices[symbol] = float(document.current_price)
+                    elif stats is not None and stats.price is not None:
+                        live_prices[symbol] = float(stats.price)
 
         if not use_live_prices:
             for symbol in symbols:
