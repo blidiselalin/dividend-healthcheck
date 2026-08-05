@@ -42,19 +42,15 @@ def set_admin_console_active(active: bool) -> None:
     st.session_state[ADMIN_VIEW_KEY] = active
 
 
-def render_admin_sidebar_entry() -> None:
-    """Single sidebar entry for admins (replaces scattered admin controls)."""
+def render_admin_options_entry() -> None:
+    """Admin console entry for the top-right Options menu."""
     if not is_app_admin():
         return
 
-    st.sidebar.divider()
-    st.sidebar.markdown(
-        '<p class="ds-sidebar-heading">Administration</p>',
-        unsafe_allow_html=True,
-    )
+    st.markdown("**Administration**")
     if is_admin_console_active():
-        if st.sidebar.button(
-            "Home",
+        if st.button(
+            "Back to Home",
             use_container_width=True,
             key="admin_console_back",
             help="Return to portfolio home",
@@ -62,7 +58,7 @@ def render_admin_sidebar_entry() -> None:
             from ui.portfolio_home import navigate_to_portfolio_home
 
             navigate_to_portfolio_home()
-    elif st.sidebar.button(
+    elif st.button(
         "Open admin console",
         use_container_width=True,
         type="secondary",
@@ -70,6 +66,11 @@ def render_admin_sidebar_entry() -> None:
     ):
         set_admin_console_active(True)
         st.rerun()
+
+
+def render_admin_sidebar_entry() -> None:
+    """Backward-compatible alias — admin entry lives in Options now."""
+    render_admin_options_entry()
 
 
 def render_admin_page_if_active() -> bool:

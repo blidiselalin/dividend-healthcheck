@@ -249,10 +249,13 @@ def render_compact_summary(rows: list[PortfolioDetailRow]) -> None:
 
     from ui.beta_disclaimer import render_research_disclaimer
     from ui.beta_feedback import render_beta_feedback
+    from ui.dividend_risk_watchlist import render_dividend_risk_watchlist
 
     render_research_disclaimer(compact=True)
     render_beta_feedback(page="Portfolio home", key_suffix="portfolio_home")
 
+    st.divider()
+    render_dividend_risk_watchlist(rows)
     st.divider()
     render_stocks_overview(rows)
 

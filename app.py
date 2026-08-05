@@ -76,9 +76,9 @@ from auth.user_context import ensure_user_session
 from config import DATA_SOURCES
 from services.deferred_startup import apply_background_results, schedule_startup_tasks
 from services.portfolio_session import sync_portfolio_session_with_db
-from ui.admin_page import render_admin_page_if_active, render_admin_sidebar_entry
+from ui.admin_page import render_admin_page_if_active
 from ui.app_about import render_about_body
-from ui.auth_account_panel import render_account_sidebar
+from ui.app_options_bar import render_app_options_bar
 from ui.chatbot_widget import render_chatbot_widget
 from ui.portfolio_details_view import PortfolioDetailsView
 from ui.portfolio_sidebar import render_portfolio_sidebar
@@ -244,15 +244,12 @@ def main() -> None:
     st.session_state["market_db_status"] = boot.get("market_db") or {}
 
     st.session_state["analysis_type"] = NAV_PORTFOLIO
+    # Left: Getting started workflow only. Account/admin/help → top-right Options.
     render_sidebar_progress()
     render_portfolio_sidebar()
-    from ui.user_guidance import render_sidebar_help_entry
-
-    render_sidebar_help_entry()
-    render_account_sidebar()
-    render_admin_sidebar_entry()
     render_chatbot_widget()
     main_content_start()
+    render_app_options_bar()
     if render_admin_page_if_active():
         _render_sidebar_footer()
         return

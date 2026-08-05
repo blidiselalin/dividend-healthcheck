@@ -1,5 +1,5 @@
 """
-Sidebar account controls and admin user management.
+Account controls and admin user management (app Options menu).
 """
 
 from __future__ import annotations
@@ -15,8 +15,6 @@ from auth.user_context import (
     is_app_admin,
 )
 from auth.user_store import UserStore
-from ui.access_request_panel import render_admin_access_requests
-from ui.theme import sidebar_heading
 
 
 def _holding_count_for_user(user_id: str) -> int:
@@ -25,39 +23,49 @@ def _holding_count_for_user(user_id: str) -> int:
     return holding_count_for_user(user_id)
 
 
-def render_account_sidebar() -> None:
+def render_account_options() -> None:
+    """Account block for the top-right Options popover (main panel)."""
     user = current_user()
     if user is None:
         return
 
-    sidebar_heading("Account")
-    cols = st.sidebar.columns([1, 3])
+    st.markdown("**Account**")
+    cols = st.columns([1, 3])
     if user.picture_url:
         cols[0].image(user.picture_url, width=48)
     with cols[1]:
-        st.sidebar.markdown(f"**{user.name or user.email.split('@')[0]}**")
-        st.sidebar.caption(user.email)
+        st.markdown(f"**{user.name or user.email.split('@')[0]}**")
+        st.caption(user.email)
 
     if test_user_session_active() and is_test_user(user):
-        if st.sidebar.button("Exit test user", use_container_width=True):
+        if st.button("Exit test user", use_container_width=True, key="options_exit_test_user"):
             sign_out_test_user()
             st.rerun()
-    elif auth_required() and st.sidebar.button("Sign out", use_container_width=True):
+    elif auth_required() and st.button(
+        "Sign out", use_container_width=True, key="options_sign_out"
+    ):
         clear_portfolio_session_state()
         st.logout()
 
     registered = ensure_user_session()
     if registered and is_app_admin(user, registered):
-        render_admin_access_requests()
+        from ui.access_request_panel import render_admin_access_requests
+
+        render_admin_access_requests(in_sidebar=False)
         _render_admin_users()
 
 
+def render_account_sidebar() -> None:
+    """Backward-compatible alias — account lives in Options now."""
+    render_account_options()
+
+
 def _render_admin_users() -> None:
-    sidebar_heading("Users")
+    st.markdown("**Users**")
     store = UserStore()
     users = store.list_users()
     if not users:
-        st.sidebar.caption("No users yet.")
+        st.caption("No users yet.")
         return
 
     rows = []
@@ -73,9 +81,9 @@ def _render_admin_users() -> None:
                 "Last login": item.last_login_at.strftime("%Y-%m-%d %H:%M"),
             }
         )
-    st.sidebar.dataframe(rows, use_container_width=True, hide_index=True)
+    st.dataframe(rows, use_container_width=True, hide_index=True)
 
-    with st.sidebar.expander("Manage access", expanded=False):
+    with st.expander("Manage access", expanded=False):
         pick = st.selectbox(
             "User",
             options=[u.id for u in users],

@@ -96,30 +96,35 @@ def _render_request_form(identity, store: AccessRequestStore, *, allow_resubmit:
         )
 
 
-def render_admin_access_requests() -> None:
-    """Sidebar block for admins — pending Google access requests."""
+def render_admin_access_requests(*, in_sidebar: bool = False) -> None:
+    """Admin block for pending Google access requests (Options menu or sidebar)."""
     store = AccessRequestStore()
     pending = store.list_pending()
     count = len(pending)
+    panel = st.sidebar if in_sidebar else st
 
-    sidebar_heading("Access requests")
+    if in_sidebar:
+        sidebar_heading("Access requests")
+    else:
+        st.markdown("**Access requests**")
+
     if count == 0:
-        st.sidebar.caption("No pending requests.")
+        panel.caption("No pending requests.")
         return
 
-    st.sidebar.warning(f"{count} pending — new user(s) waiting for approval")
+    panel.warning(f"{count} pending — new user(s) waiting for approval")
 
     for item in pending:
-        st.sidebar.markdown(f"**{item.email}**")
+        panel.markdown(f"**{item.email}**")
         if item.name:
-            st.sidebar.caption(item.name)
-        st.sidebar.caption(item.requested_at.strftime("%Y-%m-%d %H:%M UTC"))
+            panel.caption(item.name)
+        panel.caption(item.requested_at.strftime("%Y-%m-%d %H:%M UTC"))
         if item.message:
-            st.sidebar.caption(f"“{item.message[:200]}”")
+            panel.caption(f"“{item.message[:200]}”")
 
         approve_key = f"approve_access_{item.email}"
         reject_key = f"reject_access_{item.email}"
-        col_a, col_b = st.sidebar.columns(2)
+        col_a, col_b = panel.columns(2)
         admin_email = ""
         try:
             from auth.user_context import current_user
@@ -141,4 +146,4 @@ def render_admin_access_requests() -> None:
             ):
                 st.warning(f"Rejected {item.email}")
                 st.rerun()
-        st.sidebar.divider()
+        panel.divider()

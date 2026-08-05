@@ -367,12 +367,6 @@ def render_help_drawer(*, force_open: bool | None = None) -> None:
             st.rerun()
 
 
-def render_sidebar_help_entry() -> None:
-    if st.sidebar.button("Help & guidance", key="sidebar_help_open", use_container_width=True):
-        open_help_drawer("getting_started")
-        st.rerun()
-
-
 def render_import_capabilities_caption() -> None:
     st.caption("This import can include: " + "; ".join(IMPORT_CAPABILITIES) + ".")
 

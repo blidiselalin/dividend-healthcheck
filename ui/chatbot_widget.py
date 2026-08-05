@@ -85,7 +85,6 @@ def render_chatbot_widget() -> None:
 
     _init_chat_state()
 
-    st.sidebar.divider()
     hf_note = " · AI replies enabled" if huggingface_configured() else " · FAQ mode"
     with st.sidebar.expander(f"Assistant{hf_note}", expanded=False):
         _render_chat_messages()
