@@ -2233,9 +2233,43 @@ class PortfolioDetailsView:
         st.markdown("##### Account deposits & portfolio value")
         st.caption(
             "Monthly deposits (€ and $) and portfolio € at each month end "
-            "(journal shares × month-end closes; trade price used when library "
-            "history is incomplete)."
+            "(journal shares × market closes from library, Stooq, or Yahoo; "
+            "last trade price only when market history is missing)."
         )
+        try:
+            from services.portfolio_context import create_portfolio_context
+            from services.portfolio_monthly_valuation import (
+                compute_monthly_portfolio_valuations,
+                continuous_monthly_deposits,
+                summarize_valuation_quality,
+            )
+
+            quality_ctx = create_portfolio_context()
+            # One remote gap-fill + Stooq/Yahoo cross-check per browser session.
+            fetch_remote = not bool(st.session_state.get("portfolio_price_remote_checked"))
+            quality_vals = compute_monthly_portfolio_valuations(
+                continuous_monthly_deposits(deposits, include_current_month=True),
+                db_path=quality_ctx.db_path,
+                journal_service=quality_ctx.journal_service,
+                fetch_remote=fetch_remote,
+            )
+            if fetch_remote:
+                st.session_state["portfolio_price_remote_checked"] = True
+            quality = summarize_valuation_quality(quality_vals)
+            status_icon = {
+                "ok": "✅",
+                "partial": "ℹ️",
+                "warning": "⚠️",
+                "unavailable": "⚠️",
+            }.get(quality.status, "ℹ️")
+            st.caption(
+                f"{status_icon} Price quality: {quality.months_full_coverage}/"
+                f"{quality.months_valued} months fully priced · "
+                f"library {quality.library_marks} · Stooq/Yahoo {quality.remote_marks} · "
+                f"trade fallback {quality.journal_marks}. {quality.note}"
+            )
+        except Exception:  # noqa: S110
+            pass
 
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:

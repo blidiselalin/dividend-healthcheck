@@ -19,18 +19,70 @@ from services.portfolio_purchase_journal_service import PortfolioPurchaseJournal
 logger = logging.getLogger(__name__)
 
 
+# Prefer library history with at least ~1 year of trading days.
+_MIN_LIBRARY_BARS = 52
+# Relative tolerance when cross-checking primary vs secondary month-end closes.
+_PRICE_CROSSCHECK_TOLERANCE = 0.03
+_REMOTE_SERIES_CACHE: dict[str, list[tuple[date, float]]] = {}
+
+
 @dataclass(frozen=True)
 class MonthPortfolioValuation:
     portfolio_usd: float
     portfolio_eur: float
     symbols_held: int
     symbols_priced: int
+    library_priced: int = 0
+    remote_priced: int = 0
+    journal_priced: int = 0
+    validation_status: str = "unchecked"
+    validation_note: str = ""
 
     @property
     def coverage(self) -> float:
         if self.symbols_held <= 0:
             return 0.0
         return self.symbols_priced / self.symbols_held
+
+    @property
+    def mark_quality_label(self) -> str:
+        if self.symbols_priced <= 0:
+            return "unavailable"
+        if self.journal_priced > 0 and self.library_priced + self.remote_priced == 0:
+            return "trade-price fallback"
+        if self.validation_status == "ok":
+            return "validated"
+        if self.validation_status == "warning":
+            return "cross-check warning"
+        if self.validation_status == "failed":
+            return "cross-check failed"
+        if self.coverage >= 1.0 and self.library_priced + self.remote_priced >= self.symbols_priced:
+            return "market closes"
+        return "partial"
+
+
+@dataclass(frozen=True)
+class ValuationQualityReport:
+    months_valued: int
+    months_full_coverage: int
+    months_validated_ok: int
+    months_with_warnings: int
+    library_marks: int
+    remote_marks: int
+    journal_marks: int
+    note: str
+
+    @property
+    def status(self) -> str:
+        if self.months_valued <= 0:
+            return "unavailable"
+        if self.months_with_warnings > 0:
+            return "warning"
+        if self.months_full_coverage == self.months_valued and self.journal_marks == 0:
+            return "ok"
+        if self.months_full_coverage == self.months_valued:
+            return "ok"
+        return "partial"
 
 
 def month_end(day: date) -> date:
@@ -288,17 +340,103 @@ def _price_series(document: Any) -> list[tuple[date, float]]:
     return points
 
 
-def _load_price_series(
-    symbols: list[str],
-) -> tuple[dict[str, list[tuple[date, float]]], dict[str, float]]:
-    if not symbols:
-        return {}, {}
-    try:
-        from services.shared_market_db import load_documents
-    except ImportError:
-        return {}, {}
+def _merge_price_series(
+    primary: list[tuple[date, float]],
+    secondary: list[tuple[date, float]],
+) -> list[tuple[date, float]]:
+    """Merge two histories; primary closes win on the same date."""
+    by_date = dict(secondary)
+    by_date.update(dict(primary))
+    return sorted(by_date.items(), key=lambda item: item[0])
 
-    documents = load_documents(symbols)
+
+def _series_from_stooq(symbol: str) -> list[tuple[date, float]]:
+    try:
+        from data_ingestion.providers.stooq import StooqProvider
+
+        snap = StooqProvider().fetch(symbol)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Stooq series unavailable for %s: %s", symbol, exc)
+        return []
+    if snap is None:
+        return []
+    return _price_series(
+        type(
+            "_Doc",
+            (),
+            {
+                "price_history": snap.price_history,
+                "current_price": snap.current_price,
+            },
+        )()
+    )
+
+
+def _series_from_yahoo(symbol: str) -> list[tuple[date, float]]:
+    try:
+        from utils.yfinance_history import fetch_price_history
+    except ImportError:
+        return []
+    try:
+        frame = fetch_price_history(symbol, years=15)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Yahoo series unavailable for %s: %s", symbol, exc)
+        return []
+    if frame is None or getattr(frame, "empty", True):
+        return []
+    points: list[tuple[date, float]] = []
+    close_col = "Close" if "Close" in frame.columns else None
+    if close_col is None and "Adj Close" in frame.columns:
+        close_col = "Adj Close"
+    if close_col is None:
+        return []
+    for index, row in frame.iterrows():
+        try:
+            if hasattr(index, "date"):
+                point_date = index.date()
+            else:
+                point_date = date.fromisoformat(str(index)[:10])
+            close = float(row[close_col])
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if close > 0:
+            points.append((point_date, close))
+    points.sort(key=lambda item: item[0])
+    return points
+
+
+def _fetch_remote_price_series(
+    symbol: str,
+    *,
+    prefer: str = "stooq",
+) -> tuple[list[tuple[date, float]], str]:
+    """
+    Fetch OHLCV from Stooq and/or Yahoo.
+
+    Preference order is Stooq then Yahoo (or the reverse when ``prefer='yfinance'``).
+    Results are cached in-process to avoid repeat network calls.
+    """
+    cached = _REMOTE_SERIES_CACHE.get(symbol)
+    if cached is not None:
+        return cached, "cache"
+
+    order = ("stooq", "yfinance") if prefer == "stooq" else ("yfinance", "stooq")
+    best: list[tuple[date, float]] = []
+    best_source = "none"
+    for source in order:
+        series = _series_from_stooq(symbol) if source == "stooq" else _series_from_yahoo(symbol)
+        if len(series) > len(best):
+            best = series
+            best_source = source
+        if len(series) >= _MIN_LIBRARY_BARS:
+            _REMOTE_SERIES_CACHE[symbol] = series
+            return series, source
+    if best:
+        _REMOTE_SERIES_CACHE[symbol] = best
+    return best, best_source
+
+
+def _attach_and_hydrate_documents(documents: dict[str, Any]) -> dict[str, Any]:
     try:
         from db.connection import use_cloud_sql
 
@@ -322,23 +460,270 @@ def _load_price_series(
                 documents[symbol] = hydrate_document_history(doc)
     except ImportError:
         pass
+    return documents
 
+
+def _resolve_symbol_series(
+    symbol: str,
+    documents: dict[str, Any],
+    *,
+    fetch_remote: bool,
+) -> tuple[list[tuple[date, float]], str, float | None]:
+    """Return (series, source_label, snapshot_price) for one symbol."""
+    sym = symbol.strip().upper()
+    doc = documents.get(sym) or documents.get(symbol)
+    series = _price_series(doc)
+    if len(series) >= _MIN_LIBRARY_BARS:
+        source = "library"
+    elif series:
+        source = "library-thin"
+    else:
+        source = "none"
+    if fetch_remote and len(series) < _MIN_LIBRARY_BARS:
+        remote, remote_source = _fetch_remote_price_series(sym)
+        if remote:
+            if series:
+                series = _merge_price_series(series, remote)
+                source = f"library+{remote_source}"
+            else:
+                series = remote
+                source = remote_source
+    snapshot = getattr(doc, "current_price", None) if doc is not None else None
+    try:
+        price = float(snapshot) if snapshot is not None else None
+    except (TypeError, ValueError):
+        price = None
+    if (price is None or price <= 0) and series:
+        price = series[-1][1]
+    return series, source, price if price and price > 0 else None
+
+
+def _load_price_series(
+    symbols: list[str],
+    *,
+    fetch_remote: bool = False,
+) -> tuple[dict[str, list[tuple[date, float]]], dict[str, float], dict[str, str]]:
+    """
+    Load month-end mark histories.
+
+    Order: shared market library (+ Postgres history table) → optional Stooq/Yahoo
+    gap-fill for thin or missing symbols.
+    """
+    if not symbols:
+        return {}, {}, {}
+    try:
+        from services.shared_market_db import load_documents
+    except ImportError:
+        return {}, {}, {}
+
+    documents = _attach_and_hydrate_documents(load_documents(symbols))
     series_out: dict[str, list[tuple[date, float]]] = {}
     snapshot_out: dict[str, float] = {}
+    source_out: dict[str, str] = {}
     for symbol in symbols:
+        series, source, snapshot = _resolve_symbol_series(
+            symbol,
+            documents,
+            fetch_remote=fetch_remote,
+        )
         sym = symbol.strip().upper()
-        doc = documents.get(sym) or documents.get(symbol)
-        series = _price_series(doc)
         if series:
             series_out[sym] = series
-        snapshot = getattr(doc, "current_price", None) if doc is not None else None
-        try:
-            price = float(snapshot) if snapshot is not None else None
-        except (TypeError, ValueError):
-            price = None
-        if price is not None and price > 0:
-            snapshot_out[sym] = price
-    return series_out, snapshot_out
+            source_out[sym] = source
+        if snapshot is not None:
+            snapshot_out[sym] = snapshot
+    return series_out, snapshot_out, source_out
+
+
+def _classify_mark_source(
+    *,
+    used_history: bool,
+    series_source: str,
+    used_journal: bool,
+) -> str:
+    if used_history:
+        if series_source.startswith("library"):
+            return "library"
+        if series_source in {"stooq", "yfinance", "cache"} or "+" in series_source:
+            return "remote"
+        return "library"
+    if used_journal:
+        return "journal"
+    return "snapshot"
+
+
+def _cross_check_month_marks(
+    *,
+    marks: dict[str, float],
+    series_sources: dict[str, str],
+    as_of: date,
+    fetch_remote: bool,
+) -> tuple[str, str, int, int]:
+    """
+    Compare primary month-end marks against an alternate free source.
+
+    Returns ``(status, note, agreed, disagreed)``.
+    """
+    checkable = [
+        symbol
+        for symbol, source in series_sources.items()
+        if symbol in marks and source not in {"none", "journal", "snapshot"}
+    ]
+    if not checkable:
+        return "unchecked", "No market closes available to cross-check", 0, 0
+    if not fetch_remote:
+        return (
+            "unchecked",
+            f"{len(checkable)} market mark(s) from library/remote cache (cross-check on sync)",
+            0,
+            0,
+        )
+
+    agreed = 0
+    disagreed = 0
+    worst = 0.0
+    samples: list[str] = []
+    for symbol in checkable[:12]:
+        primary = marks[symbol]
+        primary_source = series_sources.get(symbol, "library")
+        prefer = "yfinance" if "stooq" in primary_source else "stooq"
+        alt_series, alt_source = _fetch_remote_price_series(symbol, prefer=prefer)
+        if alt_source == "cache" and "stooq" in primary_source:
+            # Force the other provider when cache already holds the primary fill.
+            alt_series = (
+                _series_from_yahoo(symbol) if prefer == "yfinance" else _series_from_stooq(symbol)
+            )
+            alt_source = prefer if alt_series else "none"
+        alt_close = _close_for_month_end(alt_series, as_of)
+        if alt_close is None or primary <= 0:
+            continue
+        rel = abs(alt_close - primary) / primary
+        worst = max(worst, rel)
+        if rel <= _PRICE_CROSSCHECK_TOLERANCE:
+            agreed += 1
+        else:
+            disagreed += 1
+            samples.append(f"{symbol} {rel:.1%}")
+
+    checked = agreed + disagreed
+    if checked == 0:
+        return "unchecked", "Alternate source returned no overlapping closes", 0, 0
+    if disagreed == 0:
+        return (
+            "ok",
+            f"{agreed}/{checked} marks within {_PRICE_CROSSCHECK_TOLERANCE:.0%} of Stooq/Yahoo",
+            agreed,
+            disagreed,
+        )
+    if disagreed / checked <= 0.25:
+        return (
+            "warning",
+            f"{disagreed}/{checked} mark(s) diverge >{_PRICE_CROSSCHECK_TOLERANCE:.0%}"
+            + (f" ({', '.join(samples[:3])})" if samples else ""),
+            agreed,
+            disagreed,
+        )
+    return (
+        "failed",
+        f"{disagreed}/{checked} marks disagree with secondary source"
+        + (f" ({', '.join(samples[:3])})" if samples else ""),
+        agreed,
+        disagreed,
+    )
+
+
+def _value_one_month(
+    *,
+    deposit: MonthlyDeposit,
+    all_symbols: list[str],
+    records_by_symbol: dict[str, list[PurchaseRecord]],
+    price_series: dict[str, list[tuple[date, float]]],
+    snapshot_prices: dict[str, float],
+    series_sources: dict[str, str],
+    fx: float,
+    as_of: date,
+    validation_target: str | None,
+    fetch_remote: bool,
+) -> MonthPortfolioValuation | None:
+    total_usd = 0.0
+    symbols_held = 0
+    symbols_priced = 0
+    library_priced = 0
+    remote_priced = 0
+    journal_priced = 0
+    missing_symbols: list[str] = []
+    month_marks: dict[str, float] = {}
+    month_sources: dict[str, str] = {}
+
+    for symbol in all_symbols:
+        symbol_records = records_by_symbol.get(symbol, [])
+        shares = shares_from_records(symbol_records, as_of)
+        if shares <= 0:
+            continue
+        symbols_held += 1
+        series = price_series.get(symbol, [])
+        history_close = _close_for_month_end(series, as_of)
+        journal_price = journal_mark_price(symbol_records, as_of)
+        close = _mark_price_for_date(
+            series,
+            as_of,
+            snapshot_price=snapshot_prices.get(symbol),
+            fallback_price=journal_price,
+        )
+        if close is None:
+            missing_symbols.append(symbol)
+            continue
+        total_usd += shares * close
+        symbols_priced += 1
+        used_history = history_close is not None
+        used_journal = (
+            (not used_history) and journal_price is not None and abs(close - journal_price) < 1e-9
+        )
+        mark_source = _classify_mark_source(
+            used_history=used_history,
+            series_source=series_sources.get(symbol, "none"),
+            used_journal=used_journal,
+        )
+        if mark_source == "library":
+            library_priced += 1
+        elif mark_source == "remote":
+            remote_priced += 1
+        elif mark_source == "journal":
+            journal_priced += 1
+        month_marks[symbol] = close
+        month_sources[symbol] = series_sources.get(symbol, mark_source)
+
+    if total_usd <= 0 or symbols_held == 0:
+        return None
+
+    if missing_symbols:
+        logger.debug(
+            "Month %s missing closes for: %s",
+            deposit.period_key,
+            ", ".join(missing_symbols[:8]) + ("…" if len(missing_symbols) > 8 else ""),
+        )
+
+    validation_status = "unchecked"
+    validation_note = ""
+    if deposit.period_key == validation_target:
+        validation_status, validation_note, _ok, _bad = _cross_check_month_marks(
+            marks=month_marks,
+            series_sources=month_sources,
+            as_of=as_of,
+            fetch_remote=fetch_remote,
+        )
+
+    return MonthPortfolioValuation(
+        portfolio_usd=round(total_usd, 2),
+        portfolio_eur=round(total_usd * fx, 2),
+        symbols_held=symbols_held,
+        symbols_priced=symbols_priced,
+        library_priced=library_priced,
+        remote_priced=remote_priced,
+        journal_priced=journal_priced,
+        validation_status=validation_status,
+        validation_note=validation_note,
+    )
 
 
 def compute_monthly_portfolio_valuations(
@@ -346,13 +731,14 @@ def compute_monthly_portfolio_valuations(
     *,
     db_path: Path | None = None,
     journal_service: PortfolioPurchaseJournalService | None = None,
+    fetch_remote: bool = False,
 ) -> dict[str, MonthPortfolioValuation]:
     """
-    Estimate end-of-month portfolio value from journal share counts and library closes.
+    Estimate end-of-month portfolio value from journal share counts and market closes.
 
-    Uses explicit buy/sell share counts when present. Each held symbol is priced from
-    the last in-month library close when available, otherwise the latest prior close.
-    A month is fully covered when every held symbol has some mark on or before month-end.
+    Price priority per holding: market library → Stooq/Yahoo gap-fill (when enabled) →
+    last journal trade → document snapshot. Optional cross-check validates marks against
+    a second free source during remote sync.
     """
     if not deposits:
         return {}
@@ -380,57 +766,73 @@ def compute_monthly_portfolio_valuations(
         sym = record.symbol.strip().upper()
         records_by_symbol.setdefault(sym, []).append(record)
 
-    symbols = sorted(records_by_symbol)
-    all_symbols = sorted(set(symbols) | set(open_holdings))
-    price_series, snapshot_prices = _load_price_series(all_symbols)
+    all_symbols = sorted(set(records_by_symbol) | set(open_holdings))
+    price_series, snapshot_prices, series_sources = _load_price_series(
+        all_symbols,
+        fetch_remote=fetch_remote,
+    )
     today = date.today()
     fx_by_month = fx_eur_per_usd_by_month(deposits, reference=today)
     values: dict[str, MonthPortfolioValuation] = {}
 
+    validation_target = None
+    for deposit in reversed(deposits):
+        if valuation_as_of(deposit.period, reference=today) < today:
+            validation_target = deposit.period_key
+            break
+
     for deposit in deposits:
-        as_of = valuation_as_of(deposit.period, reference=today)
-        total_usd = 0.0
-        symbols_held = 0
-        symbols_priced = 0
-        missing_symbols: list[str] = []
-
-        for symbol in all_symbols:
-            symbol_records = records_by_symbol.get(symbol, [])
-            shares = shares_from_records(symbol_records, as_of)
-            if shares <= 0:
-                continue
-            symbols_held += 1
-            close = _mark_price_for_date(
-                price_series.get(symbol, []),
-                as_of,
-                snapshot_price=snapshot_prices.get(symbol),
-                fallback_price=journal_mark_price(symbol_records, as_of),
-            )
-            if close is None:
-                missing_symbols.append(symbol)
-                continue
-            total_usd += shares * close
-            symbols_priced += 1
-
-        if total_usd <= 0 or symbols_held == 0:
-            continue
-
-        if missing_symbols:
-            logger.debug(
-                "Month %s missing closes for: %s",
-                deposit.period_key,
-                ", ".join(missing_symbols[:8]) + ("…" if len(missing_symbols) > 8 else ""),
-            )
-
-        fx = fx_by_month.get(deposit.period_key, 0.92)
-        values[deposit.period_key] = MonthPortfolioValuation(
-            portfolio_usd=round(total_usd, 2),
-            portfolio_eur=round(total_usd * fx, 2),
-            symbols_held=symbols_held,
-            symbols_priced=symbols_priced,
+        valued = _value_one_month(
+            deposit=deposit,
+            all_symbols=all_symbols,
+            records_by_symbol=records_by_symbol,
+            price_series=price_series,
+            snapshot_prices=snapshot_prices,
+            series_sources=series_sources,
+            fx=fx_by_month.get(deposit.period_key, 0.92),
+            as_of=valuation_as_of(deposit.period, reference=today),
+            validation_target=validation_target,
+            fetch_remote=fetch_remote,
         )
+        if valued is not None:
+            values[deposit.period_key] = valued
 
     return values
+
+
+def summarize_valuation_quality(
+    valuations: dict[str, MonthPortfolioValuation],
+) -> ValuationQualityReport:
+    """Aggregate mark-source and cross-check status for UI captions."""
+    if not valuations:
+        return ValuationQualityReport(0, 0, 0, 0, 0, 0, 0, "No month-end marks computed")
+
+    months = list(valuations.values())
+    full = sum(1 for item in months if item.coverage >= 1.0)
+    validated = sum(1 for item in months if item.validation_status == "ok")
+    warnings = sum(1 for item in months if item.validation_status in {"warning", "failed"})
+    library = sum(item.library_priced for item in months)
+    remote = sum(item.remote_priced for item in months)
+    journal = sum(item.journal_priced for item in months)
+    notes = [item.validation_note for item in months if item.validation_note]
+    note = (
+        notes[-1]
+        if notes
+        else (
+            f"{full}/{len(months)} months fully priced"
+            + (f"; {journal} trade-price fallback marks" if journal else "")
+        )
+    )
+    return ValuationQualityReport(
+        months_valued=len(months),
+        months_full_coverage=full,
+        months_validated_ok=validated,
+        months_with_warnings=warnings,
+        library_marks=library,
+        remote_marks=remote,
+        journal_marks=journal,
+        note=note,
+    )
 
 
 def portfolio_eur_to_store(

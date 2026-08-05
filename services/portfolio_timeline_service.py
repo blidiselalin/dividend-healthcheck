@@ -14,6 +14,7 @@ from services.portfolio_monthly_valuation import (
     continuous_monthly_deposits,
     portfolio_eur_to_store,
     portfolio_inception_period,
+    summarize_valuation_quality,
 )
 
 if TYPE_CHECKING:
@@ -103,6 +104,7 @@ def backfill_monthly_portfolio_eur(
         timeline,
         db_path=db_path,
         journal_service=ctx.journal_service,
+        fetch_remote=True,
     )
     if not valuations and not any(item.portfolio_eur > 0 for item in deposits):
         return 0, issues
@@ -126,14 +128,23 @@ def backfill_monthly_portfolio_eur(
         )
         updated += 1
 
-    if updated:
+    quality = summarize_valuation_quality(valuations)
+    if updated or quality.months_valued:
+        detail = (
+            f"Updated portfolio € for {updated} month(s) "
+            f"({quality.months_full_coverage}/{quality.months_valued} fully priced; "
+            f"library={quality.library_marks}, Stooq/Yahoo={quality.remote_marks}, "
+            f"trade fallback={quality.journal_marks}). {quality.note}"
+        )
+        level = (
+            ImportIssueLevel.WARNING
+            if quality.status in {"warning", "partial", "unavailable"}
+            else ImportIssueLevel.INFO
+        )
         issues.append(
             ImportIssue(
-                ImportIssueLevel.INFO,
-                (
-                    f"Updated portfolio € for {updated} month(s) from purchase journal "
-                    "and latest available stock prices."
-                ),
+                level,
+                detail,
                 section="Deposits & Withdrawals",
             )
         )

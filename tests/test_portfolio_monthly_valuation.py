@@ -18,7 +18,9 @@ from services.portfolio_deposits_service import PortfolioDepositsService
 from services.portfolio_monthly_valuation import (
     MonthPortfolioValuation,
     _close_for_month_end,
+    _cross_check_month_marks,
     _mark_price_for_date,
+    _merge_price_series,
     compute_monthly_portfolio_eur,
     compute_monthly_portfolio_valuations,
     continuous_monthly_deposits,
@@ -28,6 +30,7 @@ from services.portfolio_monthly_valuation import (
     portfolio_eur_to_store,
     portfolio_inception_period,
     shares_from_records,
+    summarize_valuation_quality,
     valuation_as_of,
 )
 
@@ -431,6 +434,112 @@ def test_pick_portfolio_prefers_stored_then_computed() -> None:
     )
     assert pick_portfolio_eur_for_month(stored=1200.0, valuation=full) == 1200.0
     assert pick_portfolio_eur_for_month(stored=None, valuation=full) == 900.0
+
+
+def test_merge_price_series_prefers_primary_on_overlap() -> None:
+    primary = [(date(2025, 1, 31), 50.0), (date(2025, 2, 28), 52.0)]
+    secondary = [(date(2025, 1, 31), 49.0), (date(2025, 3, 31), 60.0)]
+    merged = _merge_price_series(primary, secondary)
+    assert merged == [
+        (date(2025, 1, 31), 50.0),
+        (date(2025, 2, 28), 52.0),
+        (date(2025, 3, 31), 60.0),
+    ]
+
+
+def test_remote_gap_fill_prices_months_without_library(tmp_path: Path) -> None:
+    import services.portfolio_monthly_valuation as valuation_mod
+
+    valuation_mod._REMOTE_SERIES_CACHE.clear()
+    db = tmp_path / "portfolio.db"
+    portfolio = PortfolioStore(db_path=db, seed=False)
+    journal = PurchaseJournalStore(db_path=db, seed=False)
+    deposits = DepositsStore(db_path=db, seed=False)
+    journal.add_purchase("KO", date(2025, 1, 10), 50.0, shares=10.0, side="buy")
+    portfolio.upsert_holding("KO", shares=10, avg_cost_per_share=50.0)
+    deposits.upsert_deposit(
+        year=2025,
+        month=1,
+        label="January 2025",
+        deposit_eur=1000.0,
+        deposit_usd=1100.0,
+        portfolio_eur=0.0,
+    )
+    remote = [(date(2025, 1, 31), 51.0)]
+
+    with (
+        patch("services.shared_market_db.load_documents", return_value={}),
+        patch(
+            "services.portfolio_monthly_valuation._fetch_remote_price_series",
+            return_value=(remote, "stooq"),
+        ),
+        patch(
+            "services.fx_rate_service.load_eur_usd_market_series",
+            return_value=[(date(2025, 1, 31), 0.9)],
+        ),
+    ):
+        values = compute_monthly_portfolio_valuations(
+            deposits.list_deposits(),
+            db_path=db,
+            fetch_remote=True,
+        )
+
+    assert values["2025-01"].portfolio_usd == pytest.approx(10 * 51.0)
+    assert values["2025-01"].remote_priced == 1
+    assert values["2025-01"].library_priced == 0
+
+
+def test_cross_check_marks_flags_disagreement() -> None:
+    with patch(
+        "services.portfolio_monthly_valuation._fetch_remote_price_series",
+        return_value=([(date(2025, 1, 31), 60.0)], "yfinance"),
+    ):
+        status, note, agreed, disagreed = _cross_check_month_marks(
+            marks={"KO": 50.0},
+            series_sources={"KO": "stooq"},
+            as_of=date(2025, 1, 31),
+            fetch_remote=True,
+        )
+    assert status == "failed"
+    assert disagreed == 1
+    assert agreed == 0
+    assert "KO" in note
+
+
+def test_summarize_valuation_quality_counts_sources() -> None:
+    report = summarize_valuation_quality(
+        {
+            "2025-01": MonthPortfolioValuation(
+                portfolio_usd=100.0,
+                portfolio_eur=90.0,
+                symbols_held=2,
+                symbols_priced=2,
+                library_priced=1,
+                remote_priced=1,
+                journal_priced=0,
+                validation_status="ok",
+                validation_note="2/2 marks within 3%",
+            ),
+            "2025-02": MonthPortfolioValuation(
+                portfolio_usd=110.0,
+                portfolio_eur=99.0,
+                symbols_held=2,
+                symbols_priced=1,
+                library_priced=0,
+                remote_priced=0,
+                journal_priced=1,
+                validation_status="warning",
+                validation_note="1 mark diverges",
+            ),
+        }
+    )
+    assert report.months_valued == 2
+    assert report.months_full_coverage == 1
+    assert report.months_with_warnings == 1
+    assert report.library_marks == 1
+    assert report.remote_marks == 1
+    assert report.journal_marks == 1
+    assert report.status == "warning"
 
 
 def test_journal_mark_price_uses_last_trade_on_or_before() -> None:
