@@ -133,7 +133,9 @@ def render_portfolio_sidebar() -> None:
 
     render_portfolio_session_evidence(expanded=False)
 
-    # Optional help — Assistant stays in the workflow sidebar; account/admin are in Options.
+    # Assistant follows below; Account & admin block is rendered from app.py.
     st.sidebar.divider()
     sidebar_heading("Help")
-    st.sidebar.caption("Account, theme, and admin are under **Options** (top right).")
+    st.sidebar.caption(
+        "Use **Account** (top right) or **Account & admin** below for sign-out and admin."
+    )

@@ -96,7 +96,11 @@ def _render_request_form(identity, store: AccessRequestStore, *, allow_resubmit:
         )
 
 
-def render_admin_access_requests(*, in_sidebar: bool = False) -> None:
+def render_admin_access_requests(
+    *,
+    in_sidebar: bool = False,
+    key_prefix: str = "options",
+) -> None:
     """Admin block for pending Google access requests (Options menu or sidebar)."""
     store = AccessRequestStore()
     pending = store.list_pending()
@@ -122,8 +126,8 @@ def render_admin_access_requests(*, in_sidebar: bool = False) -> None:
         if item.message:
             panel.caption(f"“{item.message[:200]}”")
 
-        approve_key = f"approve_access_{item.email}"
-        reject_key = f"reject_access_{item.email}"
+        approve_key = f"{key_prefix}_approve_access_{item.email}"
+        reject_key = f"{key_prefix}_reject_access_{item.email}"
         col_a, col_b = panel.columns(2)
         admin_email = ""
         try:

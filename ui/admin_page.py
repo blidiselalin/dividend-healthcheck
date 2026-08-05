@@ -42,7 +42,7 @@ def set_admin_console_active(active: bool) -> None:
     st.session_state[ADMIN_VIEW_KEY] = active
 
 
-def render_admin_options_entry() -> None:
+def render_admin_options_entry(*, key_prefix: str = "options") -> None:
     """Admin console entry for the top-right Options menu."""
     if not is_app_admin():
         return
@@ -52,7 +52,7 @@ def render_admin_options_entry() -> None:
         if st.button(
             "Back to Home",
             use_container_width=True,
-            key="admin_console_back",
+            key=f"{key_prefix}_admin_console_back",
             help="Return to portfolio home",
         ):
             from ui.portfolio_home import navigate_to_portfolio_home
@@ -62,7 +62,7 @@ def render_admin_options_entry() -> None:
         "Open admin console",
         use_container_width=True,
         type="secondary",
-        key="admin_console_open",
+        key=f"{key_prefix}_admin_console_open",
     ):
         set_admin_console_active(True)
         st.rerun()
@@ -70,7 +70,7 @@ def render_admin_options_entry() -> None:
 
 def render_admin_sidebar_entry() -> None:
     """Backward-compatible alias — admin entry lives in Options now."""
-    render_admin_options_entry()
+    render_admin_options_entry(key_prefix="options_legacy")
 
 
 def render_admin_page_if_active() -> bool:

@@ -23,7 +23,7 @@ def _holding_count_for_user(user_id: str) -> int:
     return holding_count_for_user(user_id)
 
 
-def render_account_options() -> None:
+def render_account_options(*, key_prefix: str = "options") -> None:
     """Account block for the top-right Options popover (main panel)."""
     user = current_user()
     if user is None:
@@ -38,11 +38,17 @@ def render_account_options() -> None:
         st.caption(user.email)
 
     if test_user_session_active() and is_test_user(user):
-        if st.button("Exit test user", use_container_width=True, key="options_exit_test_user"):
+        if st.button(
+            "Exit test user",
+            use_container_width=True,
+            key=f"{key_prefix}_exit_test_user",
+        ):
             sign_out_test_user()
             st.rerun()
     elif auth_required() and st.button(
-        "Sign out", use_container_width=True, key="options_sign_out"
+        "Sign out",
+        use_container_width=True,
+        key=f"{key_prefix}_sign_out",
     ):
         clear_portfolio_session_state()
         st.logout()
@@ -51,16 +57,16 @@ def render_account_options() -> None:
     if registered and is_app_admin(user, registered):
         from ui.access_request_panel import render_admin_access_requests
 
-        render_admin_access_requests(in_sidebar=False)
-        _render_admin_users()
+        render_admin_access_requests(in_sidebar=False, key_prefix=key_prefix)
+        _render_admin_users(key_prefix=key_prefix)
 
 
 def render_account_sidebar() -> None:
     """Backward-compatible alias — account lives in Options now."""
-    render_account_options()
+    render_account_options(key_prefix="options_legacy")
 
 
-def _render_admin_users() -> None:
+def _render_admin_users(*, key_prefix: str = "options") -> None:
     st.markdown("**Users**")
     store = UserStore()
     users = store.list_users()
@@ -88,12 +94,20 @@ def _render_admin_users() -> None:
             "User",
             options=[u.id for u in users],
             format_func=lambda uid: next(u.email for u in users if u.id == uid),
-            key="admin_user_pick",
+            key=f"{key_prefix}_admin_user_pick",
         )
         selected = next(u for u in users if u.id == pick)
-        active = st.checkbox("Active", value=selected.is_active, key="admin_user_active")
-        admin = st.checkbox("Admin", value=selected.is_admin, key="admin_user_admin")
-        if st.button("Save user", key="admin_user_save"):
+        active = st.checkbox(
+            "Active",
+            value=selected.is_active,
+            key=f"{key_prefix}_admin_user_active",
+        )
+        admin = st.checkbox(
+            "Admin",
+            value=selected.is_admin,
+            key=f"{key_prefix}_admin_user_admin",
+        )
+        if st.button("Save user", key=f"{key_prefix}_admin_user_save"):
             store.set_active(pick, active=active)
             store.set_admin(pick, admin=admin)
             st.success("User updated.")
