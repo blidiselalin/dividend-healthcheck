@@ -244,13 +244,14 @@ def main() -> None:
     st.session_state["market_db_status"] = boot.get("market_db") or {}
 
     st.session_state["analysis_type"] = NAV_PORTFOLIO
-    # Left: Getting started workflow. Account/admin also in top-right + sidebar.
+    # Left: Getting started workflow. Account pinned to Streamlit header (⋮).
     render_sidebar_progress()
     render_portfolio_sidebar()
     render_sidebar_account_entry()
     render_chatbot_widget()
-    main_content_start()
+    # Render before page body so CSS can pin it under the header toolbar.
     render_app_options_bar()
+    main_content_start()
     if render_admin_page_if_active():
         _render_sidebar_footer()
         return

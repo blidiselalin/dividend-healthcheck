@@ -1,8 +1,5 @@
 """
-Top-right app options — account, help, theme, and admin.
-
-Also mirrored as a short Account & admin block in the sidebar so controls
-stay discoverable if the top-right popover is easy to miss.
+Account / admin control pinned to the Streamlit app header (under the ⋮ menu).
 """
 
 from __future__ import annotations
@@ -16,24 +13,62 @@ from auth.user_context import (
     current_user,
     is_app_admin,
 )
-from ui.design_system import render_html
 
+# Pin beside Streamlit's header toolbar (⋮). Collapse the in-page footprint so the
+# control does not appear under Home / portfolio snapshot content.
 _OPTIONS_BAR_CSS = """
 <style>
-[class*="st-key-ds_options_bar"] {
-  margin: 0 0 0.5rem 0 !important;
+header[data-testid="stHeader"] {
+  z-index: 999990 !important;
+  background: transparent !important;
+}
+/* Remove the empty vertical slot left in the main column */
+div[data-testid="stElementContainer"]:has([class*="st-key-ds_options_bar"]),
+div[data-testid="stVerticalBlockBorderWrapper"]:has([class*="st-key-ds_options_bar"]),
+div[data-testid="stVerticalBlock"]:has(> div > [class*="st-key-ds_options_bar"]) {
+  height: 0 !important;
+  min-height: 0 !important;
+  max-height: 0 !important;
+  margin: 0 !important;
   padding: 0 !important;
+  border: none !important;
+  overflow: visible !important;
+}
+[class*="st-key-ds_options_bar"] {
+  position: fixed !important;
+  top: 0.35rem !important;
+  right: 3.6rem !important; /* sit just left of Streamlit's ⋮ menu */
+  left: auto !important;
+  width: auto !important;
+  max-width: min(260px, 55vw) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  z-index: 1000005 !important;
+  background: transparent !important;
 }
 [class*="st-key-ds_options_bar"] [data-testid="stPopover"] {
-  display: flex !important;
-  justify-content: flex-end !important;
-  width: 100% !important;
+  width: auto !important;
 }
 [class*="st-key-ds_options_bar"] [data-testid="stPopover"] > button {
   border-radius: 999px !important;
   font-weight: 650 !important;
   white-space: nowrap !important;
-  min-height: 2.45rem !important;
+  min-height: 2.15rem !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22) !important;
+  background: var(--ds-surface-elevated, #1e293b) !important;
+  border: 1px solid var(--ds-border, rgba(148, 163, 184, 0.35)) !important;
+  color: var(--ds-text, #e2e8f0) !important;
+}
+@media (max-width: 640px) {
+  [class*="st-key-ds_options_bar"] {
+    right: 3.1rem !important;
+    max-width: 46vw !important;
+  }
+  [class*="st-key-ds_options_bar"] [data-testid="stPopover"] > button {
+    font-size: 0.82rem !important;
+    padding-left: 0.65rem !important;
+    padding-right: 0.65rem !important;
+  }
 }
 </style>
 """
@@ -44,8 +79,8 @@ def _account_label() -> str:
     if user is None:
         return "Account"
     short = (user.name or user.email.split("@")[0] or "Account").strip()
-    if len(short) > 18:
-        short = short[:17] + "…"
+    if len(short) > 14:
+        short = short[:13] + "…"
     return f"Account · {short}"
 
 
@@ -108,22 +143,21 @@ def _render_options_body(*, key_prefix: str) -> None:
 
 
 def render_app_options_bar() -> None:
-    """Visible Account control at the top-right of the main panel."""
-    render_html(_OPTIONS_BAR_CSS)
+    """Pin Account control under the Streamlit header, left of the ⋮ menu."""
+    # Global CSS must go through markdown — st.html can scope/strip page styles.
+    st.markdown(_OPTIONS_BAR_CSS, unsafe_allow_html=True)
 
-    with st.container(key="ds_options_bar"):
-        _left, right = st.columns([3.0, 1.5], gap="small")
-        with right, st.popover(_account_label(), use_container_width=True):
-            _render_options_body(key_prefix="options_main")
+    with st.container(key="ds_options_bar"), st.popover(_account_label()):
+        _render_options_body(key_prefix="options_main")
 
 
 def render_sidebar_account_entry() -> None:
-    """Always-visible sidebar shortcuts for account / admin / help."""
+    """Sidebar shortcuts for account / admin / help."""
     from ui.theme import sidebar_heading
 
     st.sidebar.divider()
     sidebar_heading("Account & admin")
-    st.sidebar.caption("Full menu: **Account** button at the top right.")
+    st.sidebar.caption("Full menu: **Account** beside the Streamlit ⋮ menu (top right).")
 
     user = current_user()
     if user is not None:
