@@ -242,22 +242,20 @@ def render_compact_summary(rows: list[PortfolioDetailRow]) -> None:
     )
 
     month_paid = cached_current_month_paid_dividends(rows=rows, preload=preload)
+    from ui.dividend_risk_watchlist import render_dividend_risk_watchlist
     from ui.portfolio_summary import render_dividend_focus_block
 
     render_dividend_focus_block(rows, month_paid=month_paid)
     render_holdings_summary(rows, show_month_received=False)
+    render_dividend_risk_watchlist(rows)
+    render_stocks_overview(rows)
 
     from ui.beta_disclaimer import render_research_disclaimer
     from ui.beta_feedback import render_beta_feedback
-    from ui.dividend_risk_watchlist import render_dividend_risk_watchlist
 
-    render_research_disclaimer(compact=True)
-    render_beta_feedback(page="Portfolio home", key_suffix="portfolio_home")
-
-    st.divider()
-    render_dividend_risk_watchlist(rows)
-    st.divider()
-    render_stocks_overview(rows)
+    with st.expander("About this research view", expanded=False):
+        render_research_disclaimer(compact=True)
+        render_beta_feedback(page="Portfolio home", key_suffix="portfolio_home")
 
 
 def render_portfolio_home_header(

@@ -108,9 +108,9 @@ def style_figure(
             "y": 1.02,
             "xanchor": "left",
             "x": 0,
-            "font": {"size": 11},
-            "bgcolor": palette["plot"],
-            "bordercolor": palette["grid"],
+            "font": {"size": 12, "color": palette["text"]},
+            "bgcolor": palette["paper"],
+            "bordercolor": palette["border"],
             "borderwidth": 1,
         }
 
@@ -173,17 +173,57 @@ def evolution_chart_margins(
 
 def bottom_legend() -> dict[str, Any]:
     """Horizontal legend below the plot — avoids overlapping Streamlit section titles."""
+    palette = chart_palette()
     return {
         "orientation": "h",
         "yanchor": "top",
         "y": -0.22,
         "x": 0.5,
         "xanchor": "center",
-        "font": {"size": 11},
-        "bgcolor": "rgba(255,255,255,0.92)",
-        "bordercolor": "rgba(148, 163, 184, 0.3)",
+        "font": {"size": 12, "color": palette["text"]},
+        "bgcolor": palette["paper"],
+        "bordercolor": palette["border"],
         "borderwidth": 1,
+        "itemclick": "toggle",
+        "itemdoubleclick": "toggleothers",
+        "tracegroupgap": 8,
     }
+
+
+def dividend_heatmap_colorscale() -> list[list[float | str]]:
+    """Brand teal scale for month×year dividend heatmaps (theme-aware)."""
+    from ui.theme_mode import THEME_LIGHT, get_theme_mode
+
+    if get_theme_mode() == THEME_LIGHT:
+        return [
+            [0.0, "#f1f5f9"],
+            [0.2, "#ccfbf1"],
+            [0.45, "#5eead4"],
+            [0.7, "#0f766e"],
+            [1.0, "#115e59"],
+        ]
+    return [
+        [0.0, "#0f172a"],
+        [0.2, "#134e4a"],
+        [0.45, "#0f766e"],
+        [0.7, "#2dd4bf"],
+        [1.0, "#99f6e4"],
+    ]
+
+
+def format_heatmap_usd(value: float | None) -> str:
+    """Compact cell label for heatmap annotations."""
+    if value is None:
+        return ""
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return ""
+    if amount <= 0:
+        return ""
+    if amount >= 1000:
+        return f"${amount / 1000:.1f}k"
+    return f"${amount:,.0f}"
 
 
 DARK_PALETTE: dict[str, str] = {

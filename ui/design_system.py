@@ -366,6 +366,36 @@ section.main {
   margin: 0.5rem 0 1rem 0;
   box-shadow: var(--ds-shadow);
 }
+.ds-home-panel {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  padding: 1rem 1.1rem 0.85rem;
+  margin: 0 0 1.1rem 0;
+  box-shadow: var(--ds-shadow);
+}
+.ds-home-panel .ds-section-header {
+  margin-bottom: 0.65rem;
+}
+.ds-action-card {
+  background: linear-gradient(145deg, rgba(45, 212, 191, 0.1) 0%, var(--ds-surface) 55%);
+  border: 1px solid var(--ds-highlight-border);
+  border-radius: var(--ds-radius);
+  padding: 0.95rem 1.05rem 0.85rem;
+  margin: 0 0 1rem 0;
+  box-shadow: var(--ds-highlight-glow);
+}
+.ds-action-card .ds-section-title {
+  font-size: 1.05rem;
+}
+.ds-action-card-kicker {
+  margin: 0 0 0.35rem 0;
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ds-primary-light);
+}
 
 /* Tables */
 .ds-table-wrap {
@@ -1062,6 +1092,31 @@ def render_dividend_focus_panel(
         f'<div class="ds-dividend-focus">'
         f"{_section_header_markup(title, subtitle)}"
         f"{_metric_grid_markup(metrics)}"
+        f"</div>"
+    )
+
+
+def render_home_panel(
+    title: str,
+    subtitle: str,
+    metrics: list[tuple[str, str, str] | tuple[str, str, str, bool]] | None = None,
+) -> None:
+    """Consistent Home section chrome (header + optional metric grid)."""
+    metrics_html = _metric_grid_markup(metrics) if metrics else ""
+    render_html(
+        f'<div class="ds-home-panel">'
+        f"{_section_header_markup(title, subtitle)}"
+        f"{metrics_html}"
+        f"</div>"
+    )
+
+
+def render_action_card(title: str, description: str, *, kicker: str = "Next step") -> None:
+    """Primary call-to-action header used above Home action buttons."""
+    render_html(
+        f'<div class="ds-action-card" role="region" aria-label="{html.escape(kicker)}">'
+        f'<p class="ds-action-card-kicker">{html.escape(kicker)}</p>'
+        f"{_section_header_markup(title, description)}"
         f"</div>"
     )
 

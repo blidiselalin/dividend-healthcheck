@@ -240,14 +240,19 @@ class PortfolioDividendIncomeService:
                 for item in items
             ]
         )
+        from utils.chart_theme import CATEGORICAL
+
         fig = go.Figure()
-        for year in sorted(df["year"].unique()):
+        years = sorted(df["year"].unique())
+        for index, year in enumerate(years):
             subset = df[df["year"] == year].sort_values("sort")
+            color = CATEGORICAL[index % len(CATEGORICAL)]
             fig.add_trace(
                 go.Bar(
                     x=subset["month"],
                     y=subset["net"],
                     name=year,
+                    marker_color=color,
                     hovertemplate="%{x} %{fullData.name}<br>$%{y:,.2f}<extra></extra>",
                 )
             )
@@ -256,7 +261,7 @@ class PortfolioDividendIncomeService:
             barmode="group",
             yaxis_title="Net Income (USD)",
             height=420,
-            margin={"t": 60, "b": 60},
+            margin={"t": 60, "b": 88},
             legend=bottom_legend(),
         )
         return style_figure(fig)
@@ -292,28 +297,86 @@ class PortfolioDividendIncomeService:
     def create_heatmap_chart(self, records: list[MonthlyNetDividend] | None = None) -> Any:
         if not PLOTLY_AVAILABLE:
             return None
+        from ui.theme_mode import THEME_LIGHT, get_theme_mode
+        from utils.chart_theme import (
+            chart_palette,
+            dividend_heatmap_colorscale,
+            format_heatmap_usd,
+        )
+
         pivot = self.pivot_net_dataframe(records)
         if pivot.empty:
             return None
 
         years = [column for column in pivot.columns if column != "Month"]
-        z = []
+        months = pivot["Month"].tolist()
+        z: list[list[float | None]] = []
+        text: list[list[str]] = []
+        values: list[float] = []
         for _, row in pivot.iterrows():
-            z.append([row[y] if pd.notna(row[y]) else 0 for y in years])
+            row_z: list[float | None] = []
+            row_text: list[str] = []
+            for year in years:
+                raw = row[year]
+                if pd.isna(raw):
+                    row_z.append(None)
+                    row_text.append("")
+                    continue
+                amount = float(raw)
+                row_z.append(amount)
+                row_text.append(format_heatmap_usd(amount))
+                if amount > 0:
+                    values.append(amount)
+            z.append(row_z)
+            text.append(row_text)
+
+        palette = chart_palette()
+        zmax = max(values) if values else 1.0
+        label_color = "#0f172a" if get_theme_mode() == THEME_LIGHT else "#f8fafc"
 
         fig = go.Figure(
             go.Heatmap(
                 z=z,
-                x=years,
-                y=pivot["Month"].tolist(),
-                colorscale="Greens",
-                colorbar={"title": "USD", "thickness": 14, "len": 0.8},
-                hovertemplate="%{y} %{x}<br>$%{z:,.2f}<extra></extra>",
+                x=[str(year) for year in years],
+                y=months,
+                text=text,
+                texttemplate="%{text}",
+                textfont={"size": 11, "color": label_color, "family": "system-ui, sans-serif"},
+                colorscale=dividend_heatmap_colorscale(),
+                zmin=0,
+                zmax=zmax,
+                xgap=3,
+                ygap=3,
+                colorbar={
+                    "title": {"text": "Net USD", "font": {"size": 12, "color": palette["text"]}},
+                    "thickness": 12,
+                    "len": 0.85,
+                    "tickfont": {"size": 11, "color": palette["muted"]},
+                    "outlinewidth": 0,
+                },
+                hovertemplate="<b>%{y} %{x}</b><br>Net $%{z:,.2f}<extra></extra>",
+                hoverongaps=False,
             )
         )
         fig.update_layout(
-            title="Net Dividend Heatmap — Month × Year",
-            height=400,
-            margin={"t": 60, "b": 40},
+            title=None,
+            height=max(420, 48 + 34 * len(months)),
+            margin={"t": 36, "b": 36, "l": 72, "r": 48},
         )
-        return style_figure(fig)
+        fig = style_figure(fig)
+        fig.update_xaxes(
+            side="top",
+            tickfont={"size": 12, "color": palette["text"]},
+            title=None,
+            showgrid=False,
+            ticks="",
+            constrain="domain",
+        )
+        fig.update_yaxes(
+            autorange="reversed",
+            tickfont={"size": 12, "color": palette["text"]},
+            title=None,
+            showgrid=False,
+            ticks="",
+        )
+        return fig

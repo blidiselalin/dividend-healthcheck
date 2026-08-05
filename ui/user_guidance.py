@@ -24,7 +24,6 @@ from services.portfolio_onboarding import (
 from services.portfolio_session import is_demo_session, user_has_holdings_in_db
 from ui.design_system import render_empty_state
 from ui.session_keys import HELP_DRAWER_OPEN_KEY, HELP_DRAWER_SECTION_KEY
-from ui.theme import render_notice
 
 IMPORT_CAPABILITIES = (
     "Trades",
@@ -282,15 +281,14 @@ def render_next_best_action_card(*, key_prefix: str = "nba") -> None:
             properties={"action_id": action.id, "severity": action.severity},
         )
 
-    kind = {
-        "error": "warning",
-        "warning": "warning",
-        "info": "info",
-    }.get(action.severity, "info")
-    render_notice(
-        f"<strong>Next:</strong> {action.title}<br/>{action.description}",
-        kind=kind,
-    )
+    from ui.design_system import render_action_card
+
+    kicker = {
+        "error": "Needs attention",
+        "warning": "Review recommended",
+        "info": "Next step",
+    }.get(action.severity, "Next step")
+    render_action_card(action.title, action.description, kicker=kicker)
     cols = st.columns(2 if action.secondary_action_label else 1)
     with cols[0]:
         if st.button(

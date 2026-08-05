@@ -1,7 +1,7 @@
 """
 Top-right app options — account, help, theme, and admin.
 
-Keeps user/admin controls out of the portfolio workflow sidebar.
+Pinned to the main-panel corner so it stays out of the portfolio workflow.
 """
 
 from __future__ import annotations
@@ -9,20 +9,61 @@ from __future__ import annotations
 import streamlit as st
 
 from auth.user_context import current_user, is_app_admin
+from ui.design_system import render_html
+
+_OPTIONS_BAR_CSS = """
+<style>
+/* Pin Options / user menu to the top-right of the main panel */
+[class*="st-key-ds_options_bar"] {
+  position: fixed !important;
+  top: 0.4rem !important;
+  right: 0.85rem !important;
+  left: auto !important;
+  width: min(250px, 48vw) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  z-index: 100050 !important;
+  background: transparent !important;
+}
+[class*="st-key-ds_options_bar"] > div {
+  background: transparent !important;
+}
+[class*="st-key-ds_options_bar"] [data-testid="stPopover"] {
+  display: flex !important;
+  justify-content: flex-end !important;
+  width: 100% !important;
+}
+[class*="st-key-ds_options_bar"] [data-testid="stPopover"] > button,
+[class*="st-key-ds_options_bar"] button[kind="secondary"],
+[class*="st-key-ds_options_bar"] button {
+  margin-left: auto !important;
+  border-radius: 999px !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18) !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+}
+/* Leave a slim band so page content clears the floating control */
+[data-testid="stMain"] [data-testid="block-container"] {
+  padding-top: 3.1rem !important;
+}
+</style>
+"""
 
 
 def render_app_options_bar() -> None:
-    """Compact options control aligned to the right of the main panel."""
+    """Compact Options control fixed in the top-right corner."""
+    render_html(_OPTIONS_BAR_CSS)
+
     user = current_user()
-    label = "Options"
     if user is not None:
         short = (user.name or user.email.split("@")[0] or "Account").strip()
-        if len(short) > 18:
-            short = short[:17] + "…"
-        label = f"Options · {short}"
+        if len(short) > 16:
+            short = short[:15] + "…"
+        label = f"Account · {short}"
+    else:
+        label = "Account"
 
-    _spacer, opts = st.columns([3.4, 1.6], gap="small")
-    with opts, st.popover(label, use_container_width=True):
+    with st.container(key="ds_options_bar"), st.popover(label, use_container_width=True):
         st.caption("Account, appearance, help, and admin")
         from ui.theme_mode import render_theme_toggle
 

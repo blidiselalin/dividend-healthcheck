@@ -2158,6 +2158,8 @@ class PortfolioDetailsView:
                 heatmap,
                 width="stretch",
                 key="motion_dividend_heatmap",
+                title="Net dividend heatmap",
+                subtitle="Month × year net cash after withholding — darker tiles mean higher income.",
             )
 
         st.markdown("#### Gross dividends — quarterly pivot")

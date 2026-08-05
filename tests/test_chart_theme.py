@@ -5,7 +5,10 @@ from __future__ import annotations
 
 from utils.chart_theme import (
     DARK_PALETTE,
+    bottom_legend,
+    dividend_heatmap_colorscale,
     evolution_chart_margins,
+    format_heatmap_usd,
     monthly_category_axis,
     style_yield_channel_figure,
     yield_zone_fill,
@@ -49,3 +52,20 @@ def test_yield_zone_fill_returns_rgba() -> None:
     fill = yield_zone_fill("Value", alpha=0.2)
     assert fill.startswith("rgba(")
     assert "74" in fill or "222" in fill  # green channel from #4ade80
+
+
+def test_bottom_legend_uses_readable_theme_text() -> None:
+    legend = bottom_legend()
+    assert legend["font"]["color"] == DARK_PALETTE["text"]
+    assert legend["bgcolor"] == DARK_PALETTE["paper"]
+    assert legend["font"]["size"] >= 12
+
+
+def test_heatmap_helpers_format_and_scale() -> None:
+    assert format_heatmap_usd(None) == ""
+    assert format_heatmap_usd(0) == ""
+    assert format_heatmap_usd(850) == "$850"
+    assert format_heatmap_usd(1250) == "$1.2k"
+    scale = dividend_heatmap_colorscale()
+    assert scale[0][0] == 0.0
+    assert scale[-1][0] == 1.0

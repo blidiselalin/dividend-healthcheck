@@ -16,7 +16,11 @@ from services.dividend_risk_watchlist import (
     watchlist_to_records,
 )
 from services.dividend_terminology import term_help
-from ui.design_system import close_table_container, render_section_header, wrap_table_container
+from ui.design_system import (
+    close_table_container,
+    render_home_panel,
+    wrap_table_container,
+)
 from ui.user_guidance import render_actionable_empty_state
 
 if TYPE_CHECKING:
@@ -41,20 +45,15 @@ def render_dividend_risk_watchlist(
     items = build_dividend_risk_watchlist(rows, _stock_cache())
     counts = watchlist_counts(items)
 
-    render_section_header(
+    render_home_panel(
         "Dividend risk watchlist",
-        "Holdings flagged Watch or Risky by payout, FCF coverage, safety score, "
-        "and yield — click a row for full analysis. Research only, not advice.",
-    )
-
-    m1, m2, m3 = st.columns(3)
-    m1.metric("On watchlist", counts["total"])
-    m2.metric("Risky", counts["risky"])
-    m3.metric("Watch", counts["watch"])
-
-    st.caption(
-        "Payout = earnings paid as dividends · FCF coverage = free cash flow ÷ dividend "
-        "(higher is safer) · Safety = Healthy / Watch / Risky from library metrics."
+        "Watch / Risky names by payout, FCF coverage, and safety score. "
+        "Click a row for full analysis — research only, not advice.",
+        [
+            ("On watchlist", str(counts["total"]), "Flagged holdings", True),
+            ("Risky", str(counts["risky"]), "Needs attention", True),
+            ("Watch", str(counts["watch"]), "Monitor closely", True),
+        ],
     )
 
     if not items:
