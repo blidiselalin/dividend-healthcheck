@@ -4,11 +4,38 @@
 
 Research Dividend Kings and Aristocrats, track your holdings, monitor dividend income, and deploy to the cloud — all in one self-hosted Streamlit app backed by PostgreSQL.
 
+### Public Beta
+
+DividendScope is under active development.  
+Use it for educational analytics, not personalized financial advice.  
+Market and dividend information may be delayed or incomplete.
+
+### Release status
+
+| Item | Status |
+|---|---|
+| Current release | `v0.1.0-beta.1` (prerelease) |
+| Hosted access | Invite-only for real portfolios |
+| Public demo | Sample data only |
+| License | [MIT](LICENSE) — replace the copyright holder placeholder with the legal owner name before publish |
+
+### Trust & community
+
+- [Security](SECURITY.md)
+- [Privacy](PRIVACY.md)
+- [Terms](TERMS.md)
+- [Support](SUPPORT.md)
+- [Contributing](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Changelog](CHANGELOG.md)
+- [Beta scope](docs/releases/BETA_SCOPE.md)
+
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit](https://img.shields.io/badge/streamlit-1.42+-red.svg)](https://streamlit.io/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-336791.svg)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/docker-compose-2496ED.svg)](https://docs.docker.com/compose/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Release: v0.1.0-beta.1](https://img.shields.io/badge/release-v0.1.0--beta.1-orange.svg)](docs/releases/v0.1.0-beta.1.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
@@ -29,6 +56,7 @@ Research Dividend Kings and Aristocrats, track your holdings, monitor dividend i
 - [Configuration Reference](#configuration-reference)
 - [Cloud Deployment (GCP)](#cloud-deployment-gcp)
 - [Troubleshooting](#troubleshooting)
+- [Trust documents](#trust--community)
 
 ---
 
@@ -416,6 +444,8 @@ Use this order to keep dividend decisions consistent:
 
 ### Recommendations
 
+> **Educational research categories only.** Labels such as **STRONG BUY**, **BUY**, **ACCUMULATE**, **HOLD**, and **AVOID** are generic score bands for research presentation. They are **not** personalized investment recommendations and do not instruct any user to buy, sell, or hold a security. See [TERMS.md](TERMS.md).
+
 | Score | Label |
 |---|---|
 | 80–100 | **STRONG BUY** |
@@ -427,6 +457,8 @@ Use this order to keep dividend decisions consistent:
 ### Dividend Yield Channels
 
 Based on Geraldine Weiss's methodology: yield is the most honest valuation signal for dividend stocks.
+
+> Yield-channel zones (for example “Strong Buy” / “Avoid”) are informational research signals, not personalized advice.
 
 | Zone | Yield percentile | Signal |
 |---|---|---|

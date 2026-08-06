@@ -7,7 +7,6 @@ from __future__ import annotations
 import streamlit as st
 
 from auth.settings import (
-    allowed_emails,
     auth_configured,
     auth_disabled,
     google_signup_enabled,
@@ -80,13 +79,14 @@ def _render_auth_controls() -> None:
 def _render_google_auth_block() -> None:
     if google_signup_enabled():
         if invite_only_signup():
-            st.caption(
-                "Sign up with an **invited** Google account. Your try list can carry over "
-                "into your private portfolio."
+            st.info(
+                "**Invite-only beta.** Sign in with a Google account that has been invited "
+                "or approved. The public demo uses sample data only."
             )
-            allowed = sorted(allowed_emails())
-            if len(allowed) <= 8:
-                st.caption("Invited: " + ", ".join(allowed))
+            st.caption(
+                "If you are not on the invite list, sign in once to request access. "
+                "Your try-list holdings can carry over after approval."
+            )
         else:
             st.caption(
                 "One-click Google sign-up — your try-list holdings copy into your "

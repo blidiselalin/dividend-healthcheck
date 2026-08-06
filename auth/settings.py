@@ -111,8 +111,33 @@ def admin_emails() -> frozenset[str]:
     return frozenset(_split_emails(raw))
 
 
+def invite_only_signup() -> bool:
+    """Whether real-portfolio access requires an invite or approved request.
+
+    Controlled public beta default: invite-only whenever Google auth is configured.
+    Override with ``auth.invite_only`` or ``DIVIDENDSCOPE_INVITE_ONLY``.
+    """
+    section = _auth_section()
+    if "invite_only" in section:
+        return bool(section.get("invite_only"))
+
+    env = os.environ.get("DIVIDENDSCOPE_INVITE_ONLY", "").strip().lower()
+    if env in ("0", "false", "no", "off"):
+        return False
+    if env in ("1", "true", "yes", "on"):
+        return True
+
+    if auth_configured() and not auth_disabled():
+        return True
+    return bool(allowed_emails())
+
+
 def is_email_allowed(email: str) -> bool:
-    """Static allowlist (secrets) plus admin-approved access requests."""
+    """Allowlist and admin-approved access requests.
+
+    Invite-only mode: only listed emails and approved requests.
+    Open mode: any email when the allowlist is empty.
+    """
     normalized = email.strip().lower()
     if not normalized:
         return False
@@ -126,14 +151,11 @@ def is_email_allowed(email: str) -> bool:
         logger.debug("AccessRequestStore check failed for %s: %s", normalized, exc)
 
     allow = allowed_emails()
+    if invite_only_signup():
+        return normalized in allow
     if not allow:
         return True
     return normalized in allow
-
-
-def invite_only_signup() -> bool:
-    """When true, only emails in allowed_emails may register (invite list)."""
-    return bool(allowed_emails())
 
 
 def google_signup_enabled() -> bool:

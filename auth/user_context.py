@@ -161,9 +161,16 @@ def is_app_admin(
     user: CurrentUser | None = None,
     registered: AppUser | None = None,
 ) -> bool:
-    """True when the user may use admin tools (DB admin flag or configured admin email)."""
+    """True when the user may use admin tools.
+
+    Configured ``admin_emails`` always grant access. Newly created accounts are not
+    admins unless their email is listed there (or an existing admin promotes them
+    via the Users panel / DB ``is_admin`` flag).
+    """
     user = user or current_user()
     if user is None:
+        return False
+    if is_test_user(user):
         return False
     if is_admin_email(user.email):
         return True

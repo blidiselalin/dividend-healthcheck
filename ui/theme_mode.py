@@ -40,9 +40,9 @@ def theme_tokens(mode: str) -> dict[str, str]:
     One source of truth for light/dark. Aliases keep older selectors working.
     """
     shared = {
-        # Brand
+        # Brand (launch HTML teal family, navy app shell)
         "primary": "#2dd4bf",
-        "primary-hover": "#36d5ad",
+        "primary-hover": "#14b8a6",
         "primary-dark": "#14b8a6",
         "primary-light": "#5eead4",
         "accent": "#38bdf8",
@@ -62,10 +62,11 @@ def theme_tokens(mode: str) -> dict[str, str]:
         "space-7": "48px",
         "space-8": "64px",
         # Layout
-        "content-width": "1120px",
+        "content-width": "1200px",
         "focus": "0 0 0 3px rgba(45, 212, 191, 0.4)",
         # Semantic status (shared hues; surfaces adapt per theme)
         "healthy": "#34d399",
+        "success": "#34d399",  # alias of healthy
         "warning": "#fbbf24",
         "risk": "#f87171",
         "confirmed": "#60a5fa",
@@ -78,16 +79,19 @@ def theme_tokens(mode: str) -> dict[str, str]:
             "bg-elevated": "#ffffff",
             "surface": "#ffffff",
             "surface-elevated": "#f8fafc",
+            "surface-high": "#f8fafc",  # alias of surface-elevated
             "surface-highlight": "rgba(45, 212, 191, 0.08)",
             "border": "#cbd5e1",
             "border-subtle": "#e2e8f0",
             "text": "#0f172a",
+            "text-muted": "#64748b",  # alias of muted
             "muted": "#64748b",
             "highlight-bg": "rgba(45, 212, 191, 0.08)",
             "highlight-border": "rgba(13, 148, 136, 0.45)",
             "highlight-glow": "0 0 0 1px rgba(13, 148, 136, 0.2), 0 8px 24px rgba(13, 148, 136, 0.1)",
             "shadow": "0 1px 2px rgba(15, 23, 42, 0.06), 0 4px 14px rgba(15, 23, 42, 0.06)",
             "shadow-lg": "0 10px 28px rgba(15, 23, 42, 0.1)",
+            "shadow-card": "0 12px 36px rgba(15, 23, 42, 0.10)",
             "app-gradient": (
                 "radial-gradient(circle at 8% 0%, rgba(45, 212, 191, 0.10), transparent 28rem), "
                 "linear-gradient(180deg, #e2e8f0 0%, var(--ds-bg) 140px, var(--ds-bg) 100%)"
@@ -110,24 +114,27 @@ def theme_tokens(mode: str) -> dict[str, str]:
         }
     return {
         **shared,
-        "bg": "#0b1220",
-        "bg-elevated": "#0f172a",
-        "surface": "#131c2e",
-        "surface-elevated": "#1a2740",
+        "bg": "#08111f",
+        "bg-elevated": "#0d1828",
+        "surface": "#111e30",
+        "surface-elevated": "#17263a",
+        "surface-high": "#17263a",  # alias of surface-elevated
         "surface-highlight": "rgba(45, 212, 191, 0.10)",
-        "border": "#2a3a52",
-        "border-subtle": "#1e293b",
+        "border": "rgba(148, 163, 184, 0.16)",
+        "border-subtle": "rgba(148, 163, 184, 0.10)",
         "text": "#e8eef7",
+        "text-muted": "#94a3b8",  # alias of muted
         "muted": "#94a3b8",
         "highlight-bg": "rgba(45, 212, 191, 0.1)",
         "highlight-border": "rgba(45, 212, 191, 0.5)",
         "highlight-glow": "0 0 0 1px rgba(45, 212, 191, 0.25), 0 8px 28px rgba(45, 212, 191, 0.12)",
         "shadow": "0 1px 3px rgba(0, 0, 0, 0.35), 0 4px 18px rgba(0, 0, 0, 0.25)",
         "shadow-lg": "0 10px 36px rgba(0, 0, 0, 0.45)",
+        "shadow-card": "0 12px 36px rgba(0, 0, 0, 0.18)",
         "app-gradient": (
-            "radial-gradient(circle at 8% 0%, rgba(45, 212, 191, 0.12), transparent 30rem), "
-            "radial-gradient(circle at 92% 8%, rgba(96, 229, 167, 0.06), transparent 28rem), "
-            "linear-gradient(180deg, #070d18 0%, var(--ds-bg) 160px, var(--ds-bg) 100%)"
+            "radial-gradient(circle at 8% 0%, rgba(45, 212, 191, 0.14), transparent 30rem), "
+            "radial-gradient(circle at 92% 12%, rgba(96, 229, 167, 0.07), transparent 28rem), "
+            "linear-gradient(145deg, #061018 0%, var(--ds-bg) 52%, #050a14 100%)"
         ),
         "btn-bg": "#1a2740",
         "btn-bg-hover": "#243452",

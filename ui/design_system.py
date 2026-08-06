@@ -572,50 +572,67 @@ section.main {
   background: rgba(45, 212, 191, 0.06) !important;
 }
 
-/* Command Center hero */
+/* Command Center hero (launch HTML hierarchy, Streamlit-native actions) */
 .cc-layout {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 1.25rem;
-  margin-bottom: 0.5rem;
+  gap: var(--ds-space-5);
+  margin-bottom: var(--ds-space-2);
+  min-width: 0;
 }
 @media (min-width: 900px) {
   .cc-layout { grid-template-columns: 1.05fr 0.95fr; align-items: start; }
 }
 .cc-hero {
   text-align: left;
-  padding: 0.5rem 0 1rem;
+  padding: var(--ds-space-2) 0 var(--ds-space-4);
+  min-width: 0;
 }
 .cc-hero-eyebrow {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
-  margin: 0 0 0.75rem 0;
+  gap: var(--ds-space-2);
+  margin: 0 0 var(--ds-space-3) 0;
+}
+.cc-hero-kicker {
+  margin: 0 0 var(--ds-space-2) 0;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ds-muted);
 }
 .cc-hero-title {
-  font-size: clamp(1.65rem, 4vw, 2.15rem);
-  font-weight: 750;
-  line-height: 1.15;
-  margin: 0 0 0.85rem 0;
+  font-size: clamp(1.75rem, 4.5vw, 2.75rem);
+  font-weight: 800;
+  line-height: 1.08;
+  margin: 0 0 var(--ds-space-3) 0;
   color: var(--ds-text);
-  letter-spacing: -0.03em;
+  letter-spacing: -0.04em;
 }
 .cc-hero-sub {
-  font-size: 1.02rem;
+  font-size: clamp(0.98rem, 1.6vw, 1.12rem);
   color: var(--ds-muted);
-  max-width: 36rem;
-  margin: 0 0 1.25rem 0;
+  max-width: 38rem;
+  margin: 0 0 var(--ds-space-5) 0;
   line-height: 1.55;
 }
 .cc-preview-card {
-  background: linear-gradient(160deg, var(--ds-surface-elevated) 0%, rgba(45, 212, 191, 0.06) 45%, var(--ds-surface) 100%);
+  background: linear-gradient(
+    160deg,
+    var(--ds-surface-high) 0%,
+    rgba(45, 212, 191, 0.08) 45%,
+    var(--ds-surface) 100%
+  );
   border: 1px solid var(--ds-highlight-border);
-  border-radius: var(--ds-radius);
-  box-shadow: var(--ds-highlight-glow);
-  padding: 1rem 1.1rem 0.85rem;
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-card);
+  padding: var(--ds-space-4) var(--ds-space-4) var(--ds-space-3);
   position: relative;
   overflow: hidden;
+  margin: 0 0 var(--ds-space-3) 0;
+  min-width: 0;
 }
 .cc-preview-card::before {
   content: "";
@@ -626,11 +643,11 @@ section.main {
 }
 .cc-preview-label {
   font-size: 0.68rem;
-  font-weight: 700;
+  font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--ds-primary);
-  margin: 0 0 0.65rem 0;
+  margin: 0;
 }
 .cc-sparkline {
   display: flex;
@@ -966,8 +983,9 @@ div[data-testid="stMetric"].ds-metric-dividend-highlight label p {
 .ds-feature-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 0.75rem;
-  margin: 0.5rem 0 1rem;
+  gap: var(--ds-space-3);
+  margin: var(--ds-space-2) 0 var(--ds-space-5);
+  min-width: 0;
 }
 @media (min-width: 768px) {
   .ds-feature-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -975,11 +993,12 @@ div[data-testid="stMetric"].ds-metric-dividend-highlight label p {
 .ds-feature-card {
   background: var(--ds-surface);
   border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius);
-  padding: 1.15rem 1rem;
-  box-shadow: var(--ds-shadow);
+  border-radius: var(--ds-radius-lg);
+  padding: var(--ds-space-5) var(--ds-space-4);
+  box-shadow: var(--ds-shadow-card);
   transition: box-shadow 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
   height: 100%;
+  min-width: 0;
 }
 .ds-feature-card:hover {
   box-shadow: var(--ds-shadow-lg);
@@ -987,22 +1006,116 @@ div[data-testid="stMetric"].ds-metric-dividend-highlight label p {
   border-color: rgba(45, 212, 191, 0.35);
 }
 .ds-feature-icon {
-  font-size: 1.45rem;
-  margin-bottom: 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0 var(--ds-space-2);
+  margin-bottom: var(--ds-space-3);
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-surface-highlight);
+  border: 1px solid var(--ds-highlight-border);
+  color: var(--ds-primary);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
   line-height: 1;
 }
-
 .ds-feature-title {
-  font-weight: 650;
-  font-size: 0.95rem;
+  font-weight: 750;
+  font-size: 1.02rem;
   color: var(--ds-text);
-  margin: 0 0 0.4rem 0;
+  margin: 0 0 var(--ds-space-2) 0;
+  letter-spacing: -0.02em;
 }
 .ds-feature-body {
-  font-size: 0.84rem;
+  font-size: 0.88rem;
   color: var(--ds-muted);
   line-height: 1.5;
   margin: 0;
+}
+
+/* Demo / journey progress (Product journey + Demo pages) */
+.ds-demo-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-2);
+  margin: 0 0 var(--ds-space-4) 0;
+  padding: var(--ds-space-3);
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow);
+  min-width: 0;
+}
+.ds-demo-progress-step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-height: 2rem;
+  padding: var(--ds-space-1) var(--ds-space-3);
+  border-radius: var(--ds-radius-pill);
+  border: 1px solid var(--ds-border);
+  background: var(--ds-surface-elevated);
+  color: var(--ds-muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+.ds-demo-progress-step[data-state="done"] {
+  border-color: rgba(52, 211, 153, 0.45);
+  color: var(--ds-healthy);
+  background: var(--ds-healthy-bg);
+}
+.ds-demo-progress-step[data-state="active"] {
+  border-color: var(--ds-highlight-border);
+  color: var(--ds-text);
+  background: var(--ds-surface-highlight);
+  box-shadow: var(--ds-highlight-glow);
+}
+.ds-demo-progress-index {
+  display: inline-grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.18);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+.ds-demo-progress-step[data-state="active"] .ds-demo-progress-index,
+.ds-demo-progress-step[data-state="done"] .ds-demo-progress-index {
+  background: rgba(45, 212, 191, 0.22);
+  color: var(--ds-primary);
+}
+.ds-trust-list {
+  margin: 0;
+  padding: var(--ds-space-4) var(--ds-space-5);
+  list-style: none;
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-card);
+}
+.ds-trust-list li {
+  position: relative;
+  padding: var(--ds-space-2) 0 var(--ds-space-2) var(--ds-space-5);
+  color: var(--ds-text);
+  font-size: 0.92rem;
+  line-height: 1.45;
+  border-bottom: 1px solid var(--ds-border-subtle);
+}
+.ds-trust-list li:last-child { border-bottom: 0; }
+.ds-trust-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.85rem;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--ds-primary);
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.16);
 }
 
 /* Ticker chips */
@@ -1337,6 +1450,49 @@ def render_data_provenance(text: str) -> None:
     render_html(_data_provenance_markup(text))
 
 
+def _demo_progress_markup(
+    steps: list[str],
+    *,
+    active_index: int = 0,
+    completed_through: int | None = None,
+) -> str:
+    """Presentational progress chips. Interactions stay in Streamlit widgets."""
+    if not steps:
+        return ""
+    done_until = completed_through if completed_through is not None else max(-1, active_index - 1)
+    chips: list[str] = []
+    for index, label in enumerate(steps):
+        if index <= done_until:
+            state = "done"
+        elif index == active_index:
+            state = "active"
+        else:
+            state = "todo"
+        chips.append(
+            f'<span class="ds-demo-progress-step" data-state="{state}">'
+            f'<span class="ds-demo-progress-index" aria-hidden="true">{index + 1}</span>'
+            f"{html.escape(label)}"
+            f"</span>"
+        )
+    return f'<nav class="ds-demo-progress" aria-label="Progress">' f"{''.join(chips)}" f"</nav>"
+
+
+def render_demo_progress(
+    steps: list[str],
+    *,
+    active_index: int = 0,
+    completed_through: int | None = None,
+) -> None:
+    """Guided progress for Product journey and Interactive Demo pages."""
+    render_html(
+        _demo_progress_markup(
+            steps,
+            active_index=active_index,
+            completed_through=completed_through,
+        )
+    )
+
+
 def render_feature_cards(cards: list[tuple[str, str, str]]) -> None:
     """Render icon + title + body feature cards."""
     items = "".join(
@@ -1348,6 +1504,12 @@ def render_feature_cards(cards: list[tuple[str, str, str]]) -> None:
         for icon, title, body in cards
     )
     render_html(f'<div class="ds-feature-grid">{items}</div>')
+
+
+def render_trust_list(items: list[str]) -> None:
+    """Bulleted trust points for Product and About surfaces."""
+    rows = "".join(f"<li>{html.escape(item)}</li>" for item in items if item)
+    render_html(f'<ul class="ds-trust-list">{rows}</ul>')
 
 
 def render_ticker_chips(items: list[tuple[str, str]]) -> None:

@@ -40,6 +40,8 @@ reports/
 docs/*
 !docs/product/
 !docs/product/**
+!docs/releases/
+!docs/releases/**
 !.cursor/docs/
 !.cursor/docs/**
 

@@ -6,7 +6,6 @@ Public page: Product / Demo navigation via query params. Guest holdings stay in 
 
 from __future__ import annotations
 
-import html as html_module
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
@@ -24,12 +23,16 @@ from ui.beta_disclaimer import render_research_disclaimer
 from ui.design_system import (
     PRODUCT_NAME,
     render_beta_badge,
+    render_data_provenance,
+    render_demo_progress,
     render_feature_cards,
     render_html,
+    render_info_panel,
     render_logo,
-    render_metric_grid,
+    render_metric_strip,
     render_page_divider,
     render_section_header,
+    render_trust_list,
 )
 from ui.theme import inject_command_center_theme
 
@@ -39,13 +42,17 @@ _ANALYTICS_LAST_KEY = "command_center_last_analytics"
 _CC_CSS = """
 <style>
 [data-testid="stMain"] [data-testid="block-container"] {
-  max-width: 1080px !important;
-  padding-left: 1rem !important;
-  padding-right: 1rem !important;
+  max-width: var(--ds-content-width) !important;
+  padding-left: var(--ds-space-4) !important;
+  padding-right: var(--ds-space-4) !important;
 }
 @media (max-width: 640px) {
-  .cc-hero-title { font-size: clamp(1.4rem, 6.5vw, 1.85rem) !important; }
-  .cc-preview-card .ds-metric-grid { grid-template-columns: 1fr !important; }
+  .cc-hero-title { font-size: clamp(1.45rem, 7vw, 1.9rem) !important; }
+  .cc-preview-card .ds-metric-grid,
+  .cc-preview-card + div .ds-metric-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .ds-demo-progress { gap: var(--ds-space-1) !important; }
 }
 </style>
 """
@@ -72,6 +79,15 @@ class PublicRoute:
 
 _VALID_VIEWS = frozenset(v.value for v in PublicView)
 _VALID_PAGES = frozenset(p.value for p in DemoPage)
+
+_PRODUCT_JOURNEY_STEPS = (
+    "Import or add",
+    "Verify",
+    "Received income",
+    "Estimated income",
+    "Risks",
+    "Research",
+)
 
 
 def _first_param(params: Mapping[str, object], key: str) -> str:
@@ -176,10 +192,13 @@ def _render_hero(dashboard: GuestDashboard) -> None:
     with left:
         render_beta_badge()
         render_html(
+            '<div class="cc-hero">'
+            '<p class="cc-hero-kicker">Dividend command center</p>'
             '<h1 class="cc-hero-title">Dividend income you can explain.</h1>'
             '<p class="cc-hero-sub">'
             "Track what was paid, understand what may be at risk, and estimate what comes next."
             "</p>"
+            "</div>"
         )
         a1, a2 = st.columns(2)
         with a1:
@@ -211,7 +230,7 @@ def _render_hero(dashboard: GuestDashboard) -> None:
             f'<p class="cc-preview-label">Live sample summary · {holding_count} holdings</p>'
             f"</div>"
         )
-        render_metric_grid(
+        render_metric_strip(
             [
                 (
                     "Estimated annual income",
@@ -220,13 +239,17 @@ def _render_hero(dashboard: GuestDashboard) -> None:
                     True,
                 ),
                 ("Monthly income average", f"${monthly_avg:,.2f}", "Estimated"),
-                ("Portfolio yield", html_module.escape(yield_label), "Estimated"),
+                ("Portfolio yield", yield_label, "Estimated"),
                 (
                     "Sample holdings",
                     str(holding_count),
                     "KO, JNJ, O by default",
                 ),
             ]
+        )
+        render_data_provenance(
+            "Sample guest portfolio · estimated from market-library data · "
+            "not connected to a broker account."
         )
 
 
@@ -278,13 +301,10 @@ def render_public_product_page(*, dashboard: GuestDashboard) -> None:
         "Your first session",
         "Import an IBKR activity statement or add holdings manually.",
     )
-    st.markdown(
-        """
-1. Import an IBKR activity statement or add holdings manually.
-2. Review imported holdings and dividend transactions.
-3. Resolve warnings or reconciliation differences.
-4. Explore income, risk, and research.
-"""
+    render_demo_progress(list(_PRODUCT_JOURNEY_STEPS), active_index=0)
+    render_info_panel(
+        "Start with the interactive demo to explore sample holdings, then create an "
+        "account when you are ready to import your own data."
     )
     if st.button("Try the interactive demo", key="cc_journey_demo", use_container_width=True):
         apply_public_route(PublicRoute(PublicView.DEMO, DemoPage.IMPORT))
@@ -292,15 +312,15 @@ def render_public_product_page(*, dashboard: GuestDashboard) -> None:
     render_page_divider()
 
     render_section_header("Built for private portfolios", "Trust by design")
-    st.markdown(
-        """
-- Private user portfolios in PostgreSQL
-- Shared public market-data library
-- Transparent dividend and scoring terminology
-- Received and estimated income kept separate
-- Self-hostable deployment
-- Educational use only — not financial advice
-"""
+    render_trust_list(
+        [
+            "Private user portfolios in PostgreSQL",
+            "Shared public market-data library",
+            "Transparent dividend and scoring terminology",
+            "Received and estimated income kept separate",
+            "Self-hostable deployment",
+            "Educational use only — not financial advice",
+        ]
     )
 
 

@@ -88,7 +88,7 @@ def render_notice(message: str, *, kind: str = "info") -> None:
 
 
 def inject_command_center_theme() -> None:
-    """Styles for the pre-login Dividend Command Center."""
+    """Inject shared design-system tokens/CSS for the pre-login Command Center."""
     from ui.theme_mode import init_theme_mode
 
     init_theme_mode()

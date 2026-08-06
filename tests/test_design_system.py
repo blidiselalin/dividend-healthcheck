@@ -2,6 +2,7 @@
 
 from ui.design_system import (
     _data_provenance_markup,
+    _demo_progress_markup,
     _empty_state_markup,
     _metric_card_markup,
     _metric_grid_markup,
@@ -133,12 +134,37 @@ def test_theme_tokens_include_launch_scale() -> None:
         assert tokens["radius-pill"] == "999px"
         assert tokens["space-1"] == "4px"
         assert tokens["space-8"] == "64px"
-        assert tokens["content-width"] == "1120px"
-        assert tokens["primary-hover"]
+        assert tokens["content-width"] == "1200px"
+        assert tokens["primary-hover"] == "#14b8a6"
         assert tokens["healthy"]
+        assert tokens["success"] == tokens["healthy"]
         assert tokens["confirmed"]
         assert tokens["estimated"]
         assert tokens["surface-highlight"]
+        assert tokens["surface-high"]
+        assert tokens["text-muted"] == tokens["muted"]
+        assert tokens["shadow-card"]
+
+
+def test_demo_progress_markup_states_and_escaping() -> None:
+    html = _demo_progress_markup(
+        ["Import <x>", "Verify", "Research"],
+        active_index=1,
+    )
+    assert 'class="ds-demo-progress"' in html
+    assert 'data-state="done"' in html
+    assert 'data-state="active"' in html
+    assert 'data-state="todo"' in html
+    assert "Import &lt;x&gt;" in html
+    assert "<x>" not in html
+
+
+def test_mobile_safe_layout_classes_present() -> None:
+    css = get_design_system_css(theme=THEME_DARK)
+    assert ".ds-demo-progress" in css
+    assert ".ds-feature-grid" in css
+    assert "min-width: 0" in css
+    assert ".cc-hero-title" in css
 
 
 def test_render_metric_grid_helper_still_available() -> None:

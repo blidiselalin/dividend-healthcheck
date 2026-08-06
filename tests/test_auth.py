@@ -22,9 +22,12 @@ def test_sanitize_user_id() -> None:
     assert "/" not in sanitize_user_id("a/b/c")
 
 
-def test_is_email_allowed_open_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_is_email_allowed_denied_in_invite_only_without_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr("auth.settings.allowed_emails", lambda: frozenset())
-    assert is_email_allowed("anyone@example.com") is True
+    monkeypatch.setattr("auth.settings.invite_only_signup", lambda: True)
+    assert is_email_allowed("anyone@example.com") is False
 
 
 def test_user_store_upsert(tmp_path: Path) -> None:

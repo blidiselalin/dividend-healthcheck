@@ -137,11 +137,17 @@ def _render_options_body(*, key_prefix: str) -> None:
 
     render_account_options(key_prefix=key_prefix)
 
+    from ui.admin_page import (
+        is_admin_console_active,
+        render_admin_options_entry,
+        set_admin_console_active,
+    )
+
     if is_app_admin():
         st.divider()
-        from ui.admin_page import render_admin_options_entry
-
         render_admin_options_entry(key_prefix=key_prefix)
+    elif is_admin_console_active():
+        set_admin_console_active(False)
 
 
 def render_app_options_bar() -> None:
@@ -158,7 +164,8 @@ def render_sidebar_account_entry() -> None:
     from ui.theme import sidebar_heading
 
     st.sidebar.divider()
-    sidebar_heading("Account & admin")
+    admin = is_app_admin()
+    sidebar_heading("Account & admin" if admin else "Account")
     st.sidebar.caption("Full menu: **Account** beside the Streamlit ⋮ menu (top right).")
 
     user = current_user()
@@ -181,26 +188,28 @@ def render_sidebar_account_entry() -> None:
         open_help_drawer("getting_started")
         st.rerun()
 
-    if is_app_admin():
-        from ui.admin_page import is_admin_console_active, set_admin_console_active
+    from ui.admin_page import is_admin_console_active, set_admin_console_active
 
+    if not admin:
         if is_admin_console_active():
-            if st.sidebar.button(
-                "Back to Home",
-                key="sidebar_admin_console_back",
-                use_container_width=True,
-            ):
-                from ui.portfolio_home import navigate_to_portfolio_home
-
-                navigate_to_portfolio_home()
-        elif st.sidebar.button(
-            "Open admin console",
-            key="sidebar_admin_console_open",
-            type="primary",
+            set_admin_console_active(False)
+    elif is_admin_console_active():
+        if st.sidebar.button(
+            "Back to Home",
+            key="sidebar_admin_console_back",
             use_container_width=True,
         ):
-            set_admin_console_active(True)
-            st.rerun()
+            from ui.portfolio_home import navigate_to_portfolio_home
+
+            navigate_to_portfolio_home()
+    elif st.sidebar.button(
+        "Open admin console",
+        key="sidebar_admin_console_open",
+        type="primary",
+        use_container_width=True,
+    ):
+        set_admin_console_active(True)
+        st.rerun()
 
     if user is not None:
         if demo:
