@@ -28,6 +28,7 @@ from services.clear_dividend_risk import (
     build_high_value_dividend_risk_alerts,
     evidence_from_stock_data,
     evidence_from_stock_document,
+    load_risk_evidence_batch,
     risk_level_label,
 )
 
@@ -346,9 +347,8 @@ def build_portfolio_clear_dividend_risk(
 
     Prefer vector documents for dividend-history cut detection.
     """
-    evidence_by_symbol: dict[str, Any] = {}
     company_by_symbol: dict[str, str] = {}
-
+    symbols: list[str] = []
     for row in rows:
         symbol = str(getattr(row, "ticker", "") or "").upper()
         if not symbol:
@@ -356,11 +356,20 @@ def build_portfolio_clear_dividend_risk(
         if getattr(row, "shares", None) is not None and float(row.shares) <= 0:
             continue
         company_by_symbol[symbol] = str(getattr(row, "company", None) or symbol).strip()
-        doc = _lookup_cached(vector_docs, symbol)
+        symbols.append(symbol)
+
+    # Prefer batch-loaded market documents — never reconstruct evidence from UI rows.
+    cached_docs = {
+        symbol: doc
+        for symbol in symbols
+        if (doc := _lookup_cached(vector_docs, symbol)) is not None
+    }
+    evidence_by_symbol = load_risk_evidence_batch(symbols, documents=cached_docs)
+    for symbol in symbols:
+        if symbol in evidence_by_symbol:
+            continue
         stock = _lookup_cached(stock_by_symbol, symbol)
-        if doc is not None:
-            evidence_by_symbol[symbol] = evidence_from_stock_document(doc)
-        elif stock is not None:
+        if stock is not None:
             evidence_by_symbol[symbol] = evidence_from_stock_data(stock)
         else:
             from services.clear_dividend_risk import DividendRiskEvidence, SecurityType
@@ -368,7 +377,14 @@ def build_portfolio_clear_dividend_risk(
             evidence_by_symbol[symbol] = DividendRiskEvidence(
                 symbol=symbol,
                 security_type=SecurityType.UNKNOWN,
-                sector=getattr(row, "sector", None),
+                sector=next(
+                    (
+                        getattr(row, "sector", None)
+                        for row in rows
+                        if str(getattr(row, "ticker", "")).upper() == symbol
+                    ),
+                    None,
+                ),
             )
 
     assessments = assess_holdings_dividend_risk(evidence_by_symbol, today=today)

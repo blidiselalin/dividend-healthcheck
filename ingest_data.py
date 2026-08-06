@@ -257,6 +257,15 @@ Examples:
     )
 
     parser.add_argument(
+        "--audit-dividend-risk",
+        action="store_true",
+        help=(
+            "Read-only Clear Dividend Risk evidence audit for --symbols "
+            "(does not update the database)"
+        ),
+    )
+
+    parser.add_argument(
         "--ensure-top-dividend",
         action="store_true",
         help="Fetch and populate missing top 100 dividend payers",
@@ -298,6 +307,22 @@ Examples:
     # Handle actions
     if args.create_samples:
         create_sample_data(args.data_dir)
+        return 0
+
+    if args.audit_dividend_risk:
+        from services.dividend_risk_audit import (
+            audit_dividend_risk_symbols,
+            format_audit_rows,
+        )
+
+        default_symbols = "PEP,O,HSY,ARE,BTI,BBY,MO,AMT,AWK,BMY"
+        symbols = [
+            part.strip().upper()
+            for part in (args.symbols or default_symbols).split(",")
+            if part.strip()
+        ]
+        rows = audit_dividend_risk_symbols(symbols)
+        print(format_audit_rows(rows))
         return 0
 
     if args.sync_history_tables:

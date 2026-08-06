@@ -244,7 +244,8 @@ def test_missing_as_of_date_low_confidence() -> None:
     result = assess_holding_dividend_risk(_healthy(data_as_of=None), today=TODAY)
     assert result.confidence is ConfidenceLevel.LOW
     assert SIGNAL_MISSING_AS_OF in _codes(result)
-    assert "data_as_of" in result.missing_fields
+    assert "document_updated_at" in result.missing_fields
+    assert "fundamentals_period_end" in result.missing_fields
 
 
 def test_reit_without_affo_special_analysis() -> None:

@@ -35,6 +35,12 @@ SPLIT_RATIO_TOLERANCE: Final[float] = 0.08
 # Income share above which insufficient/stale evidence warrants a portfolio alert.
 MATERIAL_INCOME_SHARE_PCT: Final[float] = 5.0
 
+# Explicit classification when market docs lack sector/industry (adapter only).
+KNOWN_REIT_SYMBOLS: Final[frozenset[str]] = frozenset({"O", "ARE", "AMT"})
+KNOWN_STANDARD_SYMBOLS: Final[frozenset[str]] = frozenset(
+    {"PEP", "HSY", "BTI", "BBY", "MO", "AWK", "BMY"}
+)
+
 # Elevated company risk for portfolio income exposure (not concentration).
 ELEVATED_RISK_LEVELS: Final[frozenset[str]] = frozenset({"MONITOR", "HIGH_OBSERVED_RISK"})
 
@@ -136,10 +142,16 @@ class DividendRiskEvidence:
     dividend_coverage: float | None = None
     # Comparable-period free cash flow, newest first (optional series).
     fcf_periods: tuple[float, ...] = ()
+    raw_free_cash_flow: float | None = None
     affo_payout_ratio: float | None = None
     ffo_payout_ratio: float | None = None
     dividend_cagr_3y: float | None = None
     dividend_payments: tuple[DividendPaymentEvidence, ...] = ()
+    # Kept separate: fundamentals period vs document refresh vs history through.
+    fundamentals_period_end: date | None = None
+    document_updated_at: date | None = None
+    dividend_history_through: date | None = None
+    # Legacy alias used for freshness: prefer fundamentals, else document refresh.
     data_as_of: date | None = None
     source_names: tuple[str, ...] = ()
     # Explicit flags when series inference is provided by the caller.
@@ -169,6 +181,9 @@ class HoldingDividendRiskAssessment:
     missing_fields: tuple[str, ...]
     source_names: tuple[str, ...]
     data_as_of: date | None
+    document_updated_at: date | None = None
+    fundamentals_period_end: date | None = None
+    dividend_history_through: date | None = None
     methodology_version: str = METHODOLOGY_VERSION
 
 
@@ -210,8 +225,17 @@ def risk_level_label(level: RiskLevel) -> str:
     return RISK_LEVEL_LABELS[level]
 
 
+def _coerce_date(value: Any) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return None
+
+
 def infer_security_type(
     *,
+    symbol: str | None = None,
     sector: str | None = None,
     industry: str | None = None,
     name: str | None = None,
@@ -220,6 +244,12 @@ def infer_security_type(
     """Infer security type from classification text when quote type is absent."""
     if explicit is not None and explicit is not SecurityType.UNKNOWN:
         return explicit
+
+    symbol_u = (symbol or "").strip().upper()
+    if symbol_u in KNOWN_REIT_SYMBOLS:
+        return SecurityType.REIT
+    if symbol_u in KNOWN_STANDARD_SYMBOLS:
+        return SecurityType.STANDARD
 
     sector_l = (sector or "").strip().lower()
     industry_l = (industry or "").strip().lower()
@@ -232,9 +262,12 @@ def infer_security_type(
         return SecurityType.ETF_FUND
     if name_l.endswith(" etf") or " etf)" in name_l or industry_l == "etf":
         return SecurityType.ETF_FUND
-    if "reit" in blob or industry_l.startswith("reit") or "real estate investment trust" in blob:
-        return SecurityType.REIT
-    if sector_l == "real estate" and "reit" in industry_l:
+    if (
+        "reit" in blob
+        or industry_l.startswith("reit")
+        or "real estate investment trust" in blob
+        or sector_l == "real estate"
+    ):
         return SecurityType.REIT
     if any(
         token in blob
@@ -273,31 +306,38 @@ def evidence_from_stock_document(doc: Any) -> DividendRiskEvidence:
         if getattr(record, "ex_date", None) is not None
         and getattr(record, "amount", None) is not None
     )
-    last_updated = getattr(doc, "last_updated", None)
-    as_of: date | None
-    if isinstance(last_updated, datetime):
-        as_of = last_updated.date()
-    elif isinstance(last_updated, date):
-        as_of = last_updated
-    else:
-        as_of = None
+    document_updated_at = _coerce_date(getattr(doc, "last_updated", None))
+    fundamentals_period_end = _coerce_date(
+        getattr(doc, "fundamentals_period_end", None) or getattr(doc, "fundamentals_as_of", None)
+    )
+    history_through = max((p.ex_date for p in payments), default=None)
+    # Freshness prefers fundamentals period; fall back to document refresh.
+    data_as_of = fundamentals_period_end or document_updated_at
 
     source = getattr(doc, "source", None)
     source_name = getattr(source, "value", None) or (str(source) if source else None)
     sources = (source_name,) if source_name else ()
 
+    symbol = str(getattr(doc, "symbol", "") or "").upper()
     sector = getattr(doc, "sector", None)
     industry = getattr(doc, "industry", None)
     name = getattr(doc, "name", None)
-    security_type = infer_security_type(sector=sector, industry=industry, name=name)
+    security_type = infer_security_type(symbol=symbol, sector=sector, industry=industry, name=name)
 
     cagr_3y = getattr(doc, "dividend_cagr_3y", None)
     if cagr_3y is None:
-        # Prefer explicit 3y; fall back to stored 5y as growth-trend evidence.
         cagr_3y = getattr(doc, "dividend_cagr_5y", None)
 
+    raw_fcf = getattr(doc, "free_cash_flow", None)
+    if raw_fcf is None:
+        raw_fcf = getattr(doc, "raw_free_cash_flow", None)
+    fcf_zero = bool(raw_fcf is not None and raw_fcf <= 0)
+    fcf_periods: tuple[float, ...] = ()
+    if raw_fcf is not None:
+        fcf_periods = (float(raw_fcf),)
+
     return DividendRiskEvidence(
-        symbol=str(doc.symbol).upper(),
+        symbol=symbol,
         security_type=security_type,
         sector=sector,
         industry=industry,
@@ -306,10 +346,18 @@ def evidence_from_stock_document(doc: Any) -> DividendRiskEvidence:
         earnings_payout_ratio=getattr(doc, "payout_ratio", None),
         fcf_payout_ratio=getattr(doc, "fcf_payout_ratio", None),
         dividend_coverage=getattr(doc, "dividend_coverage", None),
+        fcf_periods=fcf_periods,
+        raw_free_cash_flow=float(raw_fcf) if raw_fcf is not None else None,
+        affo_payout_ratio=getattr(doc, "affo_payout_ratio", None),
+        ffo_payout_ratio=getattr(doc, "ffo_payout_ratio", None),
         dividend_cagr_3y=cagr_3y,
         dividend_payments=payments,
-        data_as_of=as_of,
+        fundamentals_period_end=fundamentals_period_end,
+        document_updated_at=document_updated_at,
+        dividend_history_through=history_through,
+        data_as_of=data_as_of,
         source_names=sources,
+        fcf_zero_or_undefined=fcf_zero,
     )
 
 
@@ -327,13 +375,16 @@ def evidence_from_stock_data(stock: Any) -> DividendRiskEvidence:
     dh = getattr(stock, "dividend_history", None)
     cagr = getattr(dh, "cagr_5y", None) if dh is not None else None
     sources = tuple(str(s) for s in (getattr(stock, "data_sources", None) or []) if s)
+    symbol = str(getattr(stock, "symbol", "") or "").upper()
     sector = getattr(stock, "sector", None)
     industry = getattr(stock, "industry", None)
     name = getattr(stock, "name", None)
 
     return DividendRiskEvidence(
-        symbol=str(stock.symbol).upper(),
-        security_type=infer_security_type(sector=sector, industry=industry, name=name),
+        symbol=symbol,
+        security_type=infer_security_type(
+            symbol=symbol, sector=sector, industry=industry, name=name
+        ),
         sector=sector,
         industry=industry,
         name=name,
@@ -342,6 +393,7 @@ def evidence_from_stock_data(stock: Any) -> DividendRiskEvidence:
         fcf_payout_ratio=getattr(stock, "fcf_payout_ratio_pct", None),
         dividend_coverage=getattr(stock, "dividend_coverage", None),
         dividend_cagr_3y=cagr,
+        document_updated_at=as_of,
         data_as_of=as_of,
         source_names=sources,
     )
@@ -494,18 +546,32 @@ def _paying_dividend(evidence: DividendRiskEvidence) -> bool:
     )
 
 
+def _coverage_metric_count(evidence: DividendRiskEvidence) -> int:
+    """Independent coverage metrics available for confidence / sufficiency."""
+    count = 0
+    if (
+        evidence.fcf_payout_ratio is not None
+        or evidence.fcf_periods
+        or evidence.fcf_zero_or_undefined
+        or evidence.raw_free_cash_flow is not None
+    ):
+        count += 1
+    if evidence.earnings_payout_ratio is not None:
+        count += 1
+    if evidence.dividend_coverage is not None:
+        count += 1
+    if evidence.affo_payout_ratio is not None or evidence.ffo_payout_ratio is not None:
+        count += 1
+    return count
+
+
+def _has_dividend_history(evidence: DividendRiskEvidence) -> bool:
+    return len(_regular_payments(evidence.dividend_payments)) >= 2
+
+
 def _core_fields_present(evidence: DividendRiskEvidence) -> bool:
-    return any(
-        (
-            evidence.fcf_payout_ratio is not None,
-            evidence.earnings_payout_ratio is not None,
-            evidence.dividend_coverage is not None,
-            len(_regular_payments(evidence.dividend_payments)) >= 2,
-            evidence.affo_payout_ratio is not None,
-            evidence.ffo_payout_ratio is not None,
-            evidence.fcf_periods,
-        )
-    )
+    """Standard companies need at least one valid coverage metric to assess."""
+    return _coverage_metric_count(evidence) >= 1
 
 
 def _fcf_amount_signals(
@@ -801,10 +867,14 @@ def _freshness_signals(
 
 def _missing_fields(evidence: DividendRiskEvidence) -> tuple[str, ...]:
     missing: list[str] = []
-    if evidence.data_as_of is None:
-        missing.append("data_as_of")
-    if evidence.fcf_payout_ratio is None and not evidence.fcf_periods:
+    if evidence.fundamentals_period_end is None:
+        missing.append("fundamentals_period_end")
+    if evidence.document_updated_at is None:
+        missing.append("document_updated_at")
+    if evidence.fcf_payout_ratio is None and evidence.raw_free_cash_flow is None:
         missing.append("fcf_payout_ratio")
+    if evidence.raw_free_cash_flow is None:
+        missing.append("raw_free_cash_flow")
     if evidence.earnings_payout_ratio is None:
         missing.append("earnings_payout_ratio")
     if evidence.dividend_coverage is None:
@@ -812,12 +882,14 @@ def _missing_fields(evidence: DividendRiskEvidence) -> tuple[str, ...]:
     if evidence.dividend_cagr_3y is None:
         missing.append("dividend_cagr_3y")
     if not evidence.dividend_payments:
-        missing.append("dividend_payments")
+        missing.append("dividend_history")
     if evidence.security_type is SecurityType.REIT:
         if evidence.affo_payout_ratio is None:
             missing.append("affo_payout_ratio")
         if evidence.ffo_payout_ratio is None:
             missing.append("ffo_payout_ratio")
+    if not evidence.source_names:
+        missing.append("source_names")
     return tuple(missing)
 
 
@@ -925,17 +997,94 @@ def _finalize_status(
     return RiskLevel.LOWER_OBSERVED_RISK
 
 
-def _summary_for(level: RiskLevel, signals: Sequence[RiskSignal]) -> str:
+def _precise_insufficient_summary(evidence: DividendRiskEvidence) -> str:
+    missing_cov: list[str] = []
+    if evidence.fcf_payout_ratio is None and evidence.raw_free_cash_flow is None:
+        missing_cov.append("free-cash-flow coverage")
+    if evidence.earnings_payout_ratio is None and evidence.dividend_coverage is None:
+        missing_cov.append("payout coverage")
+    cov_text = " and ".join(missing_cov) if missing_cov else "coverage metrics"
+    parts = [f"Unable to assess: {cov_text} are missing."]
+    if evidence.dividend_history_through is not None:
+        parts.append(
+            "Dividend history is available through "
+            f"{evidence.dividend_history_through.strftime('%B %Y')}."
+        )
+    elif _has_dividend_history(evidence):
+        parts.append("Dividend history is available.")
+    else:
+        parts.append("Dividend history is missing.")
+    if evidence.document_updated_at is not None:
+        parts.append(
+            "Market data was refreshed on " f"{evidence.document_updated_at.strftime('%B %d, %Y')}."
+        )
+    return " ".join(parts)
+
+
+def _summary_for(
+    level: RiskLevel,
+    signals: Sequence[RiskSignal],
+    *,
+    evidence: DividendRiskEvidence | None = None,
+) -> str:
     actionable = [s for s in signals if s.severity in {"high", "monitor"}]
     if level is RiskLevel.SPECIAL_ANALYSIS_REQUIRED:
+        if any(s.code == SIGNAL_REIT_MISSING_AFFO_FFO for s in signals):
+            return (
+                "Special analysis required: AFFO or FFO payout data is unavailable. "
+                "GAAP earnings payout is not used as the primary REIT coverage measure."
+            )
         return "This security type needs a specialized dividend-risk model."
     if level is RiskLevel.INSUFFICIENT_DATA:
+        if evidence is not None:
+            return _precise_insufficient_summary(evidence)
         return "Not enough core evidence to assess dividend sustainability."
     if actionable:
         return actionable[0].message
     if level is RiskLevel.LOWER_OBSERVED_RISK:
         return "Available coverage and dividend-history evidence do not show elevated cut risk."
     return risk_level_label(level)
+
+
+def _assessment_shell(
+    evidence: DividendRiskEvidence,
+    *,
+    level: RiskLevel,
+    confidence: ConfidenceLevel,
+    signals: Sequence[RiskSignal],
+    observed_values: dict[str, Any],
+) -> HoldingDividendRiskAssessment:
+    return HoldingDividendRiskAssessment(
+        symbol=evidence.symbol.upper(),
+        risk_level=level,
+        risk_label=risk_level_label(level),
+        confidence=confidence,
+        summary=_summary_for(level, signals, evidence=evidence),
+        risk_signals=tuple(signals),
+        observed_values=observed_values,
+        threshold_descriptions=_threshold_descriptions(),
+        missing_fields=_missing_fields(evidence),
+        source_names=evidence.source_names,
+        data_as_of=evidence.data_as_of,
+        document_updated_at=evidence.document_updated_at,
+        fundamentals_period_end=evidence.fundamentals_period_end,
+        dividend_history_through=evidence.dividend_history_through,
+    )
+
+
+def _apply_coverage_confidence(
+    confidence: ConfidenceLevel,
+    *,
+    coverage_count: int,
+) -> ConfidenceLevel:
+    """One coverage metric → at most Medium; two+ can stay High when fresh."""
+    if coverage_count <= 0:
+        return ConfidenceLevel.LOW
+    if coverage_count == 1:
+        if confidence is ConfidenceLevel.HIGH:
+            return ConfidenceLevel.MEDIUM
+        return confidence
+    return confidence
 
 
 def assess_holding_dividend_risk(
@@ -951,6 +1100,7 @@ def assess_holding_dividend_risk(
     security_type = evidence.security_type
     if security_type is SecurityType.UNKNOWN:
         security_type = infer_security_type(
+            symbol=evidence.symbol,
             sector=evidence.sector,
             industry=evidence.industry,
             name=evidence.name,
@@ -972,22 +1122,15 @@ def assess_holding_dividend_risk(
         )
         freshness, confidence = _freshness_signals(evidence, today=reference)
         signals.extend(freshness)
-        level = RiskLevel.SPECIAL_ANALYSIS_REQUIRED
-        return HoldingDividendRiskAssessment(
-            symbol=evidence.symbol.upper(),
-            risk_level=level,
-            risk_label=risk_level_label(level),
+        return _assessment_shell(
+            evidence,
+            level=RiskLevel.SPECIAL_ANALYSIS_REQUIRED,
             confidence=confidence,
-            summary=_summary_for(level, signals),
-            risk_signals=tuple(signals),
+            signals=signals,
             observed_values={
                 "security_type": security_type.value,
                 "annual_dividend": evidence.annual_dividend,
             },
-            threshold_descriptions=_threshold_descriptions(),
-            missing_fields=_missing_fields(evidence),
-            source_names=sources,
-            data_as_of=evidence.data_as_of,
         )
 
     reit_missing_affo = (
@@ -1001,7 +1144,8 @@ def assess_holding_dividend_risk(
                 code=SIGNAL_REIT_MISSING_AFFO_FFO,
                 severity="info",
                 message=(
-                    "REIT assessment requires AFFO or FFO payout; " "EPS payout alone is not used."
+                    "REIT dividend coverage requires FFO or AFFO evidence. "
+                    "GAAP earnings payout is not used as the primary REIT measure."
                 ),
                 threshold_description="Without AFFO or FFO → special analysis required",
                 source_names=sources,
@@ -1009,62 +1153,63 @@ def assess_holding_dividend_risk(
         )
         freshness, confidence = _freshness_signals(evidence, today=reference)
         signals.extend(freshness)
-        level = RiskLevel.SPECIAL_ANALYSIS_REQUIRED
-        return HoldingDividendRiskAssessment(
-            symbol=evidence.symbol.upper(),
-            risk_level=level,
-            risk_label=risk_level_label(level),
-            confidence=confidence,
-            summary=_summary_for(level, signals),
-            risk_signals=tuple(signals),
+        return _assessment_shell(
+            evidence,
+            level=RiskLevel.SPECIAL_ANALYSIS_REQUIRED,
+            confidence=ConfidenceLevel.LOW,
+            signals=signals,
             observed_values={
                 "security_type": security_type.value,
                 "earnings_payout_ratio": evidence.earnings_payout_ratio,
             },
-            threshold_descriptions=_threshold_descriptions(),
-            missing_fields=_missing_fields(evidence),
-            source_names=sources,
-            data_as_of=evidence.data_as_of,
         )
 
     if security_type is SecurityType.REIT:
-        # REIT with AFFO/FFO: evaluate using those payouts as FCF-equivalent.
-        reit_evidence = DividendRiskEvidence(
+        evidence = DividendRiskEvidence(
             symbol=evidence.symbol,
             security_type=SecurityType.REIT,
             sector=evidence.sector,
             industry=evidence.industry,
             name=evidence.name,
             annual_dividend=evidence.annual_dividend,
-            earnings_payout_ratio=None,  # do not use EPS payout for REITs
+            earnings_payout_ratio=None,
             fcf_payout_ratio=evidence.affo_payout_ratio or evidence.ffo_payout_ratio,
             dividend_coverage=None,
             fcf_periods=evidence.fcf_periods,
+            raw_free_cash_flow=evidence.raw_free_cash_flow,
             affo_payout_ratio=evidence.affo_payout_ratio,
             ffo_payout_ratio=evidence.ffo_payout_ratio,
             dividend_cagr_3y=evidence.dividend_cagr_3y,
             dividend_payments=evidence.dividend_payments,
+            fundamentals_period_end=evidence.fundamentals_period_end,
+            document_updated_at=evidence.document_updated_at,
+            dividend_history_through=evidence.dividend_history_through,
             data_as_of=evidence.data_as_of,
             source_names=sources,
+            fcf_zero_or_undefined=evidence.fcf_zero_or_undefined,
         )
-        evidence = reit_evidence
 
-    has_core = _core_fields_present(evidence)
-    if not has_core:
+    coverage_count = _coverage_metric_count(evidence)
+    has_coverage = coverage_count >= 1
+    cut_signals = _detect_dividend_cut_signals(evidence.dividend_payments, sources)
+    has_cut_evidence = any(
+        s.code in {SIGNAL_DIVIDEND_CUT_MAJOR, SIGNAL_DIVIDEND_SUSPENSION} for s in cut_signals
+    )
+    # Coverage required to assess; cuts may still elevate risk when incomplete.
+    has_core = has_coverage or has_cut_evidence
+    if not has_coverage and not has_cut_evidence:
         signals.append(
             RiskSignal(
                 code=SIGNAL_MISSING_CORE,
                 severity="info",
-                message="Core coverage or dividend-history evidence is missing.",
-                threshold_description="Missing core evidence → insufficient data",
+                message=_precise_insufficient_summary(evidence),
+                threshold_description="No coverage metric → insufficient data",
                 source_names=sources,
             )
         )
 
-    # Collect signals independently (order of append must not change final status).
-    cut_signals = _detect_dividend_cut_signals(evidence.dividend_payments, sources)
     coverage_signals = _coverage_signals(evidence)
-    growth_signals = _growth_signals(evidence)
+    growth_signals = _growth_signals(evidence) if has_coverage else []
     freshness_signals, confidence = _freshness_signals(evidence, today=reference)
 
     signals.extend(cut_signals)
@@ -1072,8 +1217,9 @@ def assess_holding_dividend_risk(
     signals.extend(growth_signals)
     signals.extend(freshness_signals)
 
+    confidence = _apply_coverage_confidence(confidence, coverage_count=coverage_count)
+
     if security_type is SecurityType.BANK_INSURER:
-        # Banks/insurers: keep payout/dividend evidence but lower confidence.
         confidence = (
             ConfidenceLevel.MEDIUM if confidence is ConfidenceLevel.HIGH else ConfidenceLevel.LOW
         )
@@ -1091,8 +1237,7 @@ def assess_holding_dividend_risk(
         evidence=evidence,
     )
 
-    # Missing data must never produce lower-risk.
-    if level is RiskLevel.LOWER_OBSERVED_RISK and not has_core:
+    if level is RiskLevel.LOWER_OBSERVED_RISK and not has_coverage:
         level = RiskLevel.INSUFFICIENT_DATA
 
     observed: dict[str, Any] = {
@@ -1101,25 +1246,42 @@ def assess_holding_dividend_risk(
         "fcf_payout_ratio": evidence.fcf_payout_ratio,
         "earnings_payout_ratio": evidence.earnings_payout_ratio,
         "dividend_coverage": evidence.dividend_coverage,
+        "raw_free_cash_flow": evidence.raw_free_cash_flow,
         "dividend_cagr_3y": evidence.dividend_cagr_3y,
         "affo_payout_ratio": evidence.affo_payout_ratio,
         "ffo_payout_ratio": evidence.ffo_payout_ratio,
         "fcf_periods": list(evidence.fcf_periods),
+        "coverage_metric_count": coverage_count,
+        "fundamentals_period_end": evidence.fundamentals_period_end,
+        "document_updated_at": evidence.document_updated_at,
+        "dividend_history_through": evidence.dividend_history_through,
     }
 
-    return HoldingDividendRiskAssessment(
-        symbol=evidence.symbol.upper(),
-        risk_level=level,
-        risk_label=risk_level_label(level),
+    return _assessment_shell(
+        evidence,
+        level=level,
         confidence=confidence,
-        summary=_summary_for(level, signals),
-        risk_signals=tuple(signals),
+        signals=signals,
         observed_values=observed,
-        threshold_descriptions=_threshold_descriptions(),
-        missing_fields=_missing_fields(evidence),
-        source_names=sources,
-        data_as_of=evidence.data_as_of,
     )
+
+
+def load_risk_evidence_batch(
+    symbols: Sequence[str],
+    *,
+    documents: Mapping[str, Any] | None = None,
+) -> dict[str, DividendRiskEvidence]:
+    """Batch-load market documents and map to risk evidence (no UI rows)."""
+    wanted = [str(symbol).upper() for symbol in symbols if symbol]
+    docs: dict[str, Any] = dict(documents or {})
+    missing = [symbol for symbol in wanted if symbol not in docs]
+    if missing:
+        from services.shared_market_db import load_documents
+
+        docs.update(load_documents(missing))
+    return {
+        symbol: evidence_from_stock_document(docs[symbol]) for symbol in wanted if symbol in docs
+    }
 
 
 def assess_holdings_dividend_risk(
