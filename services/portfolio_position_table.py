@@ -15,8 +15,8 @@ if TYPE_CHECKING:
 _COMPANY_MAX_LEN = 28
 _POS_BG = "rgba(16, 185, 129, 0.2)"
 _POS_FG = "#34d399"
-_NEG_BG = "rgba(239, 68, 68, 0.22)"
-_NEG_FG = "#f87171"
+_NEG_BG = "rgba(239, 68, 68, 0.32)"
+_NEG_FG = "#fca5a5"
 _NEUTRAL_FG = "#94a3b8"
 _SIGNED_PCT_COLUMNS = ("P/L %", "Day %", "1Y %")
 _PROFIT_ALERT_PCT = -20.0
@@ -162,9 +162,9 @@ def _signed_pct_style(value: object) -> str:
     if _is_missing(value):
         return f"color: {_NEUTRAL_FG};"
     numeric = float(value)
-    if numeric < -0.05:
-        return f"background-color: {_NEG_BG}; color: {_NEG_FG}; font-weight: 650;"
-    if numeric > 0.05:
+    if numeric < 0:
+        return f"background-color: {_NEG_BG}; color: {_NEG_FG}; font-weight: 750;"
+    if numeric > 0:
         return f"background-color: {_POS_BG}; color: {_POS_FG}; font-weight: 650;"
     return f"color: {_NEUTRAL_FG};"
 
@@ -195,9 +195,9 @@ def _signed_pct_class(value: object) -> str:
     if _is_missing(value):
         return ""
     numeric = float(value)
-    if numeric < -0.05:
+    if numeric < 0:
         return "ds-pct-loss"
-    if numeric > 0.05:
+    if numeric > 0:
         return "ds-pct-gain"
     return ""
 

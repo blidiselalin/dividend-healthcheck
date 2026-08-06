@@ -118,7 +118,7 @@ def inject_app_theme() -> None:
         [data-testid="stMain"] [data-testid="block-container"] {
             padding-top: 2rem !important;
             padding-bottom: 2rem;
-            max-width: 1280px;
+            max-width: var(--ds-content-width);
             scroll-padding-top: 2.5rem !important;
             overflow: visible !important;
         }
@@ -351,12 +351,14 @@ def inject_app_theme() -> None:
 
 
 def render_page_header(*, title: str, subtitle: str, compact: bool = False) -> None:
-    from ui.design_system import render_html, render_section_header
+    """Thin wrapper — prefer ``ui.design_system.render_page_header`` for new call sites."""
+    from ui.design_system import render_page_header as _render_page_header
+    from ui.design_system import render_section_header
 
     if compact:
         render_section_header(title, subtitle)
         return
-    render_html(f'<div class="ds-hero"><h2>{title}</h2><p>{subtitle}</p></div>')
+    _render_page_header(title, subtitle)
 
 
 def resolve_portfolio_section_label(label: str | None) -> str:

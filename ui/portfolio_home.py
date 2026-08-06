@@ -14,6 +14,11 @@ from auth.user_context import clear_portfolio_session_state, current_user, resol
 from services.portfolio_details_service import PortfolioDetailRow
 from services.portfolio_session import is_demo_session
 from ui.app_about import render_app_about
+from ui.design_system import (
+    render_data_provenance,
+    render_empty_state,
+    render_page_header,
+)
 from ui.session_keys import ADMIN_VIEW_KEY
 from ui.theme import (
     PORTFOLIO_LABEL_BY_KEY,
@@ -181,11 +186,11 @@ def render_empty_home_demo() -> None:
     """Welcome when the test user has no cached rows yet."""
     render_app_about(expanded=True)
     render_test_user_banner()
-
-    st.markdown("#### Welcome (test mode)")
-    st.write(
+    render_empty_state(
+        "Welcome (test mode)",
         "Demo holdings load automatically. If the table is empty, "
-        "click **Load demo portfolio**, then open the examples."
+        "click Load demo portfolio, then open the examples.",
+        icon="📂",
     )
 
     c1, c2 = st.columns(2)
@@ -247,6 +252,10 @@ def render_compact_summary(rows: list[PortfolioDetailRow]) -> None:
 
     render_dividend_focus_block(rows, month_paid=month_paid)
     render_holdings_summary(rows, show_month_received=False)
+    render_data_provenance(
+        "Values use open positions with live or market-library prices. "
+        "Received and estimated dividend figures stay separate."
+    )
     render_dividend_risk_watchlist(rows)
     render_stocks_overview(rows)
 
@@ -266,6 +275,12 @@ def render_portfolio_home_header(
         render_onboarding_checklist,
     )
     from ui.user_guidance import render_next_best_action_card
+
+    render_page_header(
+        "Portfolio overview",
+        "Value, income quality, and the next action — before you open another screen.",
+        kicker="Portfolio command center",
+    )
 
     # Getting started first — before summary, research, and section nav.
     render_app_about(expanded=False)

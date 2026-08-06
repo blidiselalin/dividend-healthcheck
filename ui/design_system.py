@@ -7,9 +7,16 @@ Reusable HTML/CSS components and global theme tokens. No business logic.
 from __future__ import annotations
 
 import html
+import re
 from typing import Literal
 
 import streamlit as st
+
+# Signed money / percent display: $-1.2, -$1.2, -1.2%, −3 (unicode minus).
+_NEGATIVE_DISPLAY_RE = re.compile(
+    r"(?:^|\$)\s*-\s*\$?\s*\d|"  # $-12 / $ -12 / -$12
+    r"^-\s*\d"  # -12 / -12%
+)
 
 PRODUCT_NAME = "DividendScope"
 
@@ -51,6 +58,19 @@ LOGO_SVG = """
 """
 
 DESIGN_SYSTEM_BASE_CSS = """
+/* Application shell */
+[data-testid="stMain"] [data-testid="block-container"] {
+  max-width: var(--ds-content-width) !important;
+  padding-left: var(--ds-space-4) !important;
+  padding-right: var(--ds-space-4) !important;
+}
+@media (min-width: 768px) {
+  [data-testid="stMain"] [data-testid="block-container"] {
+    padding-left: var(--ds-space-5) !important;
+    padding-right: var(--ds-space-5) !important;
+  }
+}
+
 .stApp {
   background: var(--ds-app-gradient) !important;
   color: var(--ds-text);
@@ -160,17 +180,17 @@ section.main {
 
 /* Section headers */
 .ds-section-header {
-  margin: 0 0 0.85rem 0;
+  margin: 0 0 var(--ds-space-3) 0;
 }
 .ds-section-title {
   margin: 0;
   font-size: 1.15rem;
-  font-weight: 650;
+  font-weight: 700;
   color: var(--ds-text);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
 }
 .ds-section-subtitle {
-  margin: 0.25rem 0 0 0;
+  margin: var(--ds-space-1) 0 0 0;
   font-size: 0.88rem;
   color: var(--ds-muted);
   line-height: 1.45;
@@ -192,48 +212,90 @@ section.main {
 .ds-metric-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.65rem;
+  gap: var(--ds-space-3);
 }
 @media (min-width: 640px) {
   .ds-metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+@media (min-width: 900px) {
+  .ds-metric-grid.ds-metric-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
 .ds-metric-card {
+  position: relative;
+  overflow: hidden;
   background: linear-gradient(180deg, var(--ds-surface-elevated) 0%, var(--ds-surface) 100%);
   border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius-sm);
-  padding: 0.65rem 0.75rem;
-  min-height: 4.5rem;
+  border-radius: var(--ds-radius-lg);
+  padding: var(--ds-space-4);
+  min-height: 5.25rem;
+  box-shadow: var(--ds-shadow);
   transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
 }
 .ds-metric-card:hover {
-  box-shadow: var(--ds-shadow);
+  box-shadow: var(--ds-shadow-lg);
   border-color: rgba(45, 212, 191, 0.35);
   transform: translateY(-1px);
 }
 .ds-metric-card.ds-highlight {
   background: linear-gradient(145deg, rgba(45, 212, 191, 0.14) 0%, var(--ds-surface-elevated) 55%);
-  border-color: var(--ds-highlight-border); box-shadow: var(--ds-highlight-glow);
+  border-color: var(--ds-highlight-border);
+  box-shadow: var(--ds-highlight-glow);
+}
+.ds-metric-card::after {
+  content: "";
+  position: absolute;
+  width: 5.5rem;
+  height: 5.5rem;
+  right: -2.2rem;
+  bottom: -2.6rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(45, 212, 191, 0.12), transparent 68%);
+  pointer-events: none;
 }
 .ds-metric-card.ds-highlight .ds-metric-label {
   color: var(--ds-primary-light);
 }
 .ds-metric-card.ds-highlight .ds-metric-value {
-  color: #f0fdfa;
+  color: var(--ds-text);
+}
+.ds-metric-card.ds-metric-negative {
+  border-color: rgba(248, 113, 113, 0.55);
+  background: linear-gradient(145deg, rgba(239, 68, 68, 0.14) 0%, var(--ds-surface) 58%);
+  box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.18), var(--ds-shadow);
+}
+.ds-metric-card.ds-metric-negative.ds-highlight {
+  border-color: rgba(248, 113, 113, 0.65);
+  background: linear-gradient(145deg, rgba(239, 68, 68, 0.18) 0%, var(--ds-surface-elevated) 55%);
+}
+.ds-metric-card.ds-metric-negative .ds-metric-label {
+  color: #fca5a5;
+}
+.ds-metric-card.ds-metric-negative .ds-metric-value,
+.ds-metric-card.ds-metric-negative .ds-metric-hint,
+.ds-neg {
+  color: var(--ds-risk) !important;
+  font-weight: 800;
 }
 .ds-metric-label {
-  font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ds-muted); margin: 0 0 0.25rem 0;
+  font-size: 0.68rem;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ds-muted);
+  margin: 0 0 var(--ds-space-2) 0;
 }
 .ds-metric-value {
-  font-size: 1.15rem;
-  font-weight: 700;
+  font-size: clamp(1.15rem, 2.2vw, 1.55rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
   color: var(--ds-text);
   font-variant-numeric: tabular-nums;
-  line-height: 1.2;
+  line-height: 1.1;
 }
 .ds-metric-hint {
   font-size: 0.72rem;
   color: var(--ds-muted);
-  margin: 0.2rem 0 0 0;
+  margin: var(--ds-space-1) 0 0 0;
 }
 
 /* Chart card */
@@ -260,11 +322,15 @@ section.main {
 /* Empty state */
 .ds-empty-state {
   text-align: center;
-  padding: 2rem 1.25rem;
+  padding: var(--ds-space-6) var(--ds-space-5);
   background: var(--ds-surface);
   border: 1px dashed var(--ds-border);
-  border-radius: var(--ds-radius);
-  margin: 0.75rem 0 1rem 0;
+  border-radius: var(--ds-radius-lg);
+  margin: 0 0 var(--ds-space-5) 0;
+  box-shadow: var(--ds-shadow);
+}
+.ds-empty-state.ds-surface-card {
+  border-style: dashed;
 }
 .ds-empty-icon {
   font-size: 1.75rem;
@@ -338,11 +404,11 @@ section.main {
 
 /* Dividend focus — high-interest strip */
 .ds-dividend-focus {
-  background: linear-gradient(135deg, rgba(45, 212, 191, 0.08) 0%, var(--ds-surface) 40%, var(--ds-surface) 100%);
+  background: linear-gradient(135deg, rgba(45, 212, 191, 0.10) 0%, var(--ds-surface) 42%, var(--ds-surface) 100%);
   border: 1px solid var(--ds-highlight-border);
-  border-radius: var(--ds-radius);
-  padding: 1rem 1.1rem 0.85rem;
-  margin: 0 0 1rem 0;
+  border-radius: var(--ds-radius-lg);
+  padding: var(--ds-space-5) var(--ds-space-5) var(--ds-space-4);
+  margin: 0 0 var(--ds-space-5) 0;
   box-shadow: var(--ds-highlight-glow);
   position: relative;
   overflow: hidden;
@@ -350,8 +416,8 @@ section.main {
 .ds-dividend-focus::before {
   content: "DIVIDEND FOCUS";
   position: absolute;
-  top: 0.65rem;
-  right: 0.85rem;
+  top: var(--ds-space-4);
+  right: var(--ds-space-4);
   font-size: 0.62rem;
   font-weight: 800;
   letter-spacing: 0.1em;
@@ -361,40 +427,98 @@ section.main {
 .ds-dividend-section {
   background: var(--ds-surface);
   border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius);
-  padding: 1rem 1.1rem 0.25rem;
-  margin: 0.5rem 0 1rem 0;
+  border-radius: var(--ds-radius-lg);
+  padding: var(--ds-space-4) var(--ds-space-5) var(--ds-space-2);
+  margin: var(--ds-space-2) 0 var(--ds-space-5) 0;
   box-shadow: var(--ds-shadow);
 }
 .ds-home-panel {
   background: var(--ds-surface);
   border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius);
-  padding: 1rem 1.1rem 0.85rem;
-  margin: 0 0 1.1rem 0;
+  border-radius: var(--ds-radius-lg);
+  padding: var(--ds-space-5);
+  margin: 0 0 var(--ds-space-5) 0;
   box-shadow: var(--ds-shadow);
 }
 .ds-home-panel .ds-section-header {
-  margin-bottom: 0.65rem;
+  margin-bottom: var(--ds-space-3);
 }
 .ds-action-card {
-  background: linear-gradient(145deg, rgba(45, 212, 191, 0.1) 0%, var(--ds-surface) 55%);
+  background: linear-gradient(145deg, rgba(45, 212, 191, 0.10) 0%, var(--ds-surface) 55%);
   border: 1px solid var(--ds-highlight-border);
-  border-radius: var(--ds-radius);
-  padding: 0.95rem 1.05rem 0.85rem;
-  margin: 0 0 1rem 0;
+  border-radius: var(--ds-radius-lg);
+  padding: var(--ds-space-4) var(--ds-space-5);
+  margin: 0 0 var(--ds-space-5) 0;
   box-shadow: var(--ds-highlight-glow);
 }
 .ds-action-card .ds-section-title {
-  font-size: 1.05rem;
+  font-size: 1.1rem;
+  letter-spacing: -0.03em;
 }
 .ds-action-card-kicker {
-  margin: 0 0 0.35rem 0;
+  margin: 0 0 var(--ds-space-2) 0;
   font-size: 0.68rem;
-  font-weight: 750;
+  font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ds-primary-light);
+}
+
+/* Page header / surface / provenance */
+.ds-page-header {
+  margin: 0 0 var(--ds-space-5) 0;
+}
+.ds-page-kicker {
+  margin: 0 0 var(--ds-space-2) 0;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ds-muted);
+}
+.ds-page-title {
+  margin: 0;
+  font-size: clamp(1.55rem, 3.2vw, 2.15rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  color: var(--ds-text);
+}
+.ds-page-subtitle {
+  margin: var(--ds-space-2) 0 0 0;
+  max-width: 42rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--ds-muted);
+}
+.ds-surface-card {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  padding: var(--ds-space-5);
+  margin: 0 0 var(--ds-space-5) 0;
+  box-shadow: var(--ds-shadow);
+}
+.ds-info-panel {
+  background: var(--ds-surface-highlight);
+  border: 1px solid var(--ds-highlight-border);
+  border-radius: var(--ds-radius);
+  padding: var(--ds-space-4);
+  margin: 0 0 var(--ds-space-4) 0;
+  color: var(--ds-text);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+.ds-provenance {
+  margin: 0 0 var(--ds-space-4) 0;
+  font-size: 0.78rem;
+  color: var(--ds-muted);
+  line-height: 1.45;
+}
+.ds-home-stack {
+  display: grid;
+  gap: var(--ds-space-1);
+  margin-bottom: var(--ds-space-2);
 }
 
 /* Tables */
@@ -426,8 +550,9 @@ section.main {
 }
 [data-testid="stDataFrame"] [role="gridcell"].ds-pct-loss,
 [data-testid="stDataFrame"] [role="gridcell"].ds-pl-loss {
-  background: rgba(239, 68, 68, 0.22) !important;
-  color: #f87171 !important;
+  background: rgba(239, 68, 68, 0.32) !important;
+  color: #fca5a5 !important;
+  font-weight: 750 !important;
 }
 [data-testid="stDataFrame"] [role="gridcell"].ds-pct-gain,
 [data-testid="stDataFrame"] [role="gridcell"].ds-pl-gain {
@@ -573,7 +698,7 @@ button[data-testid="stBaseButton-primary"],
 button[data-testid="stBaseButton-minimal"],
 button[kind="secondary"],
 button[kind="primary"] {
-  border-radius: 10px !important;
+  border-radius: var(--ds-radius-sm) !important;
   font-weight: 600 !important;
   transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.12s ease, box-shadow 0.12s ease !important;
 }
@@ -713,6 +838,17 @@ div[data-testid="stMetric"] label p {
 div[data-testid="stMetricValue"],
 div[data-testid="stMetricValue"] p {
   color: var(--ds-text) !important;
+}
+/* When Streamlit marks the delta as down, paint the metric value red too. */
+div[data-testid="stMetric"]:has([data-testid="stMetricDelta"][data-test-direction="down"]) {
+  border-color: rgba(248, 113, 113, 0.5) !important;
+  background: linear-gradient(145deg, rgba(239, 68, 68, 0.12), var(--ds-surface)) !important;
+}
+div[data-testid="stMetric"]:has([data-testid="stMetricDelta"][data-test-direction="down"])
+  [data-testid="stMetricValue"],
+div[data-testid="stMetric"]:has([data-testid="stMetricDelta"][data-test-direction="down"])
+  [data-testid="stMetricValue"] p {
+  color: var(--ds-risk) !important;
 }
 div[data-testid="stMetric"].ds-metric-dividend-highlight {
   border-color: var(--ds-highlight-border) !important;
@@ -981,10 +1117,12 @@ div[data-testid="stMetric"].ds-metric-dividend-highlight label p {
 /* Delta colors on metrics */
 div[data-testid="stMetricDelta"] svg { display: none; }
 div[data-testid="stMetricDelta"][data-test-direction="up"] {
-  color: #6ee7b7 !important;
+  color: var(--ds-healthy) !important;
+  font-weight: 700 !important;
 }
 div[data-testid="stMetricDelta"][data-test-direction="down"] {
-  color: #fca5a5 !important;
+  color: var(--ds-risk) !important;
+  font-weight: 800 !important;
 }
 
 /* Yield zone accent bar on chart sections */
@@ -1011,6 +1149,14 @@ def _section_header_markup(title: str, subtitle: str = "") -> str:
     )
 
 
+def looks_negative_display(text: str) -> bool:
+    """True when a display string is a signed negative money/percent value."""
+    raw = (text or "").strip().replace("−", "-").replace("–", "-")
+    if not raw or raw in {"-", "—"}:
+        return False
+    return bool(_NEGATIVE_DISPLAY_RE.search(raw.replace(",", "")))
+
+
 def _metric_card_markup(
     label: str,
     value: str,
@@ -1018,12 +1164,19 @@ def _metric_card_markup(
     *,
     highlight: bool = False,
 ) -> str:
-    cls = "ds-metric-card ds-highlight" if highlight else "ds-metric-card"
-    hint_html = f'<p class="ds-metric-hint">{html.escape(hint)}</p>' if hint else ""
+    classes = ["ds-metric-card"]
+    if highlight:
+        classes.append("ds-highlight")
+    negative = looks_negative_display(value) or looks_negative_display(hint)
+    if negative:
+        classes.append("ds-metric-negative")
+    value_cls = "ds-metric-value ds-neg" if looks_negative_display(value) else "ds-metric-value"
+    hint_cls = "ds-metric-hint ds-neg" if looks_negative_display(hint) else "ds-metric-hint"
+    hint_html = f'<p class="{hint_cls}">{html.escape(hint)}</p>' if hint else ""
     return (
-        f'<div class="{cls}">'
+        f'<div class="{" ".join(classes)}">'
         f'<p class="ds-metric-label">{html.escape(label)}</p>'
-        f'<p class="ds-metric-value">{html.escape(value)}</p>'
+        f'<p class="{value_cls}">{html.escape(value)}</p>'
         f"{hint_html}"
         f"</div>"
     )
@@ -1031,13 +1184,14 @@ def _metric_card_markup(
 
 def _health_panel_markup(label: str, reasons: tuple[str, ...] | list[str]) -> str:
     kind = status_class_for_label(label)
-    dark_colors = {
-        "healthy": ("rgba(16, 185, 129, 0.12)", "#6ee7b7", "rgba(52, 211, 153, 0.35)"),
-        "watch": ("rgba(245, 158, 11, 0.1)", "#fcd34d", "rgba(251, 191, 36, 0.35)"),
-        "risky": ("rgba(239, 68, 68, 0.1)", "#fca5a5", "rgba(248, 113, 113, 0.35)"),
-        "unknown": ("rgba(148, 163, 184, 0.08)", "#cbd5e1", "rgba(148, 163, 184, 0.25)"),
+    # Prefer CSS variables so light/dark stay consistent.
+    token_map = {
+        "healthy": ("var(--ds-healthy-bg)", "var(--ds-healthy)", "var(--ds-healthy)"),
+        "watch": ("var(--ds-warning-bg)", "var(--ds-warning)", "var(--ds-warning)"),
+        "risky": ("var(--ds-risk-bg)", "var(--ds-risk)", "var(--ds-risk)"),
+        "unknown": ("rgba(148, 163, 184, 0.08)", "var(--ds-muted)", "var(--ds-border)"),
     }
-    bg, fg, border = dark_colors.get(kind, dark_colors["unknown"])
+    bg, fg, border = token_map.get(kind, token_map["unknown"])
     reason_text = html.escape(" · ".join(reasons[:3]) if reasons else "")
     return (
         f'<div class="ds-health-panel" style="background:{bg};border:1px solid {border};color:{fg};">'
@@ -1051,6 +1205,7 @@ def _metric_grid_markup(
     items: list[tuple[str, str, str] | tuple[str, str, str, bool]],
     *,
     highlight_all: bool = False,
+    strip: bool = False,
 ) -> str:
     cards = []
     for item in items:
@@ -1060,7 +1215,8 @@ def _metric_grid_markup(
             label, value, hint = item[0], item[1], item[2]
             highlighted = highlight_all
         cards.append(_metric_card_markup(label, value, hint, highlight=highlighted))
-    return f'<div class="ds-metric-grid">{"".join(cards)}</div>'
+    cls = "ds-metric-grid ds-metric-strip" if strip else "ds-metric-grid"
+    return f'<div class="{cls}">{"".join(cards)}</div>'
 
 
 def render_page_divider() -> None:
@@ -1102,8 +1258,8 @@ def render_home_panel(
     subtitle: str,
     metrics: list[tuple[str, str, str] | tuple[str, str, str, bool]] | None = None,
 ) -> None:
-    """Consistent Home section chrome (header + optional metric grid)."""
-    metrics_html = _metric_grid_markup(metrics) if metrics else ""
+    """Consistent Home section chrome (header + optional metric strip)."""
+    metrics_html = _metric_grid_markup(metrics, strip=True) if metrics else ""
     render_html(
         f'<div class="ds-home-panel">'
         f"{_section_header_markup(title, subtitle)}"
@@ -1120,6 +1276,65 @@ def render_action_card(title: str, description: str, *, kicker: str = "Next step
         f"{_section_header_markup(title, description)}"
         f"</div>"
     )
+
+
+def _page_header_markup(
+    title: str,
+    subtitle: str = "",
+    *,
+    kicker: str = "",
+) -> str:
+    kicker_html = f'<p class="ds-page-kicker">{html.escape(kicker)}</p>' if kicker else ""
+    sub_html = f'<p class="ds-page-subtitle">{html.escape(subtitle)}</p>' if subtitle else ""
+    return (
+        f'<header class="ds-page-header">'
+        f"{kicker_html}"
+        f'<h1 class="ds-page-title">{html.escape(title)}</h1>'
+        f"{sub_html}"
+        f"</header>"
+    )
+
+
+def render_page_header(
+    title: str,
+    subtitle: str = "",
+    *,
+    kicker: str = "",
+) -> None:
+    """Authenticated page title block (launch visual hierarchy)."""
+    render_html(_page_header_markup(title, subtitle, kicker=kicker))
+
+
+def render_metric_strip(
+    items: list[tuple[str, str, str] | tuple[str, str, str, bool]],
+    *,
+    highlight_all: bool = False,
+) -> None:
+    """Four-up metric strip for portfolio Home summaries."""
+    render_html(_metric_grid_markup(items, highlight_all=highlight_all, strip=True))
+
+
+def render_surface_card(title: str, subtitle: str = "", *, body_html: str = "") -> None:
+    """Presentational surface card. Escape dynamic text before passing body_html."""
+    render_html(
+        f'<section class="ds-surface-card">'
+        f"{_section_header_markup(title, subtitle)}"
+        f"{body_html}"
+        f"</section>"
+    )
+
+
+def render_info_panel(message: str) -> None:
+    render_html(f'<div class="ds-info-panel" role="note">{html.escape(message)}</div>')
+
+
+def _data_provenance_markup(text: str) -> str:
+    return f'<p class="ds-provenance">{html.escape(text)}</p>'
+
+
+def render_data_provenance(text: str) -> None:
+    """Small provenance / freshness caption under metric strips."""
+    render_html(_data_provenance_markup(text))
 
 
 def render_feature_cards(cards: list[tuple[str, str, str]]) -> None:
@@ -1260,19 +1475,28 @@ def render_metric_grid(
     render_html(_metric_grid_markup(items, highlight_all=highlight_all))
 
 
+def _empty_state_markup(
+    title: str,
+    body: str,
+    *,
+    icon: str = "📊",
+) -> str:
+    return (
+        f'<div class="ds-empty-state ds-surface-card" role="status">'
+        f'<div class="ds-empty-icon" aria-hidden="true">{html.escape(icon)}</div>'
+        f'<p class="ds-empty-title">{html.escape(title)}</p>'
+        f'<p class="ds-empty-body">{html.escape(body)}</p>'
+        f"</div>"
+    )
+
+
 def render_empty_state(
     title: str,
     body: str,
     *,
     icon: str = "📊",
 ) -> None:
-    render_html(
-        f'<div class="ds-empty-state" role="status">'
-        f'<div class="ds-empty-icon" aria-hidden="true">{html.escape(icon)}</div>'
-        f'<p class="ds-empty-title">{html.escape(title)}</p>'
-        f'<p class="ds-empty-body">{html.escape(body)}</p>'
-        f"</div>"
-    )
+    render_html(_empty_state_markup(title, body, icon=icon))
 
 
 def render_chart_card_header(title: str, subtitle: str = "") -> None:
