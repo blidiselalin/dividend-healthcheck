@@ -29,6 +29,13 @@ ALLOWED_EVENTS = frozenset(
         "reconciliation_opened",
         "dividend_dashboard_opened",
         "upcoming_dividends_opened",
+        # Public Command Center (Product / Demo)
+        "public_product_viewed",
+        "public_demo_started",
+        "public_demo_page_viewed",
+        "public_demo_step_completed",
+        "public_create_portfolio_clicked",
+        "guest_holding_quantity_changed",
     }
 )
 

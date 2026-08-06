@@ -78,6 +78,8 @@ def _account_label() -> str:
     user = current_user()
     if user is None:
         return "Account"
+    if test_user_session_active() and is_test_user(user):
+        return "Account · Demo"
     short = (user.name or user.email.split("@")[0] or "Account").strip()
     if len(short) > 14:
         short = short[:13] + "…"
@@ -160,9 +162,14 @@ def render_sidebar_account_entry() -> None:
     st.sidebar.caption("Full menu: **Account** beside the Streamlit ⋮ menu (top right).")
 
     user = current_user()
+    demo = bool(user and test_user_session_active() and is_test_user(user))
     if user is not None:
-        st.sidebar.markdown(f"**{user.name or user.email.split('@')[0]}**")
-        st.sidebar.caption(user.email)
+        if demo:
+            st.sidebar.markdown("**Demo portfolio**")
+            st.sidebar.caption("Sample holdings — no personal email shown.")
+        else:
+            st.sidebar.markdown(f"**{user.name or user.email.split('@')[0]}**")
+            st.sidebar.caption(user.email)
 
     if st.sidebar.button(
         "Help & guidance",
@@ -196,9 +203,9 @@ def render_sidebar_account_entry() -> None:
             st.rerun()
 
     if user is not None:
-        if test_user_session_active() and is_test_user(user):
+        if demo:
             if st.sidebar.button(
-                "Exit test user",
+                "Exit demo",
                 key="sidebar_exit_test_user",
                 use_container_width=True,
             ):

@@ -78,6 +78,8 @@ class GuestDashboard:
     safety_alerts: list[GuestSafetyAlert] = field(default_factory=list)
     rows: list[Any] = field(default_factory=list)
     library_ready: bool = False
+    portfolio_value_usd: float = 0.0
+    portfolio_yield_pct: float | None = None
 
 
 def _normalize_symbol(symbol: str) -> str:
@@ -137,28 +139,45 @@ def add_guest_holding(
     *,
     symbol: str,
     shares: float = 10.0,
-    avg_cost_per_share: float = 0.0,
-    company_name: str = "",
+    avg_cost_per_share: float | None = None,
+    company_name: str | None = None,
 ) -> tuple[list[GuestHolding], str | None]:
-    """Add or update a guest holding. Returns (holdings, error_message)."""
+    """Add or update a guest holding. Returns (holdings, error_message).
+
+    When updating an existing symbol, omitted cost/name preserve prior metadata.
+    """
     symbol = _normalize_symbol(symbol)
     if not symbol:
         return guest_holdings_from_session(session), "Enter a ticker symbol."
 
     current = guest_holdings_from_session(session)
-    if not any(h.symbol == symbol for h in current) and len(current) >= GUEST_MAX_HOLDINGS:
+    existing = next((h for h in current if h.symbol == symbol), None)
+    if existing is None and len(current) >= GUEST_MAX_HOLDINGS:
         return (
             current,
             f"Try up to {GUEST_MAX_HOLDINGS} stocks before sign-up — remove one to add another.",
         )
+
+    if existing is not None:
+        cost = (
+            existing.avg_cost_per_share
+            if avg_cost_per_share is None
+            else max(0.0, float(avg_cost_per_share))
+        )
+        name = existing.company_name
+        if company_name is not None and str(company_name).strip():
+            name = str(company_name).strip()
+    else:
+        cost = 0.0 if avg_cost_per_share is None else max(0.0, float(avg_cost_per_share))
+        name = (str(company_name).strip() if company_name else "") or symbol
 
     updated = [h for h in current if h.symbol != symbol]
     updated.append(
         GuestHolding(
             symbol=symbol,
             shares=max(0.0, float(shares)),
-            avg_cost_per_share=max(0.0, float(avg_cost_per_share)),
-            company_name=company_name or symbol,
+            avg_cost_per_share=cost,
+            company_name=name,
         )
     )
     updated.sort(key=lambda h: h.symbol)
@@ -283,6 +302,23 @@ def _next_payouts_from_calendar(calendar: Any) -> list[GuestNextPayout]:
     return payouts[:8]
 
 
+def _apply_portfolio_metrics(dashboard: GuestDashboard) -> None:
+    """Set portfolio_value_usd and portfolio_yield_pct from rows / cost basis."""
+    total_value = sum(float(getattr(row, "current_value", 0) or 0) for row in dashboard.rows)
+    if total_value <= 0:
+        total_value = sum(
+            h.shares * h.avg_cost_per_share for h in dashboard.holdings if h.avg_cost_per_share > 0
+        )
+    dashboard.portfolio_value_usd = round(total_value, 2)
+    if total_value > 0 and dashboard.annual_income_usd:
+        dashboard.portfolio_yield_pct = round(
+            dashboard.annual_income_usd / total_value * 100,
+            2,
+        )
+    else:
+        dashboard.portfolio_yield_pct = None
+
+
 def build_guest_dashboard(guest: Sequence[GuestHolding]) -> GuestDashboard:
     """Compute Command Center metrics from the shared library (no user DB)."""
     dashboard = GuestDashboard(holdings=list(guest))
@@ -332,6 +368,7 @@ def build_guest_dashboard(guest: Sequence[GuestHolding]) -> GuestDashboard:
         dashboard.safety_alerts = _safety_alerts_from_rows(rows)
     except (ImportError, AttributeError, SQLiteError, PostgresError, OSError):  # noqa: BLE001
         pass  # Best effort; return partial dashboard on error
+    _apply_portfolio_metrics(dashboard)
     return dashboard
 
 

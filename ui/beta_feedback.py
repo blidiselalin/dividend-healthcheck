@@ -36,12 +36,21 @@ def render_beta_feedback(*, page: str, key_suffix: str = "") -> None:
             user = None
 
         email = None
-        if user and getattr(user, "email", None):
-            st.caption(f"Signed in as **{user.email}** — we will attach your account.")
-        else:
+        demo_user = False
+        if user is not None:
+            try:
+                from auth.test_user import is_test_user, test_user_session_active
+
+                demo_user = bool(test_user_session_active() and is_test_user(user))
+            except Exception:
+                demo_user = False
+
+        if user and getattr(user, "email", None) and not demo_user:
+            st.caption("Signed in — feedback will be linked to your account (not shown here).")
+        elif not user:
             email = st.text_input(
-                "Email (optional)",
-                placeholder="you@example.com",
+                "Contact (optional)",
+                placeholder="Leave blank to stay anonymous",
                 key=f"beta_feedback_email{suffix}",
             )
 
@@ -55,8 +64,8 @@ def render_beta_feedback(*, page: str, key_suffix: str = "") -> None:
                     rating=rating,
                     message=message.strip(),
                     page=page,
-                    email=email if not user else user.email,
-                    user_id=getattr(user, "id", None) if user else None,
+                    email=None if demo_user else (email if not user else user.email),
+                    user_id=None if demo_user else (getattr(user, "id", None) if user else None),
                 )
                 st.success("Thank you — your feedback was saved.")
                 st.session_state.pop(f"beta_feedback_message{suffix}", None)

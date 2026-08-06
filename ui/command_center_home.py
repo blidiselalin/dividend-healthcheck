@@ -1,352 +1,354 @@
 """
-Pre-login Dividend Command Center — try 2–3 stocks before creating an account.
+Pre-login Dividend Command Center — Product landing + Interactive demo router.
+
+Public page: Product / Demo navigation via query params. Guest holdings stay in session.
 """
 
 from __future__ import annotations
 
 import html as html_module
-from typing import Callable
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from enum import StrEnum
+from typing import Any
 
 import streamlit as st
 
 from services.guest_playground import (
-    BETA_DEMO_SYMBOLS,
-    GUEST_MAX_HOLDINGS,
-    GUEST_SPOTLIGHT_KEY,
     GuestDashboard,
-    add_guest_holding,
     build_guest_dashboard,
     guest_holdings_from_session,
-    remove_guest_holding,
-    save_guest_holdings,
 )
+from services.guidance_analytics import track_guidance_event
 from ui.beta_disclaimer import render_research_disclaimer
-from ui.beta_feedback import render_beta_feedback
 from ui.design_system import (
     PRODUCT_NAME,
     render_beta_badge,
-    render_empty_state,
     render_feature_cards,
     render_html,
     render_logo,
+    render_metric_grid,
     render_page_divider,
-    render_payout_list,
     render_section_header,
-    render_ticker_chips,
 )
 from ui.theme import inject_command_center_theme
 
+AUTH_REQUESTED_KEY = "command_center_auth_requested"
+_ANALYTICS_LAST_KEY = "command_center_last_analytics"
 
-def _render_hero_preview_card(dashboard: GuestDashboard) -> None:
-    """Compact hero snapshot — details expand in the dashboard section below."""
-    monthly_avg = dashboard.annual_income_usd / 12 if dashboard.annual_income_usd else 0
-    total_value = sum(getattr(row, "current_value", 0) or 0 for row in dashboard.rows)
-    portfolio_yield = (
-        (dashboard.annual_income_usd / total_value * 100)
-        if total_value > 0 and dashboard.annual_income_usd
-        else None
+_CC_CSS = """
+<style>
+[data-testid="stMain"] [data-testid="block-container"] {
+  max-width: 1080px !important;
+  padding-left: 1rem !important;
+  padding-right: 1rem !important;
+}
+@media (max-width: 640px) {
+  .cc-hero-title { font-size: clamp(1.4rem, 6.5vw, 1.85rem) !important; }
+  .cc-preview-card .ds-metric-grid { grid-template-columns: 1fr !important; }
+}
+</style>
+"""
+
+
+class PublicView(StrEnum):
+    PRODUCT = "product"
+    DEMO = "demo"
+
+
+class DemoPage(StrEnum):
+    OVERVIEW = "overview"
+    INCOME = "income"
+    RISK = "risk"
+    RESEARCH = "research"
+    IMPORT = "import"
+
+
+@dataclass(frozen=True)
+class PublicRoute:
+    view: PublicView
+    demo_page: DemoPage
+
+
+_VALID_VIEWS = frozenset(v.value for v in PublicView)
+_VALID_PAGES = frozenset(p.value for p in DemoPage)
+
+
+def _first_param(params: Mapping[str, object], key: str) -> str:
+    raw = params.get(key)
+    if raw is None:
+        return ""
+    if isinstance(raw, (list, tuple)):
+        return str(raw[0] if raw else "").strip().lower()
+    return str(raw).strip().lower()
+
+
+def resolve_public_route(params: Mapping[str, object]) -> PublicRoute:
+    """Validate untrusted query params; invalid values fall back safely."""
+    view_raw = _first_param(params, "view")
+    page_raw = _first_param(params, "page")
+
+    if view_raw not in _VALID_VIEWS:
+        return PublicRoute(view=PublicView.PRODUCT, demo_page=DemoPage.OVERVIEW)
+
+    view = PublicView(view_raw)
+    if view == PublicView.DEMO:
+        page = DemoPage(page_raw) if page_raw in _VALID_PAGES else DemoPage.OVERVIEW
+        return PublicRoute(view=PublicView.DEMO, demo_page=page)
+
+    return PublicRoute(view=PublicView.PRODUCT, demo_page=DemoPage.OVERVIEW)
+
+
+def apply_public_route(route: PublicRoute) -> None:
+    """Update only view/page query keys (preserve unrelated params)."""
+    st.query_params["view"] = route.view.value
+    st.query_params["page"] = route.demo_page.value
+
+
+def request_auth_panel(*, source_section: str) -> None:
+    st.session_state[AUTH_REQUESTED_KEY] = True
+    track_guidance_event(
+        "public_create_portfolio_clicked",
+        session=st.session_state,
+        properties={"source_section": source_section},
     )
-    yield_label = html_module.escape(
-        f"{portfolio_yield:.2f}%" if portfolio_yield is not None else "—"
-    )
-
-    render_html(
-        f'<div class="cc-preview-card" aria-label="Try portfolio preview">'
-        f'<p class="cc-preview-label">Sample try list · session preview</p>'
-        f'<div class="ds-metric-grid">'
-        f'<div class="ds-metric-card ds-highlight"><p class="ds-metric-label">Est. annual income</p>'
-        f'<p class="ds-metric-value">${dashboard.annual_income_usd:,.2f}</p></div>'
-        f'<div class="ds-metric-card ds-highlight"><p class="ds-metric-label">Monthly average</p>'
-        f'<p class="ds-metric-value">${monthly_avg:,.2f}</p></div>'
-        f'<div class="ds-metric-card ds-highlight"><p class="ds-metric-label">Portfolio yield</p>'
-        f'<p class="ds-metric-value">{yield_label}</p></div>'
-        f"</div>"
-        f"</div>"
-    )
 
 
-def _render_hero() -> None:
-    left, right = st.columns([1.05, 0.95], gap="large")
-    guest = guest_holdings_from_session(st.session_state)
-    preview_dashboard = build_guest_dashboard(guest)
-    with left:
-        render_logo(tagline="Free during beta · dividend research")
-        render_beta_badge()
-        render_html(
-            '<h1 class="cc-hero-title">Track <span class="ds-accent">dividend yield history</span> '
-            "and future income in one place.</h1>"
-            '<p class="cc-hero-sub">'
-            "Try up to three dividend stocks with no account — then sign up free to save your portfolio."
-            "</p>"
-        )
-    with right:
-        _render_hero_preview_card(preview_dashboard)
-
-
-def _render_demo_quick_picks() -> None:
-    st.caption("Quick add:")
-    symbols = BETA_DEMO_SYMBOLS[: min(len(BETA_DEMO_SYMBOLS), GUEST_MAX_HOLDINGS + 2)]
-    cols = st.columns(len(symbols))
-    for col, symbol in zip(cols, symbols):
-        with col:
-            if st.button(symbol, key=f"cc_demo_pick_{symbol}", use_container_width=True):
-                _, err = add_guest_holding(st.session_state, symbol=symbol, shares=10.0)
-                if err:
-                    st.warning(err)
-                else:
-                    st.session_state[GUEST_SPOTLIGHT_KEY] = symbol
-                    st.rerun()
-
-
-def _render_search_and_playground() -> GuestDashboard:
-    render_section_header(
-        "Try dividend stocks",
-        f"Add up to {GUEST_MAX_HOLDINGS} tickers — session only until you sign up. Starts with "
-        "KO, JNJ, O.",
-    )
-
-    _render_demo_quick_picks()
-    col_search, col_shares, col_add = st.columns([3, 1, 1])
-    with col_search:
-        symbol = st.text_input(
-            "Search ticker",
-            key="cc_symbol_search",
-            placeholder="e.g. KO, JNJ, VZ",
-            label_visibility="collapsed",
-        )
-    with col_shares:
-        shares = st.number_input(
-            "Shares",
-            min_value=1.0,
-            value=10.0,
-            step=1.0,
-            key="cc_symbol_shares",
-            label_visibility="collapsed",
-        )
-    with col_add:
-        add_clicked = st.button(
-            "Add", type="primary", use_container_width=True, key="cc_add_symbol"
-        )
-
-    if add_clicked and symbol.strip():
-        _, err = add_guest_holding(
-            st.session_state,
-            symbol=symbol.strip(),
-            shares=shares,
-        )
-        if err:
-            st.warning(err)
-        else:
-            st.toast(f"Added {symbol.strip().upper()} to your try list.")
-            st.rerun()
-
-    guest = guest_holdings_from_session(st.session_state)
-    if guest:
-        render_ticker_chips([(h.symbol, f"{h.shares:.0f} sh") for h in guest])
-        remove_cols = st.columns(min(len(guest), GUEST_MAX_HOLDINGS))
-        for col, holding in zip(remove_cols, guest):
-            with col:
-                if st.button(
-                    f"Remove {holding.symbol}",
-                    key=f"cc_remove_{holding.symbol}",
-                    use_container_width=True,
-                ):
-                    remove_guest_holding(st.session_state, holding.symbol)
-                    st.rerun()
-        if st.button("Reset to sample list", key="cc_reset_sample"):
-            from services.guest_playground import default_guest_holdings
-
-            save_guest_holdings(st.session_state, default_guest_holdings())
-            st.session_state[GUEST_SPOTLIGHT_KEY] = "KO"
-            st.rerun()
-
-    return build_guest_dashboard(guest)
-
-
-def _render_monthly_income_chart(dashboard: GuestDashboard) -> None:
-    if not dashboard.monthly_forecast:
-        render_empty_state(
-            "No forecast yet",
-            "Add a ticker to see projected monthly dividend income.",
-            icon="📅",
-        )
+def _track_once(
+    event_name: str, *, dedupe_key: str, properties: dict[str, Any] | None = None
+) -> None:
+    last = st.session_state.setdefault(_ANALYTICS_LAST_KEY, {})
+    if not isinstance(last, dict):
+        last = {}
+        st.session_state[_ANALYTICS_LAST_KEY] = last
+    if last.get(event_name) == dedupe_key:
         return
+    last[event_name] = dedupe_key
+    track_guidance_event(event_name, session=st.session_state, properties=properties)
 
-    render_section_header(
-        "Monthly dividend cash",
-        "Next 12 months · estimated from the shared library",
-    )
-    try:
-        import plotly.graph_objects as go
 
-        from utils.chart_theme import chart_palette, style_yield_channel_figure
-
-        palette = chart_palette()
-
-        labels = [label for label, _ in dashboard.monthly_forecast]
-        values = [value for _, value in dashboard.monthly_forecast]
-        fig = go.Figure(
-            data=[
-                go.Bar(
-                    x=labels,
-                    y=values,
-                    marker_color=palette["primary"],
-                    hovertemplate="%{x}<br>$%{y:,.2f}<extra></extra>",
+def render_public_navigation(route: PublicRoute) -> None:
+    top_l, top_m, top_r = st.columns([2.2, 2.6, 1.1], gap="small")
+    with top_l:
+        render_logo(tagline="Product · interactive demo")
+    with top_m:
+        product_on = route.view == PublicView.PRODUCT
+        c1, c2 = st.columns(2)
+        with c1:
+            label = "Product · active" if product_on else "Product"
+            if st.button(
+                label,
+                key="cc_nav_product",
+                use_container_width=True,
+                type="primary" if product_on else "secondary",
+            ):
+                apply_public_route(PublicRoute(PublicView.PRODUCT, DemoPage.OVERVIEW))
+                st.rerun()
+        with c2:
+            label = "Interactive demo" if product_on else "Interactive demo · active"
+            if st.button(
+                label,
+                key="cc_nav_demo",
+                use_container_width=True,
+                type="secondary" if product_on else "primary",
+            ):
+                _track_once(
+                    "public_demo_started",
+                    dedupe_key="started",
+                    properties={"source_section": "nav"},
                 )
-            ]
-        )
-        fig.update_layout(xaxis_title="Month", yaxis_title="USD")
-        style_yield_channel_figure(fig, height=300)
-        st.plotly_chart(fig, use_container_width=True)
-    except Exception:
-        st.bar_chart(
-            dict(dashboard.monthly_forecast),
-            height=300,
-        )
-
-
-def _render_demo_dashboard(dashboard: GuestDashboard) -> None:
-    render_section_header(
-        "Income preview",
-        "Upcoming payouts and ranked income for your try list.",
-    )
-    if not dashboard.library_ready:
-        render_empty_state(
-            "Library not loaded yet",
-            "Research data will appear here once the shared library is available on this server.",
-            icon="📚",
-        )
-        return
-
-    if dashboard.next_payouts:
-        render_payout_list(
-            [
-                (
-                    payout.symbol,
-                    f"${payout.amount_usd:,.2f}",
-                    f"pay ~{(payout.pay_date.strftime('%d %b') if payout.pay_date else 'TBD')} · {payout.status}",
-                )
-                for payout in dashboard.next_payouts[:5]
-            ]
-        )
-    else:
-        st.caption("No upcoming payouts on the try list yet.")
-
-    if dashboard.rows:
-        ranked = sorted(
-            dashboard.rows,
-            key=lambda row: getattr(row, "annual_income", 0) or 0,
-            reverse=True,
-        )
-        render_section_header("Income by holding", "Estimated annual cash from your try list")
-        render_payout_list(
-            [
-                (
-                    row.ticker,
-                    f"${getattr(row, 'annual_income', 0) or 0:,.2f}/yr",
-                    f"yield {getattr(row, 'dividend_yield_pct', 0):.2f}%"
-                    if getattr(row, "dividend_yield_pct", None) is not None
-                    else "income n/a",
-                )
-                for row in ranked[:GUEST_MAX_HOLDINGS]
-            ]
-        )
-
-    _render_monthly_income_chart(dashboard)
-
-
-def _render_feature_cards() -> None:
-    render_section_header(
-        f"What you get with {PRODUCT_NAME}",
-        "Free during beta — full dividend workspace after sign-up.",
-    )
-    render_feature_cards(
-        [
-            ("💵", "Track income", "Calendar, cash received, and a 12-month dividend forecast."),
-            (
-                "🛡️",
-                "Yield channels",
-                "See if today's yield is high or low vs a stock's own history.",
-            ),
-            (
-                "📈",
-                "Portfolio view",
-                "Holdings, growth, journal, and benchmarks after you create an account.",
-            ),
-        ]
-    )
-
-
-def _render_yield_preview(dashboard: GuestDashboard) -> None:
-    guest = dashboard.holdings
-    if not guest:
-        return
-    symbols = [h.symbol for h in guest]
-    default = st.session_state.get(GUEST_SPOTLIGHT_KEY) or symbols[0]
-    if default not in symbols:
-        default = symbols[0]
-
-    with st.expander("Preview: dividend yield channels (one stock)", expanded=False):
-        spotlight = st.selectbox(
-            "Ticker",
-            options=symbols,
-            index=symbols.index(default),
-            key="cc_spotlight_pick",
-            label_visibility="collapsed",
-        )
-        st.session_state[GUEST_SPOTLIGHT_KEY] = spotlight
-
-        with st.spinner(f"Loading {spotlight}…"):
-            from services.stock_analysis_service import load_independent_stock_analysis
-
-            analysis = load_independent_stock_analysis(
-                spotlight,
-                include_yield_channel=True,
-                apply_live_price=False,
-                fetch_realtime_prices=False,
-            )
-
-        if not analysis:
-            st.info("No library data for this symbol yet.")
-            return
-
-        from ui.components import UIComponents
-
-        UIComponents.display_yield_channel_chart(
-            spotlight,
-            years=10,
-            channel_data=analysis.yield_channel,
-            vector_doc=analysis.document,
-            show_header=True,
-        )
-        render_research_disclaimer(compact=True)
-
-
-def _render_signup_block(auth_block: Callable[[], None]) -> None:
-    render_section_header(
-        "Create your free portfolio",
-        "Sign up with Google to save holdings — no credit card during beta.",
-    )
-    render_research_disclaimer(compact=True)
-    auth_block()
-
-
-def render_command_center_page(*, auth_block: Callable[[], None]) -> None:
-    """Focused pre-login homepage for the free beta try experience."""
-    inject_command_center_theme()
-    _spacer, _theme = st.columns([6, 1.35])
-    with _theme:
+                apply_public_route(PublicRoute(PublicView.DEMO, DemoPage.OVERVIEW))
+                st.rerun()
+    with top_r:
         from ui.theme_mode import render_theme_toggle
 
         render_theme_toggle()
-    _render_hero()
+
+
+def _render_hero(dashboard: GuestDashboard) -> None:
+    monthly_avg = dashboard.annual_income_usd / 12 if dashboard.annual_income_usd else 0.0
+    yield_label = (
+        f"{dashboard.portfolio_yield_pct:.2f}%"
+        if dashboard.portfolio_yield_pct is not None
+        else "—"
+    )
+    left, right = st.columns([1.15, 0.85], gap="large")
+    with left:
+        render_beta_badge()
+        render_html(
+            '<h1 class="cc-hero-title">Dividend income you can explain.</h1>'
+            '<p class="cc-hero-sub">'
+            "Track what was paid, understand what may be at risk, and estimate what comes next."
+            "</p>"
+        )
+        a1, a2 = st.columns(2)
+        with a1:
+            if st.button(
+                "Explore the interactive demo",
+                type="primary",
+                use_container_width=True,
+                key="cc_hero_demo",
+            ):
+                _track_once(
+                    "public_demo_started",
+                    dedupe_key="started",
+                    properties={"source_section": "hero"},
+                )
+                apply_public_route(PublicRoute(PublicView.DEMO, DemoPage.OVERVIEW))
+                st.rerun()
+        with a2:
+            if st.button(
+                "Create your portfolio",
+                use_container_width=True,
+                key="cc_hero_auth",
+            ):
+                request_auth_panel(source_section="hero")
+                st.rerun()
+    with right:
+        holding_count = len(dashboard.holdings)
+        render_html(
+            f'<div class="cc-preview-card" aria-label="Sample portfolio preview">'
+            f'<p class="cc-preview-label">Live sample summary · {holding_count} holdings</p>'
+            f"</div>"
+        )
+        render_metric_grid(
+            [
+                (
+                    "Estimated annual income",
+                    f"${dashboard.annual_income_usd:,.2f}",
+                    "Estimated",
+                    True,
+                ),
+                ("Monthly income average", f"${monthly_avg:,.2f}", "Estimated"),
+                ("Portfolio yield", html_module.escape(yield_label), "Estimated"),
+                (
+                    "Sample holdings",
+                    str(holding_count),
+                    "KO, JNJ, O by default",
+                ),
+            ]
+        )
+
+
+def render_public_product_page(*, dashboard: GuestDashboard) -> None:
+    _track_once(
+        "public_product_viewed",
+        dedupe_key="product",
+        properties={"source_section": "product"},
+    )
+    _render_hero(dashboard)
     render_page_divider()
-    dashboard = _render_search_and_playground()
+
+    render_section_header(
+        "The income story brokers leave incomplete",
+        "Educational framing — not investment advice.",
+    )
+    render_feature_cards(
+        [
+            (
+                "01",
+                "Broker reports",
+                "Explain transactions, not the complete dividend income story.",
+            ),
+            (
+                "02",
+                "Mixed totals",
+                "Portfolio trackers often blend received and projected dividends.",
+            ),
+            (
+                "03",
+                "Yield alone",
+                "High yield does not explain payout safety or concentration risk.",
+            ),
+        ]
+    )
     render_page_divider()
-    _render_demo_dashboard(dashboard)
+
+    render_section_header("How DividendScope works", "Track · Analyze · Forecast")
+    render_feature_cards(
+        [
+            ("Track", "Track", "Received dividends, transactions, and holdings."),
+            ("Analyze", "Analyze", "Payout safety, concentration, and dividend trends."),
+            ("Forecast", "Forecast", "Upcoming payments and estimated annual income."),
+        ]
+    )
     render_page_divider()
-    _render_feature_cards()
-    _render_yield_preview(dashboard)
-    render_beta_feedback(page="Command Center (pre-login)", key_suffix="command_center")
-    _render_signup_block(auth_block)
-    st.caption(f"{PRODUCT_NAME} · dividend research only · not financial advice.")
+
+    render_section_header(
+        "Your first session",
+        "Import an IBKR activity statement or add holdings manually.",
+    )
+    st.markdown(
+        """
+1. Import an IBKR activity statement or add holdings manually.
+2. Review imported holdings and dividend transactions.
+3. Resolve warnings or reconciliation differences.
+4. Explore income, risk, and research.
+"""
+    )
+    if st.button("Try the interactive demo", key="cc_journey_demo", use_container_width=True):
+        apply_public_route(PublicRoute(PublicView.DEMO, DemoPage.IMPORT))
+        st.rerun()
+    render_page_divider()
+
+    render_section_header("Built for private portfolios", "Trust by design")
+    st.markdown(
+        """
+- Private user portfolios in PostgreSQL
+- Shared public market-data library
+- Transparent dividend and scoring terminology
+- Received and estimated income kept separate
+- Self-hostable deployment
+- Educational use only — not financial advice
+"""
+    )
+
+
+def render_public_conversion_panel(*, auth_block: Callable[[], None]) -> None:
+    """Single authentication panel — auth_block widgets have fixed keys."""
+    highlighted = bool(st.session_state.get(AUTH_REQUESTED_KEY))
+    render_page_divider()
+    render_section_header(
+        "Create your portfolio",
+        "Your sample try-list holdings can transfer after you create an account.",
+    )
+    render_research_disclaimer(compact=True)
+    with st.container(border=highlighted):
+        if highlighted:
+            st.info("Create an account here — Google sign-up and demo portfolio stay available.")
+        auth_block()
+    st.link_button(
+        "View project on GitHub",
+        "https://github.com/blidiselalin/dividend-healthcheck",
+        use_container_width=True,
+    )
+    st.caption(f"{PRODUCT_NAME} · educational research only · not financial advice.")
+
+
+def render_command_center_page(*, auth_block: Callable[[], None]) -> None:
+    """Public experience router for the pre-login Command Center."""
+    inject_command_center_theme()
+    st.markdown(_CC_CSS, unsafe_allow_html=True)
+
+    route = resolve_public_route(dict(st.query_params))
+    # Normalize view/page when missing or invalid (preserve unrelated params).
+    if (
+        st.query_params.get("view") != route.view.value
+        or st.query_params.get("page") != route.demo_page.value
+    ):
+        apply_public_route(route)
+        st.rerun()
+
+    guest = guest_holdings_from_session(st.session_state)
+    dashboard = build_guest_dashboard(guest)
+
+    render_public_navigation(route)
+
+    if route.view == PublicView.DEMO:
+        from ui.command_center_demo import render_public_demo
+
+        render_public_demo(route=route, dashboard=dashboard)
+    else:
+        render_public_product_page(dashboard=dashboard)
+
+    render_public_conversion_panel(auth_block=auth_block)

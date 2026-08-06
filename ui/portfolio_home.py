@@ -144,7 +144,7 @@ def render_test_user_banner() -> None:
             load_demo_ui_snapshot()
             st.rerun()
     with c3:
-        if st.button("Exit test user", use_container_width=True):
+        if st.button("Exit demo", use_container_width=True):
             sign_out_test_user()
             st.rerun()
 

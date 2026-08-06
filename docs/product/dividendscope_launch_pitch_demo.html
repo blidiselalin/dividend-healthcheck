@@ -1,0 +1,1796 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#07120f" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="description" content="DividendScope product story and interactive demo: reconcile dividend income, surface portfolio risks, and forecast what comes next." />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="DividendScope — Dividend income you can explain" />
+  <meta property="og:description" content="A private, self-hostable command center for dividend portfolio tracking, income health, and forward planning." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="DividendScope — Pitch & interactive demo" />
+  <meta name="twitter:description" content="Track what was paid, understand what is at risk, and forecast what comes next." />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' data:; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+  <title>DividendScope — Pitch & Interactive Demo</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #06100d;
+      --bg-2: #091814;
+      --surface: rgba(12, 29, 24, .82);
+      --surface-strong: #0d211b;
+      --surface-raised: #102a22;
+      --surface-soft: rgba(20, 54, 43, .48);
+      --line: rgba(170, 220, 206, .14);
+      --line-strong: rgba(79, 224, 190, .36);
+      --text: #f4fbf8;
+      --text-soft: #d1e0da;
+      --muted: #91ada4;
+      --muted-2: #68867d;
+      --brand: #48e0bd;
+      --brand-2: #22c9a5;
+      --brand-3: #8ef3d8;
+      --positive: #60e5a7;
+      --warning: #f5c65f;
+      --danger: #ff8798;
+      --info: #7db7ff;
+      --purple: #c39bff;
+      --shadow: 0 30px 90px rgba(0, 0, 0, .42);
+      --shadow-soft: 0 18px 52px rgba(0, 0, 0, .24);
+      --radius-xl: 30px;
+      --radius-lg: 22px;
+      --radius-md: 16px;
+      --radius-sm: 12px;
+      --nav-height: 74px;
+      --content: 1200px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      overflow-x: hidden;
+      background:
+        radial-gradient(circle at 8% 8%, rgba(34, 201, 165, .14), transparent 30rem),
+        radial-gradient(circle at 92% 18%, rgba(96, 229, 167, .08), transparent 36rem),
+        linear-gradient(145deg, #06100d 0%, #081713 52%, #050c0a 100%);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    button, input, a { font: inherit; }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    button { color: inherit; }
+    a { color: inherit; }
+    [hidden] { display: none !important; }
+    img, svg { max-width: 100%; }
+
+    .skip-link {
+      position: fixed;
+      left: 16px;
+      top: -70px;
+      z-index: 1000;
+      padding: 12px 16px;
+      border-radius: 12px;
+      background: var(--brand);
+      color: #03241d;
+      font-weight: 850;
+      transition: top .18s ease;
+    }
+    .skip-link:focus { top: 14px; }
+
+    .topbar {
+      position: fixed;
+      inset: 0 0 auto 0;
+      z-index: 100;
+      height: var(--nav-height);
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) auto minmax(180px, 1fr);
+      align-items: center;
+      gap: 18px;
+      padding: 0 clamp(16px, 3.8vw, 56px);
+      background: rgba(5, 15, 12, .78);
+      border-bottom: 1px solid var(--line);
+      -webkit-backdrop-filter: blur(18px);
+      backdrop-filter: blur(18px);
+    }
+
+    .brand {
+      appearance: none;
+      justify-self: start;
+      display: inline-flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+    .brand-logo { width: 39px; height: 39px; flex: 0 0 auto; }
+    .brand-copy { display: grid; line-height: 1.05; }
+    .brand-name { font-weight: 860; letter-spacing: -.035em; }
+    .brand-tag { margin-top: 5px; color: var(--muted); font-size: 10px; font-weight: 720; letter-spacing: .035em; }
+
+    .view-switcher {
+      justify-self: center;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(14, 38, 31, .78);
+    }
+    .view-button {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      padding: 9px 16px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 800;
+      transition: color .18s ease, background .18s ease, box-shadow .18s ease;
+    }
+    .view-button:hover { color: var(--text); }
+    .view-button[aria-selected="true"] {
+      color: #03241d;
+      background: linear-gradient(135deg, #80efd6, #42dcba);
+      box-shadow: 0 8px 28px rgba(72, 224, 189, .22);
+    }
+
+    .top-actions {
+      justify-self: end;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .button {
+      appearance: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      padding: 0 15px;
+      text-decoration: none;
+      background: rgba(15, 39, 32, .78);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 800;
+      transition: transform .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease;
+    }
+    .button:hover { transform: translateY(-1px); border-color: var(--line-strong); background: rgba(22, 54, 44, .86); }
+    .button:active { transform: translateY(0); }
+    .button.primary {
+      border-color: transparent;
+      background: linear-gradient(135deg, #56e4c3, #36d5ad);
+      color: #03241d;
+      box-shadow: 0 16px 42px rgba(72, 224, 189, .18);
+    }
+    .button.primary:hover { box-shadow: 0 18px 48px rgba(72, 224, 189, .25); }
+    .button.ghost { background: transparent; }
+    .button.compact { min-height: 36px; padding: 0 12px; border-radius: 11px; }
+    .button.icon-only { width: 42px; padding: 0; }
+    .icon { width: 17px; height: 17px; display: block; }
+
+    :focus-visible {
+      outline: 3px solid rgba(128, 239, 214, .42);
+      outline-offset: 3px;
+    }
+
+    .deck-view {
+      height: 100vh;
+      overflow-y: auto;
+      scroll-snap-type: y mandatory;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(128, 239, 214, .34) transparent;
+    }
+    .slide {
+      position: relative;
+      min-height: 100vh;
+      scroll-snap-align: start;
+      display: grid;
+      place-items: center;
+      padding: calc(var(--nav-height) + 42px) clamp(22px, 5.5vw, 92px) 62px;
+      overflow: hidden;
+      isolation: isolate;
+    }
+    .slide::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -2;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+      background-size: 48px 48px;
+      -webkit-mask-image: linear-gradient(to bottom, transparent, black 22%, black 78%, transparent);
+      mask-image: linear-gradient(to bottom, transparent, black 22%, black 78%, transparent);
+    }
+    .slide::after {
+      content: "";
+      position: absolute;
+      width: 560px;
+      height: 560px;
+      right: -260px;
+      bottom: -300px;
+      z-index: -1;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(72, 224, 189, .08), transparent 68%);
+      pointer-events: none;
+    }
+    .slide-inner {
+      width: min(var(--content), 100%);
+      margin-inline: auto;
+    }
+    .slide-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      margin: 0 0 18px;
+      padding: 8px 12px;
+      border: 1px solid rgba(72, 224, 189, .25);
+      border-radius: 999px;
+      background: rgba(72, 224, 189, .07);
+      color: #a0f6e2;
+      font-size: 11px;
+      font-weight: 850;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .slide-label::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--brand);
+      box-shadow: 0 0 18px var(--brand);
+    }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 {
+      max-width: 930px;
+      margin-bottom: 22px;
+      font-size: clamp(47px, 7vw, 94px);
+      line-height: .98;
+      letter-spacing: -.066em;
+      font-weight: 880;
+    }
+    h2 {
+      max-width: 950px;
+      margin-bottom: 19px;
+      font-size: clamp(38px, 5vw, 68px);
+      line-height: 1.02;
+      letter-spacing: -.055em;
+      font-weight: 860;
+    }
+    h3 { letter-spacing: -.025em; }
+    .accent {
+      background: linear-gradient(105deg, #a5f6e3 4%, #48e0bd 52%, #8ff0b7 96%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .lead {
+      max-width: 760px;
+      margin-bottom: 30px;
+      color: #bfd3cc;
+      font-size: clamp(18px, 2vw, 24px);
+      line-height: 1.56;
+    }
+    .support-copy { color: var(--muted); line-height: 1.65; }
+    .slide-actions { display: flex; flex-wrap: wrap; gap: 11px; }
+
+    .hero-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.03fr) minmax(380px, .97fr);
+      gap: clamp(36px, 6vw, 86px);
+      align-items: center;
+    }
+    .hero-proof {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      margin-top: 26px;
+    }
+    .proof-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 11px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,.025);
+      color: #bfd4cd;
+      font-size: 11px;
+      font-weight: 750;
+    }
+    .proof-pill svg { width: 13px; height: 13px; color: var(--brand); }
+
+    .product-window {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(128, 239, 214, .22);
+      border-radius: 24px;
+      background: rgba(7, 22, 18, .88);
+      box-shadow: var(--shadow);
+      transform: perspective(1200px) rotateY(-3deg) rotateX(1deg);
+    }
+    .window-top {
+      height: 42px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(17, 42, 34, .72);
+    }
+    .traffic { display: flex; gap: 5px; }
+    .traffic i { width: 8px; height: 8px; border-radius: 50%; background: #3d665c; }
+    .traffic i:first-child { background: #ff8b96; }
+    .traffic i:nth-child(2) { background: #f4c764; }
+    .traffic i:nth-child(3) { background: #65e2aa; }
+    .window-label { color: #6f9389; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
+    .window-body { display: grid; grid-template-columns: 105px 1fr; min-height: 410px; }
+    .mock-sidebar { padding: 18px 12px; border-right: 1px solid var(--line); background: rgba(6, 19, 15, .82); }
+    .mock-brand { display: flex; align-items: center; gap: 7px; margin-bottom: 22px; font-size: 10px; font-weight: 850; }
+    .mock-logo { display: grid; place-items: center; width: 25px; height: 25px; border-radius: 8px; background: linear-gradient(135deg, #52e0bd, #2fc49e); color: #04231d; font-size: 8px; }
+    .mock-nav { display: grid; gap: 5px; }
+    .mock-nav span { padding: 8px 9px; border-radius: 8px; color: #597a70; font-size: 8px; font-weight: 760; }
+    .mock-nav .active { background: rgba(72,224,189,.10); color: #b9f8e8; }
+    .mock-main { min-width: 0; padding: 18px; }
+    .mock-heading { display: flex; justify-content: space-between; align-items: start; gap: 10px; margin-bottom: 13px; }
+    .mock-heading strong { display: block; font-size: 13px; }
+    .mock-heading small { color: #6d8b82; font-size: 8px; }
+    .mock-button { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: rgba(255,255,255,.02); color: #a7c3bb; font-size: 7px; }
+    .mock-metrics { display: grid; grid-template-columns: repeat(4,1fr); gap: 7px; }
+    .mock-metric { min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: rgba(13,34,28,.78); }
+    .mock-metric small { display: block; color: #69897f; font-size: 6.5px; }
+    .mock-metric strong { display: block; margin: 5px 0 3px; font-size: 12px; letter-spacing: -.03em; }
+    .mock-metric em { color: #67d9b4; font-size: 5.8px; font-style: normal; }
+    .mock-grid { display: grid; grid-template-columns: 1.55fr .85fr; gap: 8px; margin-top: 8px; }
+    .mock-chart, .mock-watch { min-height: 185px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(13,34,28,.72); }
+    .mock-chart-title, .mock-watch-title { margin-bottom: 15px; color: #b9d0c8; font-size: 7px; font-weight: 800; }
+    .bar-chart { height: 125px; display: flex; align-items: end; gap: 5px; padding-top: 10px; border-bottom: 1px solid rgba(255,255,255,.08); background: repeating-linear-gradient(to bottom, rgba(255,255,255,.05) 0 1px, transparent 1px 31px); }
+    .bar-chart i { flex: 1; min-height: 5px; border-radius: 4px 4px 1px 1px; background: linear-gradient(180deg,#77efd1,#27b895); opacity: .86; }
+    .watch-row { display: grid; grid-template-columns: 24px 1fr auto; align-items: center; gap: 7px; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
+    .watch-row:last-child { border-bottom: 0; }
+    .watch-icon { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 8px; background: rgba(72,224,189,.10); color: #87eed6; font-size: 6px; font-weight: 900; }
+    .watch-copy { min-width: 0; display: grid; }
+    .watch-copy b { font-size: 7px; }
+    .watch-copy span { overflow: hidden; color: #64847a; font-size: 5.5px; text-overflow: ellipsis; white-space: nowrap; }
+    .watch-score { color: #71e0b8; font-size: 8px; font-weight: 850; }
+    .float-badge {
+      position: absolute;
+      right: 18px;
+      bottom: 17px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 10px;
+      border: 1px solid rgba(72,224,189,.24);
+      border-radius: 999px;
+      background: rgba(4, 22, 17, .92);
+      color: #b4f7e5;
+      box-shadow: 0 12px 32px rgba(0,0,0,.34);
+      font-size: 8px;
+      font-weight: 800;
+    }
+    .float-badge i { width: 6px; height: 6px; border-radius: 50%; background: var(--positive); box-shadow: 0 0 12px var(--positive); }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      background: linear-gradient(145deg, rgba(15, 38, 31, .82), rgba(8, 23, 18, .70));
+      box-shadow: var(--shadow-soft);
+    }
+    .card p { margin: 0; color: var(--muted); line-height: 1.6; }
+    .card-kicker { margin-bottom: 12px; color: var(--brand-3); font-size: 10px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+
+    .question-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 15px; margin-top: 36px; }
+    .question-card { min-height: 250px; padding: 24px; display: flex; flex-direction: column; }
+    .question-number { margin-bottom: 32px; color: #50766b; font-size: 12px; font-weight: 850; }
+    .question-card h3 { margin-bottom: 12px; font-size: 25px; line-height: 1.12; }
+    .question-answer { margin-top: auto; padding-top: 20px; color: #a6d7c8; font-size: 12px; font-weight: 760; }
+
+    .truth-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-top: 34px; }
+    .truth-card { position: relative; overflow: hidden; min-height: 290px; padding: 26px; }
+    .truth-card::after { content: ""; position: absolute; width: 170px; height: 170px; right: -70px; bottom: -70px; border-radius: 50%; background: radial-gradient(circle, rgba(72,224,189,.12), transparent 68%); }
+    .truth-icon { width: 46px; height: 46px; display: grid; place-items: center; margin-bottom: 26px; border: 1px solid rgba(72,224,189,.2); border-radius: 14px; background: rgba(72,224,189,.08); color: var(--brand); }
+    .truth-icon svg { width: 21px; height: 21px; }
+    .truth-card h3 { margin-bottom: 10px; font-size: 28px; }
+    .truth-value { margin-top: 26px; color: #dff8f1; font-size: 13px; font-weight: 800; }
+    .truth-value span { color: var(--brand); }
+
+    .journey {
+      display: grid;
+      grid-template-columns: repeat(4,1fr);
+      gap: 12px;
+      margin-top: 34px;
+      counter-reset: journey;
+    }
+    .journey-step {
+      position: relative;
+      min-height: 245px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      background: rgba(11, 30, 24, .72);
+      counter-increment: journey;
+    }
+    .journey-step::before {
+      content: "0" counter(journey);
+      display: block;
+      margin-bottom: 42px;
+      color: #5e8378;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .08em;
+    }
+    .journey-step:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      top: 37px;
+      right: -13px;
+      z-index: 3;
+      width: 25px;
+      height: 1px;
+      background: var(--line-strong);
+    }
+    .journey-step h3 { margin-bottom: 10px; font-size: 22px; }
+    .journey-step p { margin: 0; color: var(--muted); line-height: 1.6; font-size: 13px; }
+    .journey-outcome { margin-top: 18px; color: #aeeedc; font-size: 11px; font-weight: 780; }
+
+    .bento { display: grid; grid-template-columns: 1.25fr .75fr; grid-template-rows: auto auto; gap: 14px; margin-top: 30px; }
+    .bento-card { min-height: 220px; padding: 24px; }
+    .bento-card.large { grid-row: span 2; min-height: 455px; }
+    .bento-head { display: flex; justify-content: space-between; align-items: start; gap: 18px; margin-bottom: 22px; }
+    .bento-head h3 { margin-bottom: 7px; font-size: 26px; }
+    .bento-head p { margin: 0; color: var(--muted); line-height: 1.55; }
+    .micro-badge { flex: 0 0 auto; padding: 7px 9px; border: 1px solid var(--line); border-radius: 999px; color: #a8c8bf; font-size: 9px; font-weight: 850; text-transform: uppercase; letter-spacing: .06em; }
+    .bento-dashboard { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+    .bento-kpi { padding: 13px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.018); }
+    .bento-kpi span { display: block; color: var(--muted-2); font-size: 8px; }
+    .bento-kpi b { display: block; margin-top: 6px; font-size: 17px; }
+    .bento-chart { height: 205px; display: flex; align-items: end; gap: 8px; margin-top: 14px; padding: 18px 12px 10px; border: 1px solid var(--line); border-radius: 14px; background: repeating-linear-gradient(to bottom, rgba(255,255,255,.04) 0 1px, transparent 1px 48px); }
+    .bento-chart i { flex: 1; min-width: 4px; border-radius: 6px 6px 2px 2px; background: linear-gradient(180deg,#7af1d4,#25b996); }
+    .signal-list { display: grid; gap: 9px; }
+    .signal-row { display: grid; grid-template-columns: 35px 1fr auto; align-items: center; gap: 10px; padding: 11px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.015); }
+    .signal-symbol { display: grid; place-items: center; width: 35px; height: 35px; border-radius: 11px; background: rgba(72,224,189,.09); color: var(--brand-3); font-size: 9px; font-weight: 900; }
+    .signal-copy { display: grid; min-width: 0; }
+    .signal-copy b { font-size: 11px; }
+    .signal-copy span { overflow: hidden; color: var(--muted-2); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+    .signal-status { color: var(--positive); font-size: 8px; font-weight: 850; }
+    .signal-status.watch { color: var(--warning); }
+    .research-snapshot { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; }
+    .research-score { width: 90px; height: 90px; display: grid; place-items: center; border: 8px solid rgba(72,224,189,.14); border-top-color: var(--brand); border-right-color: var(--brand); border-radius: 50%; color: #d9fff5; font-size: 28px; font-weight: 900; }
+    .research-factors { display: grid; gap: 8px; }
+    .research-factor { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; color: #bcd2ca; font-size: 10px; }
+    .research-factor i { grid-column: 1 / -1; height: 4px; border-radius: 999px; background: rgba(255,255,255,.06); overflow: hidden; }
+    .research-factor i::before { content: ""; display: block; width: var(--w); height: 100%; border-radius: inherit; background: linear-gradient(90deg,#3bd4af,#75e8bb); }
+
+    .demo-slide-layout { display: grid; grid-template-columns: .82fr 1.18fr; gap: 16px; align-items: stretch; margin-top: 30px; }
+    .demo-promise { padding: clamp(26px,4vw,44px); }
+    .demo-promise h3 { margin-bottom: 13px; font-size: 31px; }
+    .demo-list { display: grid; gap: 14px; margin: 24px 0 28px; padding: 0; list-style: none; }
+    .demo-list li { display: flex; gap: 10px; align-items: flex-start; color: #c6d9d3; line-height: 1.5; }
+    .check { flex: 0 0 auto; width: 20px; height: 20px; display: grid; place-items: center; margin-top: 1px; border-radius: 7px; background: rgba(72,224,189,.1); color: var(--brand); font-size: 11px; font-weight: 900; }
+    .demo-preview { min-height: 420px; padding: 20px; overflow: hidden; }
+    .guided-window { height: 100%; padding: 18px; border: 1px solid var(--line); border-radius: 18px; background: #081b16; }
+    .guided-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .guided-head strong { font-size: 12px; }
+    .demo-mode-badge { padding: 6px 8px; border: 1px solid rgba(245,198,95,.20); border-radius: 999px; color: #efd58c; background: rgba(245,198,95,.06); font-size: 7px; font-weight: 850; text-transform: uppercase; }
+    .guided-progress { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; margin-bottom: 18px; }
+    .guided-progress i { height: 4px; border-radius: 999px; background: rgba(255,255,255,.08); }
+    .guided-progress i.done { background: var(--brand); }
+    .guided-action { padding: 17px; border: 1px solid rgba(72,224,189,.18); border-radius: 15px; background: linear-gradient(145deg,rgba(72,224,189,.08),rgba(72,224,189,.02)); }
+    .guided-action span { color: var(--brand-3); font-size: 8px; font-weight: 850; text-transform: uppercase; letter-spacing: .08em; }
+    .guided-action h4 { margin: 8px 0 6px; font-size: 19px; }
+    .guided-action p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+    .guided-kpis { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 12px; }
+    .guided-kpi { padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.02); }
+    .guided-kpi span { display: block; color: var(--muted-2); font-size: 7px; }
+    .guided-kpi b { display: block; margin-top: 6px; font-size: 15px; }
+    .guided-bars { height: 145px; display: flex; align-items: end; gap: 7px; margin-top: 12px; padding: 10px 8px 6px; border-bottom: 1px solid var(--line); background: repeating-linear-gradient(to bottom,rgba(255,255,255,.04) 0 1px,transparent 1px 35px); }
+    .guided-bars i { flex: 1; border-radius: 5px 5px 1px 1px; background: linear-gradient(180deg,#70ebce,#24b894); }
+
+    .trust-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 14px; margin-top: 30px; }
+    .trust-card { display: grid; grid-template-columns: 47px 1fr; gap: 16px; padding: 22px; }
+    .trust-icon { width: 47px; height: 47px; display: grid; place-items: center; border: 1px solid rgba(72,224,189,.18); border-radius: 14px; background: rgba(72,224,189,.07); color: var(--brand); }
+    .trust-icon svg { width: 21px; height: 21px; }
+    .trust-card h3 { margin: 0 0 8px; font-size: 20px; }
+    .trust-card p { font-size: 13px; }
+    .trust-foot { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    .trust-foot span { padding: 7px 9px; border: 1px solid var(--line); border-radius: 999px; color: #a7c5bc; font-size: 9px; font-weight: 760; }
+
+    .comparison-wrap { overflow: hidden; margin-top: 30px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: rgba(10,28,23,.74); }
+    .comparison-table { width: 100%; border-collapse: collapse; }
+    .comparison-table th, .comparison-table td { padding: 17px 19px; border-bottom: 1px solid var(--line); text-align: left; }
+    .comparison-table tr:last-child td { border-bottom: 0; }
+    .comparison-table th { color: #73968c; font-size: 10px; font-weight: 850; letter-spacing: .07em; text-transform: uppercase; }
+    .comparison-table td { color: #bdd1ca; font-size: 13px; }
+    .comparison-table th:not(:first-child), .comparison-table td:not(:first-child) { text-align: center; }
+    .comparison-table .highlight-col { background: rgba(72,224,189,.055); color: #e3fff7; font-weight: 800; }
+    .cap-yes { color: var(--positive); font-weight: 900; }
+    .cap-partial { color: var(--warning); font-weight: 900; }
+    .cap-no { color: #536f67; font-weight: 900; }
+    .comparison-note { margin-top: 14px; color: var(--muted-2); font-size: 11px; line-height: 1.6; }
+
+    .launch-grid { display: grid; grid-template-columns: 1fr .8fr; gap: 18px; margin-top: 30px; }
+    .launch-steps { display: grid; gap: 10px; }
+    .launch-step { display: grid; grid-template-columns: 78px 1fr auto; align-items: center; gap: 16px; padding: 18px; border: 1px solid var(--line); border-radius: 17px; background: rgba(11,30,24,.70); }
+    .launch-phase { color: var(--brand-3); font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
+    .launch-copy { display: grid; }
+    .launch-copy b { margin-bottom: 5px; font-size: 14px; }
+    .launch-copy span { color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .launch-status { padding: 7px 9px; border-radius: 999px; background: rgba(96,229,167,.09); color: #9af0c0; font-size: 8px; font-weight: 850; text-transform: uppercase; }
+    .launch-status.next { background: rgba(125,183,255,.08); color: #a7caff; }
+    .success-card { padding: 24px; }
+    .success-card h3 { margin-bottom: 20px; font-size: 24px; }
+    .success-list { display: grid; gap: 15px; }
+    .success-item { padding-bottom: 15px; border-bottom: 1px solid var(--line); }
+    .success-item:last-child { padding-bottom: 0; border-bottom: 0; }
+    .success-item span { display: block; margin-bottom: 5px; color: var(--brand-3); font-size: 9px; font-weight: 850; text-transform: uppercase; letter-spacing: .07em; }
+    .success-item b { font-size: 13px; }
+    .success-item p { margin: 6px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+
+    .cta-panel {
+      display: grid;
+      grid-template-columns: minmax(0,1fr) auto;
+      gap: 40px;
+      align-items: center;
+      padding: clamp(32px,6vw,70px);
+      border: 1px solid rgba(72,224,189,.23);
+      border-radius: var(--radius-xl);
+      background:
+        radial-gradient(circle at 92% 50%, rgba(72,224,189,.12), transparent 28rem),
+        linear-gradient(145deg, rgba(15,43,34,.90), rgba(7,23,18,.82));
+      box-shadow: var(--shadow);
+    }
+    .cta-panel h2 { max-width: 800px; }
+    .cta-panel .lead { margin-bottom: 0; }
+    .cta-actions { display: grid; gap: 10px; min-width: 205px; }
+    .cta-meta { margin-top: 20px; color: var(--muted-2); font-size: 10px; line-height: 1.6; }
+
+    .slide-nav {
+      position: fixed;
+      z-index: 90;
+      left: 18px;
+      top: 50%;
+      display: grid;
+      gap: 8px;
+      transform: translateY(-50%);
+    }
+    .slide-dot {
+      appearance: none;
+      width: 8px;
+      height: 8px;
+      padding: 0;
+      border: 0;
+      border-radius: 999px;
+      background: rgba(255,255,255,.20);
+      cursor: pointer;
+      transition: height .18s ease, background .18s ease;
+    }
+    .slide-dot.active { height: 27px; background: var(--brand); }
+    .slide-progress { position: fixed; z-index: 101; left: 0; top: 0; height: 2px; width: 10%; background: linear-gradient(90deg,var(--brand),var(--positive)); transition: width .25s ease; }
+    .keyboard-hint { position: fixed; z-index: 90; right: 19px; bottom: 17px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 999px; background: rgba(5,17,14,.72); color: #638279; font-size: 8px; font-weight: 760; }
+
+    /* Product demo */
+    .demo-view { min-height: 100vh; padding-top: var(--nav-height); }
+    .demo-shell { display: grid; grid-template-columns: 238px minmax(0,1fr); min-height: calc(100vh - var(--nav-height)); }
+    .demo-sidebar {
+      position: sticky;
+      top: var(--nav-height);
+      height: calc(100vh - var(--nav-height));
+      padding: 22px 17px;
+      border-right: 1px solid var(--line);
+      background: rgba(5,18,14,.88);
+      overflow-y: auto;
+    }
+    .demo-profile { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.018); }
+    .avatar { width: 35px; height: 35px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 11px; background: linear-gradient(135deg,#50dfbc,#2fc39e); color: #04231c; font-size: 10px; font-weight: 900; }
+    .profile-copy { min-width: 0; display: grid; }
+    .profile-copy b { font-size: 11px; }
+    .profile-copy span { overflow: hidden; color: var(--muted-2); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+    .demo-nav-label { margin: 19px 10px 8px; color: #4f7168; font-size: 8px; font-weight: 900; letter-spacing: .13em; text-transform: uppercase; }
+    .demo-nav-list { display: grid; gap: 5px; }
+    .demo-nav-item {
+      appearance: none;
+      width: 100%;
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 11px;
+      border: 1px solid transparent;
+      border-radius: 11px;
+      background: transparent;
+      color: #77968d;
+      text-align: left;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 780;
+      transition: background .16s ease, color .16s ease, border-color .16s ease;
+    }
+    .demo-nav-item:hover { color: var(--text); background: rgba(255,255,255,.025); }
+    .demo-nav-item.active { color: #e8fff8; border-color: rgba(72,224,189,.16); background: rgba(72,224,189,.09); }
+    .demo-nav-item svg { width: 17px; height: 17px; color: #68dcbf; }
+    .demo-sidebar-footer { display: grid; gap: 9px; margin-top: 20px; }
+    .demo-sidebar-note { padding: 12px; border: 1px solid rgba(245,198,95,.14); border-radius: 13px; background: rgba(245,198,95,.05); color: #d8c989; font-size: 9px; line-height: 1.5; }
+    .sidebar-action { width: 100%; }
+
+    .demo-main { min-width: 0; padding: clamp(21px,3.2vw,44px); }
+    .demo-page { display: none; animation: fade-up .25s ease both; }
+    .demo-page.active { display: block; }
+    @keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .demo-banner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 16px;
+      padding: 11px 13px;
+      border: 1px solid rgba(245,198,95,.16);
+      border-radius: 13px;
+      background: rgba(245,198,95,.045);
+      color: #dfd09c;
+      font-size: 10px;
+      line-height: 1.45;
+    }
+    .demo-banner strong { color: #f3df9e; }
+    .demo-banner button { flex: 0 0 auto; }
+    .tour-panel {
+      display: grid;
+      grid-template-columns: minmax(220px,.7fr) minmax(0,1.3fr);
+      gap: 18px;
+      margin-bottom: 18px;
+      padding: 19px;
+      border: 1px solid rgba(72,224,189,.17);
+      border-radius: 18px;
+      background: linear-gradient(145deg,rgba(72,224,189,.065),rgba(8,25,20,.72));
+    }
+    .tour-copy h3 { margin: 6px 0 8px; font-size: 19px; }
+    .tour-copy p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+    .tour-progress-label { color: var(--brand-3); font-size: 8px; font-weight: 850; text-transform: uppercase; letter-spacing: .08em; }
+    .tour-progress-bar { height: 5px; margin-top: 12px; border-radius: 999px; background: rgba(255,255,255,.07); overflow: hidden; }
+    .tour-progress-bar i { display: block; width: 0%; height: 100%; border-radius: inherit; background: linear-gradient(90deg,var(--brand),var(--positive)); transition: width .25s ease; }
+    .tour-tasks { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
+    .tour-task {
+      appearance: none;
+      min-height: 86px;
+      display: grid;
+      align-content: space-between;
+      gap: 10px;
+      padding: 11px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: rgba(255,255,255,.018);
+      color: #9db9b1;
+      text-align: left;
+      cursor: pointer;
+      font-size: 9px;
+      font-weight: 760;
+    }
+    .tour-task:hover { border-color: var(--line-strong); }
+    .tour-task.done { color: #d8f9ef; border-color: rgba(72,224,189,.18); background: rgba(72,224,189,.055); }
+    .task-status { width: 20px; height: 20px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; color: #617f76; font-size: 9px; }
+    .tour-task.done .task-status { border-color: transparent; background: var(--brand); color: #04241d; }
+
+    .demo-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 25px; margin-bottom: 22px; }
+    .demo-kicker { margin-bottom: 6px; color: #709188; font-size: 10px; font-weight: 850; letter-spacing: .09em; text-transform: uppercase; }
+    .demo-title { margin: 0; font-size: clamp(31px,4vw,47px); line-height: 1.04; letter-spacing: -.046em; }
+    .demo-subtitle { max-width: 700px; margin: 9px 0 0; color: var(--muted); line-height: 1.55; }
+    .demo-header-actions { display: flex; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
+
+    .next-action {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 17px;
+      padding: 17px;
+      border: 1px solid rgba(72,224,189,.20);
+      border-radius: 17px;
+      background: linear-gradient(135deg,rgba(72,224,189,.09),rgba(72,224,189,.025));
+    }
+    .next-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 13px; background: rgba(72,224,189,.11); color: var(--brand); }
+    .next-icon svg { width: 20px; height: 20px; }
+    .next-copy { display: grid; }
+    .next-copy span { color: var(--brand-3); font-size: 8px; font-weight: 850; text-transform: uppercase; letter-spacing: .08em; }
+    .next-copy b { margin: 4px 0; font-size: 14px; }
+    .next-copy small { color: var(--muted); font-size: 9px; line-height: 1.5; }
+
+    .settings-row { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin-bottom: 16px; padding: 13px; border: 1px solid var(--line); border-radius: 15px; background: rgba(9,27,22,.66); }
+    .settings-row label { display: grid; gap: 5px; color: #718f86; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+    .shares-input { width: 92px; min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: #081b16; color: var(--text); font-size: 12px; font-weight: 800; }
+    .settings-note { margin-left: auto; align-self: center; color: var(--muted-2); font-size: 9px; }
+
+    .kpi-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 11px; margin-bottom: 16px; }
+    .kpi-card { position: relative; overflow: hidden; min-height: 125px; padding: 17px; border: 1px solid var(--line); border-radius: 17px; background: rgba(10,29,24,.74); }
+    .kpi-card.highlight { border-color: rgba(72,224,189,.20); background: linear-gradient(145deg,rgba(72,224,189,.09),rgba(10,29,24,.76)); }
+    .kpi-label { display: block; color: #6d8d83; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+    .kpi-value { display: block; margin: 13px 0 6px; font-size: clamp(22px,2.5vw,31px); line-height: 1; letter-spacing: -.04em; }
+    .kpi-delta { color: #65dcb5; font-size: 8px; font-weight: 760; }
+    .kpi-delta.muted { color: #739087; }
+    .kpi-orb { position: absolute; width: 85px; height: 85px; right: -38px; bottom: -45px; border-radius: 50%; background: radial-gradient(circle,rgba(72,224,189,.13),transparent 68%); }
+    .data-tag { display: inline-flex; margin-top: 7px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted-2); font-size: 7px; font-weight: 850; text-transform: uppercase; letter-spacing: .05em; }
+    .data-tag.received { border-color: rgba(96,229,167,.18); color: #8ee9b8; background: rgba(96,229,167,.04); }
+    .data-tag.estimated { border-color: rgba(125,183,255,.18); color: #9dc7ff; background: rgba(125,183,255,.04); }
+
+    .dashboard-grid { display: grid; grid-template-columns: 1.42fr .78fr; gap: 13px; margin-bottom: 13px; }
+    .demo-card { border: 1px solid var(--line); border-radius: 18px; padding: 18px; background: rgba(9,28,23,.72); }
+    .demo-card-head { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-bottom: 15px; }
+    .demo-card-title { margin: 0; font-size: 14px; }
+    .demo-card-caption { margin-top: 4px; color: #68887e; font-size: 9px; line-height: 1.45; }
+    .legend { display: flex; gap: 11px; color: #6e8c83; font-size: 8px; }
+    .legend span { display: flex; align-items: center; gap: 5px; }
+    .legend i { width: 7px; height: 7px; border-radius: 2px; background: var(--brand); }
+    .legend span:last-child i { height: 1px; background: #829d95; }
+    .income-chart { position: relative; height: 245px; padding: 12px 0 22px 40px; }
+    .chart-y-labels { position: absolute; left: 0; top: 8px; bottom: 22px; display: flex; flex-direction: column; justify-content: space-between; color: #536f67; font-size: 7px; }
+    .chart-grid-lines { position: absolute; inset: 12px 0 22px 40px; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
+    .chart-grid-lines i { display: block; height: 1px; background: rgba(255,255,255,.05); }
+    .income-bars { position: relative; z-index: 2; height: 100%; display: grid; grid-template-columns: repeat(12,1fr); align-items: end; gap: 6px; }
+    .income-month { height: 100%; display: grid; grid-template-rows: 1fr auto; gap: 7px; align-items: end; text-align: center; }
+    .income-bar-wrap { height: 100%; display: flex; align-items: end; justify-content: center; }
+    .income-bar { width: min(21px,80%); min-height: 3px; display: block; border-radius: 6px 6px 2px 2px; background: linear-gradient(180deg,#7bf0d4,#25b995); box-shadow: 0 0 18px rgba(72,224,189,.08); }
+    .income-month span { color: #5c7a71; font-size: 7px; }
+    .average-line { position: absolute; left: 40px; right: 0; height: 1px; border-top: 1px dashed rgba(145,173,164,.52); pointer-events: none; }
+    .average-line span { position: absolute; right: 0; top: -14px; color: #738f87; font-size: 7px; }
+
+    .attention-list { display: grid; gap: 8px; }
+    .attention-item { display: grid; grid-template-columns: 36px 1fr auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.015); }
+    .attention-icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 11px; background: rgba(72,224,189,.09); color: #8beed7; font-size: 9px; font-weight: 900; }
+    .attention-icon.warn { background: rgba(245,198,95,.08); color: #ead07e; }
+    .attention-copy { min-width: 0; display: grid; }
+    .attention-copy b { font-size: 10px; }
+    .attention-copy span { overflow: hidden; color: #67867c; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+    .attention-status { padding: 5px 7px; border-radius: 999px; background: rgba(96,229,167,.08); color: #82e5ae; font-size: 7px; font-weight: 850; text-transform: uppercase; }
+    .attention-status.watch { background: rgba(245,198,95,.07); color: #e8ce7c; }
+
+    .table-card { padding: 0; overflow: hidden; }
+    .table-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 17px 18px; border-bottom: 1px solid var(--line); }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 14px 17px; border-bottom: 1px solid rgba(255,255,255,.045); text-align: left; white-space: nowrap; }
+    tbody tr:last-child td { border-bottom: 0; }
+    th { color: #607f76; font-size: 7px; font-weight: 850; letter-spacing: .07em; text-transform: uppercase; }
+    td { color: #bcd1ca; font-size: 10px; }
+    .ticker-cell { display: flex; align-items: center; gap: 10px; }
+    .ticker-logo { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid rgba(72,224,189,.12); border-radius: 11px; background: rgba(72,224,189,.07); color: #8beed7; font-size: 8px; font-weight: 900; }
+    .ticker-meta { display: grid; }
+    .ticker-meta b { font-size: 10px; }
+    .ticker-meta span { color: #5d7b72; font-size: 7px; }
+    .status-pill { display: inline-flex; padding: 5px 7px; border-radius: 999px; background: rgba(96,229,167,.08); color: #83e3af; font-size: 7px; font-weight: 850; text-transform: uppercase; }
+    .status-pill.watch { background: rgba(245,198,95,.07); color: #e8cf7d; }
+
+    .calendar-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; }
+    .payment-card { padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(9,28,23,.70); }
+    .payment-top { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 22px; }
+    .payment-date { color: #7c9b92; font-size: 8px; font-weight: 800; }
+    .payment-type { padding: 4px 6px; border-radius: 999px; background: rgba(125,183,255,.08); color: #9ec8ff; font-size: 6px; font-weight: 850; text-transform: uppercase; }
+    .payment-type.confirmed { background: rgba(96,229,167,.08); color: #92e8b9; }
+    .payment-symbol { color: var(--brand-3); font-size: 10px; font-weight: 900; }
+    .payment-company { margin: 5px 0 12px; color: #718e85; font-size: 8px; }
+    .payment-amount { font-size: 21px; font-weight: 850; letter-spacing: -.035em; }
+
+    .risk-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 11px; margin-bottom: 13px; }
+    .risk-card { padding: 18px; border: 1px solid var(--line); border-radius: 17px; background: rgba(9,28,23,.70); }
+    .risk-top { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+    .risk-top b { font-size: 13px; }
+    .risk-score { font-size: 24px; font-weight: 900; color: var(--positive); }
+    .risk-score.watch { color: var(--warning); }
+    .risk-card p { margin: 14px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+    .factor-list { display: grid; gap: 10px; }
+    .factor-row { display: grid; grid-template-columns: 145px 1fr auto; gap: 13px; align-items: center; }
+    .factor-row span { color: #9eb8b0; font-size: 9px; }
+    .factor-track { height: 6px; border-radius: 999px; background: rgba(255,255,255,.06); overflow: hidden; }
+    .factor-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg,#37cfa9,#76e7b8); }
+    .factor-row b { color: #bcd3cb; font-size: 9px; }
+
+    .research-layout { display: grid; grid-template-columns: .8fr 1.2fr; gap: 13px; }
+    .stock-hero { min-height: 390px; display: flex; flex-direction: column; }
+    .stock-symbol { display: flex; align-items: center; gap: 11px; }
+    .stock-symbol h3 { margin: 0 0 4px; font-size: 16px; }
+    .stock-symbol p { margin: 0; color: var(--muted); font-size: 9px; }
+    .stock-score { margin-top: 36px; font-size: 74px; line-height: 1; font-weight: 900; letter-spacing: -.07em; color: #dffff6; }
+    .score-copy { margin-top: 9px; color: #8eaaa1; font-size: 9px; }
+    .score-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; margin-top: auto; }
+    .score-item { padding: 11px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.015); }
+    .score-item span { display: block; color: #627f76; font-size: 7px; }
+    .score-item b { display: block; margin-top: 5px; font-size: 11px; }
+    .evidence-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 9px; }
+    .evidence-card { padding: 15px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.015); }
+    .evidence-card span { display: block; color: var(--muted-2); font-size: 7px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+    .evidence-card b { display: block; margin: 9px 0 6px; font-size: 16px; }
+    .evidence-card p { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.5; }
+    .method-note { margin-top: 10px; padding: 12px; border: 1px solid rgba(125,183,255,.13); border-radius: 13px; background: rgba(125,183,255,.035); color: #8fabce; font-size: 8px; line-height: 1.55; }
+
+    .import-layout { display: grid; grid-template-columns: .8fr 1.2fr; gap: 13px; }
+    .import-steps { display: grid; gap: 9px; }
+    .import-step { display: grid; grid-template-columns: 31px 1fr; gap: 11px; align-items: start; padding: 13px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.015); }
+    .import-step-number { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 10px; background: rgba(72,224,189,.08); color: var(--brand-3); font-size: 8px; font-weight: 900; }
+    .import-step b { display: block; margin-bottom: 5px; font-size: 11px; }
+    .import-step p { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.5; }
+    .import-summary { display: grid; grid-template-columns: repeat(2,1fr); gap: 9px; }
+    .import-metric { padding: 15px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.015); }
+    .import-metric span { display: block; color: var(--muted-2); font-size: 7px; text-transform: uppercase; letter-spacing: .05em; }
+    .import-metric b { display: block; margin-top: 8px; font-size: 21px; }
+    .reconcile-box { margin-top: 10px; padding: 14px; border: 1px solid rgba(96,229,167,.15); border-radius: 14px; background: rgba(96,229,167,.035); }
+    .reconcile-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .reconcile-head b { font-size: 11px; }
+    .reconcile-head span { color: #8ee8b8; font-size: 8px; font-weight: 850; text-transform: uppercase; }
+    .reconcile-list { display: grid; gap: 7px; margin-top: 12px; }
+    .reconcile-row { display: flex; justify-content: space-between; gap: 12px; color: #8aa79e; font-size: 8px; }
+    .reconcile-row b { color: #c7ded6; }
+
+    .demo-footer { margin-top: 20px; padding: 14px 0 4px; border-top: 1px solid var(--line); color: #5d7a72; font-size: 8px; line-height: 1.55; }
+    .demo-toast {
+      position: fixed;
+      z-index: 300;
+      right: 20px;
+      bottom: 20px;
+      max-width: 360px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 13px 14px;
+      border: 1px solid rgba(72,224,189,.20);
+      border-radius: 14px;
+      background: rgba(7,26,20,.96);
+      box-shadow: 0 20px 54px rgba(0,0,0,.40);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(12px);
+      transition: opacity .2s ease, transform .2s ease;
+    }
+    .demo-toast.show { opacity: 1; transform: translateY(0); }
+    .toast-dot { width: 8px; height: 8px; flex: 0 0 auto; margin-top: 3px; border-radius: 50%; background: var(--positive); box-shadow: 0 0 13px var(--positive); }
+    .toast-copy { display: grid; }
+    .toast-copy b { font-size: 10px; }
+    .toast-copy span { margin-top: 3px; color: var(--muted); font-size: 8px; line-height: 1.45; }
+
+    dialog {
+      width: min(620px, calc(100% - 30px));
+      padding: 0;
+      border: 1px solid rgba(72,224,189,.22);
+      border-radius: 22px;
+      background: #0b201a;
+      color: var(--text);
+      box-shadow: var(--shadow);
+    }
+    dialog::backdrop { background: rgba(2,10,8,.72); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+    .dialog-head { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 19px 20px; border-bottom: 1px solid var(--line); }
+    .dialog-head h2 { margin: 0; font-size: 23px; letter-spacing: -.035em; }
+    .dialog-body { padding: 20px; }
+    .dialog-body p { color: var(--muted); line-height: 1.6; }
+    .definition-grid { display: grid; gap: 9px; }
+    .definition { padding: 13px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.015); }
+    .definition b { display: block; margin-bottom: 5px; font-size: 11px; }
+    .definition span { color: var(--muted); font-size: 9px; line-height: 1.55; }
+
+    @media (max-width: 1100px) {
+      .topbar { grid-template-columns: 1fr auto auto; }
+      .hero-layout { grid-template-columns: 1fr; }
+      .product-window { width: min(760px,100%); transform: none; }
+      .question-grid, .truth-grid { grid-template-columns: repeat(3,1fr); }
+      .journey { grid-template-columns: repeat(2,1fr); }
+      .journey-step:nth-child(2)::after { display: none; }
+      .bento { grid-template-columns: 1fr; }
+      .bento-card.large { grid-row: auto; min-height: 430px; }
+      .demo-slide-layout, .launch-grid { grid-template-columns: 1fr; }
+      .cta-panel { grid-template-columns: 1fr; }
+      .cta-actions { grid-template-columns: repeat(3,auto); justify-content: start; }
+      .demo-shell { grid-template-columns: 205px minmax(0,1fr); }
+      .tour-panel { grid-template-columns: 1fr; }
+      .kpi-grid { grid-template-columns: repeat(2,1fr); }
+      .dashboard-grid, .research-layout, .import-layout { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 760px) {
+      :root { --nav-height: 64px; }
+      .topbar { grid-template-columns: 1fr auto; padding: 0 13px; }
+      .brand-tag, .top-actions .github-label, .keyboard-hint { display: none; }
+      .view-switcher { grid-column: 1 / -1; position: fixed; left: 50%; bottom: max(12px,env(safe-area-inset-bottom)); z-index: 120; transform: translateX(-50%); background: rgba(5,20,15,.94); box-shadow: 0 14px 40px rgba(0,0,0,.38); }
+      .top-actions { gap: 6px; }
+      .top-actions .button { min-height: 38px; padding: 0 11px; }
+      .slide { min-height: 100svh; padding: calc(var(--nav-height) + 34px) 18px 92px; scroll-snap-stop: normal; }
+      h1 { font-size: clamp(44px,13vw,68px); }
+      h2 { font-size: clamp(34px,10vw,50px); }
+      .lead { font-size: 18px; }
+      .window-body { grid-template-columns: 78px 1fr; min-height: 360px; }
+      .mock-sidebar { padding: 13px 8px; }
+      .mock-main { padding: 12px; }
+      .mock-metrics { grid-template-columns: repeat(2,1fr); }
+      .mock-grid { grid-template-columns: 1fr; }
+      .mock-watch { display: none; }
+      .question-grid, .truth-grid, .trust-grid { grid-template-columns: 1fr; }
+      .question-card, .truth-card { min-height: auto; }
+      .journey { grid-template-columns: 1fr; }
+      .journey-step { min-height: auto; }
+      .journey-step::after { display: none; }
+      .bento-dashboard { grid-template-columns: 1fr; }
+      .bento-card.large { min-height: auto; }
+      .bento-chart { height: 160px; }
+      .comparison-wrap { overflow-x: auto; }
+      .comparison-table { min-width: 720px; }
+      .launch-step { grid-template-columns: 62px 1fr; }
+      .launch-status { grid-column: 2; justify-self: start; }
+      .cta-actions { grid-template-columns: 1fr; }
+      .slide-nav { display: none; }
+      .demo-shell { grid-template-columns: 1fr; }
+      .demo-sidebar { position: sticky; top: var(--nav-height); z-index: 60; height: auto; padding: 10px 12px; border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; }
+      .demo-profile, .demo-nav-label, .demo-sidebar-footer { display: none; }
+      .demo-nav-list { grid-auto-flow: column; grid-auto-columns: max-content; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+      .demo-nav-list::-webkit-scrollbar { display: none; }
+      .demo-nav-item { width: auto; min-height: 38px; padding: 0 10px; }
+      .demo-main { padding: 18px 13px 92px; }
+      .demo-banner { align-items: flex-start; }
+      .tour-tasks { grid-template-columns: repeat(2,1fr); }
+      .demo-header { display: grid; }
+      .demo-header-actions { justify-content: flex-start; }
+      .next-action { grid-template-columns: auto 1fr; }
+      .next-action .button { grid-column: 1 / -1; }
+      .settings-note { width: 100%; margin-left: 0; }
+      .kpi-grid { grid-template-columns: repeat(2,1fr); }
+      .calendar-grid, .risk-grid { grid-template-columns: repeat(2,1fr); }
+      .factor-row { grid-template-columns: 95px 1fr auto; }
+      .demo-toast { left: 13px; right: 13px; bottom: 76px; }
+    }
+
+    @media (max-width: 470px) {
+      .brand-name { font-size: 14px; }
+      .top-actions .share-label { display: none; }
+      .top-actions .button.icon-only-mobile { width: 38px; padding: 0; }
+      .product-window { border-radius: 18px; }
+      .window-body { grid-template-columns: 1fr; }
+      .mock-sidebar { display: none; }
+      .mock-grid { margin-top: 7px; }
+      .demo-slide-layout { grid-template-columns: 1fr; }
+      .guided-kpis { grid-template-columns: 1fr; }
+      .kpi-grid { grid-template-columns: 1fr; }
+      .calendar-grid, .risk-grid, .evidence-grid, .import-summary { grid-template-columns: 1fr; }
+      .tour-tasks { grid-template-columns: 1fr; }
+      .tour-task { min-height: 65px; grid-template-columns: auto 1fr; align-items: center; align-content: center; }
+      .score-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 760px) {
+      .top-actions { display: none; }
+      .view-switcher { position: static; grid-column: auto; left: auto; bottom: auto; transform: none; justify-self: end; box-shadow: none; }
+      .demo-shell, .demo-sidebar, .demo-main, .demo-nav-list { min-width: 0; max-width: 100%; }
+      .demo-sidebar, .demo-main { width: 100%; }
+      .demo-nav-list { width: 100%; }
+      .demo-banner { display: grid; }
+      .demo-banner .button { width: 100%; }
+      .demo-page, .tour-panel, .next-action, .settings-row, .kpi-grid, .dashboard-grid, .demo-card, .demo-footer { min-width: 0; max-width: 100%; }
+      .table-wrap { width: 100%; max-width: 100%; }
+      .kpi-orb { pointer-events: none; }
+    }
+
+    @media (max-height: 820px) and (min-width: 761px) {
+      .deck-view { scroll-snap-type: y proximity; }
+      .slide { padding-top: calc(var(--nav-height) + 26px); padding-bottom: 42px; }
+      h1 { font-size: clamp(45px, 6.5vw, 82px); }
+      h2 { font-size: clamp(36px, 4.6vw, 60px); }
+      .lead { margin-bottom: 24px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+      .product-window { transform: none; }
+    }
+
+    @media print {
+      :root { color-scheme: light; }
+      body { background: #fff; color: #10231e; }
+      .topbar, .slide-nav, .slide-progress, .keyboard-hint, .demo-view, .demo-toast, dialog { display: none !important; }
+      .deck-view { height: auto; overflow: visible; }
+      .slide { min-height: 100vh; break-after: page; padding: 52px; background: #fff; }
+      .slide::before, .slide::after { display: none; }
+      .card, .journey-step, .comparison-wrap, .cta-panel, .product-window, .demo-promise, .demo-preview, .trust-card, .bento-card { border-color: #cbd9d4; background: #f7faf9; box-shadow: none; }
+      .lead, .support-copy, .card p, .journey-step p, .comparison-table td { color: #465a53; }
+      .accent { color: #0f766e; -webkit-text-fill-color: #0f766e; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+
+  <header class="topbar">
+    <button class="brand" id="brandButton" type="button" aria-label="Open DividendScope pitch">
+      <svg class="brand-logo" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs><linearGradient id="logoGradient" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stop-color="#0f766e"/><stop offset="100%" stop-color="#48e0bd"/></linearGradient></defs>
+        <rect x="2" y="2" width="36" height="36" rx="11" fill="url(#logoGradient)"/>
+        <path d="M10.5 28V19.5h4V28h-4Zm7.5 0V14h4v14h-4Zm7.5 0V9.5h4V28h-4Z" fill="#fff"/>
+        <path d="m10.5 16 6-4.5 5 2 8-7" fill="none" stroke="#fef08a" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="29.5" cy="6.5" r="2.2" fill="#fef08a"/>
+      </svg>
+      <span class="brand-copy"><span class="brand-name">DividendScope</span><span class="brand-tag">Product story · interactive demo</span></span>
+    </button>
+
+    <nav class="view-switcher" role="tablist" aria-label="Choose page view">
+      <button class="view-button" id="deckTab" type="button" role="tab" aria-controls="deckView" aria-selected="true">Pitch</button>
+      <button class="view-button" id="demoTab" type="button" role="tab" aria-controls="demoView" aria-selected="false">Demo</button>
+    </nav>
+
+    <div class="top-actions">
+      <button class="button ghost icon-only-mobile" id="shareButton" type="button" aria-label="Share this presentation">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4"/></svg>
+        <span class="share-label">Share</span>
+      </button>
+      <a class="button ghost" href="https://github.com/blidiselalin/dividend-healthcheck" target="_blank" rel="noopener noreferrer">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 19c-4 1.5-4-2-5-2.5M14.5 22v-3.9c0-1.1.4-2 1-2.5 3.3-.4 6.8-1.6 6.8-7.1 0-1.6-.6-2.9-1.5-3.9.1-.4.7-2-.2-4.1 0 0-1.2-.4-4 1.5a13.5 13.5 0 0 0-7.2 0C6.6.1 5.4.5 5.4.5c-.9 2.1-.3 3.7-.2 4.1-.9 1-1.5 2.3-1.5 3.9 0 5.5 3.5 6.7 6.8 7.1.5.5.9 1.3.9 2.5V22"/></svg>
+        <span class="github-label">GitHub</span>
+      </a>
+      <button class="button primary" id="topDemoButton" type="button">Open demo</button>
+    </div>
+  </header>
+
+  <main id="main-content">
+    <section class="deck-view" id="deckView" aria-label="DividendScope product pitch">
+      <section class="slide" data-title="Promise" id="slide-promise">
+        <div class="slide-inner hero-layout">
+          <div>
+            <div class="slide-label">Beta launch experience</div>
+            <h1>Your dividend portfolio, <span class="accent">explained.</span></h1>
+            <p class="lead">Reconcile what was paid, surface what needs attention, and forecast the next twelve months of income—in one private investor workspace.</p>
+            <div class="slide-actions">
+              <button class="button primary" type="button" data-open-demo="overview">Explore the guided demo</button>
+              <a class="button" href="https://github.com/blidiselalin/dividend-healthcheck#quick-start--docker-recommended" target="_blank" rel="noopener noreferrer">Run it locally</a>
+            </div>
+            <div class="hero-proof" aria-label="Product principles">
+              <span class="proof-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 4 6v6c0 4.7 3.2 8.5 8 10 4.8-1.5 8-5.3 8-10V6l-8-3Z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>User-scoped portfolio data</span>
+              <span class="proof-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16"/><path d="m7 15 4-4 3 2 5-6"/></svg>Income-first workflow</span>
+              <span class="proof-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M7 3v4m10-4v4M6 11h4v4H6zM14 11h4v4h-4z"/></svg>Self-hostable</span>
+              <span class="proof-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/></svg>No paid market-data key required</span>
+            </div>
+          </div>
+
+          <div class="product-window" aria-label="Illustrative DividendScope dashboard preview">
+            <div class="window-top"><span class="traffic"><i></i><i></i><i></i></span><span class="window-label">DividendScope / portfolio command center</span></div>
+            <div class="window-body">
+              <aside class="mock-sidebar"><div class="mock-brand"><span class="mock-logo">DS</span><span>Scope</span></div><div class="mock-nav"><span class="active">Overview</span><span>Income</span><span>Risk</span><span>Research</span><span>Import</span></div></aside>
+              <div class="mock-main">
+                <div class="mock-heading"><div><strong>Portfolio overview</strong><small>Illustrative dividend portfolio</small></div><button class="mock-button" type="button" tabindex="-1">Data reconciled</button></div>
+                <div class="mock-metrics">
+                  <div class="mock-metric"><small>Portfolio value</small><strong data-mirror="portfolio-value">$24,590</strong><em>Illustrative prices</em></div>
+                  <div class="mock-metric"><small>Annual income</small><strong data-mirror="annual-income">$895</strong><em data-mirror="portfolio-yield">3.64% yield</em></div>
+                  <div class="mock-metric"><small>Received YTD</small><strong data-mirror="received-ytd">$548</strong><em>Broker-aligned</em></div>
+                  <div class="mock-metric"><small>Data status</small><strong>Verified</strong><em>0 blocking issues</em></div>
+                </div>
+                <div class="mock-grid">
+                  <div class="mock-chart"><div class="mock-chart-title">Next 12 months · estimated gross income</div><div class="bar-chart" aria-hidden="true"><i style="height:30%"></i><i style="height:64%"></i><i style="height:48%"></i><i style="height:73%"></i><i style="height:38%"></i><i style="height:80%"></i><i style="height:47%"></i><i style="height:72%"></i><i style="height:55%"></i><i style="height:86%"></i><i style="height:43%"></i><i style="height:92%"></i></div></div>
+                  <div class="mock-watch"><div class="mock-watch-title">Needs attention</div><div class="watch-row"><span class="watch-icon">KO</span><span class="watch-copy"><b>Healthy</b><span>Durable growth</span></span><span class="watch-score">87</span></div><div class="watch-row"><span class="watch-icon">JNJ</span><span class="watch-copy"><b>Healthy</b><span>Payout covered</span></span><span class="watch-score">83</span></div><div class="watch-row"><span class="watch-icon">O</span><span class="watch-copy"><b>Review</b><span>Rate sensitivity</span></span><span class="watch-score" style="color:#f4d47e">68</span></div></div>
+                </div>
+              </div>
+            </div>
+            <div class="float-badge"><i></i>Interactive demo ready</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-title="User problem" id="slide-problem">
+        <div class="slide-inner">
+          <div class="slide-label">The job to be done</div>
+          <h2>Investors do not need more numbers. They need <span class="accent">answers they can trust.</span></h2>
+          <p class="lead">DividendScope is designed for the investor who has outgrown a spreadsheet but does not want a trading terminal.</p>
+          <div class="question-grid">
+            <article class="card question-card"><div class="question-number">01 · Past</div><h3>What did I actually receive?</h3><p>Broker exports, taxes, duplicate imports, currencies, and payment dates can make a simple total surprisingly hard to verify.</p><div class="question-answer">Answer: reconciled gross, tax, and net cash.</div></article>
+            <article class="card question-card"><div class="question-number">02 · Present</div><h3>Which income is becoming fragile?</h3><p>Yield alone does not explain payout coverage, growth durability, debt sensitivity, or concentration inside the portfolio.</p><div class="question-answer">Answer: prioritized, explainable risk signals.</div></article>
+            <article class="card question-card"><div class="question-number">03 · Future</div><h3>What should I expect next?</h3><p>Received, accrued, declared, and estimated income are often blended together, weakening planning and confidence.</p><div class="question-answer">Answer: clearly labelled forward income.</div></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-title="Product promise" id="slide-truth">
+        <div class="slide-inner">
+          <div class="slide-label">One source of dividend truth</div>
+          <h2>Three views. One continuous <span class="accent">income story.</span></h2>
+          <p class="lead">The product connects broker evidence, portfolio health, and forward expectations without hiding where each number came from.</p>
+          <div class="truth-grid">
+            <article class="card truth-card"><div class="truth-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></div><div class="card-kicker">Received</div><h3>Cash evidence</h3><p>Track broker-reported dividend transactions, withholding tax, net receipts, and the import record behind each value.</p><div class="truth-value"><span>Outcome:</span> totals that can be reconciled.</div></article>
+            <article class="card truth-card"><div class="truth-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 4 6v6c0 4.7 3.2 8.5 8 10 4.8-1.5 8-5.3 8-10V6l-8-3Z"/><path d="M8 13h2l1.5-4 2 7 1.5-3H18"/></svg></div><div class="card-kicker">Health</div><h3>Portfolio attention</h3><p>Surface payout pressure, dividend changes, concentration, financial strength, and holdings that deserve review first.</p><div class="truth-value"><span>Outcome:</span> fewer hidden income risks.</div></article>
+            <article class="card truth-card"><div class="truth-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5M4 19h16"/><path d="m7 15 4-4 3 2 5-6"/></svg></div><div class="card-kicker">Next</div><h3>Forward income</h3><p>Forecast the next twelve months while preserving the distinction between confirmed, accrued, declared, and estimated cash.</p><div class="truth-value"><span>Outcome:</span> planning without false precision.</div></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-title="First-session journey" id="slide-journey">
+        <div class="slide-inner">
+          <div class="slide-label">Designed for activation</div>
+          <h2>The first session ends with an <span class="accent">understood portfolio.</span></h2>
+          <p class="lead">Every step has a clear completion state, a single next action, and an explanation when data is missing.</p>
+          <div class="journey">
+            <article class="journey-step"><h3>Add or import</h3><p>Start manually, from CSV, or with supported IBKR data. Preview exactly what will be created before applying changes.</p><div class="journey-outcome">Portfolio exists</div></article>
+            <article class="journey-step"><h3>Validate</h3><p>Detect duplicates, unmatched transactions, currency issues, missing dates, and records requiring attention.</p><div class="journey-outcome">Import is understandable</div></article>
+            <article class="journey-step"><h3>Reconcile</h3><p>Compare positions, cash, gross dividends, withholding tax, and net receipts against broker evidence.</p><div class="journey-outcome">Numbers are trusted</div></article>
+            <article class="journey-step"><h3>Review next</h3><p>Open the one action that matters now: fix an issue, inspect income, or review the portfolio’s highest-priority signal.</p><div class="journey-outcome">User reaches the “aha” moment</div></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-title="Product experience" id="slide-product">
+        <div class="slide-inner">
+          <div class="slide-label">Built product, not a concept</div>
+          <h2>A focused operating system for <span class="accent">dividend portfolios.</span></h2>
+          <div class="bento">
+            <article class="card bento-card large">
+              <div class="bento-head"><div><h3>Portfolio command center</h3><p>Value, income, data quality, and the next best action—before the user opens another screen.</p></div><span class="micro-badge">Home</span></div>
+              <div class="bento-dashboard"><div class="bento-kpi"><span>Portfolio value</span><b data-mirror="portfolio-value">$24,590</b></div><div class="bento-kpi"><span>Annual income</span><b data-mirror="annual-income">$895</b></div><div class="bento-kpi"><span>Data quality</span><b>Verified</b></div></div>
+              <div class="bento-chart" aria-hidden="true"><i style="height:31%"></i><i style="height:63%"></i><i style="height:46%"></i><i style="height:70%"></i><i style="height:40%"></i><i style="height:82%"></i><i style="height:52%"></i><i style="height:75%"></i><i style="height:57%"></i><i style="height:88%"></i><i style="height:45%"></i><i style="height:94%"></i></div>
+            </article>
+            <article class="card bento-card"><div class="bento-head"><div><h3>Attention, not alarm</h3><p>Signals show why a holding needs review without presenting a black-box recommendation.</p></div><span class="micro-badge">Risk</span></div><div class="signal-list"><div class="signal-row"><span class="signal-symbol">KO</span><span class="signal-copy"><b>Coca-Cola</b><span>Coverage and growth remain durable</span></span><span class="signal-status">Healthy</span></div><div class="signal-row"><span class="signal-symbol">O</span><span class="signal-copy"><b>Realty Income</b><span>Review leverage and rate sensitivity</span></span><span class="signal-status watch">Review</span></div></div></article>
+            <article class="card bento-card"><div class="bento-head"><div><h3>Evidence-led research</h3><p>Score composition, yield history, financial strength, and source context in one view.</p></div><span class="micro-badge">Research</span></div><div class="research-snapshot"><div class="research-score">87</div><div class="research-factors"><div class="research-factor"><span>Dividend durability</span><b>92</b><i style="--w:92%"></i></div><div class="research-factor"><span>Payout quality</span><b>84</b><i style="--w:84%"></i></div><div class="research-factor"><span>Financial strength</span><b>79</b><i style="--w:79%"></i></div></div></div></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-title="Interactive demo" id="slide-demo">
+        <div class="slide-inner">
+          <div class="slide-label">Try before setup</div>
+          <h2>A guided demo that keeps its <span class="accent">state and context.</span></h2>
+          <p class="lead">Visitors can complete a meaningful product journey without logging in, then return to the pitch without losing their place.</p>
+          <div class="demo-slide-layout">
+            <article class="card demo-promise"><h3>Four actions reveal the product</h3><ul class="demo-list"><li><span class="check">1</span><span>Adjust a sample portfolio and see income update.</span></li><li><span class="check">2</span><span>Separate broker-received cash from estimated income.</span></li><li><span class="check">3</span><span>Inspect the reason behind a portfolio risk signal.</span></li><li><span class="check">4</span><span>Review a transparent stock research score.</span></li></ul><button class="button primary" type="button" data-open-demo="overview">Start guided demo</button></article>
+            <article class="card demo-preview"><div class="guided-window"><div class="guided-head"><strong>Guided product tour</strong><span class="demo-mode-badge">Illustrative · read only</span></div><div class="guided-progress"><i class="done"></i><i class="done"></i><i></i><i></i></div><div class="guided-action"><span>Next best action</span><h4>Review why one holding needs attention</h4><p>The experience explains the signal and the data behind it rather than presenting a trading instruction.</p></div><div class="guided-kpis"><div class="guided-kpi"><span>Received YTD</span><b data-mirror="received-ytd">$548</b></div><div class="guided-kpi"><span>Estimated 12M</span><b data-mirror="annual-income">$895</b></div><div class="guided-kpi"><span>Portfolio yield</span><b data-mirror="portfolio-yield-short">3.64%</b></div></div><div class="guided-bars" aria-hidden="true"><i style="height:30%"></i><i style="height:62%"></i><i style="height:46%"></i><i style="height:71%"></i><i style="height:39%"></i><i style="height:83%"></i><i style="height:49%"></i><i style="height:74%"></i><i style="height:57%"></i><i style="height:88%"></i><i style="height:44%"></i><i style="height:93%"></i></div></div></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-title="Trust" id="slide-trust">
+        <div class="slide-inner">
+          <div class="slide-label">Trust by design</div>
+          <h2>Financial data must be <span class="accent">explainable before it is beautiful.</span></h2>
+          <p class="lead">The product experience is built around provenance, reconciliation, transparent labels, and recoverable errors.</p>
+          <div class="trust-grid">
+            <article class="card trust-card"><div class="trust-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></svg></div><div><h3>Visible data provenance</h3><p>Received cash points back to broker imports. Market history and fundamentals remain distinguishable from user-entered portfolio data.</p><div class="trust-foot"><span>Broker evidence</span><span>Market sources</span><span>User input</span></div></div></article>
+            <article class="card trust-card"><div class="trust-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m5 12 4 4L19 6"/><path d="M4 20h16"/></svg></div><div><h3>Reconciliation before success</h3><p>An import is not “done” merely because rows were parsed. Positions, cash, dividends, taxes, and duplicates receive explicit checks.</p><div class="trust-foot"><span>Atomic apply</span><span>Duplicate-safe</span><span>Review issues</span></div></div></article>
+            <article class="card trust-card"><div class="trust-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 17h.01"/></svg></div><div><h3>No blended certainty</h3><p>Received, accrued, declared, and estimated values remain visually separate, with plain-language explanations available where decisions are made.</p><div class="trust-foot"><span>Received</span><span>Accrued</span><span>Estimated</span></div></div></article>
+            <article class="card trust-card"><div class="trust-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 4 6v6c0 4.7 3.2 8.5 8 10 4.8-1.5 8-5.3 8-10V6l-8-3Z"/><path d="M9 12h6M12 9v6"/></svg></div><div><h3>Private, bounded positioning</h3><p>User portfolio records are scoped to the account. The product supports research and monitoring—not personalized investment advice or guaranteed outcomes.</p><div class="trust-foot"><span>Google OAuth</span><span>PostgreSQL</span><span>Self-hostable</span></div></div></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-title="Differentiation" id="slide-difference">
+        <div class="slide-inner">
+          <div class="slide-label">Why this product earns a place</div>
+          <h2>It connects tools that are usually <span class="accent">separate.</span></h2>
+          <div class="comparison-wrap">
+            <table class="comparison-table">
+              <thead><tr><th>Core job</th><th>Typical broker portal</th><th>Spreadsheet</th><th>Stock screener</th><th class="highlight-col">DividendScope</th></tr></thead>
+              <tbody>
+                <tr><td>Reconcile dividend cash and tax</td><td><span class="cap-partial">Partial</span></td><td><span class="cap-partial">Manual</span></td><td><span class="cap-no">—</span></td><td class="highlight-col"><span class="cap-yes">Built in</span></td></tr>
+                <tr><td>Explain portfolio-level income risk</td><td><span class="cap-no">—</span></td><td><span class="cap-partial">Custom</span></td><td><span class="cap-partial">Stock only</span></td><td class="highlight-col"><span class="cap-yes">Prioritized</span></td></tr>
+                <tr><td>Separate received from estimated income</td><td><span class="cap-partial">Varies</span></td><td><span class="cap-partial">Manual</span></td><td><span class="cap-no">—</span></td><td class="highlight-col"><span class="cap-yes">Explicit</span></td></tr>
+                <tr><td>Research a holding in portfolio context</td><td><span class="cap-partial">Basic</span></td><td><span class="cap-no">—</span></td><td><span class="cap-yes">Strong</span></td><td class="highlight-col"><span class="cap-yes">Connected</span></td></tr>
+                <tr><td>Self-host portfolio records</td><td><span class="cap-no">—</span></td><td><span class="cap-partial">Local file</span></td><td><span class="cap-no">—</span></td><td class="highlight-col"><span class="cap-yes">Supported</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="comparison-note">This comparison describes common product patterns rather than every provider. The differentiation is the connected workflow: evidence → health → forward income.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-title="Launch plan" id="slide-launch">
+        <div class="slide-inner">
+          <div class="slide-label">Responsible beta launch</div>
+          <h2>Launch around <span class="accent">activation and data trust</span>, not feature volume.</h2>
+          <div class="launch-grid">
+            <div class="launch-steps">
+              <article class="launch-step"><div class="launch-phase">Gate 01</div><div class="launch-copy"><b>Invite focused users</b><span>Start with dividend investors who already track receipts and can validate the numbers against a broker report.</span></div><span class="launch-status">Launch</span></article>
+              <article class="launch-step"><div class="launch-phase">Gate 02</div><div class="launch-copy"><b>Observe the first-session journey</b><span>Measure add/import → validation → reconciliation → first income or risk review.</span></div><span class="launch-status next">Measure</span></article>
+              <article class="launch-step"><div class="launch-phase">Gate 03</div><div class="launch-copy"><b>Close trust gaps first</b><span>Prioritize data mismatches, duplicate prevention, currency handling, and explanations before expanding breadth.</span></div><span class="launch-status next">Improve</span></article>
+              <article class="launch-step"><div class="launch-phase">Gate 04</div><div class="launch-copy"><b>Automate proven workflows</b><span>Add secure scheduled broker synchronization only after manual import and reconciliation behavior is reliable.</span></div><span class="launch-status next">Scale</span></article>
+            </div>
+            <article class="card success-card"><div class="card-kicker">Success signals</div><h3>Measure outcomes users feel</h3><div class="success-list"><div class="success-item"><span>Activation</span><b>First portfolio verified</b><p>The user reaches a state where holdings and dividend totals are understandable.</p></div><div class="success-item"><span>Aha moment</span><b>Income reviewed + one signal understood</b><p>The user sees both the cash story and what deserves attention.</p></div><div class="success-item"><span>Retention</span><b>Returns around the next portfolio event</b><p>A payment, declaration, import, or risk change creates a reason to come back.</p></div><div class="success-item"><span>Trust</span><b>Low unresolved reconciliation rate</b><p>Success is constrained by correctness, not just clicks.</p></div></div></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-title="Invitation" id="slide-invitation">
+        <div class="slide-inner">
+          <div class="cta-panel">
+            <div><div class="slide-label">Early-user invitation</div><h2>Challenge the product with a portfolio you <span class="accent">already understand.</span></h2><p class="lead">The best beta feedback is simple: “Does this match my broker, does it explain the difference, and does it help me see what matters next?”</p><p class="cta-meta">DividendScope is research and portfolio-monitoring software. Demo values are illustrative and are not investment advice.</p></div>
+            <div class="cta-actions"><button class="button primary" type="button" data-open-demo="overview">Start guided demo</button><a class="button" href="https://github.com/blidiselalin/dividend-healthcheck" target="_blank" rel="noopener noreferrer">Review the project</a><button class="button ghost" type="button" id="printDeck">Print / save PDF</button></div>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <section class="demo-view" id="demoView" aria-label="Persistent DividendScope product demo" hidden>
+      <div class="demo-shell">
+        <aside class="demo-sidebar" aria-label="Demo navigation">
+          <div class="demo-profile"><div class="avatar">DS</div><div class="profile-copy"><b>Sample portfolio</b><span>Read-only guided workspace</span></div></div>
+          <div class="demo-nav-label">Workspace</div>
+          <nav class="demo-nav-list">
+            <button class="demo-nav-item active" type="button" data-demo-page="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>Overview</button>
+            <button class="demo-nav-item" type="button" data-demo-page="income"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v18M17 6H9.5a3.5 3.5 0 1 0 0 7H14a3.5 3.5 0 1 1 0 7H6"/></svg>Income</button>
+            <button class="demo-nav-item" type="button" data-demo-page="risk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 4 6v6c0 4.7 3.2 8.5 8 10 4.8-1.5 8-5.3 8-10V6l-8-3Z"/><path d="M8 13h2l1.5-4 2 7 1.5-3H18"/></svg>Risk</button>
+            <button class="demo-nav-item" type="button" data-demo-page="research"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>Research</button>
+            <button class="demo-nav-item" type="button" data-demo-page="import"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Import</button>
+          </nav>
+          <div class="demo-sidebar-footer">
+            <button class="button compact sidebar-action" type="button" id="copyDemoLink">Copy demo link</button>
+            <button class="button compact ghost sidebar-action" type="button" id="resetDemo">Reset demo</button>
+            <div class="demo-sidebar-note"><strong>Illustrative demo</strong><br />Prices, payment dates, scores, and forecasts are sample values. No order can be placed.</div>
+          </div>
+        </aside>
+
+        <div class="demo-main">
+          <div class="demo-banner"><span><strong>Demo mode:</strong> local, read-only, and intentionally illustrative. Received and estimated amounts remain separate.</span><button class="button compact ghost" type="button" data-open-methodology>How calculations work</button></div>
+
+          <section class="tour-panel" aria-label="Guided demo progress">
+            <div class="tour-copy"><span class="tour-progress-label" id="tourProgressLabel">0 of 4 actions complete</span><h3>See the full product story</h3><p>Complete the four actions to experience portfolio setup, income clarity, risk explanation, and research transparency.</p><div class="tour-progress-bar" aria-hidden="true"><i id="tourProgressBar"></i></div></div>
+            <div class="tour-tasks">
+              <button class="tour-task" type="button" data-tour-action="adjust"><span class="task-status">1</span><span>Adjust sample shares</span></button>
+              <button class="tour-task" type="button" data-tour-action="income"><span class="task-status">2</span><span>Compare received vs estimated</span></button>
+              <button class="tour-task" type="button" data-tour-action="risk"><span class="task-status">3</span><span>Inspect a risk signal</span></button>
+              <button class="tour-task" type="button" data-tour-action="research"><span class="task-status">4</span><span>Review score evidence</span></button>
+            </div>
+          </section>
+
+          <section class="demo-page active" data-page="overview" tabindex="-1">
+            <div class="demo-header"><div><div class="demo-kicker">Portfolio command center</div><h2 class="demo-title">Start with the one thing that matters next.</h2><p class="demo-subtitle">The sample portfolio is reconciled. One holding deserves a closer look, while received and estimated income remain clearly separated.</p></div><div class="demo-header-actions"><button class="button compact" type="button" id="reloadDemo">Restore sample values</button><button class="button compact primary" type="button" data-demo-page-link="income">Review income</button></div></div>
+
+            <article class="next-action"><div class="next-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 4 6v6c0 4.7 3.2 8.5 8 10 4.8-1.5 8-5.3 8-10V6l-8-3Z"/><path d="M8 13h2l1.5-4 2 7 1.5-3H18"/></svg></div><div class="next-copy"><span>Next best action</span><b>Review Realty Income’s rate sensitivity</b><small>This signal is informational: it explains the factor to inspect and does not instruct the user to buy or sell.</small></div><button class="button compact primary" type="button" data-demo-page-link="risk">Review signal</button></article>
+
+            <div class="settings-row" aria-label="Sample portfolio controls">
+              <label for="koShares">KO shares<input class="shares-input" id="koShares" type="number" inputmode="numeric" min="0" max="10000" step="1" value="100" /></label>
+              <label for="jnjShares">JNJ shares<input class="shares-input" id="jnjShares" type="number" inputmode="numeric" min="0" max="10000" step="1" value="60" /></label>
+              <label for="oShares">O shares<input class="shares-input" id="oShares" type="number" inputmode="numeric" min="0" max="10000" step="1" value="120" /></label>
+              <span class="settings-note">Adjust any quantity. Demo state is saved in this browser.</span>
+            </div>
+
+            <div class="kpi-grid">
+              <article class="kpi-card"><span class="kpi-label">Portfolio value</span><strong class="kpi-value" id="portfolioValue">$24,590</strong><span class="kpi-delta muted">Illustrative market prices</span><i class="kpi-orb"></i></article>
+              <article class="kpi-card highlight"><span class="kpi-label">Estimated next 12 months</span><strong class="kpi-value" id="annualIncome">$895</strong><span class="kpi-delta" id="portfolioYield">3.64% portfolio yield</span><span class="data-tag estimated">Estimated</span><i class="kpi-orb"></i></article>
+              <article class="kpi-card"><span class="kpi-label">Gross received YTD</span><strong class="kpi-value" id="receivedYtd">$548</strong><span class="kpi-delta muted">Broker-aligned cash records</span><span class="data-tag received">Received</span><i class="kpi-orb"></i></article>
+              <article class="kpi-card"><span class="kpi-label">Data quality</span><strong class="kpi-value">Verified</strong><span class="kpi-delta">0 blocking reconciliation issues</span><i class="kpi-orb"></i></article>
+            </div>
+
+            <div class="dashboard-grid">
+              <article class="demo-card"><div class="demo-card-head"><div><h3 class="demo-card-title">Next 12 months · estimated gross income</h3><div class="demo-card-caption">Illustrative forecast based on sample holdings and payment frequency</div></div><div class="legend"><span><i></i>Estimated</span><span><i></i>Monthly average</span></div></div><div class="income-chart" role="img" id="incomeChart" aria-label="Estimated dividend income by month"><div class="chart-y-labels"><span id="chartMaxLabel">$120</span><span id="chartMidLabel">$80</span><span id="chartLowLabel">$40</span><span>$0</span></div><div class="chart-grid-lines"><i></i><i></i><i></i><i></i></div><div class="average-line" id="averageLine"><span>Average</span></div><div class="income-bars" id="incomeBars"></div></div></article>
+              <article class="demo-card"><div class="demo-card-head"><div><h3 class="demo-card-title">Portfolio attention</h3><div class="demo-card-caption">Signals ordered by review priority</div></div></div><div class="attention-list"><div class="attention-item"><div class="attention-icon warn">O</div><div class="attention-copy"><b>Realty Income</b><span>Review leverage and interest-rate sensitivity</span></div><span class="attention-status watch">Review</span></div><div class="attention-item"><div class="attention-icon">JNJ</div><div class="attention-copy"><b>Johnson &amp; Johnson</b><span>Diversified cash generation and covered payout</span></div><span class="attention-status">Healthy</span></div><div class="attention-item"><div class="attention-icon">KO</div><div class="attention-copy"><b>Coca-Cola</b><span>Durable streak and stable growth profile</span></div><span class="attention-status">Healthy</span></div></div></article>
+            </div>
+
+            <article class="demo-card table-card"><div class="table-head"><div><h3 class="demo-card-title">Portfolio positions</h3><div class="demo-card-caption">Income contribution and signal are visible together</div></div><button class="button compact" type="button" data-demo-page-link="risk">Open risk view</button></div><div class="table-wrap"><table><thead><tr><th>Holding</th><th>Shares</th><th>Value</th><th>Annual income</th><th>Yield</th><th>Income share</th><th>Signal</th></tr></thead><tbody id="overviewRows"></tbody></table></div></article>
+          </section>
+
+          <section class="demo-page" data-page="income" tabindex="-1">
+            <div class="demo-header"><div><div class="demo-kicker">Dividend income</div><h2 class="demo-title">Do not mix cash received with cash expected.</h2><p class="demo-subtitle">The product keeps gross receipts, withholding tax, net cash, and estimated future income auditable and visually distinct.</p></div><div class="demo-header-actions"><button class="button compact" type="button" data-open-methodology>Calculation definitions</button><button class="button compact primary" type="button" id="exportDemo">Prepare sample report</button></div></div>
+            <div class="kpi-grid"><article class="kpi-card"><span class="kpi-label">Gross received YTD</span><strong class="kpi-value" id="grossYtd">$548</strong><span class="data-tag received">Received</span></article><article class="kpi-card"><span class="kpi-label">Withholding tax YTD</span><strong class="kpi-value" id="taxYtd">$82</strong><span class="kpi-delta muted">Shown separately</span></article><article class="kpi-card"><span class="kpi-label">Net received YTD</span><strong class="kpi-value" id="netYtd">$466</strong><span class="data-tag received">Received</span></article><article class="kpi-card highlight"><span class="kpi-label">Estimated next 12 months</span><strong class="kpi-value" id="incomeAnnual2">$895</strong><span class="data-tag estimated">Estimated</span></article></div>
+            <article class="demo-card" style="margin-bottom:13px"><div class="demo-card-head"><div><h3 class="demo-card-title">Forward income profile</h3><div class="demo-card-caption">Expected gross cash by month · sample schedule</div></div></div><div class="income-chart" role="img" id="incomeChart2" aria-label="Estimated forward dividend income by month"><div class="chart-y-labels"><span id="chartMaxLabel2">$120</span><span id="chartMidLabel2">$80</span><span id="chartLowLabel2">$40</span><span>$0</span></div><div class="chart-grid-lines"><i></i><i></i><i></i><i></i></div><div class="average-line" id="averageLine2"><span>Average</span></div><div class="income-bars" id="incomeBars2"></div></div></article>
+            <div class="calendar-grid"><article class="payment-card"><div class="payment-top"><span class="payment-date">Sample month 1</span><span class="payment-type">Estimated</span></div><div class="payment-symbol">O</div><div class="payment-company">Realty Income</div><div class="payment-amount" id="paymentO">$31.56</div></article><article class="payment-card"><div class="payment-top"><span class="payment-date">Sample month 2</span><span class="payment-type">Estimated</span></div><div class="payment-symbol">JNJ</div><div class="payment-company">Johnson &amp; Johnson</div><div class="payment-amount" id="paymentJNJ">$78.00</div></article><article class="payment-card"><div class="payment-top"><span class="payment-date">Sample month 3</span><span class="payment-type">Estimated</span></div><div class="payment-symbol">KO</div><div class="payment-company">Coca-Cola</div><div class="payment-amount" id="paymentKO">$51.00</div></article><article class="payment-card"><div class="payment-top"><span class="payment-date">Imported record</span><span class="payment-type confirmed">Received</span></div><div class="payment-symbol">O</div><div class="payment-company">Realty Income</div><div class="payment-amount" id="paymentO2">$31.56</div></article></div>
+          </section>
+
+          <section class="demo-page" data-page="risk" tabindex="-1">
+            <div class="demo-header"><div><div class="demo-kicker">Portfolio risk</div><h2 class="demo-title">Explain the signal before asking for attention.</h2><p class="demo-subtitle">Scores are a review aid. Each one is decomposed into factors so the user can challenge the conclusion.</p></div><div class="demo-header-actions"><button class="button compact primary" type="button" data-demo-page-link="research">Open KO research</button></div></div>
+            <div class="risk-grid"><article class="risk-card"><div class="risk-top"><b>KO · Coca-Cola</b><span class="risk-score">87</span></div><p>Durable dividend history, stable coverage, and moderate growth support a healthy monitoring status.</p></article><article class="risk-card"><div class="risk-top"><b>JNJ · Johnson &amp; Johnson</b><span class="risk-score">83</span></div><p>Strong cash generation offsets a slower growth profile. No blocking dividend-quality signal is shown.</p></article><article class="risk-card"><div class="risk-top"><b>O · Realty Income</b><span class="risk-score watch">68</span></div><p>Monthly income remains attractive, but leverage and rate sensitivity increase the need for review.</p></article></div>
+            <article class="demo-card"><div class="demo-card-head"><div><h3 class="demo-card-title">Why O is marked “Review”</h3><div class="demo-card-caption">Illustrative factor decomposition · not a buy or sell recommendation</div></div><span class="status-pill watch">Review</span></div><div class="factor-list"><div class="factor-row"><span>Dividend durability</span><div class="factor-track"><i style="width:89%"></i></div><b>89</b></div><div class="factor-row"><span>Payout quality</span><div class="factor-track"><i style="width:71%"></i></div><b>71</b></div><div class="factor-row"><span>Balance-sheet sensitivity</span><div class="factor-track"><i style="width:52%;background:linear-gradient(90deg,#e6bb56,#f3d687)"></i></div><b>52</b></div><div class="factor-row"><span>Income concentration</span><div class="factor-track"><i id="oConcentrationBar" style="width:42%"></i></div><b id="oConcentrationValue">42%</b></div><div class="factor-row"><span>Data completeness</span><div class="factor-track"><i style="width:96%"></i></div><b>96</b></div></div><div class="method-note">A score can prioritize review, but it cannot capture every business risk. Users should inspect source data and company filings before making an investment decision.</div></article>
+          </section>
+
+          <section class="demo-page" data-page="research" tabindex="-1">
+            <div class="demo-header"><div><div class="demo-kicker">Stock research</div><h2 class="demo-title">Coca-Cola dividend quality, decomposed.</h2><p class="demo-subtitle">The score summarizes evidence; the factors explain it. Missing or stale inputs should reduce confidence rather than disappear.</p></div><div class="demo-header-actions"><button class="button compact" type="button" id="generateReport">Generate sample report</button></div></div>
+            <div class="research-layout"><article class="demo-card stock-hero"><div class="stock-symbol"><div class="ticker-logo">KO</div><div><h3>The Coca-Cola Company</h3><p>Consumer staples · illustrative research snapshot</p></div></div><div class="stock-score">87</div><div class="score-copy">Composite dividend-quality score · strong monitoring profile</div><div class="score-grid"><div class="score-item"><span>Dividend durability</span><b>92 / 100</b></div><div class="score-item"><span>Payout quality</span><b>84 / 100</b></div><div class="score-item"><span>Growth quality</span><b>81 / 100</b></div><div class="score-item"><span>Financial strength</span><b>79 / 100</b></div></div></article><article class="demo-card"><div class="demo-card-head"><div><h3 class="demo-card-title">Evidence behind the score</h3><div class="demo-card-caption">Sample factors are illustrative and not current market facts</div></div><span class="status-pill">Complete</span></div><div class="evidence-grid"><div class="evidence-card"><span>Dividend history</span><b>Durable</b><p>Long-running payment and growth history supports the durability factor.</p></div><div class="evidence-card"><span>Payout coverage</span><b>Healthy</b><p>The sample profile shows earnings and cash coverage within the product’s preferred range.</p></div><div class="evidence-card"><span>Growth consistency</span><b>Moderate</b><p>Growth is steady rather than aggressive, improving predictability but limiting acceleration.</p></div><div class="evidence-card"><span>Yield history</span><b>Review zone</b><p>The current illustrative yield is compared with the stock’s own historical distribution.</p></div><div class="evidence-card"><span>Balance sheet</span><b>Stable</b><p>Financial-strength inputs do not trigger a high-priority warning in this sample.</p></div><div class="evidence-card"><span>Data quality</span><b>High</b><p>The product should display missing fields and timestamps rather than fill gaps silently.</p></div></div><div class="method-note">DividendScope supports research and monitoring. It does not determine suitability, personalize a recommendation, or guarantee future payments.</div></article></div>
+          </section>
+
+          <section class="demo-page" data-page="import" tabindex="-1">
+            <div class="demo-header"><div><div class="demo-kicker">Import and reconciliation</div><h2 class="demo-title">A successful import is one the user can verify.</h2><p class="demo-subtitle">Preview, normalize, deduplicate, apply atomically, and reconcile before the portfolio is marked ready.</p></div><div class="demo-header-actions"><button class="button compact primary" type="button" id="simulateImport">Run sample validation</button></div></div>
+            <div class="import-layout"><article class="demo-card"><div class="demo-card-head"><div><h3 class="demo-card-title">Import flow</h3><div class="demo-card-caption">The same workflow can support manual files and broker integrations</div></div></div><div class="import-steps"><div class="import-step"><span class="import-step-number">1</span><div><b>Select and preview</b><p>Identify broker, account scope, date range, currencies, and record types before changing portfolio data.</p></div></div><div class="import-step"><span class="import-step-number">2</span><div><b>Normalize and validate</b><p>Map trades, dividends, taxes, fees, transfers, and corporate actions into one internal model.</p></div></div><div class="import-step"><span class="import-step-number">3</span><div><b>Deduplicate and apply</b><p>Use broker identifiers and record hashes. A retry must not create a second economic event.</p></div></div><div class="import-step"><span class="import-step-number">4</span><div><b>Reconcile and explain</b><p>Compare positions, cash, dividend gross, withholding tax, and net cash before completion.</p></div></div></div></article><article class="demo-card"><div class="demo-card-head"><div><h3 class="demo-card-title">Sample import result</h3><div class="demo-card-caption" id="importCaption">Validated activity statement · illustrative result</div></div><span class="status-pill" id="importStatus">Ready</span></div><div class="import-summary"><div class="import-metric"><span>New records</span><b id="importNew">48</b></div><div class="import-metric"><span>Skipped duplicates</span><b id="importDuplicates">12</b></div><div class="import-metric"><span>Updated records</span><b id="importUpdated">3</b></div><div class="import-metric"><span>Warnings</span><b id="importWarnings">0</b></div></div><div class="reconcile-box"><div class="reconcile-head"><b>Reconciliation checks</b><span id="reconcileStatus">All passed</span></div><div class="reconcile-list"><div class="reconcile-row"><span>Position quantities</span><b>Matched</b></div><div class="reconcile-row"><span>Cash by currency</span><b>Matched</b></div><div class="reconcile-row"><span>Gross dividends</span><b>Matched</b></div><div class="reconcile-row"><span>Withholding tax</span><b>Matched</b></div><div class="reconcile-row"><span>Net dividend cash</span><b>Matched</b></div></div></div></article></div>
+          </section>
+
+          <footer class="demo-footer">Illustrative product demo. Values are generated locally in this page, are not live market data, and should not be used to make an investment decision. Dividend payments can change or stop.</footer>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="slide-nav" id="slideNav" aria-label="Pitch slide navigation"></nav>
+  <div class="slide-progress" id="slideProgress" aria-hidden="true"></div>
+  <div class="keyboard-hint" id="keyboardHint">↑ ↓ navigate · D demo · P pitch · Esc return</div>
+  <div class="demo-toast" id="demoToast" role="status" aria-live="polite"><span class="toast-dot"></span><span class="toast-copy"><b id="toastTitle">Demo ready</b><span id="toastMessage">Your sample workspace is available.</span></span></div>
+
+  <dialog id="methodologyDialog" aria-labelledby="methodologyTitle">
+    <div class="dialog-head"><h2 id="methodologyTitle">How the demo treats dividend income</h2><button class="button icon-only compact" type="button" id="closeMethodology" aria-label="Close definitions"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+    <div class="dialog-body"><p>These definitions are intentionally visible because different certainty levels should not be blended into one unexplained total.</p><div class="definition-grid"><div class="definition"><b>Gross received</b><span>A completed broker cash transaction before withholding tax and other deductions.</span></div><div class="definition"><b>Withholding tax</b><span>Tax deducted by the broker or payment source and shown separately from the dividend itself.</span></div><div class="definition"><b>Net received</b><span>Gross received minus withholding tax and any applicable deductions.</span></div><div class="definition"><b>Estimated next 12 months</b><span>A forward-looking projection based on sample holdings and payment assumptions. It is not guaranteed cash.</span></div></div></div>
+  </dialog>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const REPO_URL = 'https://github.com/blidiselalin/dividend-healthcheck';
+      const STORAGE_KEY = 'dividendscope.pitch-demo.v2';
+      const DEFAULT_STATE = Object.freeze({
+        shares: { KO: 100, JNJ: 60, O: 120 },
+        page: 'overview',
+        completed: { adjust: false, income: false, risk: false, research: false }
+      });
+      const stocks = Object.freeze({
+        KO: { name: 'Coca-Cola', price: 69.20, annualDividend: 2.04, averageCost: 54.10, score: 87, signal: 'Healthy' },
+        JNJ: { name: 'Johnson & Johnson', price: 171.50, annualDividend: 5.20, averageCost: 148.00, score: 83, signal: 'Healthy' },
+        O: { name: 'Realty Income', price: 61.50, annualDividend: 3.156, averageCost: 58.20, score: 68, signal: 'Review' }
+      });
+      const months = Object.freeze(['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']);
+      const incomePattern = Object.freeze([.70,1.19,.93,1.31,.76,1.39,.89,1.28,1.00,1.48,.81,1.59]);
+
+      const deckView = document.getElementById('deckView');
+      const demoView = document.getElementById('demoView');
+      const deckTab = document.getElementById('deckTab');
+      const demoTab = document.getElementById('demoTab');
+      const slideNav = document.getElementById('slideNav');
+      const slideProgress = document.getElementById('slideProgress');
+      const keyboardHint = document.getElementById('keyboardHint');
+      const slides = [...document.querySelectorAll('.slide')];
+      const toast = document.getElementById('demoToast');
+      const methodologyDialog = document.getElementById('methodologyDialog');
+      const inputMap = {
+        KO: document.getElementById('koShares'),
+        JNJ: document.getElementById('jnjShares'),
+        O: document.getElementById('oShares')
+      };
+
+      let activeView = 'deck';
+      let currentSlide = 0;
+      let toastTimer = 0;
+      let state = loadState();
+
+      function cloneDefaultState() {
+        return JSON.parse(JSON.stringify(DEFAULT_STATE));
+      }
+
+      function loadState() {
+        try {
+          const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+          if (!saved || typeof saved !== 'object') return cloneDefaultState();
+          return {
+            shares: {
+              KO: normalizeShares(saved.shares?.KO, DEFAULT_STATE.shares.KO),
+              JNJ: normalizeShares(saved.shares?.JNJ, DEFAULT_STATE.shares.JNJ),
+              O: normalizeShares(saved.shares?.O, DEFAULT_STATE.shares.O)
+            },
+            page: ['overview','income','risk','research','import'].includes(saved.page) ? saved.page : 'overview',
+            completed: {
+              adjust: Boolean(saved.completed?.adjust),
+              income: Boolean(saved.completed?.income),
+              risk: Boolean(saved.completed?.risk),
+              research: Boolean(saved.completed?.research)
+            }
+          };
+        } catch (_error) {
+          return cloneDefaultState();
+        }
+      }
+
+      function saveState() {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (_error) { /* Storage can be unavailable in private contexts. */ }
+      }
+
+      function normalizeShares(value, fallback = 0) {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return fallback;
+        return Math.min(10000, Math.max(0, Math.round(number)));
+      }
+
+      function money(value, digits = 0) {
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Number.isFinite(value) ? value : 0);
+      }
+
+      function showToast(title, message) {
+        window.clearTimeout(toastTimer);
+        document.getElementById('toastTitle').textContent = title;
+        document.getElementById('toastMessage').textContent = message;
+        toast.classList.add('show');
+        toastTimer = window.setTimeout(() => toast.classList.remove('show'), 2800);
+      }
+
+      function emitDemoEvent(name, detail = {}) {
+        window.dispatchEvent(new CustomEvent('dividendscope:demo-action', { detail: { name, ...detail } }));
+      }
+
+      function parseHash() {
+        const hash = location.hash.replace(/^#/, '');
+        if (hash.startsWith('demo/')) return { view: 'demo', page: hash.split('/')[1] || 'overview' };
+        if (hash === 'demo') return { view: 'demo', page: state.page };
+        if (hash.startsWith('pitch/')) return { view: 'deck', slideId: hash.split('/')[1] };
+        return { view: 'deck' };
+      }
+
+      function updateHash(view, pageOrSlide = '') {
+        const nextHash = view === 'demo' ? `#demo/${pageOrSlide || state.page || 'overview'}` : `#pitch/${pageOrSlide || slides[currentSlide]?.id || 'slide-promise'}`;
+        if (location.hash !== nextHash) history.replaceState(null, '', nextHash);
+      }
+
+      function switchView(view, demoPage = null, manageHash = true) {
+        const isDeck = view === 'deck';
+        activeView = isDeck ? 'deck' : 'demo';
+        deckView.hidden = !isDeck;
+        demoView.hidden = isDeck;
+        deckTab.setAttribute('aria-selected', String(isDeck));
+        demoTab.setAttribute('aria-selected', String(!isDeck));
+        deckTab.tabIndex = isDeck ? 0 : -1;
+        demoTab.tabIndex = isDeck ? -1 : 0;
+        slideNav.hidden = !isDeck;
+        slideProgress.hidden = !isDeck;
+        keyboardHint.hidden = !isDeck;
+        document.body.style.overflow = isDeck ? 'hidden' : 'auto';
+        document.title = isDeck ? 'DividendScope — Pitch & Interactive Demo' : 'DividendScope — Interactive Product Demo';
+        if (!isDeck) openDemoPage(demoPage || state.page, false);
+        const topViewButton = document.getElementById('topDemoButton');
+        topViewButton.textContent = isDeck ? 'Open demo' : 'Back to pitch';
+        topViewButton.setAttribute('aria-label', isDeck ? 'Open interactive demo' : 'Return to product pitch');
+        if (manageHash) updateHash(activeView, isDeck ? slides[currentSlide]?.id : state.page);
+        (isDeck ? deckTab : demoTab).focus({ preventScroll: true });
+        emitDemoEvent('view_changed', { view: activeView });
+      }
+
+      function buildSlideNav() {
+        const fragment = document.createDocumentFragment();
+        slides.forEach((slide, index) => {
+          const button = document.createElement('button');
+          button.className = 'slide-dot';
+          button.type = 'button';
+          button.setAttribute('aria-label', `Go to slide ${index + 1}: ${slide.dataset.title}`);
+          button.title = slide.dataset.title;
+          button.addEventListener('click', () => scrollToSlide(index));
+          fragment.appendChild(button);
+        });
+        slideNav.appendChild(fragment);
+      }
+
+      function setCurrentSlide(index, manageHash = true) {
+        currentSlide = Math.max(0, Math.min(slides.length - 1, index));
+        [...slideNav.children].forEach((dot, dotIndex) => {
+          dot.classList.toggle('active', dotIndex === currentSlide);
+          if (dotIndex === currentSlide) dot.setAttribute('aria-current', 'step');
+          else dot.removeAttribute('aria-current');
+        });
+        slideProgress.style.width = `${((currentSlide + 1) / slides.length) * 100}%`;
+        if (manageHash && activeView === 'deck') updateHash('deck', slides[currentSlide].id);
+      }
+
+      function scrollToSlide(index, behavior = 'smooth') {
+        const safeIndex = Math.max(0, Math.min(slides.length - 1, index));
+        slides[safeIndex].scrollIntoView({ behavior, block: 'start' });
+        setCurrentSlide(safeIndex);
+      }
+
+      function openDemoPage(page, manageHash = true) {
+        const safePage = ['overview','income','risk','research','import'].includes(page) ? page : 'overview';
+        state.page = safePage;
+        if (safePage === 'income') state.completed.income = true;
+        if (safePage === 'risk') state.completed.risk = true;
+        if (safePage === 'research') state.completed.research = true;
+        saveState();
+
+        document.querySelectorAll('.demo-page').forEach(section => {
+          const active = section.dataset.page === safePage;
+          section.classList.toggle('active', active);
+          section.setAttribute('aria-hidden', String(!active));
+        });
+        document.querySelectorAll('.demo-nav-item').forEach(item => {
+          const active = item.dataset.demoPage === safePage;
+          item.classList.toggle('active', active);
+          if (active) item.setAttribute('aria-current', 'page');
+          else item.removeAttribute('aria-current');
+        });
+        updateTour();
+        if (manageHash) updateHash('demo', safePage);
+        window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+        const activeSection = document.querySelector(`.demo-page[data-page="${safePage}"]`);
+        window.setTimeout(() => activeSection?.focus({ preventScroll: true }), 80);
+        emitDemoEvent('demo_page_opened', { page: safePage });
+      }
+
+      function completeTour(action, silent = false) {
+        if (!Object.hasOwn(state.completed, action)) return;
+        const wasComplete = state.completed[action];
+        state.completed[action] = true;
+        saveState();
+        updateTour();
+        if (!wasComplete && !silent) showToast('Tour action complete', `${tourActionLabel(action)} is now complete.`);
+      }
+
+      function tourActionLabel(action) {
+        return ({ adjust: 'Portfolio adjustment', income: 'Income comparison', risk: 'Risk review', research: 'Research evidence review' })[action] || 'Demo action';
+      }
+
+      function updateTour() {
+        const completedCount = Object.values(state.completed).filter(Boolean).length;
+        document.getElementById('tourProgressLabel').textContent = `${completedCount} of 4 actions complete`;
+        document.getElementById('tourProgressBar').style.width = `${completedCount * 25}%`;
+        document.querySelectorAll('[data-tour-action]').forEach(button => {
+          const action = button.dataset.tourAction;
+          const complete = Boolean(state.completed[action]);
+          button.classList.toggle('done', complete);
+          button.querySelector('.task-status').textContent = complete ? '✓' : ({ adjust: '1', income: '2', risk: '3', research: '4' })[action];
+          button.setAttribute('aria-label', `${tourActionLabel(action)}${complete ? ', complete' : ''}`);
+        });
+        if (completedCount === 4) {
+          document.getElementById('tourProgressLabel').textContent = 'Guided demo complete';
+        }
+      }
+
+      function getShares() {
+        return Object.fromEntries(Object.entries(inputMap).map(([symbol, input]) => [symbol, normalizeShares(input.value, 0)]));
+      }
+
+      function calculatePortfolio(shares) {
+        const symbols = Object.keys(stocks);
+        const portfolioValue = symbols.reduce((sum, symbol) => sum + shares[symbol] * stocks[symbol].price, 0);
+        const annualIncome = symbols.reduce((sum, symbol) => sum + shares[symbol] * stocks[symbol].annualDividend, 0);
+        const portfolioYield = portfolioValue > 0 ? annualIncome / portfolioValue * 100 : 0;
+        const receivedGross = annualIncome * .613;
+        const tax = receivedGross * .15;
+        const net = receivedGross - tax;
+        return { portfolioValue, annualIncome, portfolioYield, receivedGross, tax, net };
+      }
+
+      function updateMirror(name, value) {
+        document.querySelectorAll(`[data-mirror="${name}"]`).forEach(element => { element.textContent = value; });
+      }
+
+      function renderBars(container, chartElement, labelIds, lineElement, annualIncome) {
+        const average = annualIncome / 12;
+        const values = incomePattern.map(multiplier => average * multiplier);
+        const maxValue = Math.max(...values, 1);
+        const roundedMax = Math.max(20, Math.ceil(maxValue / 20) * 20);
+        const fragment = document.createDocumentFragment();
+        values.forEach((value, index) => {
+          const month = document.createElement('div');
+          month.className = 'income-month';
+          const barWrap = document.createElement('div');
+          barWrap.className = 'income-bar-wrap';
+          const bar = document.createElement('i');
+          bar.className = 'income-bar';
+          bar.style.height = `${Math.max(3, value / roundedMax * 100)}%`;
+          bar.title = `${months[index]}: ${money(value, 0)} estimated`;
+          bar.setAttribute('aria-hidden', 'true');
+          const label = document.createElement('span');
+          label.textContent = months[index];
+          barWrap.appendChild(bar);
+          month.append(barWrap, label);
+          fragment.appendChild(month);
+        });
+        container.replaceChildren(fragment);
+        document.getElementById(labelIds[0]).textContent = money(roundedMax, 0);
+        document.getElementById(labelIds[1]).textContent = money(roundedMax * 2 / 3, 0);
+        document.getElementById(labelIds[2]).textContent = money(roundedMax / 3, 0);
+        const averagePosition = Math.min(100, Math.max(0, average / roundedMax * 100));
+        lineElement.style.bottom = `calc(22px + ${averagePosition}% * (100% - 34px) / 100)`;
+        chartElement.setAttribute('aria-label', `Estimated monthly dividend income ranges from ${money(Math.min(...values),0)} to ${money(Math.max(...values),0)}, averaging ${money(average,0)} per month.`);
+      }
+
+      function createTextCell(text) {
+        const cell = document.createElement('td');
+        cell.textContent = text;
+        return cell;
+      }
+
+      function renderRows(shares, annualIncome) {
+        const body = document.getElementById('overviewRows');
+        const fragment = document.createDocumentFragment();
+        ['O','KO','JNJ'].forEach(symbol => {
+          const stock = stocks[symbol];
+          const quantity = shares[symbol];
+          const value = quantity * stock.price;
+          const income = quantity * stock.annualDividend;
+          const yieldPct = stock.price > 0 ? stock.annualDividend / stock.price * 100 : 0;
+          const incomeShare = annualIncome > 0 ? income / annualIncome * 100 : 0;
+          const row = document.createElement('tr');
+          const holding = document.createElement('td');
+          const holdingWrap = document.createElement('div');
+          holdingWrap.className = 'ticker-cell';
+          const logo = document.createElement('span'); logo.className = 'ticker-logo'; logo.textContent = symbol;
+          const meta = document.createElement('span'); meta.className = 'ticker-meta';
+          const company = document.createElement('b'); company.textContent = stock.name;
+          const ticker = document.createElement('span'); ticker.textContent = symbol;
+          meta.append(company, ticker); holdingWrap.append(logo, meta); holding.appendChild(holdingWrap);
+          const signal = document.createElement('td');
+          const status = document.createElement('span'); status.className = `status-pill${stock.signal === 'Review' ? ' watch' : ''}`; status.textContent = stock.signal; signal.appendChild(status);
+          row.append(holding, createTextCell(quantity.toLocaleString('en-US')), createTextCell(money(value)), createTextCell(money(income)), createTextCell(`${yieldPct.toFixed(2)}%`), createTextCell(`${incomeShare.toFixed(1)}%`), signal);
+          fragment.appendChild(row);
+        });
+        body.replaceChildren(fragment);
+      }
+
+      function updateDemo({ markAdjusted = false } = {}) {
+        const shares = getShares();
+        state.shares = shares;
+        if (markAdjusted) state.completed.adjust = true;
+        saveState();
+        const metrics = calculatePortfolio(shares);
+
+        document.getElementById('portfolioValue').textContent = money(metrics.portfolioValue);
+        document.getElementById('annualIncome').textContent = money(metrics.annualIncome);
+        document.getElementById('incomeAnnual2').textContent = money(metrics.annualIncome);
+        document.getElementById('portfolioYield').textContent = `${metrics.portfolioYield.toFixed(2)}% portfolio yield`;
+        document.getElementById('receivedYtd').textContent = money(metrics.receivedGross);
+        document.getElementById('grossYtd').textContent = money(metrics.receivedGross);
+        document.getElementById('taxYtd').textContent = money(metrics.tax);
+        document.getElementById('netYtd').textContent = money(metrics.net);
+        document.getElementById('paymentO').textContent = money(shares.O * stocks.O.annualDividend / 12, 2);
+        document.getElementById('paymentO2').textContent = money(shares.O * stocks.O.annualDividend / 12, 2);
+        document.getElementById('paymentJNJ').textContent = money(shares.JNJ * stocks.JNJ.annualDividend / 4, 2);
+        document.getElementById('paymentKO').textContent = money(shares.KO * stocks.KO.annualDividend / 4, 2);
+
+        updateMirror('portfolio-value', money(metrics.portfolioValue));
+        updateMirror('annual-income', money(metrics.annualIncome));
+        updateMirror('portfolio-yield', `${metrics.portfolioYield.toFixed(2)}% yield`);
+        updateMirror('portfolio-yield-short', `${metrics.portfolioYield.toFixed(2)}%`);
+        updateMirror('received-ytd', money(metrics.receivedGross));
+
+        renderBars(document.getElementById('incomeBars'), document.getElementById('incomeChart'), ['chartMaxLabel','chartMidLabel','chartLowLabel'], document.getElementById('averageLine'), metrics.annualIncome);
+        renderBars(document.getElementById('incomeBars2'), document.getElementById('incomeChart2'), ['chartMaxLabel2','chartMidLabel2','chartLowLabel2'], document.getElementById('averageLine2'), metrics.annualIncome);
+        renderRows(shares, metrics.annualIncome);
+        const oIncome = shares.O * stocks.O.annualDividend;
+        const oShare = metrics.annualIncome > 0 ? oIncome / metrics.annualIncome * 100 : 0;
+        document.getElementById('oConcentrationBar').style.width = `${Math.min(100,oShare)}%`;
+        document.getElementById('oConcentrationValue').textContent = `${oShare.toFixed(0)}%`;
+        updateTour();
+      }
+
+      async function sharePage() {
+        const shareData = { title: 'DividendScope — Pitch & interactive demo', text: 'Explore the DividendScope product story and guided demo.', url: location.href };
+        try {
+          if (navigator.share) {
+            await navigator.share(shareData);
+            showToast('Shared', 'The DividendScope presentation was shared.');
+          } else if (navigator.clipboard) {
+            await navigator.clipboard.writeText(location.href);
+            showToast('Link copied', 'The current pitch or demo view is ready to share.');
+          } else {
+            showToast('Share this page', 'Copy the address from your browser to share it.');
+          }
+        } catch (error) {
+          if (error?.name !== 'AbortError') showToast('Share unavailable', 'Copy the browser address to share this page.');
+        }
+      }
+
+      async function copyDemoLink() {
+        const url = new URL(location.href);
+        url.hash = `demo/${state.page}`;
+        try {
+          await navigator.clipboard.writeText(url.toString());
+          showToast('Demo link copied', `The ${state.page} view is ready to share.`);
+        } catch (_error) {
+          showToast('Copy unavailable', 'Use the browser address to share the current demo view.');
+        }
+      }
+
+      function resetDemo() {
+        state = cloneDefaultState();
+        Object.entries(inputMap).forEach(([symbol,input]) => { input.value = state.shares[symbol]; });
+        saveState();
+        updateDemo();
+        openDemoPage('overview');
+        showToast('Demo reset', 'Sample quantities, progress, and navigation were restored.');
+        emitDemoEvent('demo_reset');
+      }
+
+      buildSlideNav();
+      setCurrentSlide(0, false);
+      Object.entries(inputMap).forEach(([symbol,input]) => { input.value = state.shares[symbol]; });
+      updateDemo();
+
+      const observer = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting && entry.intersectionRatio > .57) setCurrentSlide(slides.indexOf(entry.target));
+        });
+      }, { root: deckView, threshold: [.57] });
+      slides.forEach(slide => observer.observe(slide));
+
+      deckTab.addEventListener('click', () => switchView('deck'));
+      demoTab.addEventListener('click', () => switchView('demo', state.page));
+      document.getElementById('brandButton').addEventListener('click', () => switchView('deck'));
+      document.getElementById('topDemoButton').addEventListener('click', () => activeView === 'deck' ? switchView('demo', state.page) : switchView('deck'));
+      document.getElementById('shareButton').addEventListener('click', sharePage);
+      document.getElementById('printDeck').addEventListener('click', () => window.print());
+      document.getElementById('copyDemoLink').addEventListener('click', copyDemoLink);
+      document.getElementById('resetDemo').addEventListener('click', resetDemo);
+      document.getElementById('reloadDemo').addEventListener('click', () => {
+        state.shares = { ...DEFAULT_STATE.shares };
+        Object.entries(inputMap).forEach(([symbol,input]) => { input.value = state.shares[symbol]; });
+        updateDemo();
+        showToast('Sample values restored', 'The initial KO, JNJ, and O quantities are back in place.');
+      });
+
+      document.querySelectorAll('[data-open-demo]').forEach(button => button.addEventListener('click', () => switchView('demo', button.dataset.openDemo || 'overview')));
+      document.querySelectorAll('.demo-nav-item').forEach(button => button.addEventListener('click', () => openDemoPage(button.dataset.demoPage)));
+      document.querySelectorAll('[data-demo-page-link]').forEach(button => button.addEventListener('click', () => openDemoPage(button.dataset.demoPageLink)));
+      document.querySelectorAll('[data-open-methodology]').forEach(button => button.addEventListener('click', () => methodologyDialog.showModal()));
+      document.getElementById('closeMethodology').addEventListener('click', () => methodologyDialog.close());
+      methodologyDialog.addEventListener('click', event => {
+        const bounds = methodologyDialog.getBoundingClientRect();
+        if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) methodologyDialog.close();
+      });
+
+      Object.values(inputMap).forEach(input => input.addEventListener('input', () => updateDemo({ markAdjusted: true })));
+      document.querySelectorAll('[data-tour-action]').forEach(button => button.addEventListener('click', () => {
+        const action = button.dataset.tourAction;
+        if (action === 'adjust') {
+          switchView('demo', 'overview');
+          inputMap.KO.focus();
+          showToast('Try the controls', 'Change any share quantity to complete this action.');
+          return;
+        }
+        switchView('demo', action);
+      }));
+
+      document.getElementById('exportDemo').addEventListener('click', () => { completeTour('income', true); showToast('Sample report prepared', 'In the product, this action generates a traceable income report.'); emitDemoEvent('sample_export'); });
+      document.getElementById('generateReport').addEventListener('click', () => { completeTour('research', true); showToast('Research report prepared', 'The production workflow can export the score composition and evidence summary.'); emitDemoEvent('sample_report'); });
+      document.getElementById('simulateImport').addEventListener('click', () => {
+        const status = document.getElementById('importStatus');
+        const caption = document.getElementById('importCaption');
+        status.textContent = 'Validating';
+        caption.textContent = 'Checking identifiers, duplicates, currencies, and totals…';
+        window.setTimeout(() => {
+          status.textContent = 'Ready';
+          caption.textContent = 'Validated activity statement · illustrative result';
+          document.getElementById('importNew').textContent = '48';
+          document.getElementById('importDuplicates').textContent = '12';
+          document.getElementById('importUpdated').textContent = '3';
+          document.getElementById('importWarnings').textContent = '0';
+          document.getElementById('reconcileStatus').textContent = 'All passed';
+          showToast('Sample import validated', 'Duplicates were skipped and reconciliation checks passed.');
+          emitDemoEvent('sample_import_validated');
+        }, 700);
+      });
+
+      document.addEventListener('keydown', event => {
+        const tag = document.activeElement?.tagName;
+        const editing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+        if (!editing && event.key.toLowerCase() === 'd') { event.preventDefault(); switchView('demo', state.page); return; }
+        if (!editing && event.key.toLowerCase() === 'p') { event.preventDefault(); switchView('deck'); return; }
+        if (event.key === 'Escape' && activeView === 'demo' && !methodologyDialog.open) { event.preventDefault(); switchView('deck'); return; }
+        if (activeView !== 'deck' || editing) return;
+        if (['ArrowDown','PageDown',' '].includes(event.key)) { event.preventDefault(); scrollToSlide(currentSlide + 1); }
+        if (['ArrowUp','PageUp'].includes(event.key)) { event.preventDefault(); scrollToSlide(currentSlide - 1); }
+        if (event.key === 'Home') { event.preventDefault(); scrollToSlide(0); }
+        if (event.key === 'End') { event.preventDefault(); scrollToSlide(slides.length - 1); }
+      });
+
+      window.addEventListener('hashchange', () => {
+        const route = parseHash();
+        if (route.view === 'demo') switchView('demo', route.page, false);
+        else {
+          switchView('deck', null, false);
+          if (route.slideId) {
+            const index = slides.findIndex(slide => slide.id === route.slideId);
+            if (index >= 0) window.setTimeout(() => scrollToSlide(index, 'auto'), 0);
+          }
+        }
+      });
+
+      const route = parseHash();
+      if (route.view === 'demo') switchView('demo', route.page, false);
+      else {
+        switchView('deck', null, false);
+        if (route.slideId) {
+          const index = slides.findIndex(slide => slide.id === route.slideId);
+          if (index >= 0) window.setTimeout(() => scrollToSlide(index, 'auto'), 0);
+        }
+      }
+
+      // Make repository URL easy to discover for integrations inspecting this page.
+      document.documentElement.dataset.repository = REPO_URL;
+    })();
+  </script>
+</body>
+</html>

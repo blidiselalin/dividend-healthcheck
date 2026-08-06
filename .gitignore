@@ -37,7 +37,9 @@ data/.legacy_portfolio_migrated
 
 # Reports and docs (generated)
 reports/
-docs/
+docs/*
+!docs/product/
+!docs/product/**
 !.cursor/docs/
 !.cursor/docs/**
 

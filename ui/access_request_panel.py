@@ -28,7 +28,7 @@ def render_access_denied_panel() -> None:
 
     if record and record.status == AccessRequestStatus.APPROVED:
         render_notice(
-            f"Access approved for **{identity.email}**. Click below to open your portfolio.",
+            "Access approved for your Google account. Click below to open your portfolio.",
             kind="success",
         )
         if st.button("Enter DividendScope", type="primary", use_container_width=True):
@@ -37,7 +37,7 @@ def render_access_denied_panel() -> None:
 
     if record and record.status == AccessRequestStatus.PENDING:
         st.warning(
-            f"Your access request for **{identity.email}** is waiting for admin approval. "
+            "Your access request is waiting for admin approval. "
             "You will be able to sign in once the owner approves your Google account."
         )
         st.caption(f"Requested {record.requested_at.strftime('%Y-%m-%d %H:%M')} UTC")
@@ -45,7 +45,7 @@ def render_access_denied_panel() -> None:
             st.rerun()
     elif record and record.status == AccessRequestStatus.REJECTED:
         st.error(
-            f"Access for **{identity.email}** was declined. "
+            "Access for this Google account was declined. "
             "You may send a new request with a short note for the admin."
         )
         _render_request_form(identity, store, allow_resubmit=True)

@@ -855,6 +855,7 @@ div[data-testid="stMetric"].ds-metric-dividend-highlight label p {
   margin-bottom: 0.55rem;
   line-height: 1;
 }
+
 .ds-feature-title {
   font-weight: 650;
   font-size: 0.95rem;

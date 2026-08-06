@@ -30,16 +30,21 @@ def render_account_options(*, key_prefix: str = "options") -> None:
         return
 
     st.markdown("**Account**")
+    demo = test_user_session_active() and is_test_user(user)
     cols = st.columns([1, 3])
-    if user.picture_url:
+    if user.picture_url and not demo:
         cols[0].image(user.picture_url, width=48)
     with cols[1]:
-        st.markdown(f"**{user.name or user.email.split('@')[0]}**")
-        st.caption(user.email)
+        if demo:
+            st.markdown("**Demo portfolio**")
+            st.caption("Sample holdings KO, JNJ, O — no personal account linked.")
+        else:
+            st.markdown(f"**{user.name or user.email.split('@')[0]}**")
+            st.caption(user.email)
 
-    if test_user_session_active() and is_test_user(user):
+    if demo:
         if st.button(
-            "Exit test user",
+            "Exit demo",
             use_container_width=True,
             key=f"{key_prefix}_exit_test_user",
         ):
