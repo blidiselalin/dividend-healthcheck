@@ -39,6 +39,7 @@ Short index. Read the linked doc for the area you are changing.
 | Streamlit session keys | `ui/session_keys.py` (shared constants only) |
 | Purchase journal views | `services.portfolio_purchase_journal_service` |
 | Holding drill-down history | `services.portfolio_holding_detail_service` |
+| Clear dividend risk (explainable) | `services.clear_dividend_risk` |
 
 ## Cursor rules (auto-loaded by area)
 

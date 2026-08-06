@@ -398,25 +398,29 @@ class UIComponents:
         *,
         symbol: str | None = None,
         vector_doc: StockDocument | None = None,
+        estimated_annual_income: float | None = None,
     ) -> None:
-        """Prominent dividend block for stock detail — health, metrics, payout history."""
-        from services.dividend_health import assess_dividend_health
+        """Prominent dividend block — Clear Dividend Risk, metrics, payout history."""
         from ui.beta_disclaimer import YIELD_HISTORY_HELP
-        from ui.design_system import render_dividend_detail_block
+        from ui.clear_dividend_risk_panel import render_holding_clear_dividend_risk
+        from ui.design_system import render_metric_grid, render_section_header
         from utils.library_document import resolve_library_document
         from utils.yield_history_tables import yearly_dividend_per_share_table
 
         symbol = (symbol or data.symbol or "").upper()
-        health = assess_dividend_health(data)
         dh = data.dividend_history
         annual = dh.current_annual if dh and dh.current_annual else data.dividend_rate
         ex_div = dh.ex_dividend_date if dh else None
+        doc = resolve_library_document(symbol, vector_doc)
 
-        render_dividend_detail_block(
-            "Dividends",
-            YIELD_HISTORY_HELP,
-            health.label,
-            health.reasons,
+        render_section_header("Dividends", YIELD_HISTORY_HELP)
+        render_holding_clear_dividend_risk(
+            symbol,
+            stock=data,
+            vector_doc=doc,
+            estimated_annual_income=estimated_annual_income,
+        )
+        render_metric_grid(
             [
                 (
                     "Current yield",
@@ -476,9 +480,7 @@ class UIComponents:
                 ),
             ],
         )
-        st.caption(health.disclaimer)
 
-        doc = resolve_library_document(symbol, vector_doc)
         yearly = yearly_dividend_per_share_table(doc) if doc is not None else pd.DataFrame()
         if not yearly.empty:
             st.markdown("**Dividend payout history (annual per share)**")

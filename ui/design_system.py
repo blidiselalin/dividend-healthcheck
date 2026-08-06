@@ -39,6 +39,17 @@ _STATUS_CLASS: dict[str, str] = {
     "Estimated": "estimated",
     "Missing": "missing",
     "Not available yet": "missing",
+    # Clear Dividend Risk (methodology 1.0)
+    "Lower observed risk": "healthy",
+    "Monitor": "watch",
+    "High observed risk": "risky",
+    "Insufficient data": "unknown",
+    "Special analysis required": "unknown",
+    "High": "confirmed",
+    "Medium": "watch",
+    "Low": "unknown",
+    "None": "confirmed",
+    "High concentration": "risky",
 }
 
 LOGO_SVG = """
@@ -1295,7 +1306,12 @@ def _metric_card_markup(
     )
 
 
-def _health_panel_markup(label: str, reasons: tuple[str, ...] | list[str]) -> str:
+def _health_panel_markup(
+    label: str,
+    reasons: tuple[str, ...] | list[str],
+    *,
+    title: str = "Dividend health",
+) -> str:
     kind = status_class_for_label(label)
     # Prefer CSS variables so light/dark stay consistent.
     token_map = {
@@ -1308,7 +1324,7 @@ def _health_panel_markup(label: str, reasons: tuple[str, ...] | list[str]) -> st
     reason_text = html.escape(" · ".join(reasons[:3]) if reasons else "")
     return (
         f'<div class="ds-health-panel" style="background:{bg};border:1px solid {border};color:{fg};">'
-        f'<p class="ds-health-panel-title">Dividend health · {html.escape(label)}</p>'
+        f'<p class="ds-health-panel-title">{html.escape(title)} · {html.escape(label)}</p>'
         f'<p class="ds-health-panel-body">{reason_text}</p>'
         f"</div>"
     )
@@ -1678,8 +1694,13 @@ def render_disclaimer_banner(message: str) -> None:
     render_html(f'<div class="ds-disclaimer-banner" role="note">{html.escape(message)}</div>')
 
 
-def render_health_panel(label: str, reasons: tuple[str, ...] | list[str]) -> None:
-    render_html(_health_panel_markup(label, reasons))
+def render_health_panel(
+    label: str,
+    reasons: tuple[str, ...] | list[str],
+    *,
+    title: str = "Dividend health",
+) -> None:
+    render_html(_health_panel_markup(label, reasons, title=title))
 
 
 def render_dividend_detail_block(
@@ -1688,12 +1709,14 @@ def render_dividend_detail_block(
     health_label: str,
     reasons: tuple[str, ...] | list[str],
     metrics: list[tuple[str, str, str] | tuple[str, str, str, bool]],
+    *,
+    health_title: str = "Dividend health",
 ) -> None:
     """Header, health, and metric grid in one HTML block for stock detail."""
     render_html(
         f'<div class="ds-dividend-section">'
         f"{_section_header_markup(title, subtitle)}"
-        f"{_health_panel_markup(health_label, reasons)}"
+        f"{_health_panel_markup(health_label, reasons, title=health_title)}"
         f"{_metric_grid_markup(metrics)}"
         f"</div>"
     )

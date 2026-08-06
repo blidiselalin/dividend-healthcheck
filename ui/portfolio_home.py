@@ -247,7 +247,7 @@ def render_compact_summary(rows: list[PortfolioDetailRow]) -> None:
     )
 
     month_paid = cached_current_month_paid_dividends(rows=rows, preload=preload)
-    from ui.dividend_risk_watchlist import render_dividend_risk_watchlist
+    from ui.clear_dividend_risk_panel import render_portfolio_clear_dividend_risk
     from ui.portfolio_summary import render_dividend_focus_block
 
     render_dividend_focus_block(rows, month_paid=month_paid)
@@ -256,7 +256,11 @@ def render_compact_summary(rows: list[PortfolioDetailRow]) -> None:
         "Values use open positions with live or market-library prices. "
         "Received and estimated dividend figures stay separate."
     )
-    render_dividend_risk_watchlist(rows)
+    render_portfolio_clear_dividend_risk(
+        rows,
+        vector_docs=vector_docs if isinstance(vector_docs, dict) else {},
+        stock_by_symbol=stock_cache if isinstance(stock_cache, dict) else {},
+    )
     render_stocks_overview(rows)
 
     from ui.beta_disclaimer import render_research_disclaimer

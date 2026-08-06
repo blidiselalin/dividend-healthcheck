@@ -21,6 +21,9 @@ def test_status_class_mapping() -> None:
     assert status_class_for_label("Not enough data") == "unknown"
     assert status_class_for_label("Confirmed") == "confirmed"
     assert status_class_for_label("Estimated") == "estimated"
+    assert status_class_for_label("Lower observed risk") == "healthy"
+    assert status_class_for_label("High observed risk") == "risky"
+    assert status_class_for_label("Special analysis required") == "unknown"
 
 
 def test_metric_markup_uses_highlight_class() -> None:
