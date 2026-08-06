@@ -340,13 +340,13 @@ def _render_market_library_tab() -> None:
     if refresh_status.get("running"):
         last_run = refresh_status.get("last_run_at") or "not yet"
         st.caption(
-            f"Automatic price refresh every **{refresh_status.get('interval_seconds', 300) // 60} minutes** "
+            f"Automatic price refresh every **{refresh_status.get('interval_seconds', 1800) // 60} minutes** "
             f"(last run: {last_run})."
         )
     else:
         st.caption(
             "Automatic price refresh is disabled in this process "
-            "(set `DIVIDENDSCOPE_ENABLE_PRICE_SCHEDULER=1` to enable)."
+            "(enabled by default when `DATABASE_URL` is set; every 30 minutes)."
         )
 
     st.markdown(
@@ -378,7 +378,7 @@ def _render_market_library_tab() -> None:
 
     with col_prices:
         st.markdown("**Refresh prices now**")
-        st.caption("Live quotes only — same pass as the 5-minute scheduler.")
+        st.caption("Live quotes only — same pass as the 30-minute scheduler.")
         if st.button("Refresh prices", key="admin_run_prices"):
             job_id = schedule_price_refresh()
             st.toast("Price refresh started" if job_id else "Refresh already running")

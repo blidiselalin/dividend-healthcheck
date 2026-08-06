@@ -87,7 +87,7 @@ Browser → Caddy (HTTPS 443) → Streamlit :8501 → PostgreSQL 16
 | **App** | Streamlit 1.42+ | UI, auth, API |
 | **Database** | PostgreSQL 16 (Docker) | Users, portfolios, market library |
 | **Auth** | Google OAuth (OIDC) via `streamlit[auth]` | Login, user isolation |
-| **Market data** | `stock_documents` table (JSONB) | Shared S&P 500 library; hourly price refresh |
+| **Market data** | `stock_documents` table (JSONB) | Shared S&P 500 library; live prices every 30 min |
 | **Price/dividend history** | `stock_price_history`, `stock_dividend_history` | Yield charts, income calendar |
 | **Benchmark comparison** | `benchmark_price_history`, `benchmark_etf_info` | Portfolio vs S&P 500 / SCHD / Dow / Nasdaq |
 | **Reverse proxy** | Caddy (host) | Auto-TLS via Let's Encrypt |
@@ -667,10 +667,11 @@ DIVIDENDSCOPE_HISTORY_REFRESH_HOURS=6     # Hours between daemon history refresh
 DIVIDENDSCOPE_AUTO_BACKFILL_ON_LOAD=0     # Auto backfill thin rows when background tasks run (default: 0)
 DIVIDENDSCOPE_SKIP_LEGACY_IMPORT=0        # Skip one-time Chroma→Postgres import (default: 0)
 
-# Optional: Price refresh scheduler (off by default — enable on VM if desired)
-DIVIDENDSCOPE_ENABLE_PRICE_SCHEDULER=0  # Start in-process price/history daemon (default: 0)
+# Optional: Price refresh scheduler (on by default when DATABASE_URL is set)
+DIVIDENDSCOPE_ENABLE_PRICE_SCHEDULER=1  # Force on/off (default: on when DATABASE_URL set)
 DIVIDENDSCOPE_DISABLE_PRICE_SCHEDULER=1  # Legacy: force-disable even when ENABLE=1
-DIVIDENDSCOPE_PRICE_REFRESH_SECONDS=300  # Price refresh interval in seconds (default: 300)
+DIVIDENDSCOPE_PRICE_REFRESH_SECONDS=1800 # Price refresh interval in seconds (default: 1800 = 30 min)
+DIVIDENDSCOPE_PRICE_STALE_MINUTES=45     # UI stale threshold for cached prices (default: 45)
 
 # Optional: Auth overrides (also configurable via .streamlit/secrets.toml)
 DIVIDENDSCOPE_AUTH_DISABLE=0             # Bypass auth for local dev (default: 0)

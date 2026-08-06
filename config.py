@@ -312,7 +312,11 @@ DEFAULT_STALENESS_DAYS: Final[int] = 7
 PORTFOLIO_RISK_REFRESH_SECONDS: Final[int] = 3600
 MIN_YIELD_PRICE_POINTS: Final[int] = 252
 MIN_YIELD_DIVIDEND_PAYMENTS: Final[int] = 4
-PRICE_REFRESH_INTERVAL_SECONDS: Final[int] = 300
+# Backend live-price refresh interval (default 30 minutes).
+PRICE_REFRESH_INTERVAL_SECONDS: Final[int] = max(
+    60,
+    int(os.environ.get("DIVIDENDSCOPE_PRICE_REFRESH_SECONDS", "1800") or "1800"),
+)
 
 # Auto-trigger a thin-history backfill on portfolio load when holdings lack
 # enough price/dividend data for yield charts
@@ -328,12 +332,29 @@ HISTORY_REFRESH_HOURS: Final[int] = max(
     int(os.environ.get("DIVIDENDSCOPE_HISTORY_REFRESH_HOURS", "6") or "6"),
 )
 
-# Background price/history daemon is off unless explicitly enabled
-# (DIVIDENDSCOPE_ENABLE_PRICE_SCHEDULER=1). Legacy disable flag still honored.
-PRICE_SCHEDULER_ENABLED: Final[bool] = os.environ.get(
-    "DIVIDENDSCOPE_ENABLE_PRICE_SCHEDULER", "0"
-).strip().lower() in ("1", "true", "yes")
 
-# Age threshold (minutes) above which a cached price is shown as stale in the
-# portfolio table until the background live-reload job updates it.
-PRICE_STALE_MINUTES: Final[int] = 5
+def _price_scheduler_enabled_default() -> bool:
+    """On by default when Postgres is configured; opt-in/out via env."""
+    flag = os.environ.get("DIVIDENDSCOPE_ENABLE_PRICE_SCHEDULER", "").strip().lower()
+    if flag in ("1", "true", "yes", "on"):
+        return True
+    if flag in ("0", "false", "no", "off"):
+        return False
+    return bool(
+        (
+            os.environ.get("DATABASE_URL") or os.environ.get("DIVIDENDSCOPE_DATABASE_URL") or ""
+        ).strip()
+    )
+
+
+# Background price/history daemon. Default: enabled when DATABASE_URL is set.
+# Override with DIVIDENDSCOPE_ENABLE_PRICE_SCHEDULER=0/1. Legacy disable flag
+# still honored inside the scheduler module.
+PRICE_SCHEDULER_ENABLED: Final[bool] = _price_scheduler_enabled_default()
+
+# Age threshold (minutes) above which a cached price is shown as stale.
+# Aligned with the 30-minute backend refresh so marks stay accurate between runs.
+PRICE_STALE_MINUTES: Final[int] = max(
+    5,
+    int(os.environ.get("DIVIDENDSCOPE_PRICE_STALE_MINUTES", "45") or "45"),
+)

@@ -69,30 +69,58 @@ def _apply_latest_price(document: Any, price: float) -> None:
     document.price_history.sort(key=lambda point: point.date, reverse=True)
 
 
-def _collect_symbols() -> list[str]:
-    """Symbols to refresh: market library entries plus portfolio holdings."""
-    from config import DELISTED_SYMBOLS
-    from services.shared_market_db import get_shared_vector_store
-
+def _portfolio_holding_symbols() -> set[str]:
+    """Symbols held by any user (Postgres) plus the current-session portfolio."""
     symbols: set[str] = set()
-
-    try:
-        store = get_shared_vector_store()
-        for document in store.get_all_documents():
-            if document.symbol:
-                symbols.add(document.symbol.upper())
-    except ImportError as exc:
-        logger.warning("Could not load market library symbols: %s", exc)
 
     try:
         from services.portfolio_context import create_portfolio_context
 
         for holding in create_portfolio_context().portfolio.list_holdings():
-            symbols.add(holding.symbol.upper())
-    except ImportError:  # noqa: S110
-        pass
+            if holding.symbol:
+                symbols.add(holding.symbol.upper())
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Could not load session portfolio symbols: %s", exc)
 
-    return sorted(symbol for symbol in symbols if symbol not in DELISTED_SYMBOLS)
+    try:
+        from db.connection import open_app_db, use_cloud_sql
+
+        if use_cloud_sql():
+            with open_app_db() as conn:
+                rows = conn.execute("SELECT DISTINCT symbol FROM holdings").fetchall()
+            for row in rows:
+                symbol = row.get("symbol") if isinstance(row, dict) else row[0]
+                if symbol:
+                    symbols.add(str(symbol).upper())
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Could not load cross-user holding symbols: %s", exc)
+
+    return symbols
+
+
+def _collect_symbols() -> list[str]:
+    """Symbols to refresh: portfolio holdings first, then remaining library names."""
+    from config import DELISTED_SYMBOLS
+    from services.shared_market_db import get_shared_vector_store
+
+    library: set[str] = set()
+    try:
+        store = get_shared_vector_store()
+        for document in store.get_all_documents():
+            if document.symbol:
+                library.add(document.symbol.upper())
+    except ImportError as exc:
+        logger.warning("Could not load market library symbols: %s", exc)
+
+    portfolio = _portfolio_holding_symbols()
+    delisted = set(DELISTED_SYMBOLS)
+    portfolio_ordered = sorted(symbol for symbol in portfolio if symbol not in delisted)
+    library_rest = sorted(
+        symbol for symbol in library if symbol not in delisted and symbol not in portfolio
+    )
+    # Portfolio holdings first so live marks stay accurate even if the full
+    # library pass is large or partially rate-limited.
+    return portfolio_ordered + library_rest
 
 
 def refresh_market_library_prices(
@@ -111,11 +139,13 @@ def refresh_market_library_prices(
     target_symbols = [
         symbol.upper() for symbol in (symbols if symbols is not None else _collect_symbols())
     ]
+    portfolio_symbols = _portfolio_holding_symbols()
     stats: dict[str, Any] = {
         "total": len(target_symbols),
         "updated": 0,
         "skipped": 0,
         "errors": 0,
+        "portfolio_symbols": len(portfolio_symbols),
         "timestamp": datetime.now().isoformat(),
     }
 

@@ -1,5 +1,8 @@
 """
-Background price refresh — keep shared library current_price updated every 5 minutes.
+Background price refresh — keep shared library current_price updated on a timer.
+
+Default interval is 30 minutes (see ``PRICE_REFRESH_INTERVAL_SECONDS``). Enabled
+automatically when ``DATABASE_URL`` is set unless explicitly disabled.
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ _run_lock = threading.Lock()
 _last_stats: dict[str, Any] | None = None
 _last_run_at: datetime | None = None
 _last_error: str | None = None
-_interval_seconds: int = 300
+_interval_seconds: int = 1800
 
 # History backfill scheduler state (separate from price refresh)
 _backfill_lock = threading.Lock()

@@ -75,6 +75,53 @@ def test_refresh_market_library_prices_updates_and_skips(monkeypatch) -> None:
     assert doc_ko.current_price == 61.5
 
 
+def test_collect_symbols_prioritizes_portfolio_holdings(monkeypatch) -> None:
+    class _Doc:
+        def __init__(self, symbol: str) -> None:
+            self.symbol = symbol
+
+    class _Store:
+        def get_all_documents(self):
+            return [_Doc("ZZZ"), _Doc("AAA"), _Doc("KO")]
+
+    monkeypatch.setattr(
+        "services.shared_market_db.get_shared_vector_store",
+        lambda: _Store(),
+    )
+    monkeypatch.setattr(
+        db_price_refresh,
+        "_portfolio_holding_symbols",
+        lambda: {"KO", "MSFT"},
+    )
+    monkeypatch.setattr("config.DELISTED_SYMBOLS", frozenset())
+
+    symbols = db_price_refresh._collect_symbols()
+
+    assert symbols[:2] == ["KO", "MSFT"]
+    assert symbols[2:] == ["AAA", "ZZZ"]
+
+
+def test_refresh_market_library_prices_includes_portfolio_symbol_count(monkeypatch) -> None:
+    doc = StockDocument(symbol="KO", name="KO")
+    doc.price_history = []
+
+    class _Store:
+        def get_all_documents(self):
+            return [doc]
+
+        def add_documents(self, docs):
+            return None
+
+    monkeypatch.setattr("services.shared_market_db.get_shared_vector_store", lambda: _Store())
+    monkeypatch.setattr(db_price_refresh, "_fetch_latest_price", lambda symbol: 61.5)
+    monkeypatch.setattr(db_price_refresh, "_portfolio_holding_symbols", lambda: {"KO", "JNJ"})
+
+    stats = db_price_refresh.refresh_market_library_prices(symbols=["KO"], max_workers=1)
+
+    assert stats["portfolio_symbols"] == 2
+    assert stats["updated"] == 1
+
+
 def test_remove_delisted_from_market_library_uses_sorted_symbols(monkeypatch) -> None:
     called = {}
 

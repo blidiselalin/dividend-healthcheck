@@ -104,11 +104,17 @@ def _startup_db_light() -> dict:
         from services.price_refresh_scheduler import start_price_refresh_scheduler
 
         if start_price_refresh_scheduler():
-            logger.info("Background price refresh scheduler started")
+            from config import PRICE_REFRESH_INTERVAL_SECONDS
+
+            logger.info(
+                "Background price refresh scheduler started (every %ss)",
+                PRICE_REFRESH_INTERVAL_SECONDS,
+            )
         else:
             logger.info(
                 "Background price refresh scheduler not started "
-                "(set DIVIDENDSCOPE_ENABLE_PRICE_SCHEDULER=1 to enable)"
+                "(enabled by default when DATABASE_URL is set; "
+                "override with DIVIDENDSCOPE_ENABLE_PRICE_SCHEDULER=0/1)"
             )
     except Exception as exc:
         logger.warning("Price refresh scheduler not started: %s", exc)

@@ -26,7 +26,7 @@ Automatic enrichment is **off by default** (`services/background_task_prefs.py`)
 |----------------|--------|
 | Sidebar panel | `ui/background_tasks_panel.py` |
 | Startup scheduling gate | `services/deferred_startup.schedule_startup_tasks()` |
-| Price/history daemon | `services/price_refresh_scheduler.py` — off unless `DIVIDENDSCOPE_ENABLE_PRICE_SCHEDULER=1` |
+| Price/history daemon | `services/price_refresh_scheduler.py` — every 30 min; on by default when `DATABASE_URL` is set |
 
 ## IBKR Activity Statement import
 

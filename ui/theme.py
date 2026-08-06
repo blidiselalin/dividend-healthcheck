@@ -469,7 +469,7 @@ def render_portfolio_status_line() -> None:
     elif analysis_ready:
         parts.append("analysis ready — use **Reload live data** after ingest when needed")
     else:
-        parts.append("prices auto-refresh every 5 minutes in the backend")
+        parts.append("prices auto-refresh every 30 minutes in the backend")
 
     if parts:
         st.caption(" · ".join(parts))

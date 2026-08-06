@@ -1,4 +1,4 @@
-"""Tests for the 5-minute price refresh scheduler."""
+"""Tests for the 30-minute price refresh scheduler."""
 # ruff: noqa: S101
 
 from __future__ import annotations
@@ -33,11 +33,20 @@ def test_start_price_refresh_scheduler_is_idempotent(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(mod, "_started", False)
     monkeypatch.setattr(mod, "_scheduler_disabled", lambda: False)
     with patch.object(mod, "_refresh_loop"):
-        assert mod.start_price_refresh_scheduler(interval_seconds=300) is True
-        assert mod.start_price_refresh_scheduler(interval_seconds=300) is False
+        assert mod.start_price_refresh_scheduler(interval_seconds=1800) is True
+        assert mod.start_price_refresh_scheduler(interval_seconds=1800) is False
 
 
 def test_scheduler_disabled_under_pytest_sqlite(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PYTEST_USE_SQLITE", "1")
     assert start_price_refresh_scheduler() is False
     assert scheduler_status()["enabled"] is False
+
+
+def test_resolve_interval_defaults_to_30_minutes(monkeypatch: pytest.MonkeyPatch) -> None:
+    import services.price_refresh_scheduler as mod
+
+    monkeypatch.delenv("DIVIDENDSCOPE_PRICE_REFRESH_SECONDS", raising=False)
+    assert mod._resolve_interval_seconds() == 1800
+    monkeypatch.setenv("DIVIDENDSCOPE_PRICE_REFRESH_SECONDS", "900")
+    assert mod._resolve_interval_seconds() == 900
