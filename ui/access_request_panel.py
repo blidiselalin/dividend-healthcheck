@@ -53,7 +53,7 @@ def render_access_denied_panel() -> None:
         if invite_only_signup():
             st.error(
                 "This Google account is not on the invite list yet. "
-                "Request access below — the app owner will be notified in the admin panel."
+                "Request access below — the app owner reviews pending requests in the sidebar."
             )
         else:
             st.error("Your account is not allowed to use this app. Contact the owner for access.")
@@ -79,19 +79,25 @@ def _render_request_form(identity, store: AccessRequestStore, *, allow_resubmit:
     )
     label = "Send new request" if allow_resubmit else "Request access from admin"
     if st.button(label, type="primary", use_container_width=True, key="access_submit_request"):
-        store.submit_request(
-            email=identity.email,
-            user_id=identity.id,
-            name=identity.name,
-            picture_url=identity.picture_url,
-            message=note.strip() or None,
-        )
+        try:
+            store.submit_request(
+                email=identity.email,
+                user_id=identity.id,
+                name=identity.name,
+                picture_url=identity.picture_url,
+                message=note.strip() or None,
+            )
+        except Exception as exc:
+            logger.exception("Failed to submit access request for %s", identity.email)
+            st.error(f"Could not save your access request. Please try again. ({exc})")
+            return
         st.session_state["access_request_just_sent"] = identity.email
         st.rerun()
 
     if st.session_state.get("access_request_just_sent") == identity.email:
         render_notice(
-            "Request sent. The admin will see it in the **Access requests** panel and can approve your Google email.",
+            "Request sent. When the owner signs in, they will see it under "
+            "**Access requests** in the sidebar (and Account menu).",
             kind="success",
         )
 
@@ -102,8 +108,15 @@ def render_admin_access_requests(
     key_prefix: str = "options",
 ) -> None:
     """Admin block for pending Google access requests (Options menu or sidebar)."""
-    store = AccessRequestStore()
-    pending = store.list_pending()
+    try:
+        store = AccessRequestStore()
+        pending = store.list_pending()
+    except Exception as exc:
+        logger.exception("Failed to load access requests")
+        target = st.sidebar if in_sidebar else st
+        target.error(f"Could not load access requests: {exc}")
+        return
+
     count = len(pending)
     panel = st.sidebar if in_sidebar else st
 
@@ -116,7 +129,7 @@ def render_admin_access_requests(
         panel.caption("No pending requests.")
         return
 
-    panel.warning(f"{count} pending — new user(s) waiting for approval")
+    panel.warning(f"{count} pending — approve or reject below")
 
     for item in pending:
         panel.markdown(f"**{item.email}**")

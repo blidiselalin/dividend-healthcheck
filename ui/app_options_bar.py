@@ -74,6 +74,14 @@ div[data-testid="stVerticalBlock"]:has(> div > [class*="st-key-ds_options_bar"])
 """
 
 
+def _pending_access_count() -> int:
+    if not is_app_admin():
+        return 0
+    from auth.access_requests import pending_access_request_count
+
+    return pending_access_request_count()
+
+
 def _account_label() -> str:
     user = current_user()
     if user is None:
@@ -83,6 +91,9 @@ def _account_label() -> str:
     short = (user.name or user.email.split("@")[0] or "Account").strip()
     if len(short) > 14:
         short = short[:13] + "…"
+    pending = _pending_access_count()
+    if pending:
+        return f"Account · {short} · {pending} request{'s' if pending != 1 else ''}"
     return f"Account · {short}"
 
 
@@ -193,23 +204,29 @@ def render_sidebar_account_entry() -> None:
     if not admin:
         if is_admin_console_active():
             set_admin_console_active(False)
-    elif is_admin_console_active():
-        if st.sidebar.button(
-            "Back to Home",
-            key="sidebar_admin_console_back",
+    else:
+        from ui.access_request_panel import render_admin_access_requests
+
+        # Pending invites must be visible without opening the Account popover.
+        render_admin_access_requests(in_sidebar=True, key_prefix="sidebar")
+
+        if is_admin_console_active():
+            if st.sidebar.button(
+                "Back to Home",
+                key="sidebar_admin_console_back",
+                use_container_width=True,
+            ):
+                from ui.portfolio_home import navigate_to_portfolio_home
+
+                navigate_to_portfolio_home()
+        elif st.sidebar.button(
+            "Open admin console",
+            key="sidebar_admin_console_open",
+            type="primary",
             use_container_width=True,
         ):
-            from ui.portfolio_home import navigate_to_portfolio_home
-
-            navigate_to_portfolio_home()
-    elif st.sidebar.button(
-        "Open admin console",
-        key="sidebar_admin_console_open",
-        type="primary",
-        use_container_width=True,
-    ):
-        set_admin_console_active(True)
-        st.rerun()
+            set_admin_console_active(True)
+            st.rerun()
 
     if user is not None:
         if demo:

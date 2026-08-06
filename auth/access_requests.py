@@ -127,6 +127,9 @@ class AccessRequestStore:
         message: str | None = None,
     ) -> AccessRequest:
         normalized = email.strip().lower()
+        if not normalized:
+            raise ValueError("Access request requires a non-empty email address")
+
         now = _utc_now().isoformat()
         existing = self.get_by_email(normalized)
 
@@ -136,14 +139,36 @@ class AccessRequestStore:
             if existing and existing.status == AccessRequestStatus.PENDING:
                 return existing
             if existing and existing.status == AccessRequestStatus.REJECTED:
+                if connection.is_postgres:
+                    connection.execute(
+                        """
+                        UPDATE access_requests
+                        SET user_id = ?, name = ?, picture_url = ?, status = 'pending',
+                            message = ?, requested_at = ?::timestamptz,
+                            reviewed_at = NULL, reviewed_by = NULL
+                        WHERE lower(email) = ?
+                        """,
+                        (user_id, name, picture_url, message, now, normalized),
+                    )
+                else:
+                    connection.execute(
+                        """
+                        UPDATE access_requests
+                        SET user_id = ?, name = ?, picture_url = ?, status = 'pending',
+                            message = ?, requested_at = ?, reviewed_at = NULL, reviewed_by = NULL
+                        WHERE lower(email) = ?
+                        """,
+                        (user_id, name, picture_url, message, now, normalized),
+                    )
+            elif connection.is_postgres:
                 connection.execute(
                     """
-                    UPDATE access_requests
-                    SET user_id = ?, name = ?, picture_url = ?, status = 'pending',
-                        message = ?, requested_at = ?, reviewed_at = NULL, reviewed_by = NULL
-                    WHERE lower(email) = ?
+                    INSERT INTO access_requests (
+                      email, user_id, name, picture_url, status, message,
+                      requested_at, reviewed_at, reviewed_by
+                    ) VALUES (?, ?, ?, ?, 'pending', ?, ?::timestamptz, NULL, NULL)
                     """,
-                    (user_id, name, picture_url, message, now, normalized),
+                    (normalized, user_id, name, picture_url, message, now),
                 )
             else:
                 connection.execute(
@@ -175,34 +200,77 @@ class AccessRequestStore:
     def count_pending(self) -> int:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT COUNT(*) FROM access_requests WHERE status = 'pending'"
+                "SELECT COUNT(*) AS pending_count FROM access_requests WHERE status = 'pending'"
             ).fetchone()
-        return int(row[0]) if row else 0
+        return _row_scalar_int(row)
 
     def approve(self, email: str, *, reviewer_email: str) -> bool:
         normalized = email.strip().lower()
         now = _utc_now().isoformat()
         with self._connect() as connection:
-            cursor = connection.execute(
-                """
-                UPDATE access_requests
-                SET status = 'approved', reviewed_at = ?, reviewed_by = ?
-                WHERE lower(email) = ?
-                """,
-                (now, reviewer_email.strip().lower(), normalized),
-            )
+            if connection.is_postgres:
+                cursor = connection.execute(
+                    """
+                    UPDATE access_requests
+                    SET status = 'approved', reviewed_at = ?::timestamptz, reviewed_by = ?
+                    WHERE lower(email) = ?
+                    """,
+                    (now, reviewer_email.strip().lower(), normalized),
+                )
+            else:
+                cursor = connection.execute(
+                    """
+                    UPDATE access_requests
+                    SET status = 'approved', reviewed_at = ?, reviewed_by = ?
+                    WHERE lower(email) = ?
+                    """,
+                    (now, reviewer_email.strip().lower(), normalized),
+                )
             return cursor.rowcount > 0
 
     def reject(self, email: str, *, reviewer_email: str) -> bool:
         normalized = email.strip().lower()
         now = _utc_now().isoformat()
         with self._connect() as connection:
-            cursor = connection.execute(
-                """
-                UPDATE access_requests
-                SET status = 'rejected', reviewed_at = ?, reviewed_by = ?
-                WHERE lower(email) = ?
-                """,
-                (now, reviewer_email.strip().lower(), normalized),
-            )
+            if connection.is_postgres:
+                cursor = connection.execute(
+                    """
+                    UPDATE access_requests
+                    SET status = 'rejected', reviewed_at = ?::timestamptz, reviewed_by = ?
+                    WHERE lower(email) = ?
+                    """,
+                    (now, reviewer_email.strip().lower(), normalized),
+                )
+            else:
+                cursor = connection.execute(
+                    """
+                    UPDATE access_requests
+                    SET status = 'rejected', reviewed_at = ?, reviewed_by = ?
+                    WHERE lower(email) = ?
+                    """,
+                    (now, reviewer_email.strip().lower(), normalized),
+                )
             return cursor.rowcount > 0
+
+
+def _row_scalar_int(row: object) -> int:
+    """Read a single COUNT(*) value from SQLite Row or Postgres dict_row."""
+    if row is None:
+        return 0
+    if isinstance(row, dict):
+        return int(next(iter(row.values())))
+    try:
+        return int(row[0])  # type: ignore[index]
+    except Exception:
+        try:
+            return int(row["pending_count"])  # type: ignore[index]
+        except Exception:
+            return 0
+
+
+def pending_access_request_count() -> int:
+    """Safe pending-count helper for admin UI badges."""
+    try:
+        return AccessRequestStore().count_pending()
+    except Exception:
+        return 0

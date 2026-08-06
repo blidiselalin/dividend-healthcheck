@@ -62,3 +62,25 @@ def test_is_email_allowed_includes_approved_grant(
     request_db.submit_request(email="stranger@example.com", user_id="sub-2")
     request_db.approve("stranger@example.com", reviewer_email="owner@example.com")
     assert is_email_allowed("stranger@example.com") is True
+
+
+def test_list_and_count_pending(request_db: AccessRequestStore) -> None:
+    assert request_db.count_pending() == 0
+    assert request_db.list_pending() == []
+
+    request_db.submit_request(email="a@example.com", user_id="a", message="hi")
+    request_db.submit_request(email="b@example.com", user_id="b")
+    assert request_db.count_pending() == 2
+    emails = {item.email for item in request_db.list_pending()}
+    assert emails == {"a@example.com", "b@example.com"}
+
+    request_db.approve("a@example.com", reviewer_email="admin@example.com")
+    assert request_db.count_pending() == 1
+    assert request_db.list_pending()[0].email == "b@example.com"
+
+
+def test_row_scalar_int_supports_dict_rows() -> None:
+    from auth.access_requests import _row_scalar_int
+
+    assert _row_scalar_int({"pending_count": 3}) == 3
+    assert _row_scalar_int(None) == 0
