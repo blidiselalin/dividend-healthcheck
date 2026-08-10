@@ -30,6 +30,7 @@ from services.clear_dividend_risk import (
     evidence_from_stock_document,
     load_risk_evidence_batch,
     risk_level_label,
+    with_yield_channel,
 )
 
 DISCLAIMER = (
@@ -60,9 +61,10 @@ def assess_holding_for_ui(
     symbol: str,
     stock: Any | None = None,
     vector_doc: Any | None = None,
+    yield_channel: Any | None = None,
     today: date | None = None,
 ) -> HoldingDividendRiskAssessment:
-    """Build evidence from preloaded document/stock and assess once."""
+    """Build evidence from preloaded document/stock/yield channel and assess once."""
     symbol_u = (symbol or getattr(stock, "symbol", "") or "").upper()
     if vector_doc is not None:
         evidence = evidence_from_stock_document(vector_doc)
@@ -80,7 +82,16 @@ def assess_holding_for_ui(
         from dataclasses import replace
 
         evidence = replace(evidence, symbol=symbol_u)
-    return assess_holding_dividend_risk(evidence, today=today)
+    if yield_channel is None:
+        import streamlit as st
+
+        cached = st.session_state.get("portfolio_yield_cache") or {}
+        if isinstance(cached, dict):
+            yield_channel = cached.get(symbol_u)
+    return assess_holding_dividend_risk(
+        with_yield_channel(evidence, yield_channel),
+        today=today,
+    )
 
 
 def primary_signal_messages(
@@ -127,6 +138,10 @@ def evidence_table_rows(
         "earnings_payout_ratio",
         "dividend_coverage",
         "dividend_yield",
+        "yield_channel_zone",
+        "yield_channel_percentile",
+        "yield_channel_current",
+        "yield_channel_median",
         "debt_to_ebitda",
         "debt_to_equity",
         "interest_coverage",
@@ -135,7 +150,7 @@ def evidence_table_rows(
         "affo_payout_ratio",
         "ffo_payout_ratio",
         "security_type",
-        "monitor_signal_count",
+        "hard_monitor_signal_count",
     ):
         value = observed.get(key)
         if value is None or value == []:
@@ -287,21 +302,35 @@ def render_holding_clear_dividend_risk(
                 False,
             ),
             (
-                "Dividend yield",
-                _fmt_pct(observed.get("dividend_yield")),
-                "Stretched yields warrant coverage review",
+                "Yield channel",
+                str(observed.get("yield_channel_zone") or "—"),
+                (
+                    f"Weiss zone · pctl {_fmt_pct(observed.get('yield_channel_percentile'), suffix='')}"
+                    if observed.get("yield_channel_percentile") is not None
+                    else "Weiss historical yield bands"
+                ),
+                False,
+            ),
+            (
+                "Channel yield",
+                _fmt_pct(observed.get("yield_channel_current") or observed.get("dividend_yield")),
+                (
+                    f"Median {_fmt_pct(observed.get('yield_channel_median'))}"
+                    if observed.get("yield_channel_median") is not None
+                    else "Current vs history"
+                ),
                 False,
             ),
             (
                 "Debt / EBITDA",
                 _fmt_ratio(observed.get("debt_to_ebitda")),
-                "Leverage stress signal",
+                "Soft context — not automatic High",
                 False,
             ),
             (
                 "Interest coverage",
                 _fmt_ratio(observed.get("interest_coverage")),
-                "Ability to service debt",
+                "Soft context — not automatic High",
                 False,
             ),
         ]
@@ -352,6 +381,7 @@ class PortfolioClearRiskTableRow:
     sustainability_status: str
     confidence: str
     main_signal: str
+    yield_channel_zone: str
     fcf_payout_pct: float | None
     earnings_payout_pct: float | None
     dividend_yield_pct: float | None
@@ -412,12 +442,14 @@ def build_portfolio_clear_dividend_risk(
     *,
     vector_docs: Mapping[str, Any] | None = None,
     stock_by_symbol: Mapping[str, Any] | None = None,
+    yield_channels: Mapping[str, Any] | None = None,
     today: date | None = None,
 ) -> PortfolioClearRiskView:
     """
     Batch-assess holdings from preloaded caches (one pass, no I/O).
 
     Prefer vector documents for dividend-history cut detection.
+    Yield channels (Weiss) refine absolute yield into value vs trap context.
     """
     company_by_symbol: dict[str, str] = {}
     symbols: list[str] = []
@@ -459,7 +491,11 @@ def build_portfolio_clear_dividend_risk(
                 ),
             )
 
-    assessments = assess_holdings_dividend_risk(evidence_by_symbol, today=today)
+    assessments = assess_holdings_dividend_risk(
+        evidence_by_symbol,
+        today=today,
+        yield_channels=yield_channels,
+    )
     inputs: list[PortfolioHoldingIncomeInput] = []
     for row in rows:
         symbol = str(getattr(row, "ticker", "") or "").upper()
@@ -483,6 +519,7 @@ def build_portfolio_clear_dividend_risk(
         income = max(0.0, item.estimated_annual_income)
         share = (income / total * 100.0) if total > 0 else 0.0
         signals = primary_signal_messages(assessment, limit=1)
+        zone = str((assessment.observed_values or {}).get("yield_channel_zone") or "—")
         table.append(
             PortfolioClearRiskTableRow(
                 symbol=item.symbol,
@@ -492,9 +529,11 @@ def build_portfolio_clear_dividend_risk(
                 sustainability_status=assessment.risk_label,
                 confidence=confidence_label(assessment.confidence),
                 main_signal=signals[0] if signals else assessment.summary,
+                yield_channel_zone=zone,
                 fcf_payout_pct=_observed_float(assessment, "fcf_payout_ratio"),
                 earnings_payout_pct=_observed_float(assessment, "earnings_payout_ratio"),
-                dividend_yield_pct=_observed_float(assessment, "dividend_yield"),
+                dividend_yield_pct=_observed_float(assessment, "yield_channel_current")
+                or _observed_float(assessment, "dividend_yield"),
                 debt_to_ebitda=_observed_float(assessment, "debt_to_ebitda"),
                 data_as_of=format_as_of(assessment.data_as_of),
                 action="Review evidence",
@@ -647,6 +686,7 @@ def portfolio_table_records(
             "Share of income %": row.income_share_pct,
             "Sustainability": row.sustainability_status,
             "Confidence": row.confidence,
+            "Yield zone": row.yield_channel_zone,
             "FCF payout %": row.fcf_payout_pct,
             "Earnings payout %": row.earnings_payout_pct,
             "Yield %": row.dividend_yield_pct,
@@ -665,6 +705,7 @@ def render_portfolio_clear_dividend_risk(
     table_key: str = "home_clear_dividend_risk",
     vector_docs: Mapping[str, Any] | None = None,
     stock_by_symbol: Mapping[str, Any] | None = None,
+    yield_channels: Mapping[str, Any] | None = None,
 ) -> PortfolioClearRiskView | None:
     """Home / Dividend Income portfolio Clear Dividend Risk summary."""
     import pandas as pd
@@ -686,33 +727,50 @@ def render_portfolio_clear_dividend_risk(
     if stock_by_symbol is None:
         cached_stocks = st.session_state.get("portfolio_stock_cache") or {}
         stock_by_symbol = cached_stocks if isinstance(cached_stocks, dict) else {}
+    if yield_channels is None:
+        cached_channels = st.session_state.get("portfolio_yield_cache") or {}
+        yield_channels = cached_channels if isinstance(cached_channels, dict) else {}
 
     view = build_portfolio_clear_dividend_risk(
         rows,
         vector_docs=vector_docs,
         stock_by_symbol=stock_by_symbol,
+        yield_channels=yield_channels,
     )
     portfolio = view.portfolio
 
     render_home_panel(
         "Dividend income risk",
-        "Company dividend sustainability (coverage, leverage, yield, cuts) and income "
-        "concentration — separate concepts. Research only; estimated income is not "
-        "reduced by risk status. Methodology "
-        f"{METHODOLOGY_VERSION}.",
+        "Sustainability (coverage & cuts) is separate from Weiss yield-channel valuation. "
+        "High yield vs history is a value signal unless coverage is stressed (yield trap). "
+        "Research only; estimated income is not reduced by risk status. "
+        f"Methodology {METHODOLOGY_VERSION}.",
         portfolio_income_metric_items(portfolio),
     )
     _render_high_value_alerts(view.alerts)
 
-    conc_cols = st.columns(2)
+    from collections import Counter
+
+    from ui.design_system import render_status_badge
+
+    conc_cols = st.columns(3)
     with conc_cols[0]:
         st.caption("Company income concentration")
-        from ui.design_system import render_status_badge
-
         render_status_badge(concentration_label(portfolio.company_concentration))
     with conc_cols[1]:
         st.caption("Sector income concentration")
         render_status_badge(concentration_label(portfolio.sector_concentration))
+    with conc_cols[2]:
+        zone_counts = Counter(
+            row.yield_channel_zone
+            for row in view.table_rows
+            if row.yield_channel_zone and row.yield_channel_zone != "—"
+        )
+        st.caption("Yield-channel zones (Weiss)")
+        if zone_counts:
+            st.caption(" · ".join(f"{zone} {count}" for zone, count in zone_counts.most_common()))
+        else:
+            st.caption("Load yield charts for zone context")
 
     if not view.table_rows:
         st.info("No open holdings with dividend-risk assessments yet.")
@@ -735,6 +793,7 @@ def render_portfolio_clear_dividend_risk(
             "Share of income %": st.column_config.NumberColumn(format="%.1f%%"),
             "Sustainability": st.column_config.TextColumn(width="medium"),
             "Confidence": st.column_config.TextColumn(width="small"),
+            "Yield zone": st.column_config.TextColumn(width="small"),
             "FCF payout %": st.column_config.NumberColumn(format="%.1f%%"),
             "Earnings payout %": st.column_config.NumberColumn(format="%.1f%%"),
             "Yield %": st.column_config.NumberColumn(format="%.1f%%"),

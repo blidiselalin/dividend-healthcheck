@@ -48,7 +48,14 @@ def test_health_panel_title_uses_sustainability() -> None:
     assert "FCF payout is 88%." in markup
 
 
-def test_assess_holding_for_ui_prefers_document_evidence() -> None:
+def test_assess_holding_for_ui_prefers_document_evidence(monkeypatch) -> None:
+    import sys
+    from unittest.mock import MagicMock
+
+    mock_st = MagicMock()
+    mock_st.session_state = {}
+    monkeypatch.setitem(sys.modules, "streamlit", mock_st)
+
     doc = SimpleNamespace(
         symbol="KO",
         name="Coca-Cola",

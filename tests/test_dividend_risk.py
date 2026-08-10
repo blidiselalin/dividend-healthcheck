@@ -66,8 +66,8 @@ def test_stored_payout_and_fcf_reach_risk_input() -> None:
     assert result.risk_level is RiskLevel.MONITOR
 
 
-def test_fcf_near_critical_is_high() -> None:
-    evidence = evidence_from_stock_document(_doc(payout_ratio=55.0, fcf_payout_ratio=92.0))
+def test_fcf_above_100_is_high() -> None:
+    evidence = evidence_from_stock_document(_doc(payout_ratio=55.0, fcf_payout_ratio=110.0))
     result = assess_holding_dividend_risk(evidence, today=date(2026, 8, 6))
     assert result.risk_level is RiskLevel.HIGH_OBSERVED_RISK
 

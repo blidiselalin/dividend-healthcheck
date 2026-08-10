@@ -16,11 +16,9 @@ from services.clear_dividend_risk import (
     SIGNAL_CONFLICTING_COVERAGE,
     SIGNAL_DATA_FRESHNESS_WARNING,
     SIGNAL_DATA_STALE,
-    SIGNAL_DEBT_TO_EBITDA_HIGH,
     SIGNAL_DIVIDEND_CAGR_NEGATIVE,
     SIGNAL_DIVIDEND_CUT_MAJOR,
     SIGNAL_DIVIDEND_CUT_MINOR,
-    SIGNAL_DIVIDEND_YIELD_EXTREME,
     SIGNAL_EARNINGS_NEGATIVE,
     SIGNAL_EARNINGS_PAYOUT_CRITICAL,
     SIGNAL_FCF_NEGATIVE,
@@ -31,6 +29,8 @@ from services.clear_dividend_risk import (
     SIGNAL_MULTI_MONITOR,
     SIGNAL_REIT_MISSING_AFFO_FFO,
     SIGNAL_UNSUPPORTED_TYPE,
+    SIGNAL_YIELD_CHANNEL_ZONE,
+    SIGNAL_YIELD_TRAP,
     SIGNAL_ZERO_DENOMINATOR,
     ConcentrationLevel,
     ConfidenceLevel,
@@ -99,25 +99,44 @@ def test_healthy_coverage_lower_observed_risk() -> None:
     assert result.observed_values["fcf_payout_ratio"] == 60.0
 
 
-def test_fcf_payout_70_to_90_monitor() -> None:
+def test_fcf_payout_80_to_100_monitor() -> None:
     result = assess_holding_dividend_risk(_healthy(fcf_payout_ratio=88.0), today=TODAY)
     assert result.risk_level is RiskLevel.MONITOR
     assert SIGNAL_FCF_PAYOUT_ELEVATED in _codes(result)
     assert result.observed_values["fcf_payout_ratio"] == 88.0
 
 
-def test_fcf_payout_above_90_high() -> None:
+def test_fcf_payout_above_100_high() -> None:
     result = assess_holding_dividend_risk(_healthy(fcf_payout_ratio=120.0), today=TODAY)
     assert result.risk_level is RiskLevel.HIGH_OBSERVED_RISK
     assert SIGNAL_FCF_PAYOUT_CRITICAL in _codes(result)
 
 
-def test_multi_monitor_signals_escalate_to_high() -> None:
+def test_soft_leverage_and_yield_do_not_auto_high() -> None:
+    result = assess_holding_dividend_risk(
+        _healthy(dividend_yield=15.0, debt_to_ebitda=9.0, interest_coverage=0.5),
+        today=TODAY,
+    )
+    assert result.risk_level is RiskLevel.MONITOR
+    assert result.risk_level is not RiskLevel.HIGH_OBSERVED_RISK
+
+
+def test_hard_multi_monitor_escalates_to_high() -> None:
+    payments = (
+        _pay(2024, 3, 1, 1.00),
+        _pay(2024, 6, 1, 1.00),
+        _pay(2024, 9, 1, 1.00),
+        _pay(2024, 12, 1, 1.00),
+        _pay(2025, 3, 1, 0.95),
+        _pay(2025, 6, 1, 0.95),
+        _pay(2025, 9, 1, 0.95),
+        _pay(2025, 12, 1, 0.95),
+    )
     result = assess_holding_dividend_risk(
         _healthy(
-            fcf_payout_ratio=75.0,
-            dividend_cagr_3y=-1.0,
-            debt_to_ebitda=4.5,
+            fcf_payout_ratio=88.0,
+            earnings_payout_ratio=85.0,
+            dividend_payments=payments,
         ),
         today=TODAY,
     )
@@ -125,14 +144,36 @@ def test_multi_monitor_signals_escalate_to_high() -> None:
     assert SIGNAL_MULTI_MONITOR in _codes(result)
 
 
-def test_extreme_yield_and_leverage_flag_high() -> None:
+def test_yield_channel_deep_value_healthy_is_not_high() -> None:
     result = assess_holding_dividend_risk(
-        _healthy(dividend_yield=13.0, debt_to_ebitda=7.0),
+        _healthy(
+            yield_channel_zone="Deep Value",
+            yield_channel_percentile=95.0,
+            yield_channel_current=5.5,
+            yield_channel_median=3.2,
+            dividend_yield=5.5,
+        ),
+        today=TODAY,
+    )
+    assert result.risk_level is RiskLevel.LOWER_OBSERVED_RISK
+    assert SIGNAL_YIELD_CHANNEL_ZONE in _codes(result)
+    assert SIGNAL_YIELD_TRAP not in _codes(result)
+
+
+def test_yield_trap_deep_value_plus_coverage_stress() -> None:
+    result = assess_holding_dividend_risk(
+        _healthy(
+            fcf_payout_ratio=110.0,
+            yield_channel_zone="Deep Value",
+            yield_channel_percentile=96.0,
+            yield_channel_current=8.0,
+            yield_channel_median=3.5,
+            dividend_yield=8.0,
+        ),
         today=TODAY,
     )
     assert result.risk_level is RiskLevel.HIGH_OBSERVED_RISK
-    assert SIGNAL_DIVIDEND_YIELD_EXTREME in _codes(result)
-    assert SIGNAL_DEBT_TO_EBITDA_HIGH in _codes(result)
+    assert SIGNAL_YIELD_TRAP in _codes(result)
 
 
 def test_negative_fcf_while_paying_high() -> None:

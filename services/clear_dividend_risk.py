@@ -17,23 +17,28 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Any, Final
 
-METHODOLOGY_VERSION: Final[str] = "1.1"
+METHODOLOGY_VERSION: Final[str] = "1.2"
 
 # --- Threshold constants (single source; UI must import these) ---
-# Tuned so stretched coverage surfaces earlier (Monitor / High), not only at extremes.
-DIVIDEND_CUT_MAJOR_PCT: Final[float] = 8.0
-FCF_PAYOUT_MONITOR_MIN_PCT: Final[float] = 70.0
-FCF_PAYOUT_HIGH_MIN_PCT: Final[float] = 90.0
-EARNINGS_PAYOUT_MONITOR_MIN_PCT: Final[float] = 70.0
-EARNINGS_PAYOUT_HIGH_MIN_PCT: Final[float] = 90.0
-DEBT_TO_EBITDA_MONITOR_MIN: Final[float] = 4.0
-DEBT_TO_EBITDA_HIGH_MIN: Final[float] = 6.0
-INTEREST_COVERAGE_MONITOR_MAX: Final[float] = 3.0
-INTEREST_COVERAGE_HIGH_MAX: Final[float] = 1.5
-DIVIDEND_YIELD_STRETCH_PCT: Final[float] = 8.0
-DIVIDEND_YIELD_EXTREME_PCT: Final[float] = 12.0
-# Two or more independent monitor signals escalate to High observed risk.
-MULTI_MONITOR_HIGH_COUNT: Final[int] = 2
+# Coverage / cuts define sustainability. Absolute yield and leverage are soft
+# context; Weiss yield-channel zones confirm yield traps (not automatic High).
+DIVIDEND_CUT_MAJOR_PCT: Final[float] = 10.0
+FCF_PAYOUT_MONITOR_MIN_PCT: Final[float] = 80.0
+FCF_PAYOUT_HIGH_MIN_PCT: Final[float] = 100.0
+EARNINGS_PAYOUT_MONITOR_MIN_PCT: Final[float] = 80.0
+EARNINGS_PAYOUT_HIGH_MIN_PCT: Final[float] = 100.0
+DEBT_TO_EBITDA_MONITOR_MIN: Final[float] = 5.0
+DEBT_TO_EBITDA_HIGH_MIN: Final[float] = 8.0
+INTEREST_COVERAGE_MONITOR_MAX: Final[float] = 2.0
+INTEREST_COVERAGE_HIGH_MAX: Final[float] = 1.0
+DIVIDEND_YIELD_STRETCH_PCT: Final[float] = 9.0
+DIVIDEND_YIELD_EXTREME_PCT: Final[float] = 14.0
+# Hard monitor signals required to escalate Monitor → High (soft signals excluded).
+MULTI_MONITOR_HIGH_COUNT: Final[int] = 3
+# Weiss channel: high historical-yield percentile can signal value — or a trap
+# when coverage is already stressed.
+YIELD_CHANNEL_TRAP_ZONES: Final[frozenset[str]] = frozenset({"Deep Value", "Value"})
+YIELD_CHANNEL_RICH_ZONES: Final[frozenset[str]] = frozenset({"Caution", "Expensive"})
 DATA_FRESHNESS_WARNING_DAYS: Final[int] = 120
 DATA_STALE_LOW_CONFIDENCE_DAYS: Final[int] = 365
 COMPANY_INCOME_CONCENTRATION_MONITOR_PCT: Final[float] = 25.0
@@ -113,12 +118,37 @@ SIGNAL_INTEREST_COVERAGE_WEAK = "INTEREST_COVERAGE_WEAK"
 SIGNAL_INTEREST_COVERAGE_CRITICAL = "INTEREST_COVERAGE_CRITICAL"
 SIGNAL_DIVIDEND_YIELD_STRETCHED = "DIVIDEND_YIELD_STRETCHED"
 SIGNAL_DIVIDEND_YIELD_EXTREME = "DIVIDEND_YIELD_EXTREME"
+SIGNAL_YIELD_CHANNEL_ZONE = "YIELD_CHANNEL_ZONE"
+SIGNAL_YIELD_TRAP = "YIELD_TRAP"
 SIGNAL_MULTI_MONITOR = "MULTI_MONITOR_ESCALATION"
 SIGNAL_DATA_FRESHNESS_WARNING = "DATA_FRESHNESS_WARNING"
 SIGNAL_DATA_STALE = "DATA_STALE_LOW_CONFIDENCE"
 SIGNAL_MISSING_AS_OF = "MISSING_AS_OF_DATE"
 SIGNAL_CONFLICTING_COVERAGE = "CONFLICTING_COVERAGE_SOURCES"
 SIGNAL_ZERO_DENOMINATOR = "ZERO_DENOMINATOR_COVERAGE"
+
+# Soft monitors inform the UI but do not escalate to High by themselves.
+SOFT_MONITOR_CODES: Final[frozenset[str]] = frozenset(
+    {
+        SIGNAL_DEBT_TO_EBITDA_ELEVATED,
+        SIGNAL_DEBT_TO_EBITDA_HIGH,
+        SIGNAL_INTEREST_COVERAGE_WEAK,
+        SIGNAL_INTEREST_COVERAGE_CRITICAL,
+        SIGNAL_DIVIDEND_YIELD_STRETCHED,
+        SIGNAL_DIVIDEND_YIELD_EXTREME,
+        SIGNAL_DIVIDEND_CAGR_NEGATIVE,
+        SIGNAL_DIVIDEND_NO_GROWTH,
+        SIGNAL_FCF_DECLINING,
+    }
+)
+
+HARD_MONITOR_CODES: Final[frozenset[str]] = frozenset(
+    {
+        SIGNAL_FCF_PAYOUT_ELEVATED,
+        SIGNAL_EARNINGS_PAYOUT_ELEVATED,
+        SIGNAL_DIVIDEND_CUT_MINOR,
+    }
+)
 
 # High-value portfolio alert codes (PR 4)
 ALERT_DIVIDEND_SUSPENSION = "ALERT_DIVIDEND_SUSPENSION"
@@ -167,6 +197,13 @@ class DividendRiskEvidence:
     debt_to_ebitda: float | None = None
     interest_coverage: float | None = None
     dividend_payments: tuple[DividendPaymentEvidence, ...] = ()
+    # Weiss yield-channel snapshot (optional; from preloaded YieldChannelData).
+    yield_channel_zone: str | None = None
+    yield_channel_percentile: float | None = None
+    yield_channel_current: float | None = None
+    yield_channel_median: float | None = None
+    yield_channel_10th: float | None = None
+    yield_channel_90th: float | None = None
     # Kept separate: fundamentals period vs document refresh vs history through.
     fundamentals_period_end: date | None = None
     document_updated_at: date | None = None
@@ -430,6 +467,35 @@ def evidence_from_stock_data(stock: Any) -> DividendRiskEvidence:
         data_as_of=as_of,
         source_names=sources,
     )
+
+
+def with_yield_channel(evidence: DividendRiskEvidence, channel: Any | None) -> DividendRiskEvidence:
+    """Attach a preloaded Weiss yield-channel snapshot (no I/O)."""
+    if channel is None:
+        return evidence
+    from dataclasses import replace
+
+    zone = getattr(channel, "zone", None)
+    current = getattr(channel, "current_yield", None)
+    return replace(
+        evidence,
+        dividend_yield=(float(current) if current is not None else evidence.dividend_yield),
+        yield_channel_zone=str(zone) if zone else evidence.yield_channel_zone,
+        yield_channel_percentile=_optional_float(getattr(channel, "percentile", None)),
+        yield_channel_current=_optional_float(current),
+        yield_channel_median=_optional_float(getattr(channel, "median_yield", None)),
+        yield_channel_10th=_optional_float(getattr(channel, "yield_10th", None)),
+        yield_channel_90th=_optional_float(getattr(channel, "yield_90th", None)),
+    )
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _is_special_frequency(frequency: str) -> bool:
@@ -803,7 +869,7 @@ def _conflict_and_trend_signals(
 
 
 def _leverage_and_yield_signals(evidence: DividendRiskEvidence) -> list[RiskSignal]:
-    """Balance-sheet stress and stretched yield — supplemental to coverage."""
+    """Soft balance-sheet / absolute-yield context — does not auto-escalate to High."""
     signals: list[RiskSignal] = []
     sources = evidence.source_names
     debt_ebitda = evidence.debt_to_ebitda
@@ -812,8 +878,8 @@ def _leverage_and_yield_signals(evidence: DividendRiskEvidence) -> list[RiskSign
             signals.append(
                 RiskSignal(
                     code=SIGNAL_DEBT_TO_EBITDA_HIGH,
-                    severity="high",
-                    message=f"Debt / EBITDA is {debt_ebitda:.1f}x.",
+                    severity="monitor",
+                    message=f"Debt / EBITDA is {debt_ebitda:.1f}x (elevated leverage).",
                     observed_value=debt_ebitda,
                     threshold_description=(
                         f"Debt / EBITDA at or above {DEBT_TO_EBITDA_HIGH_MIN:.0f}x"
@@ -842,8 +908,8 @@ def _leverage_and_yield_signals(evidence: DividendRiskEvidence) -> list[RiskSign
             signals.append(
                 RiskSignal(
                     code=SIGNAL_INTEREST_COVERAGE_CRITICAL,
-                    severity="high",
-                    message=f"Interest coverage is {coverage:.1f}x.",
+                    severity="monitor",
+                    message=f"Interest coverage is {coverage:.1f}x (thin).",
                     observed_value=coverage,
                     threshold_description=(
                         f"Interest coverage below {INTEREST_COVERAGE_HIGH_MAX:.1f}x"
@@ -865,16 +931,17 @@ def _leverage_and_yield_signals(evidence: DividendRiskEvidence) -> list[RiskSign
                 )
             )
 
+    # Absolute yield is soft context only — Weiss channel decides value vs trap.
     yield_pct = evidence.dividend_yield
     if yield_pct is not None and yield_pct > 0:
         if yield_pct >= DIVIDEND_YIELD_EXTREME_PCT:
             signals.append(
                 RiskSignal(
                     code=SIGNAL_DIVIDEND_YIELD_EXTREME,
-                    severity="high",
+                    severity="monitor",
                     message=(
-                        f"Dividend yield is {yield_pct:.1f}% — "
-                        "extreme yield can signal payout stress."
+                        f"Absolute dividend yield is {yield_pct:.1f}% — "
+                        "review coverage and yield-channel zone before treating as a trap."
                     ),
                     observed_value=yield_pct,
                     threshold_description=(
@@ -889,8 +956,8 @@ def _leverage_and_yield_signals(evidence: DividendRiskEvidence) -> list[RiskSign
                     code=SIGNAL_DIVIDEND_YIELD_STRETCHED,
                     severity="monitor",
                     message=(
-                        f"Dividend yield is {yield_pct:.1f}% — "
-                        "elevated yield warrants coverage review."
+                        f"Absolute dividend yield is {yield_pct:.1f}% — "
+                        "context only until coverage confirms stress."
                     ),
                     observed_value=yield_pct,
                     threshold_description=(
@@ -903,18 +970,117 @@ def _leverage_and_yield_signals(evidence: DividendRiskEvidence) -> list[RiskSign
     return signals
 
 
+def _coverage_stress_codes(signals: Sequence[RiskSignal]) -> set[str]:
+    return {
+        s.code
+        for s in signals
+        if s.code
+        in {
+            SIGNAL_FCF_NEGATIVE,
+            SIGNAL_FCF_PAYOUT_CRITICAL,
+            SIGNAL_FCF_PAYOUT_ELEVATED,
+            SIGNAL_FCF_NEGATIVE_STREAK,
+            SIGNAL_ZERO_DENOMINATOR,
+            SIGNAL_EARNINGS_NEGATIVE,
+            SIGNAL_EARNINGS_PAYOUT_CRITICAL,
+            SIGNAL_EARNINGS_PAYOUT_ELEVATED,
+            SIGNAL_DIVIDEND_CUT_MAJOR,
+            SIGNAL_DIVIDEND_CUT_MINOR,
+            SIGNAL_DIVIDEND_SUSPENSION,
+        }
+    }
+
+
+def _yield_channel_signals(
+    evidence: DividendRiskEvidence,
+    *,
+    prior_signals: Sequence[RiskSignal],
+) -> list[RiskSignal]:
+    """
+    Weiss yield-channel context + yield-trap confirmation.
+
+    High historical yield (Deep Value / Value) is an opportunity when coverage is
+    healthy, and a trap only when coverage/cut evidence already shows stress.
+    """
+    signals: list[RiskSignal] = []
+    sources = evidence.source_names
+    zone = (evidence.yield_channel_zone or "").strip()
+    if not zone:
+        return signals
+
+    percentile = evidence.yield_channel_percentile
+    current = evidence.yield_channel_current
+    median = evidence.yield_channel_median
+    parts = [f"Yield channel zone: {zone}"]
+    if current is not None and median is not None:
+        parts.append(f"current {current:.1f}% vs median {median:.1f}%")
+    elif current is not None:
+        parts.append(f"current yield {current:.1f}%")
+    if percentile is not None:
+        parts.append(f"percentile {percentile:.0f}")
+
+    if zone in YIELD_CHANNEL_TRAP_ZONES:
+        message = (
+            f"{'. '.join(parts)}. High yield vs history is a value signal unless "
+            "coverage is already stressed."
+        )
+    elif zone in YIELD_CHANNEL_RICH_ZONES:
+        message = (
+            f"{'. '.join(parts)}. Low yield vs history suggests a rich price — "
+            "not by itself a dividend-cut signal."
+        )
+    else:
+        message = f"{'. '.join(parts)}."
+
+    signals.append(
+        RiskSignal(
+            code=SIGNAL_YIELD_CHANNEL_ZONE,
+            severity="info",
+            message=message,
+            observed_value=percentile,
+            threshold_description="Weiss percentile bands on historical dividend yield",
+            source_names=sources,
+        )
+    )
+
+    stress = _coverage_stress_codes(prior_signals)
+    trap_candidate = zone in YIELD_CHANNEL_TRAP_ZONES or (
+        evidence.dividend_yield is not None
+        and evidence.dividend_yield >= DIVIDEND_YIELD_EXTREME_PCT
+    )
+    if trap_candidate and stress:
+        signals.append(
+            RiskSignal(
+                code=SIGNAL_YIELD_TRAP,
+                severity="high",
+                message=(
+                    f"Possible yield trap: {zone or 'elevated absolute yield'} "
+                    "coincides with stressed dividend coverage or a recent cut."
+                ),
+                observed_value=percentile if percentile is not None else evidence.dividend_yield,
+                threshold_description=(
+                    "Deep Value/Value channel (or extreme absolute yield) + coverage stress"
+                ),
+                source_names=sources,
+            )
+        )
+    return signals
+
+
 def _coverage_signals(evidence: DividendRiskEvidence) -> list[RiskSignal]:
     sources = evidence.source_names
     paying = _paying_dividend(evidence)
     fcf = evidence.fcf_payout_ratio
     earn = evidence.earnings_payout_ratio
-    return [
+    base = [
         *_fcf_amount_signals(evidence, paying=paying, sources=sources),
         *_fcf_payout_signals(fcf, paying=paying, sources=sources),
         *_earnings_payout_signals(earn, evidence.dividend_coverage, paying=paying, sources=sources),
         *_conflict_and_trend_signals(evidence, fcf=fcf, earn=earn, sources=sources),
         *_leverage_and_yield_signals(evidence),
     ]
+    base.extend(_yield_channel_signals(evidence, prior_signals=base))
+    return base
 
 
 def _growth_signals(evidence: DividendRiskEvidence) -> list[RiskSignal]:
@@ -1042,6 +1208,7 @@ def _threshold_descriptions() -> dict[str, str]:
         "dividend_yield_stretch_pct": f"{DIVIDEND_YIELD_STRETCH_PCT:.0f}%",
         "dividend_yield_extreme_pct": f"{DIVIDEND_YIELD_EXTREME_PCT:.0f}%",
         "multi_monitor_high_count": str(MULTI_MONITOR_HIGH_COUNT),
+        "yield_channel_trap_zones": ", ".join(sorted(YIELD_CHANNEL_TRAP_ZONES)),
         "data_freshness_warning_days": str(DATA_FRESHNESS_WARNING_DAYS),
         "data_stale_low_confidence_days": str(DATA_STALE_LOW_CONFIDENCE_DAYS),
         "company_income_concentration_monitor_pct": (
@@ -1129,16 +1296,24 @@ def _finalize_status(
             return RiskLevel.MONITOR
         return RiskLevel.HIGH_OBSERVED_RISK
 
-    # 6–7. Monitoring signals (cash-flow deterioration / growth / leverage)
-    if "high" in severities:
+    # 6–7. High-severity sustainability / yield-trap signals
+    if SIGNAL_YIELD_TRAP in codes:
         return RiskLevel.HIGH_OBSERVED_RISK
-    monitor_count = sum(1 for s in signals if s.severity == "monitor")
-    if monitor_count >= MULTI_MONITOR_HIGH_COUNT:
+    hard_high = {
+        s.code for s in signals if s.severity == "high" and s.code not in SOFT_MONITOR_CODES
+    }
+    if hard_high:
         return RiskLevel.HIGH_OBSERVED_RISK
+
+    hard_monitor_count = sum(1 for s in signals if s.code in HARD_MONITOR_CODES)
+    if hard_monitor_count >= MULTI_MONITOR_HIGH_COUNT:
+        return RiskLevel.HIGH_OBSERVED_RISK
+
+    # Soft monitors (leverage, absolute yield, mild growth) → Monitor at most.
     if "monitor" in severities:
         return RiskLevel.MONITOR
 
-    # 8. Freshness alone does not create monitor/high.
+    # 8. Freshness / channel info alone does not create monitor/high.
     return RiskLevel.LOWER_OBSERVED_RISK
 
 
@@ -1330,6 +1505,12 @@ def assess_holding_dividend_risk(
             debt_to_ebitda=evidence.debt_to_ebitda,
             interest_coverage=evidence.interest_coverage,
             dividend_payments=evidence.dividend_payments,
+            yield_channel_zone=evidence.yield_channel_zone,
+            yield_channel_percentile=evidence.yield_channel_percentile,
+            yield_channel_current=evidence.yield_channel_current,
+            yield_channel_median=evidence.yield_channel_median,
+            yield_channel_10th=evidence.yield_channel_10th,
+            yield_channel_90th=evidence.yield_channel_90th,
             fundamentals_period_end=evidence.fundamentals_period_end,
             document_updated_at=evidence.document_updated_at,
             dividend_history_through=evidence.dividend_history_through,
@@ -1389,24 +1570,39 @@ def assess_holding_dividend_risk(
     if level is RiskLevel.LOWER_OBSERVED_RISK and not has_coverage:
         level = RiskLevel.INSUFFICIENT_DATA
 
-    monitor_count = sum(1 for s in signals if s.severity == "monitor")
+    hard_monitor_count = sum(1 for s in signals if s.code in HARD_MONITOR_CODES)
     if (
         level is RiskLevel.HIGH_OBSERVED_RISK
-        and monitor_count >= MULTI_MONITOR_HIGH_COUNT
-        and "high" not in {s.severity for s in signals}
+        and hard_monitor_count >= MULTI_MONITOR_HIGH_COUNT
+        and SIGNAL_YIELD_TRAP not in {s.code for s in signals}
         and not any(s.code == SIGNAL_MULTI_MONITOR for s in signals)
+        and not any(
+            s.severity == "high"
+            and s.code
+            in {
+                SIGNAL_FCF_NEGATIVE,
+                SIGNAL_FCF_PAYOUT_CRITICAL,
+                SIGNAL_FCF_NEGATIVE_STREAK,
+                SIGNAL_ZERO_DENOMINATOR,
+                SIGNAL_EARNINGS_NEGATIVE,
+                SIGNAL_EARNINGS_PAYOUT_CRITICAL,
+                SIGNAL_DIVIDEND_CUT_MAJOR,
+                SIGNAL_DIVIDEND_SUSPENSION,
+            }
+            for s in signals
+        )
     ):
         signals.append(
             RiskSignal(
                 code=SIGNAL_MULTI_MONITOR,
                 severity="high",
                 message=(
-                    f"{monitor_count} independent monitor signals are present "
+                    f"{hard_monitor_count} independent hard coverage/cut signals "
                     f"(threshold: {MULTI_MONITOR_HIGH_COUNT}+)."
                 ),
-                observed_value=float(monitor_count),
+                observed_value=float(hard_monitor_count),
                 threshold_description=(
-                    f"{MULTI_MONITOR_HIGH_COUNT}+ monitor signals → high observed risk"
+                    f"{MULTI_MONITOR_HIGH_COUNT}+ hard monitor signals → high observed risk"
                 ),
                 source_names=sources,
             )
@@ -1428,7 +1624,11 @@ def assess_holding_dividend_risk(
         "ffo_payout_ratio": evidence.ffo_payout_ratio,
         "fcf_periods": list(evidence.fcf_periods),
         "coverage_metric_count": coverage_count,
-        "monitor_signal_count": monitor_count,
+        "hard_monitor_signal_count": hard_monitor_count,
+        "yield_channel_zone": evidence.yield_channel_zone,
+        "yield_channel_percentile": evidence.yield_channel_percentile,
+        "yield_channel_current": evidence.yield_channel_current,
+        "yield_channel_median": evidence.yield_channel_median,
         "fundamentals_period_end": evidence.fundamentals_period_end,
         "document_updated_at": evidence.document_updated_at,
         "dividend_history_through": evidence.dividend_history_through,
@@ -1465,13 +1665,20 @@ def assess_holdings_dividend_risk(
     evidence_by_symbol: Mapping[str, DividendRiskEvidence],
     *,
     today: date | None = None,
+    yield_channels: Mapping[str, Any] | None = None,
 ) -> dict[str, HoldingDividendRiskAssessment]:
     """Batch assess many holdings from preloaded evidence (one pass, no I/O)."""
     reference = today or date.today()
-    return {
-        symbol.upper(): assess_holding_dividend_risk(evidence, today=reference)
-        for symbol, evidence in evidence_by_symbol.items()
-    }
+    channels = yield_channels or {}
+    out: dict[str, HoldingDividendRiskAssessment] = {}
+    for symbol, evidence in evidence_by_symbol.items():
+        key = symbol.upper()
+        channel = channels.get(key) or channels.get(symbol)
+        out[key] = assess_holding_dividend_risk(
+            with_yield_channel(evidence, channel),
+            today=reference,
+        )
+    return out
 
 
 def _concentration_level(share_pct: float, *, monitor: float, high: float) -> ConcentrationLevel:
