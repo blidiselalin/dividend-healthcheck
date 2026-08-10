@@ -27,6 +27,7 @@ Automatic enrichment is **off by default** (`services/background_task_prefs.py`)
 | Sidebar panel | `ui/background_tasks_panel.py` |
 | Startup scheduling gate | `services/deferred_startup.schedule_startup_tasks()` |
 | Price/history daemon | `services/price_refresh_scheduler.py` — every 30 min; on by default when `DATABASE_URL` is set |
+| UI sync after price daemon | `schedule_scheduled_price_ui_sync_if_needed()` — rebuilds session from library; not gated on auto-background prefs |
 
 ## IBKR Activity Statement import
 

@@ -34,8 +34,8 @@ def _doc(**overrides) -> SimpleNamespace:
         "sector": "",
         "industry": "Unknown",
         "annual_dividend": 5.69,
-        "payout_ratio": 75.0,
-        "fcf_payout_ratio": 68.0,
+        "payout_ratio": 55.0,
+        "fcf_payout_ratio": 60.0,
         "dividend_coverage": 1.4,
         "dividend_cagr_5y": 7.0,
         "dividend_history": _payments(
@@ -57,13 +57,19 @@ def _doc(**overrides) -> SimpleNamespace:
 
 
 def test_stored_payout_and_fcf_reach_risk_input() -> None:
-    evidence = evidence_from_stock_document(_doc(payout_ratio=82.0, fcf_payout_ratio=91.0))
-    assert evidence.earnings_payout_ratio == 82.0
-    assert evidence.fcf_payout_ratio == 91.0
+    evidence = evidence_from_stock_document(_doc(payout_ratio=55.0, fcf_payout_ratio=85.0))
+    assert evidence.earnings_payout_ratio == 55.0
+    assert evidence.fcf_payout_ratio == 85.0
     result = assess_holding_dividend_risk(evidence, today=date(2026, 8, 6))
-    assert result.observed_values["earnings_payout_ratio"] == 82.0
-    assert result.observed_values["fcf_payout_ratio"] == 91.0
+    assert result.observed_values["earnings_payout_ratio"] == 55.0
+    assert result.observed_values["fcf_payout_ratio"] == 85.0
     assert result.risk_level is RiskLevel.MONITOR
+
+
+def test_fcf_near_critical_is_high() -> None:
+    evidence = evidence_from_stock_document(_doc(payout_ratio=55.0, fcf_payout_ratio=92.0))
+    result = assess_holding_dividend_risk(evidence, today=date(2026, 8, 6))
+    assert result.risk_level is RiskLevel.HIGH_OBSERVED_RISK
 
 
 def test_negative_fcf_remains_valid_evidence() -> None:
@@ -183,7 +189,7 @@ def test_audit_symbols_read_only_batch() -> None:
         rows = audit_dividend_risk_symbols(["PEP", "O", "ZZZZ"])
     by_symbol = {row.symbol: row for row in rows}
     assert by_symbol["PEP"].market_document_found is True
-    assert by_symbol["PEP"].payout_ratio_pct == 75.0
+    assert by_symbol["PEP"].payout_ratio_pct == 55.0
     assert by_symbol["O"].security_type == SecurityType.REIT.value
     assert by_symbol["O"].assessment_level == RiskLevel.SPECIAL_ANALYSIS_REQUIRED.value
     assert by_symbol["ZZZZ"].market_document_found is False

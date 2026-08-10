@@ -19,6 +19,7 @@ from services.deferred_startup import (
     JOB_WARM_PORTFOLIO,
     JOB_YIELD_PRELOAD,
     apply_background_results,
+    schedule_scheduled_price_ui_sync_if_needed,
     visible_jobs,
 )
 
@@ -78,6 +79,15 @@ def _background_progress_poll_fragment() -> None:
         st.rerun()
 
 
+@st.fragment(run_every=timedelta(seconds=30))
+def _scheduled_price_ui_sync_fragment() -> None:
+    """Keep portfolio session in sync with the backend price-refresh schedule."""
+    schedule_scheduled_price_ui_sync_if_needed()
+    applied_kinds = apply_background_results()
+    if applied_kinds and any(kind in _RERUN_KINDS for kind in applied_kinds):
+        st.rerun()
+
+
 def render_background_tasks_progress() -> None:
     """Poll and show job progress inside the Background tasks expander."""
     jobs = visible_jobs(admin=is_app_admin())
@@ -91,3 +101,4 @@ def render_background_tasks_progress() -> None:
 def render_sidebar_progress() -> None:
     """Apply completed background jobs on each rerun (no top-of-sidebar UI)."""
     apply_background_results()
+    _scheduled_price_ui_sync_fragment()

@@ -126,11 +126,16 @@ def evidence_table_rows(
         "fcf_payout_ratio",
         "earnings_payout_ratio",
         "dividend_coverage",
+        "dividend_yield",
+        "debt_to_ebitda",
+        "debt_to_equity",
+        "interest_coverage",
         "dividend_cagr_3y",
         "annual_dividend",
         "affo_payout_ratio",
         "ffo_payout_ratio",
         "security_type",
+        "monitor_signal_count",
     ):
         value = observed.get(key)
         if value is None or value == []:
@@ -266,6 +271,41 @@ def render_holding_clear_dividend_risk(
                 True,
             )
         )
+    observed = result.observed_values or {}
+    metric_items.extend(
+        [
+            (
+                "FCF payout",
+                _fmt_pct(observed.get("fcf_payout_ratio")),
+                f"High ≥ {result.threshold_descriptions.get('fcf_payout_high_min_pct', '90%')}",
+                False,
+            ),
+            (
+                "Earnings payout",
+                _fmt_pct(observed.get("earnings_payout_ratio")),
+                f"High ≥ {result.threshold_descriptions.get('earnings_payout_high_min_pct', '90%')}",
+                False,
+            ),
+            (
+                "Dividend yield",
+                _fmt_pct(observed.get("dividend_yield")),
+                "Stretched yields warrant coverage review",
+                False,
+            ),
+            (
+                "Debt / EBITDA",
+                _fmt_ratio(observed.get("debt_to_ebitda")),
+                "Leverage stress signal",
+                False,
+            ),
+            (
+                "Interest coverage",
+                _fmt_ratio(observed.get("interest_coverage")),
+                "Ability to service debt",
+                False,
+            ),
+        ]
+    )
     if reasons:
         metric_items.append(
             (
@@ -312,6 +352,10 @@ class PortfolioClearRiskTableRow:
     sustainability_status: str
     confidence: str
     main_signal: str
+    fcf_payout_pct: float | None
+    earnings_payout_pct: float | None
+    dividend_yield_pct: float | None
+    debt_to_ebitda: float | None
     data_as_of: str
     action: str
     assessment: HoldingDividendRiskAssessment
@@ -327,6 +371,34 @@ class PortfolioClearRiskView:
 
 def concentration_label(level: ConcentrationLevel) -> str:
     return _CONCENTRATION_LABELS.get(level, level.value)
+
+
+def _fmt_pct(value: Any, *, suffix: str = "%") -> str:
+    if value is None:
+        return "—"
+    try:
+        return f"{float(value):.1f}{suffix}"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _fmt_ratio(value: Any) -> str:
+    if value is None:
+        return "—"
+    try:
+        return f"{float(value):.1f}x"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _observed_float(assessment: HoldingDividendRiskAssessment, key: str) -> float | None:
+    value = (assessment.observed_values or {}).get(key)
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _lookup_cached(mapping: Mapping[str, Any] | None, symbol: str) -> Any | None:
@@ -420,6 +492,10 @@ def build_portfolio_clear_dividend_risk(
                 sustainability_status=assessment.risk_label,
                 confidence=confidence_label(assessment.confidence),
                 main_signal=signals[0] if signals else assessment.summary,
+                fcf_payout_pct=_observed_float(assessment, "fcf_payout_ratio"),
+                earnings_payout_pct=_observed_float(assessment, "earnings_payout_ratio"),
+                dividend_yield_pct=_observed_float(assessment, "dividend_yield"),
+                debt_to_ebitda=_observed_float(assessment, "debt_to_ebitda"),
                 data_as_of=format_as_of(assessment.data_as_of),
                 action="Review evidence",
                 assessment=assessment,
@@ -446,11 +522,22 @@ def portfolio_income_metric_items(
     portfolio: PortfolioDividendIncomeRisk,
 ) -> list[tuple[str, str, str] | tuple[str, str, str, bool]]:
     by_level = portfolio.income_by_risk_level
+    by_count = portfolio.holdings_by_risk_level
     items: list[tuple[str, str, str] | tuple[str, str, str, bool]] = [
         (
             "Total estimated annual dividend income",
             format_income(portfolio.total_estimated_annual_income),
             "Sum of holding estimates — not risk-adjusted",
+            True,
+        ),
+        (
+            "Holdings at elevated risk",
+            (
+                f"{portfolio.elevated_holdings_count} · "
+                f"{portfolio.high_risk_holdings_count} high / "
+                f"{portfolio.monitor_holdings_count} monitor"
+            ),
+            f"{portfolio.income_elevated_share_pct:.0f}% of estimated income",
             True,
         ),
         (
@@ -460,32 +547,47 @@ def portfolio_income_metric_items(
             True,
         ),
         (
-            "Lower observed risk",
-            format_income(by_level.get(RiskLevel.LOWER_OBSERVED_RISK.value, 0.0)),
-            risk_level_label(RiskLevel.LOWER_OBSERVED_RISK),
-            False,
-        ),
-        (
-            "Monitor",
-            format_income(by_level.get(RiskLevel.MONITOR.value, 0.0)),
-            risk_level_label(RiskLevel.MONITOR),
-            False,
-        ),
-        (
             "High observed risk",
-            format_income(by_level.get(RiskLevel.HIGH_OBSERVED_RISK.value, 0.0)),
+            (
+                f"{format_income(by_level.get(RiskLevel.HIGH_OBSERVED_RISK.value, 0.0))} · "
+                f"{by_count.get(RiskLevel.HIGH_OBSERVED_RISK.value, 0)} holdings"
+            ),
             risk_level_label(RiskLevel.HIGH_OBSERVED_RISK),
             False,
         ),
         (
+            "Monitor",
+            (
+                f"{format_income(by_level.get(RiskLevel.MONITOR.value, 0.0))} · "
+                f"{by_count.get(RiskLevel.MONITOR.value, 0)} holdings"
+            ),
+            risk_level_label(RiskLevel.MONITOR),
+            False,
+        ),
+        (
+            "Lower observed risk",
+            (
+                f"{format_income(by_level.get(RiskLevel.LOWER_OBSERVED_RISK.value, 0.0))} · "
+                f"{by_count.get(RiskLevel.LOWER_OBSERVED_RISK.value, 0)} holdings"
+            ),
+            risk_level_label(RiskLevel.LOWER_OBSERVED_RISK),
+            False,
+        ),
+        (
             "Insufficient data",
-            format_income(by_level.get(RiskLevel.INSUFFICIENT_DATA.value, 0.0)),
+            (
+                f"{format_income(by_level.get(RiskLevel.INSUFFICIENT_DATA.value, 0.0))} · "
+                f"{by_count.get(RiskLevel.INSUFFICIENT_DATA.value, 0)} holdings"
+            ),
             risk_level_label(RiskLevel.INSUFFICIENT_DATA),
             False,
         ),
         (
             "Special analysis required",
-            format_income(by_level.get(RiskLevel.SPECIAL_ANALYSIS_REQUIRED.value, 0.0)),
+            (
+                f"{format_income(by_level.get(RiskLevel.SPECIAL_ANALYSIS_REQUIRED.value, 0.0))} · "
+                f"{by_count.get(RiskLevel.SPECIAL_ANALYSIS_REQUIRED.value, 0)} holdings"
+            ),
             risk_level_label(RiskLevel.SPECIAL_ANALYSIS_REQUIRED),
             False,
         ),
@@ -545,6 +647,10 @@ def portfolio_table_records(
             "Share of income %": row.income_share_pct,
             "Sustainability": row.sustainability_status,
             "Confidence": row.confidence,
+            "FCF payout %": row.fcf_payout_pct,
+            "Earnings payout %": row.earnings_payout_pct,
+            "Yield %": row.dividend_yield_pct,
+            "Debt/EBITDA": row.debt_to_ebitda,
             "Main signal": row.main_signal,
             "Data date": row.data_as_of,
             "Action": row.action,
@@ -590,8 +696,10 @@ def render_portfolio_clear_dividend_risk(
 
     render_home_panel(
         "Dividend income risk",
-        "Company dividend sustainability and income concentration — separate concepts. "
-        "Research only; estimated income is not reduced by risk status.",
+        "Company dividend sustainability (coverage, leverage, yield, cuts) and income "
+        "concentration — separate concepts. Research only; estimated income is not "
+        "reduced by risk status. Methodology "
+        f"{METHODOLOGY_VERSION}.",
         portfolio_income_metric_items(portfolio),
     )
     _render_high_value_alerts(view.alerts)
@@ -627,6 +735,10 @@ def render_portfolio_clear_dividend_risk(
             "Share of income %": st.column_config.NumberColumn(format="%.1f%%"),
             "Sustainability": st.column_config.TextColumn(width="medium"),
             "Confidence": st.column_config.TextColumn(width="small"),
+            "FCF payout %": st.column_config.NumberColumn(format="%.1f%%"),
+            "Earnings payout %": st.column_config.NumberColumn(format="%.1f%%"),
+            "Yield %": st.column_config.NumberColumn(format="%.1f%%"),
+            "Debt/EBITDA": st.column_config.NumberColumn(format="%.1fx"),
             "Main signal": st.column_config.TextColumn(width="large"),
             "Data date": st.column_config.TextColumn(width="medium"),
             "Action": st.column_config.TextColumn(width="small"),

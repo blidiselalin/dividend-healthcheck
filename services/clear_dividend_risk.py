@@ -17,14 +17,23 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Any, Final
 
-METHODOLOGY_VERSION: Final[str] = "1.0"
+METHODOLOGY_VERSION: Final[str] = "1.1"
 
 # --- Threshold constants (single source; UI must import these) ---
-DIVIDEND_CUT_MAJOR_PCT: Final[float] = 10.0
-FCF_PAYOUT_MONITOR_MIN_PCT: Final[float] = 80.0
-FCF_PAYOUT_HIGH_MIN_PCT: Final[float] = 100.0
-EARNINGS_PAYOUT_MONITOR_MIN_PCT: Final[float] = 80.0
-EARNINGS_PAYOUT_HIGH_MIN_PCT: Final[float] = 100.0
+# Tuned so stretched coverage surfaces earlier (Monitor / High), not only at extremes.
+DIVIDEND_CUT_MAJOR_PCT: Final[float] = 8.0
+FCF_PAYOUT_MONITOR_MIN_PCT: Final[float] = 70.0
+FCF_PAYOUT_HIGH_MIN_PCT: Final[float] = 90.0
+EARNINGS_PAYOUT_MONITOR_MIN_PCT: Final[float] = 70.0
+EARNINGS_PAYOUT_HIGH_MIN_PCT: Final[float] = 90.0
+DEBT_TO_EBITDA_MONITOR_MIN: Final[float] = 4.0
+DEBT_TO_EBITDA_HIGH_MIN: Final[float] = 6.0
+INTEREST_COVERAGE_MONITOR_MAX: Final[float] = 3.0
+INTEREST_COVERAGE_HIGH_MAX: Final[float] = 1.5
+DIVIDEND_YIELD_STRETCH_PCT: Final[float] = 8.0
+DIVIDEND_YIELD_EXTREME_PCT: Final[float] = 12.0
+# Two or more independent monitor signals escalate to High observed risk.
+MULTI_MONITOR_HIGH_COUNT: Final[int] = 2
 DATA_FRESHNESS_WARNING_DAYS: Final[int] = 120
 DATA_STALE_LOW_CONFIDENCE_DAYS: Final[int] = 365
 COMPANY_INCOME_CONCENTRATION_MONITOR_PCT: Final[float] = 25.0
@@ -89,15 +98,22 @@ SIGNAL_DIVIDEND_CUT_MAJOR = "DIVIDEND_CUT_MAJOR"
 SIGNAL_DIVIDEND_CUT_MINOR = "DIVIDEND_CUT_MINOR"
 SIGNAL_DIVIDEND_SUSPENSION = "DIVIDEND_SUSPENSION"
 SIGNAL_FCF_NEGATIVE = "FCF_NEGATIVE_WHILE_PAYING"
-SIGNAL_FCF_PAYOUT_CRITICAL = "FCF_PAYOUT_ABOVE_100"
-SIGNAL_FCF_PAYOUT_ELEVATED = "FCF_PAYOUT_80_TO_100"
+SIGNAL_FCF_PAYOUT_CRITICAL = "FCF_PAYOUT_CRITICAL"
+SIGNAL_FCF_PAYOUT_ELEVATED = "FCF_PAYOUT_ELEVATED"
 SIGNAL_EARNINGS_NEGATIVE = "EPS_NEGATIVE_WHILE_PAYING"
-SIGNAL_EARNINGS_PAYOUT_CRITICAL = "EARNINGS_PAYOUT_ABOVE_100"
-SIGNAL_EARNINGS_PAYOUT_ELEVATED = "EARNINGS_PAYOUT_80_TO_100"
+SIGNAL_EARNINGS_PAYOUT_CRITICAL = "EARNINGS_PAYOUT_CRITICAL"
+SIGNAL_EARNINGS_PAYOUT_ELEVATED = "EARNINGS_PAYOUT_ELEVATED"
 SIGNAL_FCF_NEGATIVE_STREAK = "FCF_NEGATIVE_TWO_PERIODS"
 SIGNAL_FCF_DECLINING = "FCF_DECLINING_TWO_PERIODS"
 SIGNAL_DIVIDEND_CAGR_NEGATIVE = "DIVIDEND_CAGR_NEGATIVE"
 SIGNAL_DIVIDEND_NO_GROWTH = "DIVIDEND_NO_GROWTH_THREE_YEARS"
+SIGNAL_DEBT_TO_EBITDA_ELEVATED = "DEBT_TO_EBITDA_ELEVATED"
+SIGNAL_DEBT_TO_EBITDA_HIGH = "DEBT_TO_EBITDA_HIGH"
+SIGNAL_INTEREST_COVERAGE_WEAK = "INTEREST_COVERAGE_WEAK"
+SIGNAL_INTEREST_COVERAGE_CRITICAL = "INTEREST_COVERAGE_CRITICAL"
+SIGNAL_DIVIDEND_YIELD_STRETCHED = "DIVIDEND_YIELD_STRETCHED"
+SIGNAL_DIVIDEND_YIELD_EXTREME = "DIVIDEND_YIELD_EXTREME"
+SIGNAL_MULTI_MONITOR = "MULTI_MONITOR_ESCALATION"
 SIGNAL_DATA_FRESHNESS_WARNING = "DATA_FRESHNESS_WARNING"
 SIGNAL_DATA_STALE = "DATA_STALE_LOW_CONFIDENCE"
 SIGNAL_MISSING_AS_OF = "MISSING_AS_OF_DATE"
@@ -137,6 +153,7 @@ class DividendRiskEvidence:
     industry: str | None = None
     name: str | None = None
     annual_dividend: float | None = None
+    dividend_yield: float | None = None
     earnings_payout_ratio: float | None = None
     fcf_payout_ratio: float | None = None
     dividend_coverage: float | None = None
@@ -146,6 +163,9 @@ class DividendRiskEvidence:
     affo_payout_ratio: float | None = None
     ffo_payout_ratio: float | None = None
     dividend_cagr_3y: float | None = None
+    debt_to_equity: float | None = None
+    debt_to_ebitda: float | None = None
+    interest_coverage: float | None = None
     dividend_payments: tuple[DividendPaymentEvidence, ...] = ()
     # Kept separate: fundamentals period vs document refresh vs history through.
     fundamentals_period_end: date | None = None
@@ -199,7 +219,12 @@ class PortfolioHoldingIncomeInput:
 class PortfolioDividendIncomeRisk:
     total_estimated_annual_income: float
     income_by_risk_level: dict[str, float]
+    holdings_by_risk_level: dict[str, int]
     income_elevated_risk: float
+    income_elevated_share_pct: float
+    elevated_holdings_count: int
+    high_risk_holdings_count: int
+    monitor_holdings_count: int
     largest_income_contributor: tuple[str, float, float] | None
     largest_sector_income: tuple[str, float, float] | None
     company_concentration: ConcentrationLevel
@@ -343,6 +368,7 @@ def evidence_from_stock_document(doc: Any) -> DividendRiskEvidence:
         industry=industry,
         name=name,
         annual_dividend=getattr(doc, "annual_dividend", None),
+        dividend_yield=getattr(doc, "dividend_yield", None),
         earnings_payout_ratio=getattr(doc, "payout_ratio", None),
         fcf_payout_ratio=getattr(doc, "fcf_payout_ratio", None),
         dividend_coverage=getattr(doc, "dividend_coverage", None),
@@ -351,6 +377,9 @@ def evidence_from_stock_document(doc: Any) -> DividendRiskEvidence:
         affo_payout_ratio=getattr(doc, "affo_payout_ratio", None),
         ffo_payout_ratio=getattr(doc, "ffo_payout_ratio", None),
         dividend_cagr_3y=cagr_3y,
+        debt_to_equity=getattr(doc, "debt_to_equity", None),
+        debt_to_ebitda=getattr(doc, "debt_to_ebitda", None),
+        interest_coverage=getattr(doc, "interest_coverage", None),
         dividend_payments=payments,
         fundamentals_period_end=fundamentals_period_end,
         document_updated_at=document_updated_at,
@@ -389,9 +418,13 @@ def evidence_from_stock_data(stock: Any) -> DividendRiskEvidence:
         industry=industry,
         name=name,
         annual_dividend=getattr(stock, "dividend_rate", None),
+        dividend_yield=getattr(stock, "dividend_yield_pct", None),
         earnings_payout_ratio=getattr(stock, "payout_ratio_pct", None),
         fcf_payout_ratio=getattr(stock, "fcf_payout_ratio_pct", None),
         dividend_coverage=getattr(stock, "dividend_coverage", None),
+        debt_to_equity=getattr(stock, "debt_to_equity", None),
+        debt_to_ebitda=getattr(stock, "debt_to_ebitda", None),
+        interest_coverage=getattr(stock, "interest_coverage", None),
         dividend_cagr_3y=cagr,
         document_updated_at=as_of,
         data_as_of=as_of,
@@ -769,6 +802,107 @@ def _conflict_and_trend_signals(
     return signals
 
 
+def _leverage_and_yield_signals(evidence: DividendRiskEvidence) -> list[RiskSignal]:
+    """Balance-sheet stress and stretched yield — supplemental to coverage."""
+    signals: list[RiskSignal] = []
+    sources = evidence.source_names
+    debt_ebitda = evidence.debt_to_ebitda
+    if debt_ebitda is not None:
+        if debt_ebitda >= DEBT_TO_EBITDA_HIGH_MIN:
+            signals.append(
+                RiskSignal(
+                    code=SIGNAL_DEBT_TO_EBITDA_HIGH,
+                    severity="high",
+                    message=f"Debt / EBITDA is {debt_ebitda:.1f}x.",
+                    observed_value=debt_ebitda,
+                    threshold_description=(
+                        f"Debt / EBITDA at or above {DEBT_TO_EBITDA_HIGH_MIN:.0f}x"
+                    ),
+                    source_names=sources,
+                )
+            )
+        elif debt_ebitda >= DEBT_TO_EBITDA_MONITOR_MIN:
+            signals.append(
+                RiskSignal(
+                    code=SIGNAL_DEBT_TO_EBITDA_ELEVATED,
+                    severity="monitor",
+                    message=f"Debt / EBITDA is {debt_ebitda:.1f}x.",
+                    observed_value=debt_ebitda,
+                    threshold_description=(
+                        f"Debt / EBITDA from {DEBT_TO_EBITDA_MONITOR_MIN:.0f}x "
+                        f"to {DEBT_TO_EBITDA_HIGH_MIN:.0f}x"
+                    ),
+                    source_names=sources,
+                )
+            )
+
+    coverage = evidence.interest_coverage
+    if coverage is not None:
+        if coverage < INTEREST_COVERAGE_HIGH_MAX:
+            signals.append(
+                RiskSignal(
+                    code=SIGNAL_INTEREST_COVERAGE_CRITICAL,
+                    severity="high",
+                    message=f"Interest coverage is {coverage:.1f}x.",
+                    observed_value=coverage,
+                    threshold_description=(
+                        f"Interest coverage below {INTEREST_COVERAGE_HIGH_MAX:.1f}x"
+                    ),
+                    source_names=sources,
+                )
+            )
+        elif coverage < INTEREST_COVERAGE_MONITOR_MAX:
+            signals.append(
+                RiskSignal(
+                    code=SIGNAL_INTEREST_COVERAGE_WEAK,
+                    severity="monitor",
+                    message=f"Interest coverage is {coverage:.1f}x.",
+                    observed_value=coverage,
+                    threshold_description=(
+                        f"Interest coverage below {INTEREST_COVERAGE_MONITOR_MAX:.0f}x"
+                    ),
+                    source_names=sources,
+                )
+            )
+
+    yield_pct = evidence.dividend_yield
+    if yield_pct is not None and yield_pct > 0:
+        if yield_pct >= DIVIDEND_YIELD_EXTREME_PCT:
+            signals.append(
+                RiskSignal(
+                    code=SIGNAL_DIVIDEND_YIELD_EXTREME,
+                    severity="high",
+                    message=(
+                        f"Dividend yield is {yield_pct:.1f}% — "
+                        "extreme yield can signal payout stress."
+                    ),
+                    observed_value=yield_pct,
+                    threshold_description=(
+                        f"Dividend yield at or above {DIVIDEND_YIELD_EXTREME_PCT:.0f}%"
+                    ),
+                    source_names=sources,
+                )
+            )
+        elif yield_pct >= DIVIDEND_YIELD_STRETCH_PCT:
+            signals.append(
+                RiskSignal(
+                    code=SIGNAL_DIVIDEND_YIELD_STRETCHED,
+                    severity="monitor",
+                    message=(
+                        f"Dividend yield is {yield_pct:.1f}% — "
+                        "elevated yield warrants coverage review."
+                    ),
+                    observed_value=yield_pct,
+                    threshold_description=(
+                        f"Dividend yield from {DIVIDEND_YIELD_STRETCH_PCT:.0f}% "
+                        f"to {DIVIDEND_YIELD_EXTREME_PCT:.0f}%"
+                    ),
+                    source_names=sources,
+                )
+            )
+    return signals
+
+
 def _coverage_signals(evidence: DividendRiskEvidence) -> list[RiskSignal]:
     sources = evidence.source_names
     paying = _paying_dividend(evidence)
@@ -779,6 +913,7 @@ def _coverage_signals(evidence: DividendRiskEvidence) -> list[RiskSignal]:
         *_fcf_payout_signals(fcf, paying=paying, sources=sources),
         *_earnings_payout_signals(earn, evidence.dividend_coverage, paying=paying, sources=sources),
         *_conflict_and_trend_signals(evidence, fcf=fcf, earn=earn, sources=sources),
+        *_leverage_and_yield_signals(evidence),
     ]
 
 
@@ -900,6 +1035,13 @@ def _threshold_descriptions() -> dict[str, str]:
         "fcf_payout_high_min_pct": f"{FCF_PAYOUT_HIGH_MIN_PCT:.0f}%",
         "earnings_payout_monitor_min_pct": f"{EARNINGS_PAYOUT_MONITOR_MIN_PCT:.0f}%",
         "earnings_payout_high_min_pct": f"{EARNINGS_PAYOUT_HIGH_MIN_PCT:.0f}%",
+        "debt_to_ebitda_monitor_min": f"{DEBT_TO_EBITDA_MONITOR_MIN:.0f}x",
+        "debt_to_ebitda_high_min": f"{DEBT_TO_EBITDA_HIGH_MIN:.0f}x",
+        "interest_coverage_monitor_max": f"{INTEREST_COVERAGE_MONITOR_MAX:.0f}x",
+        "interest_coverage_high_max": f"{INTEREST_COVERAGE_HIGH_MAX:.1f}x",
+        "dividend_yield_stretch_pct": f"{DIVIDEND_YIELD_STRETCH_PCT:.0f}%",
+        "dividend_yield_extreme_pct": f"{DIVIDEND_YIELD_EXTREME_PCT:.0f}%",
+        "multi_monitor_high_count": str(MULTI_MONITOR_HIGH_COUNT),
         "data_freshness_warning_days": str(DATA_FRESHNESS_WARNING_DAYS),
         "data_stale_low_confidence_days": str(DATA_STALE_LOW_CONFIDENCE_DAYS),
         "company_income_concentration_monitor_pct": (
@@ -987,8 +1129,11 @@ def _finalize_status(
             return RiskLevel.MONITOR
         return RiskLevel.HIGH_OBSERVED_RISK
 
-    # 6–7. Monitoring signals (cash-flow deterioration / growth weakness)
+    # 6–7. Monitoring signals (cash-flow deterioration / growth / leverage)
     if "high" in severities:
+        return RiskLevel.HIGH_OBSERVED_RISK
+    monitor_count = sum(1 for s in signals if s.severity == "monitor")
+    if monitor_count >= MULTI_MONITOR_HIGH_COUNT:
         return RiskLevel.HIGH_OBSERVED_RISK
     if "monitor" in severities:
         return RiskLevel.MONITOR
@@ -1172,6 +1317,7 @@ def assess_holding_dividend_risk(
             industry=evidence.industry,
             name=evidence.name,
             annual_dividend=evidence.annual_dividend,
+            dividend_yield=evidence.dividend_yield,
             earnings_payout_ratio=None,
             fcf_payout_ratio=evidence.affo_payout_ratio or evidence.ffo_payout_ratio,
             dividend_coverage=None,
@@ -1180,6 +1326,9 @@ def assess_holding_dividend_risk(
             affo_payout_ratio=evidence.affo_payout_ratio,
             ffo_payout_ratio=evidence.ffo_payout_ratio,
             dividend_cagr_3y=evidence.dividend_cagr_3y,
+            debt_to_equity=evidence.debt_to_equity,
+            debt_to_ebitda=evidence.debt_to_ebitda,
+            interest_coverage=evidence.interest_coverage,
             dividend_payments=evidence.dividend_payments,
             fundamentals_period_end=evidence.fundamentals_period_end,
             document_updated_at=evidence.document_updated_at,
@@ -1240,18 +1389,46 @@ def assess_holding_dividend_risk(
     if level is RiskLevel.LOWER_OBSERVED_RISK and not has_coverage:
         level = RiskLevel.INSUFFICIENT_DATA
 
+    monitor_count = sum(1 for s in signals if s.severity == "monitor")
+    if (
+        level is RiskLevel.HIGH_OBSERVED_RISK
+        and monitor_count >= MULTI_MONITOR_HIGH_COUNT
+        and "high" not in {s.severity for s in signals}
+        and not any(s.code == SIGNAL_MULTI_MONITOR for s in signals)
+    ):
+        signals.append(
+            RiskSignal(
+                code=SIGNAL_MULTI_MONITOR,
+                severity="high",
+                message=(
+                    f"{monitor_count} independent monitor signals are present "
+                    f"(threshold: {MULTI_MONITOR_HIGH_COUNT}+)."
+                ),
+                observed_value=float(monitor_count),
+                threshold_description=(
+                    f"{MULTI_MONITOR_HIGH_COUNT}+ monitor signals → high observed risk"
+                ),
+                source_names=sources,
+            )
+        )
+
     observed: dict[str, Any] = {
         "security_type": security_type.value,
         "annual_dividend": evidence.annual_dividend,
+        "dividend_yield": evidence.dividend_yield,
         "fcf_payout_ratio": evidence.fcf_payout_ratio,
         "earnings_payout_ratio": evidence.earnings_payout_ratio,
         "dividend_coverage": evidence.dividend_coverage,
         "raw_free_cash_flow": evidence.raw_free_cash_flow,
         "dividend_cagr_3y": evidence.dividend_cagr_3y,
+        "debt_to_equity": evidence.debt_to_equity,
+        "debt_to_ebitda": evidence.debt_to_ebitda,
+        "interest_coverage": evidence.interest_coverage,
         "affo_payout_ratio": evidence.affo_payout_ratio,
         "ffo_payout_ratio": evidence.ffo_payout_ratio,
         "fcf_periods": list(evidence.fcf_periods),
         "coverage_metric_count": coverage_count,
+        "monitor_signal_count": monitor_count,
         "fundamentals_period_end": evidence.fundamentals_period_end,
         "document_updated_at": evidence.document_updated_at,
         "dividend_history_through": evidence.dividend_history_through,
@@ -1315,6 +1492,7 @@ def assess_portfolio_dividend_income_risk(
     Does not alter dividend forecasts.
     """
     income_by_level: dict[str, float] = {level.value: 0.0 for level in RiskLevel}
+    holdings_by_level: dict[str, int] = {level.value: 0 for level in RiskLevel}
     total = 0.0
     sector_income: dict[str, float] = {}
     largest: tuple[str, float, float] | None = None
@@ -1328,10 +1506,15 @@ def assess_portfolio_dividend_income_risk(
             else RiskLevel.INSUFFICIENT_DATA.value
         )
         income_by_level[level] = income_by_level.get(level, 0.0) + income
+        holdings_by_level[level] = holdings_by_level.get(level, 0) + 1
         sector = (holding.sector or "Unknown").strip() or "Unknown"
         sector_income[sector] = sector_income.get(sector, 0.0) + income
 
     elevated = sum(income_by_level.get(code, 0.0) for code in ELEVATED_RISK_LEVELS)
+    elevated_count = sum(holdings_by_level.get(code, 0) for code in ELEVATED_RISK_LEVELS)
+    high_count = holdings_by_level.get(RiskLevel.HIGH_OBSERVED_RISK.value, 0)
+    monitor_count = holdings_by_level.get(RiskLevel.MONITOR.value, 0)
+    elevated_share = (elevated / total * 100.0) if total > 0 else 0.0
 
     if total > 0 and holdings:
         top = max(holdings, key=lambda h: max(0.0, float(h.estimated_annual_income or 0.0)))
@@ -1366,7 +1549,12 @@ def assess_portfolio_dividend_income_risk(
     return PortfolioDividendIncomeRisk(
         total_estimated_annual_income=round(total, 2),
         income_by_risk_level={k: round(v, 2) for k, v in income_by_level.items()},
+        holdings_by_risk_level=dict(holdings_by_level),
         income_elevated_risk=round(elevated, 2),
+        income_elevated_share_pct=round(elevated_share, 1),
+        elevated_holdings_count=elevated_count,
+        high_risk_holdings_count=high_count,
+        monitor_holdings_count=monitor_count,
         largest_income_contributor=largest,
         largest_sector_income=largest_sector,
         company_concentration=company_conc,

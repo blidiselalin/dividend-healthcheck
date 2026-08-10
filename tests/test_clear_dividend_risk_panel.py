@@ -162,22 +162,28 @@ def test_build_portfolio_clear_dividend_risk_summary() -> None:
     assert portfolio.income_elevated_risk == 600.0
     assert portfolio.income_by_risk_level[RiskLevel.HIGH_OBSERVED_RISK.value] == 600.0
     assert portfolio.income_by_risk_level[RiskLevel.LOWER_OBSERVED_RISK.value] == 400.0
+    assert portfolio.high_risk_holdings_count == 1
+    assert portfolio.elevated_holdings_count == 1
+    assert portfolio.income_elevated_share_pct == 60.0
     assert portfolio.company_concentration.value in {"MONITOR", "HIGH"}
     assert portfolio.largest_income_contributor is not None
     assert portfolio.largest_income_contributor[0] == "HI"
     assert view.table_rows[0].symbol == "HI"
     assert view.table_rows[0].action == "Review evidence"
     assert view.table_rows[0].sustainability_status == "High observed risk"
+    assert view.table_rows[0].fcf_payout_pct == 130.0
     assert view.alerts  # high FCF payout + concentration from HI at 60%
 
     metrics = portfolio_income_metric_items(portfolio)
     labels = [item[0] for item in metrics]
     assert "Estimated income exposed to elevated dividend risk" in labels
+    assert "Holdings at elevated risk" in labels
     assert "risk-adjusted" not in " ".join(labels).lower()
 
     records = portfolio_table_records(view.table_rows)
     assert records[0]["Action"] == "Review evidence"
     assert "Sustainability" in records[0]
+    assert "FCF payout %" in records[0]
     assert concentration_label(portfolio.company_concentration)
 
 

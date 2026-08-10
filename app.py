@@ -74,7 +74,11 @@ from auth.settings import auth_required
 from auth.test_user import test_user_session_active
 from auth.user_context import ensure_user_session
 from config import DATA_SOURCES
-from services.deferred_startup import apply_background_results, schedule_startup_tasks
+from services.deferred_startup import (
+    apply_background_results,
+    schedule_scheduled_price_ui_sync_if_needed,
+    schedule_startup_tasks,
+)
 from services.portfolio_session import sync_portfolio_session_with_db
 from ui.admin_page import render_admin_page_if_active
 from ui.app_about import render_about_body
@@ -245,6 +249,8 @@ def main() -> None:
         is_demo=is_demo_session(),
         has_holdings=user_has_holdings_in_db(),
     )
+    # Follow backend price schedule even when optional auto-background tasks are off.
+    schedule_scheduled_price_ui_sync_if_needed()
     boot = _startup_db_light()
     st.session_state["db_price_refresh_stats"] = boot
     st.session_state["market_db_status"] = boot.get("market_db") or {}

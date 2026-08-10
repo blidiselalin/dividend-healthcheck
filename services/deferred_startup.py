@@ -37,6 +37,10 @@ JOB_ENSURE_TOP_DIVIDEND = "ensure_top_dividend"
 JOB_PRICE_REFRESH = "price_refresh"
 JOB_PORTFOLIO_DB_REFRESH = "portfolio_db_refresh"
 
+# Session markers: sync portfolio UI after the backend price-refresh schedule.
+_UI_APPLIED_LIBRARY_PRICE_REFRESH_AT = "_ui_applied_library_price_refresh_at"
+_UI_QUEUED_LIBRARY_PRICE_REFRESH_AT = "_ui_queued_library_price_refresh_at"
+
 
 def apply_background_results() -> list[str]:
     """Merge completed background jobs into Streamlit session state."""
@@ -118,6 +122,129 @@ def schedule_startup_tasks(*, is_demo: bool, has_holdings: bool) -> None:
     schedule_stale_price_refresh_if_needed()
     schedule_coverage_badge_refresh()
     schedule_auto_backfill_if_needed()
+
+
+def schedule_scheduled_price_ui_sync_if_needed() -> str | None:
+    """
+    Rebuild portfolio UI from the shared library after a scheduled price refresh.
+
+    Independent of ``auto_background_tasks_enabled`` — follows the backend
+    price-refresh schedule. Uses library prices (not a second Yahoo fetch)
+    because the daemon / cron already updated ``current_price``.
+    """
+    import streamlit as st
+
+    from services.portfolio_session import is_demo_session
+    from services.price_refresh_scheduler import scheduler_status
+
+    if is_demo_session():
+        return None
+    if not st.session_state.get("portfolio_details_rows"):
+        return None
+
+    status = scheduler_status()
+    if not status.get("enabled"):
+        return None
+
+    last_run = status.get("last_run_at")
+    applied = st.session_state.get(_UI_APPLIED_LIBRARY_PRICE_REFRESH_AT)
+    queued = st.session_state.get(_UI_QUEUED_LIBRARY_PRICE_REFRESH_AT)
+
+    needs_sync = False
+    sync_token: str | None = None
+
+    if last_run:
+        if applied is None:
+            # First observation this session: adopt as baseline unless the
+            # daemon finished after the current portfolio snapshot.
+            details_time = st.session_state.get("portfolio_details_time")
+            if details_time is not None and _iso_newer_than(last_run, details_time):
+                needs_sync = True
+                sync_token = last_run
+            else:
+                st.session_state[_UI_APPLIED_LIBRARY_PRICE_REFRESH_AT] = last_run
+                return None
+        elif last_run != applied and last_run != queued:
+            needs_sync = True
+            sync_token = last_run
+    else:
+        # Cron / other workers may update the library without this process's
+        # last_run_at. Rebuild when the session snapshot is older than the interval.
+        details_time = st.session_state.get("portfolio_details_time")
+        interval = int(status.get("interval_seconds") or 1800)
+        if (
+            details_time is not None
+            and queued != "age"
+            and _seconds_since(details_time) >= interval
+        ):
+            needs_sync = True
+            sync_token = "age"
+
+    if not needs_sync or sync_token is None:
+        return None
+
+    if (
+        _job_running(JOB_LIVE_RELOAD)
+        or _job_running(JOB_PORTFOLIO_DB_REFRESH)
+        or _job_running(JOB_WARM_PORTFOLIO)
+    ):
+        return None
+
+    st.session_state[_UI_QUEUED_LIBRARY_PRICE_REFRESH_AT] = sync_token
+    job_id = schedule_portfolio_refresh(live_prices=False)
+    if job_id is None:
+        st.session_state.pop(_UI_QUEUED_LIBRARY_PRICE_REFRESH_AT, None)
+        return None
+
+    logger.info("Queued portfolio UI sync after scheduled library price refresh")
+    return job_id
+
+
+def _iso_newer_than(iso_ts: str, moment: Any) -> bool:
+    from datetime import datetime
+
+    try:
+        run_at = datetime.fromisoformat(iso_ts)
+    except ValueError:
+        return False
+    if hasattr(moment, "tzinfo") and moment.tzinfo is not None and run_at.tzinfo is None:
+        run_at = run_at.replace(tzinfo=moment.tzinfo)
+    try:
+        return run_at > moment
+    except TypeError:
+        return False
+
+
+def _seconds_since(moment: Any) -> float:
+    from datetime import datetime
+
+    if not hasattr(moment, "year"):
+        return 0.0
+    now = datetime.now(getattr(moment, "tzinfo", None))
+    try:
+        return max(0.0, (now - moment).total_seconds())
+    except TypeError:
+        return 0.0
+
+
+def _mark_library_price_ui_synced() -> None:
+    """Record that session prices match the latest scheduled library refresh."""
+    import streamlit as st
+
+    from services.price_refresh_scheduler import scheduler_status
+
+    queued = st.session_state.pop(_UI_QUEUED_LIBRARY_PRICE_REFRESH_AT, None)
+    last_run = scheduler_status().get("last_run_at")
+    if last_run:
+        st.session_state[_UI_APPLIED_LIBRARY_PRICE_REFRESH_AT] = last_run
+    elif queued and queued != "age":
+        st.session_state[_UI_APPLIED_LIBRARY_PRICE_REFRESH_AT] = queued
+    else:
+        from datetime import datetime
+
+        st.session_state[_UI_APPLIED_LIBRARY_PRICE_REFRESH_AT] = datetime.now().isoformat(
+            timespec="seconds"
+        )
 
 
 def schedule_dividend_sync_if_needed() -> None:
@@ -690,6 +817,7 @@ def _apply_portfolio_db_refresh(result: dict[str, Any]) -> None:
     except (SQLiteError, PostgresError, OSError) as exc:
         logger.debug("Could not store fingerprint after DB refresh: %s", exc)
     save_session_cache(force=True)
+    _mark_library_price_ui_synced()
     from services.background_task_prefs import auto_background_tasks_enabled
 
     if auto_background_tasks_enabled():
@@ -713,6 +841,7 @@ def _apply_warm_portfolio(result: dict[str, Any]) -> None:
     )
     if result.get("fast_loaded"):
         st.session_state["portfolio_fast_loaded"] = True
+    _mark_library_price_ui_synced()
     logger.info("Background warm portfolio: %d holdings", len(rows))
 
 
@@ -752,6 +881,7 @@ def _apply_live_reload(result: dict[str, Any]) -> None:
         st.session_state["portfolio_details_time"] = datetime.now()
         refresh_portfolio_risks(force=False, rows=rows, preload=merged_preload)
         save_session_cache(force=True)
+        _mark_library_price_ui_synced()
         logger.info("Background price refresh: %d holdings", len(rows))
         return
 
@@ -774,6 +904,7 @@ def _apply_live_reload(result: dict[str, Any]) -> None:
     except (SQLiteError, PostgresError, OSError) as exc:
         logger.debug("Could not store fingerprint after live reload: %s", exc)
     save_session_cache(force=True)
+    _mark_library_price_ui_synced()
     logger.info("Background live reload: %d holdings", len(rows))
 
 
@@ -879,6 +1010,21 @@ def _apply_price_refresh(result: dict[str, Any]) -> None:
     import streamlit as st
 
     st.session_state["last_price_refresh_summary"] = result
+    # Library quotes just updated — rebuild portfolio UI from the library.
+    st.session_state.pop(_UI_APPLIED_LIBRARY_PRICE_REFRESH_AT, None)
+    st.session_state.pop(_UI_QUEUED_LIBRARY_PRICE_REFRESH_AT, None)
+    if st.session_state.get("portfolio_details_rows") and not (
+        _job_running(JOB_LIVE_RELOAD)
+        or _job_running(JOB_PORTFOLIO_DB_REFRESH)
+        or _job_running(JOB_WARM_PORTFOLIO)
+    ):
+        from services.price_refresh_scheduler import scheduler_status
+
+        last_run = scheduler_status().get("last_run_at") or "admin"
+        st.session_state[_UI_QUEUED_LIBRARY_PRICE_REFRESH_AT] = last_run
+        job_id = schedule_portfolio_refresh(live_prices=False)
+        if job_id is None:
+            st.session_state.pop(_UI_QUEUED_LIBRARY_PRICE_REFRESH_AT, None)
     logger.info(
         "Background price refresh: updated=%s skipped=%s errors=%s",
         (result or {}).get("updated"),

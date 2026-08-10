@@ -16,9 +16,11 @@ from services.clear_dividend_risk import (
     SIGNAL_CONFLICTING_COVERAGE,
     SIGNAL_DATA_FRESHNESS_WARNING,
     SIGNAL_DATA_STALE,
+    SIGNAL_DEBT_TO_EBITDA_HIGH,
     SIGNAL_DIVIDEND_CAGR_NEGATIVE,
     SIGNAL_DIVIDEND_CUT_MAJOR,
     SIGNAL_DIVIDEND_CUT_MINOR,
+    SIGNAL_DIVIDEND_YIELD_EXTREME,
     SIGNAL_EARNINGS_NEGATIVE,
     SIGNAL_EARNINGS_PAYOUT_CRITICAL,
     SIGNAL_FCF_NEGATIVE,
@@ -26,6 +28,7 @@ from services.clear_dividend_risk import (
     SIGNAL_FCF_PAYOUT_ELEVATED,
     SIGNAL_MISSING_AS_OF,
     SIGNAL_MISSING_CORE,
+    SIGNAL_MULTI_MONITOR,
     SIGNAL_REIT_MISSING_AFFO_FFO,
     SIGNAL_UNSUPPORTED_TYPE,
     SIGNAL_ZERO_DENOMINATOR,
@@ -96,17 +99,40 @@ def test_healthy_coverage_lower_observed_risk() -> None:
     assert result.observed_values["fcf_payout_ratio"] == 60.0
 
 
-def test_fcf_payout_80_to_100_monitor() -> None:
+def test_fcf_payout_70_to_90_monitor() -> None:
     result = assess_holding_dividend_risk(_healthy(fcf_payout_ratio=88.0), today=TODAY)
     assert result.risk_level is RiskLevel.MONITOR
     assert SIGNAL_FCF_PAYOUT_ELEVATED in _codes(result)
     assert result.observed_values["fcf_payout_ratio"] == 88.0
 
 
-def test_fcf_payout_above_100_high() -> None:
+def test_fcf_payout_above_90_high() -> None:
     result = assess_holding_dividend_risk(_healthy(fcf_payout_ratio=120.0), today=TODAY)
     assert result.risk_level is RiskLevel.HIGH_OBSERVED_RISK
     assert SIGNAL_FCF_PAYOUT_CRITICAL in _codes(result)
+
+
+def test_multi_monitor_signals_escalate_to_high() -> None:
+    result = assess_holding_dividend_risk(
+        _healthy(
+            fcf_payout_ratio=75.0,
+            dividend_cagr_3y=-1.0,
+            debt_to_ebitda=4.5,
+        ),
+        today=TODAY,
+    )
+    assert result.risk_level is RiskLevel.HIGH_OBSERVED_RISK
+    assert SIGNAL_MULTI_MONITOR in _codes(result)
+
+
+def test_extreme_yield_and_leverage_flag_high() -> None:
+    result = assess_holding_dividend_risk(
+        _healthy(dividend_yield=13.0, debt_to_ebitda=7.0),
+        today=TODAY,
+    )
+    assert result.risk_level is RiskLevel.HIGH_OBSERVED_RISK
+    assert SIGNAL_DIVIDEND_YIELD_EXTREME in _codes(result)
+    assert SIGNAL_DEBT_TO_EBITDA_HIGH in _codes(result)
 
 
 def test_negative_fcf_while_paying_high() -> None:
@@ -362,6 +388,10 @@ def test_portfolio_income_exposure_by_risk_level() -> None:
     assert portfolio.income_by_risk_level[RiskLevel.HIGH_OBSERVED_RISK.value] == 300.0
     assert portfolio.income_by_risk_level[RiskLevel.INSUFFICIENT_DATA.value] == 300.0
     assert portfolio.income_elevated_risk == 300.0
+    assert portfolio.holdings_by_risk_level[RiskLevel.HIGH_OBSERVED_RISK.value] == 1
+    assert portfolio.high_risk_holdings_count == 1
+    assert portfolio.elevated_holdings_count == 1
+    assert portfolio.income_elevated_share_pct == 30.0
     assert portfolio.methodology_version == METHODOLOGY_VERSION
 
 
