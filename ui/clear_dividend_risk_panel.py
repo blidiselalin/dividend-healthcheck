@@ -29,7 +29,6 @@ from services.clear_dividend_risk import (
     evidence_from_stock_data,
     evidence_from_stock_document,
     load_risk_evidence_batch,
-    risk_level_label,
     with_yield_channel,
 )
 
@@ -366,8 +365,8 @@ _SEVERITY_ORDER = {
 }
 
 _CONCENTRATION_LABELS = {
-    ConcentrationLevel.NONE: "None",
-    ConcentrationLevel.MONITOR: "Monitor",
+    ConcentrationLevel.NONE: "Diversified",
+    ConcentrationLevel.MONITOR: "Monitor concentration",
     ConcentrationLevel.HIGH: "High concentration",
 }
 
@@ -560,98 +559,78 @@ def build_portfolio_clear_dividend_risk(
 def portfolio_income_metric_items(
     portfolio: PortfolioDividendIncomeRisk,
 ) -> list[tuple[str, str, str] | tuple[str, str, str, bool]]:
-    by_level = portfolio.income_by_risk_level
-    by_count = portfolio.holdings_by_risk_level
+    """Headline metrics for the Dividend income risk strip (keep high-level)."""
     items: list[tuple[str, str, str] | tuple[str, str, str, bool]] = [
         (
-            "Total estimated annual dividend income",
+            "Estimated annual income",
             format_income(portfolio.total_estimated_annual_income),
             "Sum of holding estimates — not risk-adjusted",
             True,
         ),
         (
-            "Holdings at elevated risk",
+            "Income to watch",
+            format_income(portfolio.income_elevated_risk),
+            f"{portfolio.income_elevated_share_pct:.0f}% on Monitor or High",
+            True,
+        ),
+        (
+            "Holdings to watch",
             (
                 f"{portfolio.elevated_holdings_count} · "
                 f"{portfolio.high_risk_holdings_count} high / "
                 f"{portfolio.monitor_holdings_count} monitor"
             ),
-            f"{portfolio.income_elevated_share_pct:.0f}% of estimated income",
+            "Coverage or cut signals — review evidence",
             True,
-        ),
-        (
-            "Estimated income exposed to elevated dividend risk",
-            format_income(portfolio.income_elevated_risk),
-            "Monitor + high observed risk holdings",
-            True,
-        ),
-        (
-            "High observed risk",
-            (
-                f"{format_income(by_level.get(RiskLevel.HIGH_OBSERVED_RISK.value, 0.0))} · "
-                f"{by_count.get(RiskLevel.HIGH_OBSERVED_RISK.value, 0)} holdings"
-            ),
-            risk_level_label(RiskLevel.HIGH_OBSERVED_RISK),
-            False,
-        ),
-        (
-            "Monitor",
-            (
-                f"{format_income(by_level.get(RiskLevel.MONITOR.value, 0.0))} · "
-                f"{by_count.get(RiskLevel.MONITOR.value, 0)} holdings"
-            ),
-            risk_level_label(RiskLevel.MONITOR),
-            False,
-        ),
-        (
-            "Lower observed risk",
-            (
-                f"{format_income(by_level.get(RiskLevel.LOWER_OBSERVED_RISK.value, 0.0))} · "
-                f"{by_count.get(RiskLevel.LOWER_OBSERVED_RISK.value, 0)} holdings"
-            ),
-            risk_level_label(RiskLevel.LOWER_OBSERVED_RISK),
-            False,
-        ),
-        (
-            "Insufficient data",
-            (
-                f"{format_income(by_level.get(RiskLevel.INSUFFICIENT_DATA.value, 0.0))} · "
-                f"{by_count.get(RiskLevel.INSUFFICIENT_DATA.value, 0)} holdings"
-            ),
-            risk_level_label(RiskLevel.INSUFFICIENT_DATA),
-            False,
-        ),
-        (
-            "Special analysis required",
-            (
-                f"{format_income(by_level.get(RiskLevel.SPECIAL_ANALYSIS_REQUIRED.value, 0.0))} · "
-                f"{by_count.get(RiskLevel.SPECIAL_ANALYSIS_REQUIRED.value, 0)} holdings"
-            ),
-            risk_level_label(RiskLevel.SPECIAL_ANALYSIS_REQUIRED),
-            False,
         ),
     ]
-
     if portfolio.largest_income_contributor is not None:
         symbol, amount, share = portfolio.largest_income_contributor
         items.append(
             (
-                "Largest income contributor",
-                f"{symbol} · {format_income(amount)} ({share:.0f}%)",
-                f"Company concentration: {concentration_label(portfolio.company_concentration)}",
+                "Largest income name",
+                f"{symbol} · {share:.0f}%",
+                f"{format_income(amount)} · {concentration_label(portfolio.company_concentration)}",
                 False,
             )
         )
-    if portfolio.largest_sector_income is not None:
-        sector, amount, share = portfolio.largest_sector_income
-        items.append(
-            (
-                "Largest sector income exposure",
-                f"{sector} · {format_income(amount)} ({share:.0f}%)",
-                f"Sector concentration: {concentration_label(portfolio.sector_concentration)}",
-                False,
-            )
-        )
+    return items
+
+
+def elevated_holdings_for_display(
+    table_rows: Sequence[PortfolioClearRiskTableRow],
+    *,
+    limit: int = 12,
+) -> list[PortfolioClearRiskTableRow]:
+    """High + Monitor holdings, already severity-sorted in the portfolio table."""
+    elevated = [
+        row
+        for row in table_rows
+        if row.assessment.risk_level in {RiskLevel.HIGH_OBSERVED_RISK, RiskLevel.MONITOR}
+    ]
+    return elevated[:limit]
+
+
+def _status_chip_kind(level: RiskLevel) -> str:
+    if level is RiskLevel.HIGH_OBSERVED_RISK:
+        return "risky"
+    if level is RiskLevel.MONITOR:
+        return "watch"
+    return "healthy"
+
+
+def _watch_chip_items(
+    table_rows: Sequence[PortfolioClearRiskTableRow],
+) -> list[tuple[str, str, str]]:
+    items: list[tuple[str, str, str]] = []
+    for row in elevated_holdings_for_display(table_rows):
+        signal = row.main_signal
+        if len(signal) > 42:
+            signal = signal[:41] + "…"
+        detail = f"{row.sustainability_status} · {format_income(row.estimated_annual_income)}"
+        if signal:
+            detail = f"{detail} · {signal}"
+        items.append((row.symbol, detail, _status_chip_kind(row.assessment.risk_level)))
     return items
 
 
@@ -663,10 +642,21 @@ def _render_high_value_alerts(alerts: Sequence[DividendRiskAlert]) -> None:
     if not alerts:
         return
 
-    st.markdown("**High-value alerts**")
-    st.caption("Educational flags only — review evidence. Not buy, sell, or hold advice.")
+    st.markdown("**Alerts worth a look**")
+    st.caption(
+        "Educational flags only — not buy, sell, or hold advice. "
+        "Concentration alerts need yield above 6%."
+    )
     for alert in alerts:
-        badge = "High observed risk" if alert.severity == "high" else "Monitor"
+        if alert.code in {
+            "ALERT_COMPANY_INCOME_CONCENTRATION",
+            "ALERT_SECTOR_INCOME_CONCENTRATION",
+        }:
+            badge = "High concentration"
+        elif alert.severity == "high":
+            badge = "High observed risk"
+        else:
+            badge = "Monitor"
         cols = st.columns([1, 4])
         with cols[0]:
             render_status_badge(badge)
@@ -699,6 +689,43 @@ def portfolio_table_records(
     ]
 
 
+def _render_concentration_summary(
+    portfolio: PortfolioDividendIncomeRisk,
+    *,
+    zone_summary: str,
+) -> None:
+    import streamlit as st
+
+    from services.clear_dividend_risk import CONCENTRATION_ALERT_MIN_YIELD_PCT
+    from ui.design_system import render_status_badge
+
+    company_detail = "—"
+    if portfolio.largest_income_contributor is not None:
+        symbol, _amount, share = portfolio.largest_income_contributor
+        company_detail = f"{symbol} · {share:.0f}% of income"
+
+    sector_detail = "—"
+    if portfolio.largest_sector_income is not None:
+        sector, _amount, share = portfolio.largest_sector_income
+        sector_detail = f"{sector} · {share:.0f}% of income"
+
+    cols = st.columns(3)
+    with cols[0]:
+        st.caption("Company concentration")
+        render_status_badge(concentration_label(portfolio.company_concentration))
+        st.caption(company_detail)
+        st.caption(f"High alert if yield > {CONCENTRATION_ALERT_MIN_YIELD_PCT:.0f}%")
+    with cols[1]:
+        st.caption("Sector concentration")
+        render_status_badge(concentration_label(portfolio.sector_concentration))
+        st.caption(sector_detail)
+        st.caption(f"High alert if yield > {CONCENTRATION_ALERT_MIN_YIELD_PCT:.0f}%")
+    with cols[2]:
+        st.caption("Yield-channel mix")
+        st.caption(zone_summary if zone_summary != "—" else "Load yield charts for Weiss zones")
+        st.caption("High yield vs history ≈ value unless coverage is stressed")
+
+
 def render_portfolio_clear_dividend_risk(
     rows: Sequence[Any],
     *,
@@ -708,6 +735,8 @@ def render_portfolio_clear_dividend_risk(
     yield_channels: Mapping[str, Any] | None = None,
 ) -> PortfolioClearRiskView | None:
     """Home / Dividend Income portfolio Clear Dividend Risk summary."""
+    from collections import Counter
+
     import pandas as pd
     import streamlit as st
 
@@ -715,6 +744,9 @@ def render_portfolio_clear_dividend_risk(
         close_table_container,
         render_disclaimer_banner,
         render_home_panel,
+        render_html,
+        render_section_header,
+        render_status_ticker_chips,
         wrap_table_container,
     )
 
@@ -741,81 +773,89 @@ def render_portfolio_clear_dividend_risk(
 
     render_home_panel(
         "Dividend income risk",
-        "Sustainability (coverage & cuts) is separate from Weiss yield-channel valuation. "
-        "High yield vs history is a value signal unless coverage is stressed (yield trap). "
-        "Research only; estimated income is not reduced by risk status. "
-        f"Methodology {METHODOLOGY_VERSION}.",
+        "Quick view of which holdings need a closer look. "
+        "Coverage and cuts drive risk; yield-channel zones add valuation context. "
+        f"Research only · methodology {METHODOLOGY_VERSION}.",
         portfolio_income_metric_items(portfolio),
     )
+
+    watch_items = _watch_chip_items(view.table_rows)
+    render_html('<div class="ds-watch-panel">')
+    render_section_header(
+        "Holdings to watch",
+        "Monitor and High observed risk — tap a symbol in the table below for evidence.",
+    )
+    render_html(
+        '<div class="ds-watch-legend">'
+        '<span><i class="ds-watch-dot ds-watch-dot-risky"></i> High</span>'
+        '<span><i class="ds-watch-dot ds-watch-dot-watch"></i> Monitor</span>'
+        '<span><i class="ds-watch-dot ds-watch-dot-healthy"></i> Lower risk stays off this list</span>'
+        "</div>"
+    )
+    if watch_items:
+        render_status_ticker_chips(watch_items)
+    else:
+        st.caption("Nothing on Monitor or High right now — coverage looks calm across holdings.")
+    render_html("</div>")
+
+    zone_counts = Counter(
+        row.yield_channel_zone
+        for row in view.table_rows
+        if row.yield_channel_zone and row.yield_channel_zone != "—"
+    )
+    zone_summary = (
+        " · ".join(f"{zone} {count}" for zone, count in zone_counts.most_common())
+        if zone_counts
+        else "—"
+    )
+    _render_concentration_summary(portfolio, zone_summary=zone_summary)
     _render_high_value_alerts(view.alerts)
-
-    from collections import Counter
-
-    from ui.design_system import render_status_badge
-
-    conc_cols = st.columns(3)
-    with conc_cols[0]:
-        st.caption("Company income concentration")
-        render_status_badge(concentration_label(portfolio.company_concentration))
-    with conc_cols[1]:
-        st.caption("Sector income concentration")
-        render_status_badge(concentration_label(portfolio.sector_concentration))
-    with conc_cols[2]:
-        zone_counts = Counter(
-            row.yield_channel_zone
-            for row in view.table_rows
-            if row.yield_channel_zone and row.yield_channel_zone != "—"
-        )
-        st.caption("Yield-channel zones (Weiss)")
-        if zone_counts:
-            st.caption(" · ".join(f"{zone} {count}" for zone, count in zone_counts.most_common()))
-        else:
-            st.caption("Load yield charts for zone context")
 
     if not view.table_rows:
         st.info("No open holdings with dividend-risk assessments yet.")
         render_disclaimer_banner(DISCLAIMER)
         return view
 
-    wrap_table_container()
-    frame = pd.DataFrame(portfolio_table_records(view.table_rows))
-    selection = st.dataframe(
-        frame,
-        use_container_width=True,
-        hide_index=True,
-        on_select="rerun",
-        selection_mode="single-row",
-        key=table_key,
-        column_config={
-            "Holding": st.column_config.TextColumn(width="small"),
-            "Company": st.column_config.TextColumn(width="medium"),
-            "Est. annual income": st.column_config.NumberColumn(format="$%.0f"),
-            "Share of income %": st.column_config.NumberColumn(format="%.1f%%"),
-            "Sustainability": st.column_config.TextColumn(width="medium"),
-            "Confidence": st.column_config.TextColumn(width="small"),
-            "Yield zone": st.column_config.TextColumn(width="small"),
-            "FCF payout %": st.column_config.NumberColumn(format="%.1f%%"),
-            "Earnings payout %": st.column_config.NumberColumn(format="%.1f%%"),
-            "Yield %": st.column_config.NumberColumn(format="%.1f%%"),
-            "Debt/EBITDA": st.column_config.NumberColumn(format="%.1fx"),
-            "Main signal": st.column_config.TextColumn(width="large"),
-            "Data date": st.column_config.TextColumn(width="medium"),
-            "Action": st.column_config.TextColumn(width="small"),
-        },
-    )
-    close_table_container()
+    with st.expander("All holdings · income & evidence", expanded=bool(watch_items)):
+        st.caption("Select a row to open holding evidence. Sorted by risk severity.")
+        wrap_table_container()
+        frame = pd.DataFrame(portfolio_table_records(view.table_rows))
+        selection = st.dataframe(
+            frame,
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key=table_key,
+            column_config={
+                "Holding": st.column_config.TextColumn(width="small"),
+                "Company": st.column_config.TextColumn(width="medium"),
+                "Est. annual income": st.column_config.NumberColumn(format="$%.0f"),
+                "Share of income %": st.column_config.NumberColumn(format="%.1f%%"),
+                "Sustainability": st.column_config.TextColumn(width="medium"),
+                "Confidence": st.column_config.TextColumn(width="small"),
+                "Yield zone": st.column_config.TextColumn(width="small"),
+                "FCF payout %": st.column_config.NumberColumn(format="%.1f%%"),
+                "Earnings payout %": st.column_config.NumberColumn(format="%.1f%%"),
+                "Yield %": st.column_config.NumberColumn(format="%.1f%%"),
+                "Debt/EBITDA": st.column_config.NumberColumn(format="%.1fx"),
+                "Main signal": st.column_config.TextColumn(width="large"),
+                "Data date": st.column_config.TextColumn(width="medium"),
+                "Action": st.column_config.TextColumn(width="small"),
+            },
+        )
+        close_table_container()
 
-    selected_rows = getattr(getattr(selection, "selection", None), "rows", None) or []
-    if selected_rows:
-        index = int(selected_rows[0])
-        if 0 <= index < len(view.table_rows):
-            # Row action "Review evidence" → holding analysis (PR 2 panel).
-            from ui.portfolio_home import set_holding_selection
+        selected_rows = getattr(getattr(selection, "selection", None), "rows", None) or []
+        if selected_rows:
+            index = int(selected_rows[0])
+            if 0 <= index < len(view.table_rows):
+                from ui.portfolio_home import set_holding_selection
 
-            set_holding_selection(
-                view.table_rows[index].symbol,
-                nav_tickers=[row.symbol for row in view.table_rows],
-            )
+                set_holding_selection(
+                    view.table_rows[index].symbol,
+                    nav_tickers=[row.symbol for row in view.table_rows],
+                )
 
     render_disclaimer_banner(DISCLAIMER)
     return view
@@ -837,6 +877,7 @@ __all__ = [
     "build_portfolio_clear_dividend_risk",
     "concentration_label",
     "confidence_label",
+    "elevated_holdings_for_display",
     "evidence_table_rows",
     "format_as_of",
     "format_income",

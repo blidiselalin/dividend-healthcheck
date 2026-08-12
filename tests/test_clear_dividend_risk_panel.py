@@ -18,6 +18,7 @@ from ui.clear_dividend_risk_panel import (
     DISCLAIMER,
     assess_holding_for_ui,
     confidence_label,
+    elevated_holdings_for_display,
     evidence_table_rows,
     format_as_of,
     format_income,
@@ -36,6 +37,10 @@ def test_status_labels_map_to_design_tokens() -> None:
     assert status_class_for_label("High") == "confirmed"
     assert status_class_for_label("Medium") == "watch"
     assert status_class_for_label("Low") == "unknown"
+    assert status_class_for_label("None") == "healthy"
+    assert status_class_for_label("Diversified") == "healthy"
+    assert status_class_for_label("Monitor concentration") == "watch"
+    assert status_class_for_label("High concentration") == "risky"
 
 
 def test_health_panel_title_uses_sustainability() -> None:
@@ -150,6 +155,7 @@ def test_build_portfolio_clear_dividend_risk_summary() -> None:
             sector="Energy",
             industry="Oil",
             annual_dividend=2.0,
+            dividend_yield=7.5,
             payout_ratio=55.0,
             fcf_payout_ratio=130.0,
             dividend_coverage=1.2,
@@ -183,9 +189,13 @@ def test_build_portfolio_clear_dividend_risk_summary() -> None:
 
     metrics = portfolio_income_metric_items(portfolio)
     labels = [item[0] for item in metrics]
-    assert "Estimated income exposed to elevated dividend risk" in labels
-    assert "Holdings at elevated risk" in labels
+    assert "Estimated annual income" in labels
+    assert "Income to watch" in labels
+    assert "Holdings to watch" in labels
     assert "risk-adjusted" not in " ".join(labels).lower()
+    watch = elevated_holdings_for_display(view.table_rows)
+    assert watch
+    assert watch[0].symbol == "HI"
 
     records = portfolio_table_records(view.table_rows)
     assert records[0]["Action"] == "Review evidence"

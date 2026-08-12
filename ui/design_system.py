@@ -48,8 +48,10 @@ _STATUS_CLASS: dict[str, str] = {
     "High": "confirmed",
     "Medium": "watch",
     "Low": "unknown",
-    "None": "confirmed",
-    "High concentration": "risky",
+    "None": "healthy",  # Diversified concentration — green
+    "Diversified": "healthy",
+    "Monitor concentration": "watch",  # yellow
+    "High concentration": "risky",  # red
 }
 
 LOGO_SVG = """
@@ -1149,6 +1151,76 @@ div[data-testid="stMetric"].ds-metric-dividend-highlight label p {
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
+.ds-chip-watch {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(251, 191, 36, 0.4);
+  color: #fcd34d;
+}
+.ds-chip-risky {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(248, 113, 113, 0.4);
+  color: #fca5a5;
+}
+.ds-chip-healthy {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(52, 211, 153, 0.35);
+  color: #6ee7b7;
+}
+.ds-watch-panel {
+  background: linear-gradient(160deg, rgba(45, 212, 191, 0.06) 0%, var(--ds-surface) 48%);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  padding: var(--ds-space-4) var(--ds-space-5);
+  margin: 0 0 var(--ds-space-4) 0;
+}
+.ds-watch-panel .ds-section-header { margin-bottom: var(--ds-space-2); }
+.ds-watch-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.25rem 0 0.75rem;
+  font-size: 0.75rem;
+  color: var(--ds-muted);
+}
+.ds-watch-legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
+.ds-watch-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  display: inline-block;
+}
+.ds-watch-dot-risky { background: #f87171; }
+.ds-watch-dot-watch { background: #fbbf24; }
+.ds-watch-dot-healthy { background: #34d399; }
+.ds-conc-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--ds-space-3);
+  margin: 0 0 var(--ds-space-4) 0;
+}
+@media (max-width: 720px) {
+  .ds-conc-row { grid-template-columns: 1fr; }
+}
+.ds-conc-card {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-md);
+  padding: 0.85rem 1rem;
+}
+.ds-conc-card-label {
+  margin: 0 0 0.45rem 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ds-muted);
+}
+.ds-conc-card-detail {
+  margin: 0.45rem 0 0 0;
+  font-size: 0.78rem;
+  color: var(--ds-muted);
+  line-height: 1.35;
+}
 
 /* Payout rows */
 .ds-list-card {
@@ -1528,11 +1600,23 @@ def render_trust_list(items: list[str]) -> None:
     render_html(f'<ul class="ds-trust-list">{rows}</ul>')
 
 
-def render_ticker_chips(items: list[tuple[str, str]]) -> None:
-    """Render ticker chips: (symbol, detail)."""
+def render_ticker_chips(items: list[tuple[str, str]], *, kind: str | None = None) -> None:
+    """Render ticker chips: (symbol, detail). Optional kind: watch|risky|healthy."""
+    kind_class = f" ds-chip-{kind}" if kind in {"watch", "risky", "healthy"} else ""
     chips = "".join(
-        f'<span class="ds-chip"><strong>{html.escape(symbol)}</strong> {html.escape(detail)}</span>'
+        f'<span class="ds-chip{kind_class}"><strong>{html.escape(symbol)}</strong> '
+        f"{html.escape(detail)}</span>"
         for symbol, detail in items
+    )
+    render_html(f'<div class="ds-chip-row">{chips}</div>')
+
+
+def render_status_ticker_chips(items: list[tuple[str, str, str]]) -> None:
+    """Render chips with per-item status: (symbol, detail, kind)."""
+    chips = "".join(
+        f'<span class="ds-chip ds-chip-{html.escape(kind if kind in {"watch", "risky", "healthy"} else "healthy")}">'
+        f"<strong>{html.escape(symbol)}</strong> {html.escape(detail)}</span>"
+        for symbol, detail, kind in items
     )
     render_html(f'<div class="ds-chip-row">{chips}</div>')
 

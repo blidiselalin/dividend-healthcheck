@@ -12,6 +12,7 @@ from services.clear_dividend_risk import (
     ALERT_FCF_NEGATIVE,
     ALERT_MATERIAL_INSUFFICIENT_DATA,
     ALERT_MATERIAL_STALE_EVIDENCE,
+    ALERT_SECTOR_INCOME_CONCENTRATION,
     METHODOLOGY_VERSION,
     SIGNAL_CONFLICTING_COVERAGE,
     SIGNAL_DATA_FRESHNESS_WARNING,
@@ -536,7 +537,7 @@ def test_high_value_alerts_cut_fcf_concentration_insufficient_stale() -> None:
         today=TODAY,
     )
     stale = assess_holding_dividend_risk(
-        _healthy(symbol="OLD", data_as_of=date(2025, 1, 1)),
+        _healthy(symbol="OLD", data_as_of=date(2025, 1, 1), dividend_yield=7.5),
         today=TODAY,
     )
     portfolio = assess_portfolio_dividend_income_risk(
@@ -551,7 +552,7 @@ def test_high_value_alerts_cut_fcf_concentration_insufficient_stale() -> None:
     codes = _alert_codes(alerts)
     assert ALERT_DIVIDEND_CUT_MAJOR in codes
     assert ALERT_FCF_NEGATIVE in codes
-    assert ALERT_COMPANY_INCOME_CONCENTRATION in codes  # OLD is 60%
+    assert ALERT_COMPANY_INCOME_CONCENTRATION in codes  # OLD 60% + yield 7.5% > 6%
     assert ALERT_MATERIAL_INSUFFICIENT_DATA in codes
     assert ALERT_MATERIAL_STALE_EVIDENCE in codes
     for alert in alerts:
@@ -559,6 +560,39 @@ def test_high_value_alerts_cut_fcf_concentration_insufficient_stale() -> None:
         assert "buy" not in blob
         assert "sell" not in blob
         assert alert.methodology_version == METHODOLOGY_VERSION
+
+
+def test_concentration_alert_requires_yield_above_6() -> None:
+    ok = assess_holding_dividend_risk(_healthy(symbol="LOWY", dividend_yield=4.0), today=TODAY)
+    portfolio = assess_portfolio_dividend_income_risk(
+        [
+            PortfolioHoldingIncomeInput("A", 300.0, sector="Tech", assessment=ok),
+            PortfolioHoldingIncomeInput("LOWY", 700.0, sector="Tech", assessment=ok),
+        ]
+    )
+    assert portfolio.company_concentration is ConcentrationLevel.HIGH
+    assert portfolio.sector_concentration is ConcentrationLevel.HIGH
+    alerts = build_high_value_dividend_risk_alerts(portfolio)
+    codes = _alert_codes(alerts)
+    assert ALERT_COMPANY_INCOME_CONCENTRATION not in codes
+    assert ALERT_SECTOR_INCOME_CONCENTRATION not in codes
+
+
+def test_concentration_alerts_fire_when_yield_above_6() -> None:
+    hi = assess_holding_dividend_risk(_healthy(symbol="HIY", dividend_yield=7.2), today=TODAY)
+    lo = assess_holding_dividend_risk(_healthy(symbol="LOY", dividend_yield=3.0), today=TODAY)
+    portfolio = assess_portfolio_dividend_income_risk(
+        [
+            PortfolioHoldingIncomeInput("LOY", 300.0, sector="Energy", assessment=lo),
+            PortfolioHoldingIncomeInput("HIY", 700.0, sector="Energy", assessment=hi),
+        ]
+    )
+    assert portfolio.company_concentration is ConcentrationLevel.HIGH
+    assert portfolio.sector_concentration is ConcentrationLevel.HIGH
+    alerts = build_high_value_dividend_risk_alerts(portfolio)
+    codes = _alert_codes(alerts)
+    assert ALERT_COMPANY_INCOME_CONCENTRATION in codes
+    assert ALERT_SECTOR_INCOME_CONCENTRATION in codes
 
 
 def test_high_value_alert_suspension() -> None:

@@ -45,6 +45,8 @@ COMPANY_INCOME_CONCENTRATION_MONITOR_PCT: Final[float] = 25.0
 COMPANY_INCOME_CONCENTRATION_HIGH_PCT: Final[float] = 40.0
 SECTOR_INCOME_CONCENTRATION_MONITOR_PCT: Final[float] = 35.0
 SECTOR_INCOME_CONCENTRATION_HIGH_PCT: Final[float] = 50.0
+# High-value concentration alerts only when the concentrated income has yield above this.
+CONCENTRATION_ALERT_MIN_YIELD_PCT: Final[float] = 6.0
 SPLIT_RATIO_TOLERANCE: Final[float] = 0.08
 # Income share above which insufficient/stale evidence warrants a portfolio alert.
 MATERIAL_INCOME_SHARE_PCT: Final[float] = 5.0
@@ -155,6 +157,7 @@ ALERT_DIVIDEND_SUSPENSION = "ALERT_DIVIDEND_SUSPENSION"
 ALERT_DIVIDEND_CUT_MAJOR = "ALERT_DIVIDEND_CUT_MAJOR"
 ALERT_FCF_NEGATIVE = "ALERT_FCF_NEGATIVE"
 ALERT_COMPANY_INCOME_CONCENTRATION = "ALERT_COMPANY_INCOME_CONCENTRATION"
+ALERT_SECTOR_INCOME_CONCENTRATION = "ALERT_SECTOR_INCOME_CONCENTRATION"
 ALERT_MATERIAL_INSUFFICIENT_DATA = "ALERT_MATERIAL_INSUFFICIENT_DATA"
 ALERT_MATERIAL_STALE_EVIDENCE = "ALERT_MATERIAL_STALE_EVIDENCE"
 
@@ -1219,6 +1222,7 @@ def _threshold_descriptions() -> dict[str, str]:
             f"{SECTOR_INCOME_CONCENTRATION_MONITOR_PCT:.0f}%"
         ),
         "sector_income_concentration_high_pct": f"{SECTOR_INCOME_CONCENTRATION_HIGH_PCT:.0f}%",
+        "concentration_alert_min_yield_pct": f"{CONCENTRATION_ALERT_MIN_YIELD_PCT:.0f}%",
     }
 
 
@@ -1818,6 +1822,39 @@ def _signal_alert(
     )
 
 
+def _holding_yield_pct(holding: PortfolioHoldingIncomeInput) -> float | None:
+    """Best available yield for concentration alert gating (channel current, else absolute)."""
+    assessment = holding.assessment
+    if assessment is None:
+        return None
+    observed = assessment.observed_values or {}
+    for key in ("yield_channel_current", "dividend_yield"):
+        value = observed.get(key)
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _holding_meets_concentration_yield_gate(holding: PortfolioHoldingIncomeInput) -> bool:
+    yield_pct = _holding_yield_pct(holding)
+    return yield_pct is not None and yield_pct > CONCENTRATION_ALERT_MIN_YIELD_PCT
+
+
+def _find_holding(
+    holdings: Sequence[PortfolioHoldingIncomeInput],
+    symbol: str,
+) -> PortfolioHoldingIncomeInput | None:
+    wanted = symbol.upper()
+    for holding in holdings:
+        if holding.symbol.upper() == wanted:
+            return holding
+    return None
+
+
 def _concentration_alert(
     portfolio: PortfolioDividendIncomeRisk,
 ) -> DividendRiskAlert | None:
@@ -1828,16 +1865,56 @@ def _concentration_alert(
     symbol, amount, share = portfolio.largest_income_contributor
     if share <= COMPANY_INCOME_CONCENTRATION_HIGH_PCT:
         return None
+    holding = _find_holding(portfolio.holdings, symbol)
+    if holding is None or not _holding_meets_concentration_yield_gate(holding):
+        return None
+    yield_pct = _holding_yield_pct(holding)
     return DividendRiskAlert(
         code=ALERT_COMPANY_INCOME_CONCENTRATION,
         severity="high",
         title="High company income concentration",
         message=(
             f"{symbol} contributes {share:.0f}% of estimated portfolio "
-            f"dividend income (${amount:,.0f}). Concentration is separate "
-            "from that company's sustainability status."
+            f"dividend income (${amount:,.0f})"
+            + (f" at {yield_pct:.1f}% yield" if yield_pct is not None else "")
+            + f" (alerts apply above {CONCENTRATION_ALERT_MIN_YIELD_PCT:.0f}% yield). "
+            "Concentration is separate from that company's sustainability status."
         ),
         symbols=(symbol,),
+        observed_value=round(share, 1),
+    )
+
+
+def _sector_concentration_alert(
+    portfolio: PortfolioDividendIncomeRisk,
+) -> DividendRiskAlert | None:
+    if portfolio.sector_concentration is not ConcentrationLevel.HIGH:
+        return None
+    if portfolio.largest_sector_income is None:
+        return None
+    sector, amount, share = portfolio.largest_sector_income
+    if sector == "Unknown" or share <= SECTOR_INCOME_CONCENTRATION_HIGH_PCT:
+        return None
+    sector_holdings = [
+        holding
+        for holding in portfolio.holdings
+        if ((holding.sector or "Unknown").strip() or "Unknown") == sector
+    ]
+    high_yield = [h for h in sector_holdings if _holding_meets_concentration_yield_gate(h)]
+    if not high_yield:
+        return None
+    symbols = tuple(sorted({h.symbol.upper() for h in high_yield}))
+    return DividendRiskAlert(
+        code=ALERT_SECTOR_INCOME_CONCENTRATION,
+        severity="high",
+        title="High sector income concentration",
+        message=(
+            f"{sector} contributes {share:.0f}% of estimated portfolio "
+            f"dividend income (${amount:,.0f}), including yield above "
+            f"{CONCENTRATION_ALERT_MIN_YIELD_PCT:.0f}% from {', '.join(symbols)}. "
+            "Sector concentration is separate from company sustainability status."
+        ),
+        symbols=symbols,
         observed_value=round(share, 1),
     )
 
@@ -1953,6 +2030,7 @@ def build_high_value_dividend_risk_alerts(
                 alternate_signal=SIGNAL_ZERO_DENOMINATOR,
             ),
             _concentration_alert(portfolio),
+            _sector_concentration_alert(portfolio),
             _insufficient_data_alert(holdings, total),
             _stale_evidence_alert(holdings, total),
         )

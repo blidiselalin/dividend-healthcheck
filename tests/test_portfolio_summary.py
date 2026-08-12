@@ -11,8 +11,8 @@ def test_format_delta_with_percent() -> None:
 
 
 def test_format_delta_without_percent() -> None:
-    assert _format_delta(100.0, None) is None
+    assert _format_delta(100.0, None) == "$+100.00"
 
 
 def test_format_delta_none_value() -> None:
-    assert _format_delta(None, 1.0) is None
+    assert _format_delta(None, 1.0) == "Reload live data for today's move"
