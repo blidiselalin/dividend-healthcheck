@@ -1,0 +1,20 @@
+Statement,Data,Title,Activity Statement
+Statement,Data,Period,"January 1, 2025 - June 30, 2025"
+Account Information,Data,Account,DU0000001
+Account Information,Data,Base Currency,USD
+Open Positions,Data,Summary,Stocks,USD,KO,40,55,55,2200
+Open Positions,Data,Summary,Stocks,USD,JNJ,8,160,160,1280
+Open Positions,Data,Summary,Stocks,USD,O,50,50,50,2500
+Trades,Data,Order,Stocks,USD,KO,"2025-01-15, 10:00:00",40,55,2200,USD,-1.10
+Trades,Data,Order,Stocks,USD,JNJ,"2025-02-03, 11:15:00",8,160,1280,USD,-1.25
+Trades,Data,Order,Stocks,USD,O,"2025-02-20, 09:45:00",50,50,2500,USD,-1.00
+Dividends,Data,USD,2025-03-15,"KO(US1912161007) Cash Dividend USD 0.485 per Share",19.40
+Dividends,Data,USD,2025-04-01,"O(US7561091049) Cash Dividend USD 0.264 per Share",13.20
+Dividends,Data,USD,2025-05-15,"JNJ(US4781601046) Cash Dividend USD 1.24 per Share",9.92
+Withholding Tax,Data,USD,2025-03-15,"KO(US1912161007) Cash Dividend USD 0.485 per Share - US Tax",-2.91
+Withholding Tax,Data,USD,2025-05-15,"JNJ(US4781601046) Cash Dividend USD 1.24 per Share - US Tax",-1.49
+Deposits & Withdrawals,Data,USD,2025-01-10,Electronic Fund Transfer,6000.00
+Deposits & Withdrawals,Data,USD,2025-03-01,Electronic Fund Transfer,500.00
+Base Currency Exchange Rate,Data,USD,1
+Base Currency Exchange Rate,Data,EUR,0.92
+Net Asset Value,Data,Total,USD,5980.00
