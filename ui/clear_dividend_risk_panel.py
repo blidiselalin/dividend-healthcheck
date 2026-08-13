@@ -634,6 +634,34 @@ def _watch_chip_items(
     return items
 
 
+def _render_watch_holding_buttons(
+    items: list[tuple[str, str, str]],
+    *,
+    nav_tickers: list[str],
+    key_prefix: str = "cdr_watch",
+) -> None:
+    """Clickable High/Monitor holdings — HTML chips alone are not interactive."""
+    import streamlit as st
+
+    from ui.portfolio_home import set_holding_selection
+
+    if not items:
+        return
+    cols = st.columns(min(len(items), 4))
+    for index, (symbol, detail, _kind) in enumerate(items):
+        with cols[index % len(cols)]:
+            label = f"{symbol} · {detail}"
+            if len(label) > 72:
+                label = label[:71] + "…"
+            if st.button(
+                label,
+                key=f"{key_prefix}_{symbol}",
+                use_container_width=True,
+                help="Open holding evidence",
+            ):
+                set_holding_selection(symbol, nav_tickers=nav_tickers)
+
+
 def _render_high_value_alerts(alerts: Sequence[DividendRiskAlert]) -> None:
     import streamlit as st
 
@@ -729,7 +757,7 @@ def _render_concentration_summary(
 def render_portfolio_clear_dividend_risk(
     rows: Sequence[Any],
     *,
-    table_key: str = "home_clear_dividend_risk",
+    table_key: str | None = None,
     vector_docs: Mapping[str, Any] | None = None,
     stock_by_symbol: Mapping[str, Any] | None = None,
     yield_channels: Mapping[str, Any] | None = None,
@@ -746,9 +774,12 @@ def render_portfolio_clear_dividend_risk(
         render_home_panel,
         render_html,
         render_section_header,
-        render_status_ticker_chips,
         wrap_table_container,
     )
+    from ui.session_keys import HOME_CLEAR_DIVIDEND_RISK_TABLE_KEY
+
+    if table_key is None:
+        table_key = HOME_CLEAR_DIVIDEND_RISK_TABLE_KEY
 
     if not rows:
         return None
@@ -770,6 +801,7 @@ def render_portfolio_clear_dividend_risk(
         yield_channels=yield_channels,
     )
     portfolio = view.portfolio
+    nav_tickers = [row.symbol for row in view.table_rows]
 
     render_home_panel(
         "Dividend income risk",
@@ -783,7 +815,7 @@ def render_portfolio_clear_dividend_risk(
     render_html('<div class="ds-watch-panel">')
     render_section_header(
         "Holdings to watch",
-        "Monitor and High observed risk — tap a symbol in the table below for evidence.",
+        "Monitor and High observed risk — click a holding to open evidence.",
     )
     render_html(
         '<div class="ds-watch-legend">'
@@ -793,7 +825,7 @@ def render_portfolio_clear_dividend_risk(
         "</div>"
     )
     if watch_items:
-        render_status_ticker_chips(watch_items)
+        _render_watch_holding_buttons(watch_items, nav_tickers=nav_tickers)
     else:
         st.caption("Nothing on Monitor or High right now — coverage looks calm across holdings.")
     render_html("</div>")
@@ -854,7 +886,7 @@ def render_portfolio_clear_dividend_risk(
 
                 set_holding_selection(
                     view.table_rows[index].symbol,
-                    nav_tickers=[row.symbol for row in view.table_rows],
+                    nav_tickers=nav_tickers,
                 )
 
     render_disclaimer_banner(DISCLAIMER)

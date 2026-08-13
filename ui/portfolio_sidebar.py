@@ -63,8 +63,13 @@ def _render_sidebar_explore_nav() -> None:
 def _reload_live_data() -> None:
     from services.portfolio_refresh import schedule_portfolio_reload
 
+    if not user_has_holdings_in_db():
+        st.sidebar.warning("Add or import holdings first, then reload live data.")
+        return
     mark_onboarding_live_reload_requested()
     schedule_portfolio_reload(live_prices=True, sections=["all"])
+    st.toast("Refreshing live prices in the background…")
+    st.rerun()
 
 
 def _render_load_status() -> None:
@@ -99,8 +104,6 @@ def render_portfolio_sidebar() -> None:
     _render_load_status()
     if st.sidebar.button("Reload live data", type="primary", use_container_width=True):
         _reload_live_data()
-        st.toast("Refreshing live prices in the background…")
-        st.rerun()
 
     from ui.background_tasks_panel import render_background_tasks_panel
 

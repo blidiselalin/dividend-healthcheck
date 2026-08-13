@@ -21,6 +21,7 @@ from services.portfolio_position_table import (
     style_home_positions_dataframe,
 )
 from ui.design_system import close_table_container, render_section_header, wrap_table_container
+from ui.session_keys import HOME_POSITIONS_TABLE_KEY
 
 
 def _load_risk_hints() -> dict[str, str]:
@@ -38,7 +39,7 @@ def _load_risk_hints() -> dict[str, str]:
 def render_positions_table(
     rows: list[PortfolioDetailRow],
     *,
-    table_key: str = "home_positions_table",
+    table_key: str = HOME_POSITIONS_TABLE_KEY,
 ) -> None:
     """Interactive positions table — row click opens dividend analysis."""
     if not rows:

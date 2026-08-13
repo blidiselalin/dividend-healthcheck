@@ -12,7 +12,6 @@ from services.portfolio_holdings_summary import HoldingsSummary, compute_holding
 from ui.design_system import (
     render_dividend_focus_panel,
     render_home_panel,
-    render_ticker_chips,
 )
 
 if TYPE_CHECKING:
@@ -100,8 +99,19 @@ def render_dividend_focus_block(
         if row.annual_income
     ]
     if chips:
-        st.caption("Top income contributors")
-        render_ticker_chips(chips)
+        st.caption("Top income contributors — click to open analysis")
+        nav = [symbol for symbol, _detail in chips]
+        cols = st.columns(min(len(chips), 5))
+        for index, (symbol, detail) in enumerate(chips):
+            with cols[index]:
+                if st.button(
+                    f"{symbol} · {detail}",
+                    key=f"home_income_chip_{symbol}",
+                    use_container_width=True,
+                ):
+                    from ui.portfolio_home import set_holding_selection
+
+                    set_holding_selection(symbol, nav_tickers=nav)
 
 
 def render_holdings_summary(
@@ -172,8 +182,3 @@ def render_holdings_summary(
         cards,
     )
     return metrics
-
-
-def render_portfolio_dividend_income_strip(rows: list[PortfolioDetailRow]) -> None:
-    """Legacy wrapper — dividend focus block is preferred on Home."""
-    render_dividend_focus_block(rows)

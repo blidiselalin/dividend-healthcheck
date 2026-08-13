@@ -179,29 +179,41 @@ def render_portfolio_manage_sidebar() -> None:
     """Portfolio management expander in the sidebar."""
     service = PortfolioManagementService()
 
+    show_manage_tip = bool(st.session_state.pop("portfolio_onboarding_show_manage_tip", False))
+    focus_import = bool(st.session_state.pop("portfolio_manage_focus_import", False))
     expand_manage = (
         is_demo_session()
         or not user_has_holdings_in_db()
         or bool(st.session_state.pop("portfolio_manage_expand", False))
-        or bool(st.session_state.get("portfolio_onboarding_show_manage_tip"))
+        or show_manage_tip
+        or focus_import
     )
     with st.sidebar.expander("Manage portfolio", expanded=expand_manage):
-        if (
-            st.session_state.get("portfolio_onboarding_show_manage_tip")
-            and not user_has_holdings_in_db()
-        ):
-            st.info(
-                "**Step 1:** Add a ticker below, or open **Import IBKR** for a broker "
-                "statement. Views refresh in the background automatically."
-            )
-        elif st.session_state.pop("portfolio_manage_focus_import", False):
+        if focus_import:
             st.info(
                 "Use the **Import IBKR** tab to upload an Activity Statement CSV "
                 "(trades, dividends, deposits, and positions when available)."
             )
-        tab_add, tab_edit, tab_buy, tab_evolution, tab_ibkr = st.tabs(
-            ["Add ticker", "Edit position", "Purchase", "Monthly evolution", "Import IBKR"]
-        )
+        elif show_manage_tip and not user_has_holdings_in_db():
+            st.info(
+                "**Step 1:** Add a ticker below, or open **Import IBKR** for a broker "
+                "statement. Views refresh in the background automatically."
+            )
+        elif show_manage_tip:
+            st.info(
+                "Tips: **Add ticker**, **Purchase**, **Import IBKR**, or "
+                "**Monthly evolution**. Changes refresh Home in the background."
+            )
+
+        # Streamlit always opens the first tab — put Import first when guided here.
+        if focus_import:
+            tab_ibkr, tab_add, tab_edit, tab_buy, tab_evolution = st.tabs(
+                ["Import IBKR", "Add ticker", "Edit position", "Purchase", "Monthly evolution"]
+            )
+        else:
+            tab_add, tab_edit, tab_buy, tab_evolution, tab_ibkr = st.tabs(
+                ["Add ticker", "Edit position", "Purchase", "Monthly evolution", "Import IBKR"]
+            )
 
         with tab_add:
             st.caption(
@@ -231,15 +243,15 @@ def render_portfolio_manage_sidebar() -> None:
             st.checkbox("Skip Yahoo validation", key="pm_add_skip")
             if st.button("Add to portfolio", type="primary", key="pm_add_btn"):
                 try:
-                    if st.session_state.pm_add_shares <= 0:
+                    symbol = str(st.session_state.get("pm_add_symbol") or "").strip()
+                    if not symbol:
+                        st.error("Enter a ticker symbol.")
+                    elif st.session_state.pm_add_shares <= 0:
                         st.error("Shares must be greater than zero.")
                     elif st.session_state.pm_add_avg <= 0 and not st.session_state.pm_add_skip:
                         st.error("Enter average cost per share.")
                     else:
-                        symbol = st.session_state.pm_add_symbol
-                        with inline_operation_progress(
-                            f"Adding {symbol.strip().upper()}"
-                        ) as progress:
+                        with inline_operation_progress(f"Adding {symbol.upper()}") as progress:
                             progress("Validating symbol and saving holding…", 0.25)
                             result = service.add_ticker(
                                 symbol,
@@ -310,20 +322,25 @@ def render_portfolio_manage_sidebar() -> None:
                 col_save, col_del = st.columns(2)
                 with col_save:
                     if st.button("Save changes", key="pm_edit_save"):
-                        try:
-                            with inline_operation_progress(f"Updating {pick}") as progress:
-                                progress("Saving position changes…", 0.4)
-                                service.update_holding_fields(
-                                    pick,
-                                    shares=new_shares,
-                                    avg_cost_per_share=new_avg,
-                                    commission=new_comm,
-                                    company_name=new_company.strip() or None,
-                                )
-                                progress("Refreshing portfolio views…", 0.85)
-                            _after_change(f"Updated {pick}.")
-                        except Exception as exc:
-                            st.error(str(exc))
+                        if new_shares <= 0:
+                            st.error("Shares must be greater than zero.")
+                        elif new_avg <= 0:
+                            st.error("Average cost per share must be greater than zero.")
+                        else:
+                            try:
+                                with inline_operation_progress(f"Updating {pick}") as progress:
+                                    progress("Saving position changes…", 0.4)
+                                    service.update_holding_fields(
+                                        pick,
+                                        shares=new_shares,
+                                        avg_cost_per_share=new_avg,
+                                        commission=new_comm,
+                                        company_name=new_company.strip() or None,
+                                    )
+                                    progress("Refreshing portfolio views…", 0.85)
+                                _after_change(f"Updated {pick}.")
+                            except Exception as exc:
+                                st.error(str(exc))
                 with col_del:
                     if st.button("Remove", key="pm_edit_remove"):
                         try:
@@ -455,6 +472,7 @@ def _render_ibkr_import_tab() -> None:
 
     content = st.session_state.get("pm_ibkr_file_content")
     if not content:
+        st.caption("Upload an Activity Statement CSV to preview and apply the import.")
         return
 
     mode_label = st.radio(

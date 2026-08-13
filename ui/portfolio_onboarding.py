@@ -265,7 +265,7 @@ def render_real_user_getting_started() -> None:
     st.markdown("### Welcome to DividendScope")
     st.write(
         "Track dividend holdings, income, and risk in one workspace. "
-        "Start with **Import IBKR** in the Getting started guide above, "
+        "Start with **Import IBKR** in the Getting started guide, "
         "or add a ticker manually from **Manage portfolio**."
     )
     with st.expander("What is DividendScope?", expanded=False):

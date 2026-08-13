@@ -67,7 +67,7 @@ Market and dividend information may be delayed or incomplete.
 | **Stock Research** | Dividend Kings & Aristocrats analysis, yield-channel charts, sector comparison, news & sentiment |
 | **Portfolio Tracking** | Holdings, purchase journal, monthly deposits, realized/unrealized P&L |
 | **Dividend Income** | Monthly income calendar, dividend receipt log, CAGR and growth trend |
-| **Risk & Allocation** | Sector concentration, risk monitor, attention items (payout ratio, streak breaks), benchmark comparison |
+| **Risk & Allocation** | Clear Dividend Risk (coverage, cuts, Weiss yield-channel traps), company/sector concentration alerts (yield &gt; 6%), benchmark comparison |
 | **Benchmark Comparison** | Portfolio total-return vs S&P 500, SCHD, Dow Jones, Nasdaq — same monthly purchases |
 | **PDF Reports** | One-click research reports with score card and investment thesis |
 | **Assistant** | In-app FAQ chatbot; optional Hugging Face LLM for broader replies |
@@ -127,7 +127,9 @@ Browser rerun
 | **Job queue** | `services/deferred_startup.py` | Schedule warm load, live reload, yield preload, dividend sync |
 | **Job registry** | `services/background_jobs.py` | Thread-safe workers; results applied on the main Streamlit thread |
 | **UI triggers** | `services/portfolio_refresh.py` | `schedule_portfolio_reload()` for sidebar/manage/section refresh; `reload_portfolio_after_data_import()` after IBKR apply; `reload_portfolio_session()` for tests/scripts only |
-| **Progress** | `ui/sidebar_progress_panel.py` | Polls every 2s while jobs run; reruns when warm/live/yield/DB refresh completes |
+| **Progress** | `ui/sidebar_progress_panel.py` | Polls every 2s while jobs run; 30s fragment syncs UI after backend price refresh |
+
+After the in-process **price refresh scheduler** updates library quotes (default every 30 minutes when `DATABASE_URL` is set), `schedule_scheduled_price_ui_sync_if_needed()` rebuilds the portfolio session from the library — even when optional auto-background tasks are off.
 
 **Background job kinds** (see `services/deferred_startup.py`):
 
@@ -136,8 +138,9 @@ Browser rerun
 | `warm_portfolio` | Empty session, holdings in DB | Fast load from market library (no live API prices) |
 | `yield_preload` | After fast load | Batch yield-channel charts for all holdings |
 | `live_reload` | **Reload live data** button | Live prices + full analysis preload + risk rescan |
-| `portfolio_db_refresh` | After edits or fingerprint drift | Re-read holdings from DB (library prices) |
+| `portfolio_db_refresh` | After edits, fingerprint drift, or scheduled price UI sync | Re-read holdings from DB (library prices) |
 | `dividend_sync` | Startup (≤ every 6h) | Sync received dividend receipts from market history |
+| `price_refresh` | Admin on-demand | Same pass as the backend price scheduler |
 
 **Caching:** month-to-date dividends use `cached_current_month_paid_dividends()` (keyed by DB fingerprint + date). Section tabs use `@st.cache_data` where appropriate (e.g. dividend growth, benchmark comparison).
 
@@ -274,7 +277,7 @@ This matches the product story: **past dividends → current safety → future i
 | **Purchase journal** | Home → section button | Buy dates, lots, share counts |
 | **Deposits & benchmarks** | Home → section button | Monthly deposits, portfolio € value, comparison vs S&P 500 / SCHD / Dow / Nasdaq |
 | **Research** | Home (S&P picker) | Analyze any S&P 500 symbol before you buy |
-| **Risk & watchlists** | Sidebar | Buy opportunities, dividend timing, high-risk flags (after live reload) |
+| **Risk & watchlists** | Home + Sidebar | Clear Dividend Risk on Home; sidebar attention / timing after live reload |
 | **Manage portfolio** | Sidebar expander | Add/edit holdings, log purchases, monthly deposits |
 | **Assistant** | Sidebar | FAQ and how-to (optional Hugging Face for broader chat) |
 
@@ -284,10 +287,10 @@ Your **holdings, journal, deposits, and receipts** are private to your account i
 
 1. **Add your first ticker** — Sidebar → **Manage portfolio** → **Add ticker** (symbol, shares, average cost) → **Add to portfolio**
 2. **Wait for background load** — Watch **Background tasks** in the sidebar; Home fills in from the shared library (usually seconds)
-3. **Reload live data** (recommended) — Sidebar → **Reload live data** for today's prices, yield charts, and watchlists (runs in background)
-4. **Explore** — Use section buttons on Home; click any ticker for full analysis
+3. **Reload live data** (optional) — Sidebar → **Reload live data** for an immediate Yahoo pass; otherwise library prices refresh on the backend schedule (~30 min) and the UI syncs automatically
+4. **Explore** — Use section buttons on Home; click any ticker for full analysis; review **Dividend income risk** for Monitor / High holdings
 
-Optional later: **Purchase**, **Import IBKR**, and **Monthly evolution** tabs under Manage portfolio; **Background tasks** in the sidebar for on-demand dividend sync, yield charts, and library reloads (automatic tasks are off by default).
+Optional later: **Purchase**, **Import IBKR**, and **Monthly evolution** tabs under Manage portfolio; **Background tasks** in the sidebar for on-demand dividend sync, yield charts, and library reloads (automatic enrichment tasks are off by default; the price scheduler is separate and on when Postgres is configured).
 
 ### Where to get help in the app
 
@@ -304,17 +307,38 @@ Once logged in, every user gets an isolated portfolio scoped to their account.
 
 ### Home & holdings overview
 
-- **Home** shows a summary strip (value, day change, P/L, month dividends received) and a **positions table** sorted worst-first
-- Click a ticker row to open full holding analysis (yield channel, fundamentals, journal)
+Home is a short command center (top → bottom):
+
+1. **Portfolio snapshot** — total value, day change, unrealized G/L
+2. **Dividend income at a glance** — month received (when available), estimated annual/monthly income, portfolio yield, top income chips
+3. **Dividend income risk** (Clear Dividend Risk methodology 1.2) — holdings on Monitor / High, concentration badges (green / yellow / red), high-value alerts, expandable evidence table
+4. **Positions table** — worst performers first; row click opens holding analysis
+
+Other notes:
+
 - Portfolio state is restored from a **disk cache** on startup; heavy reloads run in the **Background tasks** sidebar panel
-- **New users:** a **Getting started — step-by-step guide** on Home walks through add holding → background load → reload live data → explore tabs (sidebar shows the current next step)
+- Library prices refresh on a **30-minute backend schedule** (when `DATABASE_URL` is set); the UI syncs without requiring **Reload live data**
+- **New users:** a **Getting started** checklist on Home walks through add holding → load → explore tabs
+
+### Clear Dividend Risk
+
+Explainable dividend sustainability for holdings and portfolio income (`services/clear_dividend_risk.py`, `ui/clear_dividend_risk_panel.py`):
+
+| Layer | What it means |
+|---|---|
+| **Coverage & cuts** | FCF / earnings payout bands, negative FCF, dividend cuts / suspensions |
+| **Weiss yield channel** | Historical yield zones (Deep Value → Expensive); high yield vs history is a value signal unless coverage is stressed (**yield trap**) |
+| **Soft context** | Leverage and absolute yield inform Monitor — they do not auto-escalate to High alone |
+| **Concentration alerts** | Company (&gt;40% income) or sector (&gt;50% income) **high alerts only when yield &gt; 6%** |
+
+Statuses: Lower observed risk · Monitor · High observed risk · Insufficient data · Special analysis required.
 
 ### Reloading data
 
 | Action | Behaviour |
 |---|---|
-| **Reload live data** (sidebar) | Queues a background `live_reload` — fetches live prices, rebuilds charts, refreshes watchlists |
-| **Refresh watchlists** | Fast rescan from cached rows (no new prices) |
+| **Reload live data** (sidebar) | Queues a background `live_reload` — fetches live prices, rebuilds charts, refreshes analysis |
+| **Scheduled library sync** | After the price daemon updates `current_price`, queues `portfolio_db_refresh` so Home/tables pick up new quotes |
 | **Manage portfolio** edits | Queues `portfolio_db_refresh` — views update in background after saves |
 | **Per-tab Update** | Dashboard/holdings/dividends tabs queue live reload; journal/deposits clear section cache only |
 
@@ -342,7 +366,7 @@ The UI paints immediately from cache; numbers refresh when the background job co
 
 ## Market Data & Ingestion CLI
 
-Market data is shared across all users in the `stock_documents` PostgreSQL table. An hourly background job refreshes prices automatically.
+Market data is shared across all users in the `stock_documents` PostgreSQL table. An in-process scheduler refreshes live prices about every **30 minutes** when `DATABASE_URL` is set (override with `DIVIDENDSCOPE_PRICE_REFRESH_SECONDS`).
 
 ### Market data sources
 
@@ -539,7 +563,9 @@ dividend-healthcheck/
 │   ├── portfolio_dividend_sync_service.py    # Sync dividend receipts from market data
 │   ├── portfolio_month_dividends.py      # Monthly income totals + session-cached month received
 │   ├── portfolio_position_table.py       # Home positions table (concerns, sort worst-first)
-│   ├── portfolio_risk_monitor_service.py # Risk snapshot (attention items + cache)
+│   ├── clear_dividend_risk.py           # Clear Dividend Risk assessment (methodology 1.2)
+│   ├── dividend_risk_audit.py           # Read-only risk evidence audit CLI helper
+│   ├── portfolio_risk_monitor_service.py # Legacy attention/risk snapshot (sidebar)
 │   ├── portfolio_attention_service.py    # Attention rules (high payout, streak breaks…)
 │   ├── portfolio_analysis_preload.py     # Batch preload yield charts for all holdings
 │   ├── guest_playground.py         # Pre-login try-list (max 3 tickers, session-only)
@@ -557,8 +583,8 @@ dividend-healthcheck/
 │   ├── report_generator.py              # PDF report generation
 │   ├── yield_channel_chart.py           # "Dividends Don't Lie" chart builder
 │   ├── chatbot_service.py               # FAQ + optional Hugging Face assistant
-│   ├── hourly_market_update.py          # Hourly background price refresh job
-│   ├── price_refresh_scheduler.py       # Background scheduler for price refresh
+│   ├── hourly_market_update.py          # Hourly background market update job
+│   ├── price_refresh_scheduler.py       # 30-min live price + history backfill daemons
 │   ├── db_price_refresh.py              # Price update helper (writes to DB)
 │   ├── db_admin_service.py              # Admin operations (validate, sync, stats)
 │   ├── live_price.py                    # Fetch live prices on top of DB snapshots
@@ -568,7 +594,7 @@ dividend-healthcheck/
 │   ├── sector_service.py                # Sector comparison and peer ranking
 │   ├── sp500_peers_service.py           # S&P 500 peer selection for portfolio
 │   ├── dividend_timing.py               # Dividend timing rules
-│   ├── deferred_startup.py              # Defer heavy init to background threads
+│   ├── deferred_startup.py              # Background jobs + scheduled price UI sync
 │   ├── background_jobs.py               # Long-running background task wrappers
 │   └── vectordb_service.py              # Chroma/fallback store service (dev only)
 │
@@ -590,15 +616,16 @@ dividend-healthcheck/
 │
 ├── ui/                             # Streamlit pages and components
 │   ├── views.py                    # Single-stock and full-analysis pages
-│   ├── portfolio_home.py           # Portfolio welcome, summary, positions table
+│   ├── portfolio_home.py           # Portfolio welcome, snapshot, income, risk, positions
+│   ├── clear_dividend_risk_panel.py # Clear Dividend Risk Home + holding evidence UI
 │   ├── command_center_home.py      # Pre-login Dividend Command Center UI
 │   ├── portfolio_onboarding.py     # Post-sign-up onboarding checklist
 │   ├── portfolio_details_view.py   # Holdings, journal, income, benchmark views
 │   ├── portfolio_positions_table.py # Home positions table UI (row click → analysis)
 │   ├── portfolio_sidebar.py        # Sidebar navigation, reload, manage entry
 │   ├── portfolio_manage_panel.py   # Add/edit/remove holdings UI
-│   ├── portfolio_risk_panel.py     # Risk monitor and attention panel
-│   ├── portfolio_summary.py        # Holdings value/P&L summary strip
+│   ├── portfolio_risk_panel.py     # Sidebar risk monitor / attention panel
+│   ├── portfolio_summary.py        # Holdings value/P&L + dividend income strips
 │   ├── admin_page.py               # Database admin and market library sync
 │   ├── db_admin_panel.py           # Low-level DB admin tools
 │   ├── sp500_research_picker.py    # Pick any S&P 500 symbol for full analysis
@@ -607,7 +634,7 @@ dividend-healthcheck/
 │   ├── dividend_timing_display.py  # Upcoming / paid dividend styled tables
 │   ├── charts.py                   # Shared chart utilities
 │   ├── components.py               # Reusable UI components
-│   ├── sidebar_progress_panel.py   # Background job progress display
+│   ├── sidebar_progress_panel.py   # Background job progress + scheduled price UI sync
 │   ├── market_library_cache.py     # Market library cache status display
 │   ├── auth_account_panel.py       # Account settings and logout
 │   ├── access_request_panel.py     # Access request management UI
@@ -762,6 +789,7 @@ For a full deployment walkthrough including DNS, static IP, OAuth redirect URIs,
 | Slow first-run ingestion | Normal — 15–20 min for full S&P 500 enrichment; market data is cached afterwards |
 | Portfolio empty briefly after login | Normal — wait for **Background tasks** → *Loading portfolio*; disk cache fills on first successful load |
 | Numbers stale after editing holdings | Wait for *Updating portfolio* in sidebar, or click **Reload live data** |
+| Library prices updated but Home still old | Wait ~30s for the UI sync fragment, or open **Background tasks** / click **Reload live data** |
 | `Failed to fetch dynamically imported module` (Streamlit JS) | Hard-refresh the browser (Ctrl+Shift+R). Production Caddy sets `no-cache` on `/static/*` — redeploy Caddyfile if needed |
 | Benchmark chart shows no data | Run `python ingest_data.py --refresh-prices` to fetch benchmark ETF history |
 | `chromadb` import errors | `pip install chromadb>=0.4.22`; app works without it (API-only mode) |

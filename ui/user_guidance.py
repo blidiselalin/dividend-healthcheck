@@ -23,7 +23,11 @@ from services.portfolio_onboarding import (
 )
 from services.portfolio_session import is_demo_session, user_has_holdings_in_db
 from ui.design_system import render_empty_state
-from ui.session_keys import HELP_DRAWER_OPEN_KEY, HELP_DRAWER_SECTION_KEY
+from ui.session_keys import (
+    HELP_DRAWER_OPEN_KEY,
+    HELP_DRAWER_SECTION_KEY,
+    HELP_DRAWER_TOPIC_WIDGET_KEY,
+)
 
 IMPORT_CAPABILITIES = (
     "Trades",
@@ -114,6 +118,10 @@ def mark_preferences_configured() -> None:
 def open_help_drawer(section: str = "getting_started") -> None:
     st.session_state[HELP_DRAWER_OPEN_KEY] = True
     st.session_state[HELP_DRAWER_SECTION_KEY] = section
+    for section_id, label, _body in HELP_SECTIONS:
+        if section_id == section:
+            st.session_state[HELP_DRAWER_TOPIC_WIDGET_KEY] = label
+            break
     track_guidance_event(
         "help_article_opened",
         session=st.session_state,
@@ -156,13 +164,17 @@ def navigate_guidance_route(route: str) -> None:
         navigate_to_portfolio_home()
         return
 
-    section = {
+    section_map = {
         "dashboard": "dashboard",
         "dividends": "dividends",
+        "dividend_growth": "dividend_growth",
         "holdings": "holdings",
         "journal": "journal",
         "deposits": "deposits",
-    }.get(route, "dashboard")
+    }
+    if route not in section_map:
+        st.toast(f"Unknown guidance route “{route}” — opening Home.", icon="⚠️")
+    section = section_map.get(route, "dashboard")
     from ui.portfolio_home import navigate_to_portfolio_section
 
     navigate_to_portfolio_section(section)
@@ -335,7 +347,7 @@ def render_help_drawer(*, force_open: bool | None = None) -> None:
             "Topic",
             options=labels,
             index=index,
-            key="help_drawer_topic",
+            key=HELP_DRAWER_TOPIC_WIDGET_KEY,
             label_visibility="collapsed",
         )
         selected = HELP_SECTIONS[labels.index(choice)]

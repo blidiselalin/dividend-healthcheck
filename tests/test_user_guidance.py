@@ -88,4 +88,5 @@ def test_primary_action_routes_map_to_known_sections() -> None:
     assert PORTFOLIO_LABEL_BY_KEY["dividends"] == "Dividend income"
     assert PORTFOLIO_LABEL_BY_KEY["holdings"] == "Holdings"
     assert PORTFOLIO_LABEL_BY_KEY["dashboard"] == "Home"
+    assert PORTFOLIO_LABEL_BY_KEY["dividend_growth"] == "Dividend growth"
     assert navigate_to_portfolio_section.__name__ == "navigate_to_portfolio_section"

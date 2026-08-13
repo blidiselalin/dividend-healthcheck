@@ -1424,22 +1424,6 @@ def render_page_divider() -> None:
     render_html('<hr class="ds-page-divider" aria-hidden="true">')
 
 
-def open_dividend_focus_panel() -> None:
-    """Deprecated: use render_dividend_focus_panel instead."""
-
-
-def close_dividend_focus_panel() -> None:
-    """Deprecated: use render_dividend_focus_panel instead."""
-
-
-def open_panel() -> None:
-    """Deprecated: Streamlit widgets cannot be wrapped by split HTML tags."""
-
-
-def close_panel() -> None:
-    """Deprecated: Streamlit widgets cannot be wrapped by split HTML tags."""
-
-
 def render_dividend_focus_panel(
     title: str,
     subtitle: str,

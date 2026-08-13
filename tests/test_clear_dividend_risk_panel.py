@@ -201,7 +201,57 @@ def test_build_portfolio_clear_dividend_risk_summary() -> None:
     assert records[0]["Action"] == "Review evidence"
     assert "Sustainability" in records[0]
     assert "FCF payout %" in records[0]
+    assert "Yield zone" in records[0]
     assert concentration_label(portfolio.company_concentration)
+
+
+def test_build_portfolio_applies_yield_channel_zone() -> None:
+    """Weiss yield-channel cache should surface as Yield zone on the Home table."""
+    from types import SimpleNamespace
+
+    from ui.clear_dividend_risk_panel import build_portfolio_clear_dividend_risk
+
+    rows = [
+        SimpleNamespace(
+            ticker="KO",
+            company="Coca-Cola",
+            shares=10.0,
+            annual_income=400.0,
+            sector="Consumer Staples",
+        ),
+    ]
+    docs = {
+        "KO": SimpleNamespace(
+            symbol="KO",
+            name="Coca-Cola",
+            sector="Consumer Staples",
+            industry="Beverages",
+            annual_dividend=1.84,
+            payout_ratio=55.0,
+            fcf_payout_ratio=60.0,
+            dividend_coverage=1.8,
+            dividend_cagr_5y=4.0,
+            dividend_history=[],
+            last_updated=date(2026, 6, 30),
+            source=SimpleNamespace(value="yahoo"),
+        ),
+    }
+    channels = {
+        "KO": SimpleNamespace(
+            zone="Deep Value",
+            percentile=92.0,
+            current_yield=5.4,
+            median_yield=3.1,
+        ),
+    }
+    view = build_portfolio_clear_dividend_risk(
+        rows,
+        vector_docs=docs,
+        yield_channels=channels,
+        today=date(2026, 8, 6),
+    )
+    assert view.table_rows[0].yield_channel_zone == "Deep Value"
+    assert view.table_rows[0].sustainability_status == "Lower observed risk"
 
 
 def test_format_helpers_and_income_resolution() -> None:

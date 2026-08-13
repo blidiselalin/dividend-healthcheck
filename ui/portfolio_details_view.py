@@ -1882,6 +1882,9 @@ class PortfolioDetailsView:
     @classmethod
     def _render_dividend_growth_page(cls) -> None:
         """Annual dividend per share and growth since 2021 for all holdings."""
+        from ui.user_guidance import mark_upcoming_dividends_viewed
+
+        mark_upcoming_dividends_viewed()
         try:
             growth_data = _load_dividend_growth()
         except Exception as exc:

@@ -28,6 +28,7 @@ Automatic enrichment is **off by default** (`services/background_task_prefs.py`)
 | Startup scheduling gate | `services/deferred_startup.schedule_startup_tasks()` |
 | Price/history daemon | `services/price_refresh_scheduler.py` — every 30 min; on by default when `DATABASE_URL` is set |
 | UI sync after price daemon | `schedule_scheduled_price_ui_sync_if_needed()` — rebuilds session from library; not gated on auto-background prefs |
+| Clear Dividend Risk | `services/clear_dividend_risk.py` + `ui/clear_dividend_risk_panel.py` — Home watchlist + holding evidence |
 
 ## IBKR Activity Statement import
 

@@ -15,11 +15,10 @@ from services.portfolio_details_service import PortfolioDetailRow
 from services.portfolio_session import is_demo_session
 from ui.app_about import render_app_about
 from ui.design_system import (
-    render_data_provenance,
     render_empty_state,
     render_page_header,
 )
-from ui.session_keys import ADMIN_VIEW_KEY
+from ui.session_keys import ADMIN_VIEW_KEY, HOME_TABLE_SELECTION_KEYS
 from ui.theme import (
     PORTFOLIO_LABEL_BY_KEY,
     portfolio_data_ready,
@@ -59,6 +58,12 @@ HOME_EXAMPLES: Sequence[dict] = (
 )
 
 
+def clear_home_table_selections() -> None:
+    """Drop persisted Home dataframe selections so return-to-Home stays on Home."""
+    for key in HOME_TABLE_SELECTION_KEYS:
+        st.session_state.pop(key, None)
+
+
 def navigate_to_portfolio_home() -> None:
     """Leave admin, holding drill-down, or research and return to portfolio home."""
     st.session_state[ADMIN_VIEW_KEY] = False
@@ -66,6 +71,7 @@ def navigate_to_portfolio_home() -> None:
     st.session_state.pop("portfolio_research_mode", None)
     st.session_state["portfolio_section_label"] = "Home"
     st.session_state.pop("portfolio_holdings_drill_ticker", None)
+    clear_home_table_selections()
     st.rerun()
 
 
@@ -79,11 +85,16 @@ def navigate_to_portfolio_section(section_key: str) -> None:
     st.session_state["portfolio_section_label"] = label
     st.session_state.pop("portfolio_research_mode", None)
     st.session_state.pop("portfolio_holdings_drill_ticker", None)
+    clear_home_table_selections()
     st.rerun()
 
 
 def set_holding_selection(symbol: str, nav_tickers: list[str] | None = None) -> None:
-    st.session_state["portfolio_selected_symbol"] = symbol.strip().upper()
+    symbol = (symbol or "").strip().upper()
+    if not symbol:
+        return
+    clear_home_table_selections()
+    st.session_state["portfolio_selected_symbol"] = symbol
     st.session_state["portfolio_view_mode"] = PORTFOLIO_VIEW_HOLDING
     st.session_state["portfolio_analysis_ready"] = True
     st.session_state.pop("portfolio_research_mode", None)
@@ -98,7 +109,10 @@ def set_sp500_research_selection(
     nav_symbols: list[str] | None = None,
 ) -> None:
     """Open full analysis for an S&P name (may not be in the user's portfolio)."""
-    symbol = symbol.strip().upper()
+    symbol = (symbol or "").strip().upper()
+    if not symbol:
+        return
+    clear_home_table_selections()
     st.session_state["portfolio_selected_symbol"] = symbol
     st.session_state["portfolio_view_mode"] = PORTFOLIO_VIEW_HOLDING
     st.session_state["portfolio_research_mode"] = True
@@ -222,17 +236,13 @@ def render_empty_home() -> None:
     render_real_user_getting_started()
 
 
-def render_stocks_overview(rows: list[PortfolioDetailRow]) -> None:
-    """Compact positions table — worst performers first, row click opens analysis."""
-    from ui.portfolio_positions_table import render_positions_table
-
-    render_positions_table(rows)
-
-
 def render_compact_summary(rows: list[PortfolioDetailRow]) -> None:
+    """Home body: snapshot → dividend income → Clear Dividend Risk → positions."""
     from services.portfolio_analysis_preload import PortfolioAnalysisPreload
     from services.portfolio_month_dividends import cached_current_month_paid_dividends
-    from ui.portfolio_summary import render_holdings_summary
+    from ui.clear_dividend_risk_panel import render_portfolio_clear_dividend_risk
+    from ui.portfolio_positions_table import render_positions_table
+    from ui.portfolio_summary import render_dividend_focus_block, render_holdings_summary
 
     stock_cache = st.session_state.get("portfolio_stock_cache") or {}
     yield_cache = st.session_state.get("portfolio_yield_cache") or {}
@@ -247,21 +257,17 @@ def render_compact_summary(rows: list[PortfolioDetailRow]) -> None:
     )
 
     month_paid = cached_current_month_paid_dividends(rows=rows, preload=preload)
-    from ui.clear_dividend_risk_panel import render_portfolio_clear_dividend_risk
-    from ui.portfolio_summary import render_dividend_focus_block
 
-    render_dividend_focus_block(rows, month_paid=month_paid)
+    # 1) Value / P&L  2) Income glance  3) Risk watchlist  4) Positions
     render_holdings_summary(rows, show_month_received=False)
-    render_data_provenance(
-        "Values use open positions with live or market-library prices. "
-        "Received and estimated dividend figures stay separate."
-    )
+    render_dividend_focus_block(rows, month_paid=month_paid)
     render_portfolio_clear_dividend_risk(
         rows,
         vector_docs=vector_docs if isinstance(vector_docs, dict) else {},
         stock_by_symbol=stock_cache if isinstance(stock_cache, dict) else {},
+        yield_channels=yield_cache if isinstance(yield_cache, dict) else {},
     )
-    render_stocks_overview(rows)
+    render_positions_table(rows)
 
     from ui.beta_disclaimer import render_research_disclaimer
     from ui.beta_feedback import render_beta_feedback
@@ -278,37 +284,36 @@ def render_portfolio_home_header(
         render_onboarding_banner_if_needed,
         render_onboarding_checklist,
     )
+    from ui.sp500_research_picker import render_sp500_research_picker
     from ui.user_guidance import render_next_best_action_card
 
     render_page_header(
         "Portfolio overview",
-        "Value, income quality, and the next action — before you open another screen.",
+        "Value, income quality, and holdings to watch — then open any screen you need.",
         kicker="Portfolio command center",
     )
-
-    # Getting started first — before summary, research, and section nav.
     render_app_about(expanded=False)
     render_test_user_banner()
-    if not is_demo_session():
-        render_onboarding_checklist(expanded=True)
-        render_next_best_action_card(key_prefix="nba_home")
-        st.divider()
-
-    from ui.sp500_research_picker import render_sp500_research_picker
-
-    render_sp500_research_picker(key_prefix="main_home")
 
     if not portfolio_data_ready() or not rows:
-        st.divider()
+        if not is_demo_session():
+            render_onboarding_checklist(expanded=True)
+            render_next_best_action_card(key_prefix="nba_home")
+            st.divider()
+        render_sp500_research_picker(key_prefix="main_home_empty")
         render_empty_home()
         return False
 
+    # Portfolio first — guidance and research stay below the command center.
     render_onboarding_banner_if_needed()
-    st.divider()
+    if not is_demo_session():
+        render_next_best_action_card(key_prefix="nba_home")
     render_compact_summary(rows)
     render_portfolio_section_nav()
+    render_sp500_research_picker(key_prefix="main_home")
+    if not is_demo_session():
+        render_onboarding_checklist(expanded=False)
     render_try_it_examples(expanded=is_demo_session())
-    st.divider()
     return True
 
 

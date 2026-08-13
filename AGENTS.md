@@ -40,6 +40,8 @@ Short index. Read the linked doc for the area you are changing.
 | Purchase journal views | `services.portfolio_purchase_journal_service` |
 | Holding drill-down history | `services.portfolio_holding_detail_service` |
 | Clear dividend risk (explainable) | `services.clear_dividend_risk` |
+| Clear dividend risk UI | `ui.clear_dividend_risk_panel` |
+| UI sync after price daemon | `services.deferred_startup.schedule_scheduled_price_ui_sync_if_needed` |
 
 ## Cursor rules (auto-loaded by area)
 

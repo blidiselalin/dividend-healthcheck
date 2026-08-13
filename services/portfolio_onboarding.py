@@ -119,10 +119,10 @@ REAL_USER_ONBOARDING_STEPS: tuple[OnboardingStep, ...] = (
     OnboardingStep(
         id=ChecklistStepId.VIEW_UPCOMING_DIVIDENDS,
         title="View upcoming dividends",
-        detail="Open Home watchlists to see upcoming ex-dates and payment dates.",
-        sidebar_hint="Check upcoming ex-dates on **Home**.",
+        detail="Open **Dividend growth** to see upcoming ex-dates and payment timing.",
+        sidebar_hint="Check upcoming ex-dates under **Dividend growth**.",
         action_label="View upcoming",
-        action_route="dashboard",
+        action_route="dividend_growth",
     ),
     OnboardingStep(
         id=ChecklistStepId.CONFIGURE_PREFERENCES,
