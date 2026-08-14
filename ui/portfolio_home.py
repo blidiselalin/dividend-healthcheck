@@ -143,7 +143,7 @@ def render_test_user_banner() -> None:
         return
 
     render_notice(
-        "<strong>Test mode</strong> — demo portfolio KO, JNJ, O. "
+        "<strong>Test mode</strong> — diversified demo portfolio (10 holdings across sectors). "
         "Try the examples below. Your Google account is not affected.",
         kind="info",
     )
@@ -169,7 +169,7 @@ def render_test_user_banner() -> None:
 
 
 def render_try_it_examples(*, expanded: bool = False) -> None:
-    """Guided examples — test user only (demo tickers KO, JNJ, O)."""
+    """Guided examples — test user only (diversified demo tickers)."""
     if not is_demo_session():
         return
 

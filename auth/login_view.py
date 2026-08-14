@@ -70,7 +70,7 @@ def _render_auth_controls() -> None:
 
     if test_user_enabled():
         st.divider()
-        st.caption(f"**Test mode** — full demo KO, JNJ, O · {test_user_email()}")
+        st.caption(f"**Test mode** — diversified demo · 10 holdings · {test_user_email()}")
         if st.button("Continue as test user", use_container_width=True):
             sign_in_as_test_user()
             st.rerun()

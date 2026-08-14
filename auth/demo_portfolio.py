@@ -7,14 +7,12 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from services.guest_playground import DEFAULT_GUEST_HOLDINGS
+
 logger = logging.getLogger(__name__)
 
-# symbol, company, shares, avg_cost_usd
-DEMO_HOLDINGS: list[tuple[str, str, float, float]] = [
-    ("KO", "Coca-Cola Co", 25.0, 58.0),
-    ("JNJ", "Johnson & Johnson", 10.0, 155.0),
-    ("O", "Realty Income Corp", 30.0, 52.0),
-]
+# Keep in sync with the public guest sample.
+DEMO_HOLDINGS: list[tuple[str, str, float, float]] = list(DEFAULT_GUEST_HOLDINGS)
 
 DEMO_DEPOSITS: list[tuple[int, int, str, float, float, float]] = [
     (2024, 1, "January 2024", 1000.0, 1080.0, 4200.0),

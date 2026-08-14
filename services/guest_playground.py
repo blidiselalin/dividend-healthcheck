@@ -1,8 +1,9 @@
 """
 Session-only guest portfolio for the pre-login Command Center (no account required).
 
-Users can explore up to three dividend stocks; holdings migrate to their account on sign-up.
-Public demo metrics are snapshot-first so the MVP works without the market library.
+Users can explore a diversified sample list; holdings migrate to their account on sign-up.
+Prices, yields, and risk come from the shared market library when a document exists.
+Packaged snapshots are a fallback only — the demo does not invent live quotes.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from sqlite3 import Error as SQLiteError
 from typing import Any, Literal
@@ -26,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 GUEST_SESSION_KEY = "guest_playground_holdings"
 GUEST_SPOTLIGHT_KEY = "guest_playground_spotlight"
-GUEST_MAX_HOLDINGS = 3
+GUEST_MAX_HOLDINGS = 12
 GUEST_INCOME_CONFIRM_KEY = "cc_demo_income_confirm"
 GUEST_IMPORT_CONFIRM_KEY = "cc_demo_import_confirm"
 GUEST_IMPORT_PREVIEW_KEY = "cc_demo_import_preview"
@@ -42,13 +43,46 @@ DataMode = Literal["snapshot", "library", "snapshot+enrichment"]
 DEFAULT_GUEST_HOLDINGS: tuple[tuple[str, str, float, float], ...] = (
     ("KO", "Coca-Cola Co", 25.0, 58.0),
     ("JNJ", "Johnson & Johnson", 10.0, 155.0),
+    ("MSFT", "Microsoft Corp", 4.0, 380.0),
+    ("JPM", "JPMorgan Chase", 8.0, 195.0),
+    ("HD", "Home Depot", 6.0, 350.0),
     ("O", "Realty Income Corp", 30.0, 52.0),
+    ("VZ", "Verizon Communications", 40.0, 41.0),
+    ("XOM", "Exxon Mobil", 12.0, 110.0),
+    ("NEE", "NextEra Energy", 15.0, 70.0),
+    ("CAT", "Caterpillar", 5.0, 320.0),
+)
+
+RISK_KIND_LOWER = "lower_observed_risk"
+RISK_KIND_REIT = "reit_distribution"
+RISK_KIND_YIELD_PAYOUT = "high_yield_payout"
+RISK_KIND_CYCLICAL = "cyclical_cash_flow"
+RISK_KIND_LEVERAGE = "leverage_coverage"
+RISK_KIND_FCF = "fcf_stress"
+
+DEMO_RISK_KIND_LABELS: dict[str, str] = {
+    RISK_KIND_LOWER: "Lower observed risk",
+    RISK_KIND_REIT: "REIT distribution coverage",
+    RISK_KIND_YIELD_PAYOUT: "High yield + payout stress",
+    RISK_KIND_CYCLICAL: "Cyclical cash flow",
+    RISK_KIND_LEVERAGE: "Leverage / interest coverage",
+    RISK_KIND_FCF: "Free-cash-flow coverage",
+}
+
+ELEVATED_DEMO_RISK_KINDS: frozenset[str] = frozenset(
+    {
+        RISK_KIND_REIT,
+        RISK_KIND_YIELD_PAYOUT,
+        RISK_KIND_CYCLICAL,
+        RISK_KIND_LEVERAGE,
+        RISK_KIND_FCF,
+    }
 )
 
 
 @dataclass(frozen=True)
 class DemoSymbolSnapshot:
-    """Illustrative per-share metrics for the public demo (not live market data)."""
+    """Per-share demo metrics. Library overlays replace packaged fallbacks."""
 
     symbol: str
     company: str
@@ -60,9 +94,11 @@ class DemoSymbolSnapshot:
     next_amount_per_share: float
     alert_severity: str
     alert_message: str
+    sector: str = "Unknown"
+    risk_kind: str = RISK_KIND_LOWER
 
 
-# Deterministic educational snapshots — no external API required.
+# Packaged fallbacks when the market library has no document (no live API).
 _DEMO_SNAPSHOTS: dict[str, DemoSymbolSnapshot] = {
     "KO": DemoSymbolSnapshot(
         symbol="KO",
@@ -75,6 +111,8 @@ _DEMO_SNAPSHOTS: dict[str, DemoSymbolSnapshot] = {
         next_amount_per_share=0.485,
         alert_severity="low",
         alert_message="Payout is moderate — sample review: confirm coverage vs peers.",
+        sector="Consumer Staples",
+        risk_kind=RISK_KIND_LOWER,
     ),
     "JNJ": DemoSymbolSnapshot(
         symbol="JNJ",
@@ -87,48 +125,8 @@ _DEMO_SNAPSHOTS: dict[str, DemoSymbolSnapshot] = {
         next_amount_per_share=1.30,
         alert_severity="low",
         alert_message="Sample signal: payout looks supported — still educational only.",
-    ),
-    "O": DemoSymbolSnapshot(
-        symbol="O",
-        company="Realty Income Corp",
-        annual_dividend_per_share=3.17,
-        dividend_yield_pct=5.6,
-        payout_ratio_pct=84.0,
-        current_price=56.5,
-        next_pay_offset_days=12,
-        next_amount_per_share=0.264,
-        alert_severity="medium",
-        alert_message=(
-            "Payout ratio 84% in the sample snapshot — REIT distributions leave less "
-            "room if AFFO softens. Educational review aid only."
-        ),
-    ),
-    "SCHD": DemoSymbolSnapshot(
-        symbol="SCHD",
-        company="Schwab US Dividend Equity ETF",
-        annual_dividend_per_share=1.10,
-        dividend_yield_pct=3.5,
-        payout_ratio_pct=0.0,
-        current_price=31.5,
-        next_pay_offset_days=40,
-        next_amount_per_share=0.275,
-        alert_severity="low",
-        alert_message="ETF sample — distributions vary; treat as illustrative only.",
-    ),
-    "VZ": DemoSymbolSnapshot(
-        symbol="VZ",
-        company="Verizon Communications",
-        annual_dividend_per_share=2.71,
-        dividend_yield_pct=6.4,
-        payout_ratio_pct=88.0,
-        current_price=42.0,
-        next_pay_offset_days=22,
-        next_amount_per_share=0.6775,
-        alert_severity="high",
-        alert_message=(
-            "Sample yield 6.4% with elevated payout — verify sustainability before "
-            "treating income as durable. Educational only."
-        ),
+        sector="Health Care",
+        risk_kind=RISK_KIND_LOWER,
     ),
     "MSFT": DemoSymbolSnapshot(
         symbol="MSFT",
@@ -141,6 +139,134 @@ _DEMO_SNAPSHOTS: dict[str, DemoSymbolSnapshot] = {
         next_amount_per_share=0.83,
         alert_severity="low",
         alert_message="Low sample yield — growth-oriented name; income is secondary.",
+        sector="Information Technology",
+        risk_kind=RISK_KIND_LOWER,
+    ),
+    "JPM": DemoSymbolSnapshot(
+        symbol="JPM",
+        company="JPMorgan Chase",
+        annual_dividend_per_share=5.05,
+        dividend_yield_pct=2.5,
+        payout_ratio_pct=30.0,
+        current_price=202.0,
+        next_pay_offset_days=20,
+        next_amount_per_share=1.2625,
+        alert_severity="low",
+        alert_message="Sample payout looks supported — bank earnings still cycle with credit.",
+        sector="Financials",
+        risk_kind=RISK_KIND_LOWER,
+    ),
+    "HD": DemoSymbolSnapshot(
+        symbol="HD",
+        company="Home Depot",
+        annual_dividend_per_share=9.00,
+        dividend_yield_pct=2.4,
+        payout_ratio_pct=55.0,
+        current_price=375.0,
+        next_pay_offset_days=16,
+        next_amount_per_share=2.25,
+        alert_severity="low",
+        alert_message="Sample coverage looks measured — educational review aid only.",
+        sector="Consumer Discretionary",
+        risk_kind=RISK_KIND_LOWER,
+    ),
+    "O": DemoSymbolSnapshot(
+        symbol="O",
+        company="Realty Income Corp",
+        annual_dividend_per_share=3.17,
+        dividend_yield_pct=5.6,
+        payout_ratio_pct=84.0,
+        current_price=56.5,
+        next_pay_offset_days=12,
+        next_amount_per_share=0.264,
+        alert_severity="medium",
+        alert_message=(
+            "REIT sample: payout ratio 84% — distributions leave less room if AFFO "
+            "softens. Educational review aid only."
+        ),
+        sector="Real Estate",
+        risk_kind=RISK_KIND_REIT,
+    ),
+    "VZ": DemoSymbolSnapshot(
+        symbol="VZ",
+        company="Verizon Communications",
+        annual_dividend_per_share=2.71,
+        dividend_yield_pct=6.4,
+        payout_ratio_pct=88.0,
+        current_price=42.0,
+        next_pay_offset_days=22,
+        next_amount_per_share=0.6775,
+        alert_severity="high",
+        alert_message=(
+            "Sample yield 6.4% with elevated earnings payout — verify sustainability "
+            "before treating income as durable. Educational only."
+        ),
+        sector="Communication Services",
+        risk_kind=RISK_KIND_YIELD_PAYOUT,
+    ),
+    "XOM": DemoSymbolSnapshot(
+        symbol="XOM",
+        company="Exxon Mobil",
+        annual_dividend_per_share=3.96,
+        dividend_yield_pct=3.5,
+        payout_ratio_pct=45.0,
+        current_price=112.0,
+        next_pay_offset_days=25,
+        next_amount_per_share=0.99,
+        alert_severity="medium",
+        alert_message=(
+            "Energy cash flows are cyclical in this sample — review coverage through the cycle."
+        ),
+        sector="Energy",
+        risk_kind=RISK_KIND_CYCLICAL,
+    ),
+    "NEE": DemoSymbolSnapshot(
+        symbol="NEE",
+        company="NextEra Energy",
+        annual_dividend_per_share=2.14,
+        dividend_yield_pct=3.1,
+        payout_ratio_pct=70.0,
+        current_price=69.0,
+        next_pay_offset_days=14,
+        next_amount_per_share=0.535,
+        alert_severity="medium",
+        alert_message=(
+            "Utility sample: leverage and rate sensitivity can pressure coverage even "
+            "when the headline payout looks moderate. Educational only."
+        ),
+        sector="Utilities",
+        risk_kind=RISK_KIND_LEVERAGE,
+    ),
+    "CAT": DemoSymbolSnapshot(
+        symbol="CAT",
+        company="Caterpillar",
+        annual_dividend_per_share=5.64,
+        dividend_yield_pct=1.7,
+        payout_ratio_pct=48.0,
+        current_price=332.0,
+        next_pay_offset_days=32,
+        next_amount_per_share=1.41,
+        alert_severity="medium",
+        alert_message=(
+            "Industrial sample: free cash flow can compress late in the capex cycle "
+            "while the dividend is still being paid. Educational only."
+        ),
+        sector="Industrials",
+        risk_kind=RISK_KIND_FCF,
+    ),
+    "SCHD": DemoSymbolSnapshot(
+        symbol="SCHD",
+        company="Schwab US Dividend Equity ETF",
+        annual_dividend_per_share=1.10,
+        dividend_yield_pct=3.5,
+        payout_ratio_pct=0.0,
+        current_price=31.5,
+        next_pay_offset_days=40,
+        next_amount_per_share=0.275,
+        alert_severity="low",
+        alert_message="ETF sample — distributions vary; treat as illustrative only.",
+        sector="ETF / Fund",
+        risk_kind=RISK_KIND_LOWER,
     ),
     "PG": DemoSymbolSnapshot(
         symbol="PG",
@@ -153,18 +279,8 @@ _DEMO_SNAPSHOTS: dict[str, DemoSymbolSnapshot] = {
         next_amount_per_share=1.0065,
         alert_severity="low",
         alert_message="Sample payout looks measured — educational review aid only.",
-    ),
-    "XOM": DemoSymbolSnapshot(
-        symbol="XOM",
-        company="Exxon Mobil",
-        annual_dividend_per_share=3.96,
-        dividend_yield_pct=3.5,
-        payout_ratio_pct=45.0,
-        current_price=112.0,
-        next_pay_offset_days=25,
-        next_amount_per_share=0.99,
-        alert_severity="medium",
-        alert_message="Energy cash flows are cyclical in this sample — review coverage.",
+        sector="Consumer Staples",
+        risk_kind=RISK_KIND_LOWER,
     ),
     "AAPL": DemoSymbolSnapshot(
         symbol="AAPL",
@@ -177,6 +293,8 @@ _DEMO_SNAPSHOTS: dict[str, DemoSymbolSnapshot] = {
         next_amount_per_share=0.25,
         alert_severity="low",
         alert_message="Low sample yield — not an income-primary holding in this demo.",
+        sector="Information Technology",
+        risk_kind=RISK_KIND_LOWER,
     ),
 }
 
@@ -196,6 +314,8 @@ class GuestSafetyAlert:
     message: str
     severity: str  # high | medium | low
     suggested_check: str = "Compare payout, yield, and recent dividend history on Research."
+    sector: str = ""
+    risk_kind: str = RISK_KIND_LOWER
 
 
 @dataclass(frozen=True)
@@ -227,12 +347,37 @@ class GuestDashboard:
     provenance_label: str = "Illustrative snapshot · sample data only"
 
 
+_LIBRARY_SNAPSHOTS: dict[str, DemoSymbolSnapshot] = {}
+
+
 def _normalize_symbol(symbol: str) -> str:
     return (symbol or "").strip().upper()
 
 
 def demo_snapshot_for(symbol: str) -> DemoSymbolSnapshot | None:
-    return _DEMO_SNAPSHOTS.get(_normalize_symbol(symbol))
+    key = _normalize_symbol(symbol)
+    return _LIBRARY_SNAPSHOTS.get(key) or _DEMO_SNAPSHOTS.get(key)
+
+
+def demo_risk_kind_label(kind: str) -> str:
+    if kind in DEMO_RISK_KIND_LABELS:
+        return DEMO_RISK_KIND_LABELS[kind]
+    try:
+        from services.clear_dividend_risk import RISK_LEVEL_LABELS
+    except ImportError:
+        return kind.replace("_", " ").title()
+    for level, label in RISK_LEVEL_LABELS.items():
+        if level.value == kind:
+            return label
+    return kind.replace("_", " ").title()
+
+
+def demo_price_caption(dashboard: GuestDashboard) -> str:
+    if dashboard.data_mode == "library":
+        return "Market library"
+    if dashboard.data_mode == "snapshot+enrichment":
+        return "Library + snapshot fallback"
+    return "Packaged snapshot"
 
 
 def default_guest_holdings() -> list[GuestHolding]:
@@ -245,6 +390,10 @@ def default_guest_holdings() -> list[GuestHolding]:
         )
         for symbol, company, shares, avg_cost in DEFAULT_GUEST_HOLDINGS
     ]
+
+
+def default_guest_symbols() -> tuple[str, ...]:
+    return tuple(symbol for symbol, *_ in DEFAULT_GUEST_HOLDINGS)
 
 
 def guest_holdings_from_session(session: Mapping[str, Any]) -> list[GuestHolding]:
@@ -553,7 +702,8 @@ def _build_snapshot_dashboard(guest: Sequence[GuestHolding]) -> GuestDashboard:
                 status="Estimated",
             )
         )
-        if snap.alert_severity in {"high", "medium"} or snap.payout_ratio_pct >= 80:
+        if snap.alert_severity in {"high", "medium"} or snap.risk_kind in ELEVATED_DEMO_RISK_KINDS:
+            kind_label = DEMO_RISK_KIND_LABELS.get(snap.risk_kind, snap.risk_kind)
             alerts.append(
                 GuestSafetyAlert(
                     symbol=holding.symbol,
@@ -561,9 +711,11 @@ def _build_snapshot_dashboard(guest: Sequence[GuestHolding]) -> GuestDashboard:
                     message=snap.alert_message,
                     severity=snap.alert_severity,
                     suggested_check=(
-                        f"Open Research for {holding.symbol} and compare payout, yield, "
-                        "and dividend history."
+                        f"Open Research for {holding.symbol} and compare {kind_label.lower()}, "
+                        "payout, yield, and dividend history."
                     ),
+                    sector=snap.sector,
+                    risk_kind=snap.risk_kind,
                 )
             )
         rows.append(
@@ -608,8 +760,8 @@ def _build_snapshot_dashboard(guest: Sequence[GuestHolding]) -> GuestDashboard:
         annual_income_usd=round(annual, 2),
         near_term_income_usd=round(near_term, 2),
         monthly_forecast=monthly,
-        next_payouts=payouts[:8],
-        safety_alerts=alerts[:6],
+        next_payouts=payouts[:12],
+        safety_alerts=alerts[:10],
         rows=rows,
         library_ready=False,
         data_mode="snapshot",
@@ -626,94 +778,125 @@ def _build_snapshot_dashboard(guest: Sequence[GuestHolding]) -> GuestDashboard:
     return dashboard
 
 
-def _monthly_forecast_12m(
-    holdings: list[PortfolioHolding],
-    *,
-    vector_docs: dict[str, Any],
-    stock_data: dict[str, Any],
-) -> list[tuple[str, float]]:
-    from services.portfolio_dividend_calendar import _summarize_month, add_months, month_start
-    from services.portfolio_holding_detail_service import PortfolioHoldingDetailService
-
-    today = date.today()
-    start = month_start(today)
-    detail = PortfolioHoldingDetailService()
-    forecast: list[tuple[str, float]] = []
-    for offset in range(12):
-        target = add_months(start, offset)
-        exposure = _summarize_month(
-            holdings,
-            target,
-            vector_docs=vector_docs,
-            stock_data=stock_data,
-            reference_date=today,
-            detail_service=detail,
-        )
-        forecast.append((target.strftime("%b %Y"), round(exposure.total_cash, 2)))
-    return forecast
+def _yield_pct(price: float, dps: float | None, raw_yield: float | None) -> float:
+    if raw_yield is not None and raw_yield > 1:
+        return float(raw_yield)
+    if price > 0 and dps:
+        return round(dps / price * 100, 2)
+    if raw_yield is not None and raw_yield <= 1:
+        return round(float(raw_yield) * 100, 2)
+    return 0.0
 
 
-def _safety_alerts_from_rows(rows: Sequence[Any]) -> list[GuestSafetyAlert]:
-    alerts: list[GuestSafetyAlert] = []
-    for row in rows:
-        symbol = getattr(row, "ticker", "")
-        company = getattr(row, "company", symbol) or symbol
-        payout = getattr(row, "payout_ratio_pct", None)
-        if payout is not None and payout > 85:
-            alerts.append(
-                GuestSafetyAlert(
-                    symbol=symbol,
-                    company=company,
-                    message=f"Payout ratio {payout:.0f}% — dividend may have less room to grow.",
-                    severity="high" if payout > 95 else "medium",
-                    suggested_check=f"Open Research for {symbol} and review payout vs peers.",
-                )
+def _next_pay_from_document(doc: Any, *, dps: float, today: date) -> tuple[int, float]:
+    freq = int(getattr(doc, "payment_frequency", None) or 4) or 4
+    next_amt = dps / freq if dps > 0 else 0.0
+    ex = getattr(doc, "ex_dividend_date", None)
+    if isinstance(ex, datetime):
+        ex = ex.date()
+    if isinstance(ex, date):
+        delta = (ex - today).days
+        if delta >= 0:
+            return delta, next_amt
+        return min(90, abs(delta) or 30), next_amt
+    return 30, next_amt
+
+
+def _risk_from_document(doc: Any) -> tuple[str, str, str]:
+    """Return (severity, message, risk_kind) from Clear Dividend Risk."""
+    from services.clear_dividend_risk import (
+        RiskLevel,
+        assess_holding_dividend_risk,
+        evidence_from_stock_document,
+    )
+
+    assessment = assess_holding_dividend_risk(evidence_from_stock_document(doc))
+    level = assessment.risk_level
+    if level is RiskLevel.HIGH_OBSERVED_RISK:
+        severity = "high"
+    elif level in {
+        RiskLevel.MONITOR,
+        RiskLevel.SPECIAL_ANALYSIS_REQUIRED,
+        RiskLevel.INSUFFICIENT_DATA,
+    }:
+        severity = "medium"
+    else:
+        severity = "low"
+    message = assessment.summary or assessment.risk_label
+    for signal in assessment.risk_signals:
+        if signal.severity in {"high", "monitor"} and signal.message:
+            message = signal.message
+            break
+    return severity, message, level.value
+
+
+def _snapshot_from_library_document(doc: Any) -> DemoSymbolSnapshot | None:
+    symbol = _normalize_symbol(str(getattr(doc, "symbol", "") or ""))
+    if not symbol:
+        return None
+    raw_price = getattr(doc, "current_price", None)
+    if raw_price is None:
+        return None
+    price = float(raw_price)
+    if price <= 0:
+        return None
+    raw_dps = getattr(doc, "annual_dividend", None)
+    raw_yield = getattr(doc, "dividend_yield", None)
+    dps = float(raw_dps) if raw_dps is not None else None
+    if dps is None and raw_yield is not None and price > 0:
+        yld = float(raw_yield)
+        dps = price * (yld if yld <= 1 else yld / 100.0)
+    if dps is None or dps < 0:
+        return None
+    yld_pct = _yield_pct(price, dps, float(raw_yield) if raw_yield is not None else None)
+    raw_payout = getattr(doc, "payout_ratio", None)
+    payout = float(raw_payout) if raw_payout is not None else 0.0
+    company = str(getattr(doc, "name", "") or symbol)
+    sector = str(getattr(doc, "sector", "") or "Unknown")
+    offset, next_amt = _next_pay_from_document(doc, dps=dps, today=date.today())
+    try:
+        severity, message, risk_kind = _risk_from_document(doc)
+    except (TypeError, ValueError, AttributeError, KeyError):
+        packaged = _DEMO_SNAPSHOTS.get(symbol)
+        if packaged is not None:
+            severity, message, risk_kind = (
+                packaged.alert_severity,
+                packaged.alert_message,
+                packaged.risk_kind,
             )
-        profit = getattr(row, "profit_pct", None)
-        if profit is not None and profit < -15:
-            alerts.append(
-                GuestSafetyAlert(
-                    symbol=symbol,
-                    company=company,
-                    message=f"Position down {profit:.1f}% vs cost — review sizing and safety.",
-                    severity="medium",
-                    suggested_check=f"Open Research for {symbol} and check yield-channel context.",
-                )
+        else:
+            severity, message, risk_kind = (
+                "low",
+                "Market library holding — risk evidence incomplete.",
+                RISK_KIND_LOWER,
             )
-        yld = getattr(row, "dividend_yield_pct", None)
-        if yld is not None and yld > 8:
-            alerts.append(
-                GuestSafetyAlert(
-                    symbol=symbol,
-                    company=company,
-                    message=f"Yield {yld:.1f}% is unusually high — verify sustainability.",
-                    severity="medium",
-                    suggested_check=f"Open Research for {symbol} and inspect coverage evidence.",
-                )
-            )
-    return alerts[:6]
+    return DemoSymbolSnapshot(
+        symbol=symbol,
+        company=company,
+        annual_dividend_per_share=round(dps, 4),
+        dividend_yield_pct=yld_pct,
+        payout_ratio_pct=payout,
+        current_price=round(price, 4),
+        next_pay_offset_days=offset,
+        next_amount_per_share=round(next_amt, 4),
+        alert_severity=severity,
+        alert_message=message,
+        sector=sector,
+        risk_kind=risk_kind,
+    )
 
 
-def _next_payouts_from_calendar(calendar: Any) -> list[GuestNextPayout]:
-    payouts: list[GuestNextPayout] = []
-    for month_label, month in (
-        ("This month", calendar.current_month),
-        ("Next month", calendar.next_month),
-    ):
-        for item in getattr(month, "holdings", []) or []:
-            if getattr(item, "expected_cash", 0) <= 0:
-                continue
-            payouts.append(
-                GuestNextPayout(
-                    symbol=getattr(item, "symbol", ""),
-                    company=getattr(item, "company", "") or getattr(item, "symbol", ""),
-                    pay_date=getattr(item, "pay_date", None),
-                    amount_usd=float(getattr(item, "expected_cash", 0) or 0),
-                    status=getattr(item, "status", month_label),
-                )
-            )
-    payouts.sort(key=lambda p: (p.pay_date or date.max, -p.amount_usd))
-    return payouts[:8]
+def _try_enrich_from_library(dashboard: GuestDashboard, guest: Sequence[GuestHolding]) -> None:
+    """Overlay shared-library documents. Never calls live Yahoo."""
+    from services.shared_market_db import load_documents
+
+    docs = load_documents([h.symbol for h in guest])
+    for symbol, doc in docs.items():
+        snap = _snapshot_from_library_document(doc)
+        if snap is not None:
+            _LIBRARY_SNAPSHOTS[_normalize_symbol(symbol)] = snap
+    if _LIBRARY_SNAPSHOTS:
+        dashboard.library_ready = True
 
 
 def _apply_portfolio_metrics(dashboard: GuestDashboard) -> None:
@@ -733,96 +916,27 @@ def _apply_portfolio_metrics(dashboard: GuestDashboard) -> None:
         dashboard.portfolio_yield_pct = None
 
 
-def _try_enrich_from_library(dashboard: GuestDashboard, guest: Sequence[GuestHolding]) -> None:
-    """Best-effort library enrichment — never clears snapshot metrics on failure."""
-    holdings = to_portfolio_holdings(guest)
-    from services.portfolio_details_service import PortfolioDetailsService
-
-    service = PortfolioDetailsService()
-    rows, _preload = service.build_rows_with_cache(
-        holdings=holdings,
-        use_live_prices=False,
-        preload_analysis=False,
-    )
-    if not rows:
-        logger.warning("Guest demo library enrichment returned no rows; keeping snapshot.")
-        return
-
-    lib_annual = round(sum(getattr(row, "annual_income", 0) or 0 for row in rows), 2)
-    if lib_annual <= 0 and dashboard.annual_income_usd > 0:
-        logger.warning(
-            "Guest demo library annual income empty; keeping snapshot income %.2f",
-            dashboard.annual_income_usd,
-        )
-        dashboard.data_mode = "snapshot+enrichment"
-        dashboard.library_ready = True
-        dashboard.provenance_label = (
-            "Snapshot income · library rows available for research · sample data"
-        )
-        return
-
-    symbols = [h.symbol for h in guest]
-    vector_docs, _dividend_statuses = service._load_documents(symbols)
-    from services.stock_analysis_service import load_portfolio_statistics_stock
-
-    stock_data: dict[str, Any] = {}
-    for row in rows:
-        stats = load_portfolio_statistics_stock(row.ticker, vector_docs.get(row.ticker))
-        if stats is not None:
-            stock_data[row.ticker] = stats
-
-    from services.portfolio_dividend_calendar import build_portfolio_dividend_calendar
-
-    calendar = build_portfolio_dividend_calendar(
-        holdings,
-        vector_docs=vector_docs,
-        stock_data=stock_data,
-    )
-    lib_payouts = _next_payouts_from_calendar(calendar)
-    lib_forecast = _monthly_forecast_12m(
-        holdings,
-        vector_docs=vector_docs,
-        stock_data=stock_data,
-    )
-    lib_alerts = _safety_alerts_from_rows(rows)
-
-    dashboard.rows = rows
-    dashboard.library_ready = True
-    dashboard.annual_income_usd = lib_annual
-    if lib_payouts:
-        dashboard.next_payouts = lib_payouts
-        dashboard.near_term_income_usd = round(sum(p.amount_usd for p in lib_payouts[:3]), 2)
-    if lib_forecast and any(v > 0 for _, v in lib_forecast):
-        dashboard.monthly_forecast = lib_forecast
-    if lib_alerts or not dashboard.safety_alerts:
-        dashboard.safety_alerts = lib_alerts
-    dashboard.data_mode = "library"
-    dashboard.provenance_label = (
-        "Shared market library · educational estimates · not a broker account"
-    )
-    # Keep illustrative received sample proportional to library annual income.
-    dashboard.sample_received_gross_usd = round(lib_annual * 0.25, 2)
-    dashboard.sample_withholding_usd = round(dashboard.sample_received_gross_usd * 0.15, 2)
-    dashboard.sample_received_net_usd = round(
-        dashboard.sample_received_gross_usd - dashboard.sample_withholding_usd, 2
-    )
-    _apply_portfolio_metrics(dashboard)
-
-
 def build_guest_dashboard(guest: Sequence[GuestHolding]) -> GuestDashboard:
-    """Compute Command Center metrics — snapshot first, optional library enrichment."""
+    """Compute Command Center metrics from the market library, with snapshot fallback."""
     if not guest:
         return GuestDashboard()
 
-    dashboard = _build_snapshot_dashboard(guest)
+    _LIBRARY_SNAPSHOTS.clear()
+    scratch = GuestDashboard()
     try:
-        _try_enrich_from_library(dashboard, guest)
+        _try_enrich_from_library(scratch, guest)
     except (ImportError, AttributeError, SQLiteError, PostgresError, OSError, RuntimeError) as exc:
-        logger.warning("Guest demo library enrichment failed; using snapshot. (%s)", exc)
-        dashboard.data_mode = "snapshot"
-        dashboard.library_ready = False
+        logger.warning("Guest demo library overlay failed; using packaged snapshots. (%s)", exc)
+        _LIBRARY_SNAPSHOTS.clear()
+
+    dashboard = _build_snapshot_dashboard(guest)
+    library_hits = sum(1 for holding in guest if holding.symbol in _LIBRARY_SNAPSHOTS)
+    if library_hits:
+        dashboard.library_ready = True
+        dashboard.data_mode = "library" if library_hits >= len(guest) else "snapshot+enrichment"
         dashboard.provenance_label = (
-            "Illustrative snapshot · market library unavailable · sample data only"
+            "Market library prices and dividends × sample shares · "
+            "received cash is a scaled example, not a broker import"
         )
     return dashboard
 

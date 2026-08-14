@@ -142,7 +142,7 @@ DEMO_ONBOARDING_STEPS: tuple[OnboardingStep, ...] = (
     OnboardingStep(
         id="load_demo",
         title="Load the demo portfolio",
-        detail="Click **Load demo portfolio** — sample holdings KO, JNJ, and O load instantly.",
+        detail="Click **Load demo portfolio** — 10 sample holdings across sectors load instantly.",
         sidebar_hint="Load the demo portfolio from Home.",
         action_label="Load demo",
         action_route="dashboard",

@@ -6,7 +6,10 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from services.guest_playground import (
+    ELEVATED_DEMO_RISK_KINDS,
     GUEST_MAX_HOLDINGS,
     GUEST_SESSION_KEY,
     GuestDashboard,
@@ -14,6 +17,8 @@ from services.guest_playground import (
     add_guest_holding,
     build_guest_dashboard,
     default_guest_holdings,
+    default_guest_symbols,
+    demo_snapshot_for,
     guest_holdings_from_session,
     remove_guest_holding,
     save_guest_holdings,
@@ -21,17 +26,39 @@ from services.guest_playground import (
 )
 
 
-def test_default_guest_holdings_has_three_symbols() -> None:
+@pytest.fixture(autouse=True)
+def _clear_library_snapshots() -> None:
+    from services.guest_playground import _LIBRARY_SNAPSHOTS
+
+    _LIBRARY_SNAPSHOTS.clear()
+    yield
+    _LIBRARY_SNAPSHOTS.clear()
+
+
+def test_default_guest_holdings_are_diversified() -> None:
     holdings = default_guest_holdings()
-    assert len(holdings) == 3
-    assert {h.symbol for h in holdings} == {"KO", "JNJ", "O"}
+    symbols = default_guest_symbols()
+    assert len(holdings) >= 10
+    assert len(holdings) == len(symbols)
+    assert {h.symbol for h in holdings} == set(symbols)
+    sectors = {snap.sector for symbol in symbols if (snap := demo_snapshot_for(symbol)) is not None}
+    assert len(sectors) >= 10
+    assert all(sectors)
+    elevated = {
+        snap.risk_kind
+        for symbol in symbols
+        if (snap := demo_snapshot_for(symbol)) is not None
+        and snap.risk_kind in ELEVATED_DEMO_RISK_KINDS
+    }
+    assert elevated == set(ELEVATED_DEMO_RISK_KINDS)
+    assert len(elevated) >= 5
 
 
 def test_add_guest_rejects_blank_symbol() -> None:
     session: dict = {}
     holdings, err = add_guest_holding(session, symbol="  ", shares=1.0)
     assert err == "Enter a ticker symbol."
-    assert {h.symbol for h in holdings} == {"KO", "JNJ", "O"}
+    assert {h.symbol for h in holdings} == set(default_guest_symbols())
 
 
 def test_add_guest_respects_max_holdings() -> None:
@@ -39,9 +66,8 @@ def test_add_guest_respects_max_holdings() -> None:
     save_guest_holdings(
         session,
         [
-            GuestHolding(symbol="A", shares=1.0, avg_cost_per_share=1.0),
-            GuestHolding(symbol="B", shares=1.0, avg_cost_per_share=1.0),
-            GuestHolding(symbol="C", shares=1.0, avg_cost_per_share=1.0),
+            GuestHolding(symbol=f"S{index}", shares=1.0, avg_cost_per_share=1.0)
+            for index in range(GUEST_MAX_HOLDINGS)
         ],
     )
     _, err = add_guest_holding(session, symbol="D", shares=1.0)
@@ -100,7 +126,7 @@ def test_reset_restores_default_symbols() -> None:
     session: dict = {}
     save_guest_holdings(session, [GuestHolding(symbol="VZ", shares=10.0, avg_cost_per_share=1.0)])
     save_guest_holdings(session, default_guest_holdings())
-    assert {h.symbol for h in guest_holdings_from_session(session)} == {"KO", "JNJ", "O"}
+    assert {h.symbol for h in guest_holdings_from_session(session)} == set(default_guest_symbols())
 
 
 def test_navigation_does_not_clear_holdings() -> None:
@@ -194,7 +220,7 @@ def test_replace_empty_positions_restores_defaults() -> None:
     session: dict = {}
     save_guest_holdings(session, [GuestHolding(symbol="VZ", shares=10.0, avg_cost_per_share=40.0)])
     holdings = replace_guest_holdings_from_positions(session, [])
-    assert {h.symbol for h in holdings} == {"KO", "JNJ", "O"}
+    assert {h.symbol for h in holdings} == set(default_guest_symbols())
 
 
 def test_snapshot_dashboard_without_market_db(monkeypatch) -> None:
@@ -210,9 +236,49 @@ def test_snapshot_dashboard_without_market_db(monkeypatch) -> None:
     assert dashboard.annual_income_usd > 0
     assert dashboard.near_term_income_usd > 0
     assert dashboard.safety_alerts
+    assert {alert.risk_kind for alert in dashboard.safety_alerts} == set(ELEVATED_DEMO_RISK_KINDS)
     assert dashboard.monthly_forecast
     assert dashboard.next_payouts
     assert "snapshot" in dashboard.provenance_label.lower()
+
+
+def test_library_overlay_uses_document_price_and_dividend(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from services import guest_playground as gp
+
+    doc = SimpleNamespace(
+        symbol="KO",
+        name="Coca-Cola Co",
+        sector="Consumer Staples",
+        current_price=70.25,
+        annual_dividend=2.04,
+        dividend_yield=2.9,
+        payout_ratio=65.0,
+        payment_frequency=4,
+        ex_dividend_date=None,
+    )
+    monkeypatch.setattr(
+        "services.shared_market_db.load_documents",
+        lambda _symbols: {"KO": doc},
+    )
+    monkeypatch.setattr(
+        gp,
+        "_risk_from_document",
+        lambda _doc: ("low", "Library risk", "LOWER_OBSERVED_RISK"),
+    )
+    holdings = [
+        GuestHolding(symbol="KO", shares=10.0, avg_cost_per_share=58.0, company_name="Coca-Cola")
+    ]
+    dashboard = build_guest_dashboard(holdings)
+    assert dashboard.data_mode == "library"
+    assert dashboard.annual_income_usd == 20.4
+    assert dashboard.rows[0].current_value == 702.5
+    assert dashboard.rows[0].dividend_yield_pct == 2.9
+    snap = gp.demo_snapshot_for("KO")
+    assert snap is not None
+    assert snap.current_price == 70.25
+    assert "market library" in dashboard.provenance_label.lower()
 
 
 def test_packaged_ibkr_sample_totals_from_parser() -> None:

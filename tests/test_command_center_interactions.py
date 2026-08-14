@@ -186,15 +186,15 @@ def test_valid_and_invalid_add() -> None:
     symbol_inputs = [t for t in at.text_input if t.label == "Ticker"]
     share_inputs = [n for n in at.number_input if n.label == "Shares"]
     assert symbol_inputs and share_inputs
-    symbol_inputs[0].set_value("VZ")
+    symbol_inputs[0].set_value("PG")
     share_inputs[0].set_value(12.0)
     _click(at, "Add holding")
     text = _feedback(at)
-    assert "Added VZ" in text
+    assert "Added PG" in text
     assert "12" in text
     assert "Estimated annual income" in text
     symbols = {h.symbol for h in guest_holdings_from_session(_session_dict(at))}
-    assert "VZ" in symbols
+    assert "PG" in symbols
 
     symbol_inputs = [t for t in at.text_input if t.label == "Ticker"]
     symbol_inputs[0].set_value("   ")
@@ -204,8 +204,28 @@ def test_valid_and_invalid_add() -> None:
 
 def test_remove_and_final_holding_guard() -> None:
     at = _run_public(view="demo", page="overview")
+    state = _session_dict(at)
+    save_guest_holdings(
+        state,
+        [
+            GuestHolding(
+                symbol="KO",
+                shares=25.0,
+                avg_cost_per_share=58.0,
+                company_name="Coca-Cola",
+            ),
+            GuestHolding(
+                symbol="JNJ",
+                shares=10.0,
+                avg_cost_per_share=155.0,
+                company_name="Johnson & Johnson",
+            ),
+        ],
+    )
+    at.session_state[GUEST_SESSION_KEY] = state[GUEST_SESSION_KEY]
+    at.run()
+    assert not at.exception
     _click(at, "Remove JNJ")
-    _click(at, "Remove O")
     symbols = {h.symbol for h in guest_holdings_from_session(_session_dict(at))}
     assert symbols == {"KO"}
     _click(at, "Remove KO")
@@ -219,15 +239,15 @@ def test_reset_restores_defaults() -> None:
     state = _session_dict(at)
     save_guest_holdings(
         state,
-        [GuestHolding(symbol="VZ", shares=10.0, avg_cost_per_share=40.0, company_name="Verizon")],
+        [GuestHolding(symbol="PG", shares=10.0, avg_cost_per_share=160.0, company_name="P&G")],
     )
     at.session_state[GUEST_SESSION_KEY] = state[GUEST_SESSION_KEY]
     at.run()
     assert not at.exception
-    _click(at, "Reset to KO, JNJ, O")
+    _click(at, "Reset sample list")
     symbols = {h.symbol for h in guest_holdings_from_session(_session_dict(at))}
-    assert symbols == {"KO", "JNJ", "O"}
-    assert "Restored the sample list to KO, JNJ, and O." in _feedback(at)
+    assert symbols == {h.symbol for h in default_guest_holdings()}
+    assert "Restored the diversified sample list" in _feedback(at)
 
 
 def test_journey_overview_income_risk_auth() -> None:

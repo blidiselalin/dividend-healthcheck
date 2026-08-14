@@ -114,17 +114,17 @@ def test_reset_restores_default_values() -> None:
     state = _session_dict(at)
     save_guest_holdings(
         state,
-        [GuestHolding(symbol="VZ", shares=10.0, avg_cost_per_share=40.0, company_name="Verizon")],
+        [GuestHolding(symbol="PG", shares=10.0, avg_cost_per_share=160.0, company_name="P&G")],
     )
     at.session_state[GUEST_SESSION_KEY] = state[GUEST_SESSION_KEY]
     at.run()
     assert not at.exception
-    reset = [b for b in at.button if "Reset to KO" in b.label]
+    reset = [b for b in at.button if b.label == "Reset sample list"]
     assert reset
     reset[0].click().run()
     assert not at.exception
     symbols = {h.symbol for h in guest_holdings_from_session(_session_dict(at))}
-    assert symbols == {"KO", "JNJ", "O"}
+    assert symbols == {h.symbol for h in default_guest_holdings()}
 
 
 def test_sample_import_parser_totals_and_apply() -> None:

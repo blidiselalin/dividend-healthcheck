@@ -7,6 +7,7 @@ Research and Sample import remain optional secondary routes.
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
 import streamlit as st
@@ -18,9 +19,14 @@ from services.guest_playground import (
     GUEST_MAX_HOLDINGS,
     GUEST_SPOTLIGHT_KEY,
     GuestDashboard,
+    GuestHolding,
     add_guest_holding,
     apply_packaged_ibkr_sample_to_guest,
     default_guest_holdings,
+    default_guest_symbols,
+    demo_price_caption,
+    demo_risk_kind_label,
+    demo_snapshot_for,
     estimate_annual_income_usd,
     guest_holdings_from_session,
     load_packaged_ibkr_sample_preview,
@@ -118,7 +124,7 @@ def resolve_next_demo_step() -> DemoStep:
     if not adjusted:
         return DemoStep(
             title="Adjust sample shares",
-            description="Change KO, JNJ, or O quantities and submit to see estimated income update.",
+            description="Change sample quantities and submit to see estimated income update.",
             action_label="Stay on Overview",
             target_page=DemoPage.OVERVIEW,
         )
@@ -135,7 +141,7 @@ def resolve_next_demo_step() -> DemoStep:
     if not risk:
         return DemoStep(
             title="Inspect one explained risk update",
-            description="Review the highest-priority sample attention item and supporting metrics.",
+            description="Review the sample risk mix — five distinct signal types across sectors.",
             action_label="Open Risk",
             target_page=DemoPage.RISK,
         )
@@ -308,7 +314,10 @@ def _reset_demo_holdings() -> None:
     st.session_state[GUEST_INCOME_CONFIRM_KEY] = {"before": before, "after": after}
     set_public_feedback(
         "success",
-        "Restored the sample list to KO, JNJ, and O.",
+        (
+            "Restored the diversified sample list "
+            f"({len(default_guest_symbols())} holdings across sectors)."
+        ),
         "reset",
     )
 
@@ -342,6 +351,16 @@ def _remove_holding_clicked(symbol: str) -> None:
     set_public_feedback("success", f"Removed {symbol} from the sample list.", "remove")
 
 
+def _iter_item_columns(
+    items: Sequence[GuestHolding], per_row: int = 4
+) -> Iterator[tuple[object, GuestHolding]]:
+    """Yield (column, item) in wrapped rows so 10+ controls stay usable."""
+    for start in range(0, len(items), per_row):
+        chunk = items[start : start + per_row]
+        cols = st.columns(len(chunk))
+        yield from zip(cols, chunk)
+
+
 def _top_alert(dashboard: GuestDashboard):
     if not dashboard.safety_alerts:
         return None
@@ -351,7 +370,8 @@ def _top_alert(dashboard: GuestDashboard):
 def _render_overview(dashboard: GuestDashboard) -> None:
     render_page_header(
         "Start with the one thing that matters next.",
-        "The sample list is ready. Change shares, then review income and the highest-priority signal.",
+        f"The sample list spans {len(default_guest_symbols())} sectors. "
+        "Change shares, then review income and the risk mix.",
         kicker="Demo · Overview",
     )
 
@@ -365,7 +385,7 @@ def _render_overview(dashboard: GuestDashboard) -> None:
             (
                 "Portfolio value",
                 f"${dashboard.portfolio_value_usd:,.2f}",
-                "Illustrative prices",
+                demo_price_caption(dashboard),
             ),
             (
                 "Estimated next 12 months",
@@ -376,7 +396,7 @@ def _render_overview(dashboard: GuestDashboard) -> None:
             (
                 "Sample received",
                 f"${dashboard.sample_received_gross_usd:,.2f}",
-                "Illustrative · not broker cash",
+                "Sample received · not broker cash",
             ),
             (
                 "Near-term expected",
@@ -392,7 +412,7 @@ def _render_overview(dashboard: GuestDashboard) -> None:
     with chart_col:
         render_section_header(
             "Next 12 months · estimated income",
-            "Illustrative forecast from the sample list.",
+            "Forward income from library dividends × sample shares.",
         )
         _render_income_chart(dashboard)
     with attention_col:
@@ -417,6 +437,7 @@ def _render_overview(dashboard: GuestDashboard) -> None:
             (status for symbol, _c, _m, status in attention if symbol == holding.symbol),
             "Healthy",
         )
+        snap = demo_snapshot_for(holding.symbol)
         table_rows.append(
             {
                 "Holding": f"{holding.symbol} · {holding.company_name or holding.symbol}",
@@ -424,6 +445,7 @@ def _render_overview(dashboard: GuestDashboard) -> None:
                 "Value": f"${value:,.0f}" if value is not None else "—",
                 "Annual income": f"${income:,.2f}" if income is not None else "—",
                 "Yield": f"{yld:.1f}%" if yld is not None else "—",
+                "Sector": snap.sector if snap is not None else "—",
                 "Signal": signal,
             }
         )
@@ -432,19 +454,18 @@ def _render_overview(dashboard: GuestDashboard) -> None:
 
     render_section_header(
         "Update sample holdings",
-        f"Up to {GUEST_MAX_HOLDINGS} names. Submit to recalculate estimated income.",
+        f"Up to {GUEST_MAX_HOLDINGS} names across sectors. Submit to recalculate estimated income.",
     )
     holdings = list(dashboard.holdings)
     if not holdings:
         render_empty_state(
             "No sample holdings",
-            "Reset to KO, JNJ, and O to continue the walkthrough.",
+            "Reset the diversified sample list to continue the walkthrough.",
             icon="📂",
         )
     else:
         with st.form("cc_demo_shares_form"):
-            cols = st.columns(len(holdings))
-            for col, holding in zip(cols, holdings):
+            for col, holding in _iter_item_columns(holdings, per_row=5):
                 key = f"cc_demo_shares_{holding.symbol}"
                 if key not in st.session_state:
                     st.session_state[key] = float(holding.shares)
@@ -475,11 +496,11 @@ def _render_overview(dashboard: GuestDashboard) -> None:
         )
 
     with st.expander("Add, remove, or reset sample holdings", expanded=False):
-        st.caption("Optional — the walkthrough works with the default KO, JNJ, O list.")
+        st.caption("Optional — the walkthrough works with the default 10-name sector mix.")
         with st.container(key="cc_holdings_add"):
             add_c1, add_c2, add_c3 = st.columns([2.2, 1, 1])
             with add_c1:
-                st.text_input("Ticker", key="cc_demo_add_symbol", placeholder="e.g. VZ")
+                st.text_input("Ticker", key="cc_demo_add_symbol", placeholder="e.g. PG")
             with add_c2:
                 st.number_input(
                     "Shares", min_value=1.0, value=10.0, step=1.0, key="cc_demo_add_shares"
@@ -493,8 +514,7 @@ def _render_overview(dashboard: GuestDashboard) -> None:
                 )
 
         if dashboard.holdings:
-            rcols = st.columns(min(len(dashboard.holdings), GUEST_MAX_HOLDINGS))
-            for col, holding in zip(rcols, dashboard.holdings):
+            for col, holding in _iter_item_columns(list(dashboard.holdings), per_row=5):
                 with col:
                     render_public_button(
                         f"Remove {holding.symbol}",
@@ -507,7 +527,7 @@ def _render_overview(dashboard: GuestDashboard) -> None:
                 st.caption("Keep at least one sample holding so income and risk stay visible.")
 
         render_public_button(
-            "Reset to KO, JNJ, O",
+            "Reset sample list",
             key="cc_demo_reset",
             variant=PublicButtonVariant.GHOST,
             on_click=_reset_demo_holdings,
@@ -561,7 +581,7 @@ def _render_income(dashboard: GuestDashboard) -> None:
             (
                 term_label("gross_dividend"),
                 f"${dashboard.sample_received_gross_usd:,.2f}",
-                "Illustrative received",
+                "Scaled sample · not broker cash",
             ),
             (
                 term_label("withholding_tax"),
@@ -571,12 +591,12 @@ def _render_income(dashboard: GuestDashboard) -> None:
             (
                 term_label("net_dividend"),
                 f"${dashboard.sample_received_net_usd:,.2f}",
-                "Illustrative received",
+                "Scaled sample · not broker cash",
             ),
             (
                 term_label("annual_dividend_income"),
                 f"${dashboard.annual_income_usd:,.2f}",
-                "Estimated next 12 months",
+                demo_price_caption(dashboard),
                 True,
             ),
         ]
@@ -618,6 +638,48 @@ def _render_income(dashboard: GuestDashboard) -> None:
             st.markdown(f"**{term_label(term_id)}** — {term_help(term_id)}")
 
 
+def _risk_mix_rows(dashboard: GuestDashboard) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for holding in dashboard.holdings:
+        snap = demo_snapshot_for(holding.symbol)
+        if snap is None:
+            rows.append(
+                {
+                    "Holding": holding.symbol,
+                    "Sector": "—",
+                    "Risk type": "Not in sample snapshots",
+                    "Priority": "—",
+                }
+            )
+            continue
+        if snap.alert_severity in {"high", "risky"}:
+            priority = "Needs attention"
+        elif snap.alert_severity in {"medium", "watch"}:
+            priority = "Review"
+        else:
+            priority = "Healthy"
+        rows.append(
+            {
+                "Holding": holding.symbol,
+                "Sector": snap.sector,
+                "Risk type": demo_risk_kind_label(snap.risk_kind),
+                "Priority": priority,
+            }
+        )
+    return rows
+
+
+def _render_risk_mix(dashboard: GuestDashboard) -> None:
+    mix = _risk_mix_rows(dashboard)
+    if not mix:
+        return
+    render_section_header(
+        "Sample risk mix",
+        "Risk types come from Clear Dividend Risk when the market library has the holding.",
+    )
+    st.dataframe(mix, use_container_width=True, hide_index=True)
+
+
 def _render_risk(dashboard: GuestDashboard) -> None:
     _mark_tour(_CC_TOUR_RISK, step_id="risk")
     render_page_header(
@@ -635,14 +697,15 @@ def _render_risk(dashboard: GuestDashboard) -> None:
         )
         if attention:
             render_attention_list(attention)
+        _render_risk_mix(dashboard)
         return
 
     severity = _severity_label(top.severity)
+    kind_label = demo_risk_kind_label(top.risk_kind)
     render_section_header(
         f"Why {top.symbol} is marked “{severity}”",
         "One explained sample signal — educational research only, not a buy or sell recommendation.",
     )
-    attention = guest_attention_items(dashboard)
     if attention:
         render_attention_list(attention)
     row = next((r for r in dashboard.rows if getattr(r, "ticker", "") == top.symbol), None)
@@ -652,7 +715,7 @@ def _render_risk(dashboard: GuestDashboard) -> None:
     render_metric_strip(
         [
             ("Holding", top.symbol, top.company or top.symbol, True),
-            ("Priority", severity, top.severity.title()),
+            ("Risk type", kind_label, top.sector or "Sample"),
             (
                 "Payout ratio",
                 f"{payout:.0f}%" if payout is not None else "—",
@@ -670,6 +733,7 @@ def _render_risk(dashboard: GuestDashboard) -> None:
         f"Suggested research check: {top.suggested_check} "
         "Use the optional **Research** tab if you want a closer look."
     )
+    _render_risk_mix(dashboard)
     render_data_provenance(dashboard.provenance_label)
     st.session_state[GUEST_SPOTLIGHT_KEY] = top.symbol
 
@@ -734,7 +798,7 @@ def _render_research(dashboard: GuestDashboard) -> None:
         else:
             render_empty_state(
                 "No research data",
-                "Try KO, JNJ, or O — symbols with packaged snapshot support.",
+                "Try a sample-list ticker with packaged snapshot support.",
             )
         return
 

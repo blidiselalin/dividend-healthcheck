@@ -30,6 +30,7 @@ def test_demo_database_seed(tmp_path: Path) -> None:
 
     count = sqlite3.connect(db).execute("SELECT COUNT(*) FROM holdings").fetchone()[0]
     assert count == len(DEMO_HOLDINGS)
+    assert len(DEMO_HOLDINGS) >= 10
 
 
 def test_reset_demo_database(tmp_path: Path) -> None:

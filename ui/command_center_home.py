@@ -16,6 +16,9 @@ import streamlit as st
 from services.guest_playground import (
     GuestDashboard,
     build_guest_dashboard,
+    default_guest_symbols,
+    demo_price_caption,
+    demo_snapshot_for,
     guest_holdings_from_session,
 )
 from services.guidance_analytics import track_guidance_event
@@ -456,7 +459,16 @@ def guest_attention_items(dashboard: GuestDashboard) -> list[tuple[str, str, str
         alert = alerts.get(holding.symbol)
         company = holding.company_name or holding.symbol
         if alert is None:
-            items.append((holding.symbol, company, "No blocking sample signal.", "Healthy"))
+            snap = demo_snapshot_for(holding.symbol)
+            sector = f" · {snap.sector}" if snap is not None and snap.sector else ""
+            items.append(
+                (
+                    holding.symbol,
+                    f"{company}{sector}",
+                    "No blocking sample signal.",
+                    "Healthy",
+                )
+            )
             continue
         severity = (alert.severity or "").strip().lower()
         if severity in {"high", "risky"}:
@@ -465,7 +477,8 @@ def guest_attention_items(dashboard: GuestDashboard) -> list[tuple[str, str, str
             status = "Review"
         else:
             status = "Healthy"
-        items.append((holding.symbol, company, alert.message, status))
+        sector = f" · {alert.sector}" if alert.sector else ""
+        items.append((holding.symbol, f"{company}{sector}", alert.message, status))
     rank = {"Needs attention": 0, "Review": 1, "Healthy": 2}
     items.sort(key=lambda row: rank.get(row[3], 9))
     return items
@@ -536,9 +549,9 @@ def _render_hero(dashboard: GuestDashboard) -> None:
         )
         render_metric_strip(
             [
-                ("Portfolio value", value, "Illustrative prices"),
+                ("Portfolio value", value, demo_price_caption(dashboard)),
                 ("Estimated 12 months", income, f"{yield_label} yield", True),
-                ("Sample received", received, "Illustrative · not broker cash"),
+                ("Sample received", received, "Scaled sample · not broker cash"),
                 ("Monthly average", f"${monthly_avg:,.0f}", "Estimated"),
             ]
         )
@@ -655,7 +668,7 @@ def render_public_product_page(*, dashboard: GuestDashboard) -> None:
                 (
                     "Portfolio value",
                     f"${dashboard.portfolio_value_usd:,.0f}",
-                    "Illustrative",
+                    demo_price_caption(dashboard),
                 ),
                 (
                     "Estimated 12 months",
@@ -666,13 +679,17 @@ def render_public_product_page(*, dashboard: GuestDashboard) -> None:
                 (
                     "Sample received",
                     f"${dashboard.sample_received_gross_usd:,.0f}",
-                    "Illustrative",
+                    "Scaled sample · not broker cash",
                 ),
-                ("Holdings", str(len(dashboard.holdings)), "KO, JNJ, O by default"),
+                (
+                    "Holdings",
+                    str(len(dashboard.holdings)),
+                    f"{len(default_guest_symbols())} sectors",
+                ),
             ]
         )
         render_html(_spark_bars(dashboard))
-        render_data_provenance("Live sample summary · same session as the interactive demo")
+        render_data_provenance(dashboard.provenance_label)
     with right:
         render_section_header("Attention, not alarm", "Signals explain what to inspect.")
         if attention:
