@@ -76,9 +76,8 @@ def test_hero_demo_cta_opens_demo() -> None:
 
 def test_active_navigation_disabled_on_demo() -> None:
     at = _run_public(view="demo", page="overview")
-    active = [b for b in at.button if b.label == "Overview · active"]
+    active = [b for b in at.button if b.label == "Overview" and b.disabled]
     assert active
-    assert active[0].disabled is True
 
 
 def test_create_portfolio_renders_auth_controls() -> None:
@@ -216,12 +215,11 @@ def test_product_page_does_not_render_auth() -> None:
     markdown = " ".join(str(m.value) for m in at.markdown)
     assert "AUTH_CONTROLS_VISIBLE" not in markdown
     labels = [b.label for b in at.button]
-    assert "Explore the interactive demo" in labels
+    assert "Try interactive demo" in labels
     assert "Create your portfolio" not in labels
     assert "Try the interactive demo" not in labels
-    product_active = [b for b in at.button if b.label == "Product · active"]
+    product_active = [b for b in at.button if b.label == "Product" and b.disabled]
     assert product_active
-    assert product_active[0].disabled is True
 
 
 def test_overview_has_no_quick_add_ticker_buttons() -> None:
@@ -238,7 +236,7 @@ def test_overview_has_no_quick_add_ticker_buttons() -> None:
 def test_optional_research_and_import_pages_render() -> None:
     research = _run_public(view="demo", page="research")
     assert not research.exception
-    assert any(b.label == "Research · active" for b in research.button)
+    assert any(b.label == "Research" and b.disabled for b in research.button)
     import_page = _run_public(view="demo", page="import")
     assert not import_page.exception
     assert any(b.label == "Load sample IBKR statement" for b in import_page.button)

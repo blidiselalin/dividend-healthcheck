@@ -683,9 +683,119 @@ section.main {
   align-items: flex-start;
   gap: 0.4rem;
   font-size: 0.78rem;
-  color: #475569;
+  color: var(--ds-muted);
   margin: 0.35rem 0 0;
   line-height: 1.35;
+}
+.cc-proof-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.85rem 0 0;
+}
+.cc-proof-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.7rem;
+  padding: 0.2rem 0.7rem;
+  border-radius: var(--ds-radius-pill);
+  border: 1px solid var(--ds-border);
+  background: var(--ds-surface);
+  color: var(--ds-muted);
+  font-size: 0.72rem;
+  font-weight: 720;
+}
+.cc-window {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-card);
+  overflow: hidden;
+  margin: 0 0 var(--ds-space-3) 0;
+}
+.cc-window-top {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 0.85rem;
+  border-bottom: 1px solid var(--ds-border);
+  background: var(--ds-surface-elevated);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--ds-muted);
+}
+.cc-window-dots {
+  display: inline-flex;
+  gap: 0.28rem;
+}
+.cc-window-dots i {
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 50%;
+  background: var(--ds-border);
+}
+.cc-window-body { padding: var(--ds-space-3) var(--ds-space-4) var(--ds-space-4); }
+.cc-attention-list {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0 0 var(--ds-space-4) 0;
+}
+.cc-attention-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.7rem;
+  align-items: center;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--ds-surface);
+  min-width: 0;
+}
+.cc-attention-symbol {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2.2rem;
+  height: 2.2rem;
+  padding: 0 0.4rem;
+  border-radius: 0.65rem;
+  background: var(--ds-surface-highlight);
+  color: var(--ds-primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.cc-attention-copy { min-width: 0; }
+.cc-attention-copy b {
+  display: block;
+  color: var(--ds-text);
+  font-size: 0.88rem;
+}
+.cc-attention-copy span {
+  display: block;
+  color: var(--ds-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+.cc-attention-status {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--ds-healthy);
+}
+.cc-attention-row[data-kind="watch"] .cc-attention-status { color: var(--ds-watch, #d4a017); }
+.cc-attention-row[data-kind="risky"] .cc-attention-status { color: var(--ds-risky, #f87171); }
+.ds-feature-kicker {
+  margin: 0 0 0.35rem 0;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ds-primary);
+}
+.ds-feature-answer {
+  margin: var(--ds-space-3) 0 0 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--ds-text);
+  line-height: 1.4;
 }
 
 /* Dividend section card — merged above */
@@ -1446,10 +1556,7 @@ def render_home_panel(
     """Consistent Home section chrome (header + optional metric strip)."""
     metrics_html = _metric_grid_markup(metrics, strip=True) if metrics else ""
     render_html(
-        f'<div class="ds-home-panel">'
-        f"{_section_header_markup(title, subtitle)}"
-        f"{metrics_html}"
-        f"</div>"
+        f'<div class="ds-home-panel">{_section_header_markup(title, subtitle)}{metrics_html}</div>'
     )
 
 
@@ -1546,7 +1653,7 @@ def _demo_progress_markup(
             f"{html.escape(label)}"
             f"</span>"
         )
-    return f'<nav class="ds-demo-progress" aria-label="Progress">' f"{''.join(chips)}" f"</nav>"
+    return f'<nav class="ds-demo-progress" aria-label="Progress">{"".join(chips)}</nav>'
 
 
 def render_demo_progress(
@@ -1578,10 +1685,45 @@ def render_feature_cards(cards: list[tuple[str, str, str]]) -> None:
     render_html(f'<div class="ds-feature-grid">{items}</div>')
 
 
-def render_trust_list(items: list[str]) -> None:
-    """Bulleted trust points for Product and About surfaces."""
-    rows = "".join(f"<li>{html.escape(item)}</li>" for item in items if item)
-    render_html(f'<ul class="ds-trust-list">{rows}</ul>')
+def render_story_cards(cards: list[tuple[str, str, str, str]]) -> None:
+    """Pitch cards: (kicker, title, body, outcome)."""
+    items = "".join(
+        f'<div class="ds-feature-card">'
+        f'<p class="ds-feature-kicker">{html.escape(kicker)}</p>'
+        f'<p class="ds-feature-title">{html.escape(title)}</p>'
+        f'<p class="ds-feature-body">{html.escape(body)}</p>'
+        f'<p class="ds-feature-answer">{html.escape(outcome)}</p>'
+        f"</div>"
+        for kicker, title, body, outcome in cards
+    )
+    render_html(f'<div class="ds-feature-grid">{items}</div>')
+
+
+def render_proof_pills(items: list[str]) -> None:
+    pills = "".join(
+        f'<span class="cc-proof-pill">{html.escape(item)}</span>' for item in items if item
+    )
+    render_html(f'<div class="cc-proof-row" aria-label="Product principles">{pills}</div>')
+
+
+def render_attention_list(items: list[tuple[str, str, str, str]]) -> None:
+    """Holding attention rows: (symbol, company, message, status)."""
+    kind_for = {
+        "Needs attention": "risky",
+        "Review": "watch",
+        "Monitor": "watch",
+        "Healthy": "healthy",
+    }
+    rows = "".join(
+        f'<div class="cc-attention-row" data-kind="{kind_for.get(status, "healthy")}">'
+        f'<span class="cc-attention-symbol">{html.escape(symbol)}</span>'
+        f'<span class="cc-attention-copy"><b>{html.escape(company)}</b>'
+        f"<span>{html.escape(message)}</span></span>"
+        f'<span class="cc-attention-status">{html.escape(status)}</span>'
+        f"</div>"
+        for symbol, company, message, status in items
+    )
+    render_html(f'<div class="cc-attention-list">{rows}</div>')
 
 
 def render_ticker_chips(items: list[tuple[str, str]], *, kind: str | None = None) -> None:

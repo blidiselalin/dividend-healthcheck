@@ -181,3 +181,30 @@ def test_resolve_next_demo_step_walkthrough(monkeypatch: pytest.MonkeyPatch) -> 
     # Research / Import are optional — primary journey ends at Create portfolio.
     assert resolve_next_demo_step().target_page is None
     assert resolve_next_demo_step().action_label == "Create portfolio"
+
+
+def test_guest_attention_items_orders_review_first() -> None:
+    from services.guest_playground import GuestDashboard, GuestHolding, GuestSafetyAlert
+    from ui.command_center_home import guest_attention_items
+
+    dashboard = GuestDashboard(
+        holdings=[
+            GuestHolding(symbol="KO", shares=1.0, avg_cost_per_share=1.0, company_name="Coca-Cola"),
+            GuestHolding(
+                symbol="O", shares=1.0, avg_cost_per_share=1.0, company_name="Realty Income"
+            ),
+        ],
+        safety_alerts=[
+            GuestSafetyAlert(
+                symbol="O",
+                company="Realty Income",
+                message="Review leverage and rate sensitivity.",
+                severity="medium",
+            )
+        ],
+    )
+    items = guest_attention_items(dashboard)
+    assert items[0][0] == "O"
+    assert items[0][3] == "Review"
+    assert items[1][0] == "KO"
+    assert items[1][3] == "Healthy"

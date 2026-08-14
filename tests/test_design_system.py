@@ -168,6 +168,9 @@ def test_mobile_safe_layout_classes_present() -> None:
     assert ".ds-feature-grid" in css
     assert "min-width: 0" in css
     assert ".cc-hero-title" in css
+    assert ".cc-attention-list" in css
+    assert ".cc-proof-pill" in css
+    assert ".ds-feature-answer" in css
 
 
 def test_render_metric_grid_helper_still_available() -> None:

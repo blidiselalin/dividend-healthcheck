@@ -344,13 +344,25 @@ def add_guest_holding(
     return updated, None
 
 
-def remove_guest_holding(session: dict[str, Any], symbol: str) -> list[GuestHolding]:
+def remove_guest_holding(
+    session: dict[str, Any], symbol: str
+) -> tuple[list[GuestHolding], str | None]:
+    """Remove a guest holding. The last sample holding cannot be removed."""
     symbol = _normalize_symbol(symbol)
-    updated = [h for h in guest_holdings_from_session(session) if h.symbol != symbol]
+    current = guest_holdings_from_session(session)
+    if len(current) <= 1:
+        return (
+            current,
+            "Keep at least one sample holding so the demo can show income and risk.",
+        )
+    updated = [h for h in current if h.symbol != symbol]
     if not updated:
-        updated = default_guest_holdings()
+        return (
+            current,
+            "Keep at least one sample holding so the demo can show income and risk.",
+        )
     save_guest_holdings(session, updated)
-    return updated
+    return updated, None
 
 
 def replace_guest_holdings_from_positions(

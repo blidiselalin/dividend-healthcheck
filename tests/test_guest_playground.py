@@ -83,20 +83,17 @@ def test_add_guest_explicit_cost_update() -> None:
     assert holdings[0].avg_cost_per_share == 61.0
 
 
-def test_remove_guest_falls_back_to_defaults_when_empty() -> None:
+def test_remove_guest_rejects_last_holding() -> None:
     session: dict = {}
-    for holding in default_guest_holdings():
-        add_guest_holding(
-            session,
-            symbol=holding.symbol,
-            shares=holding.shares,
-            avg_cost_per_share=holding.avg_cost_per_share,
-            company_name=holding.company_name,
-        )
-    for symbol in ("KO", "JNJ", "O"):
-        remove_guest_holding(session, symbol)
-    assert len(guest_holdings_from_session(session)) == 3
-    assert {h.symbol for h in guest_holdings_from_session(session)} == {"KO", "JNJ", "O"}
+    save_guest_holdings(
+        session,
+        [GuestHolding(symbol="KO", shares=25.0, avg_cost_per_share=58.0, company_name="Coca-Cola")],
+    )
+    holdings, err = remove_guest_holding(session, "KO")
+    assert err is not None
+    assert "at least one" in err.lower()
+    assert [h.symbol for h in holdings] == ["KO"]
+    assert [h.symbol for h in guest_holdings_from_session(session)] == ["KO"]
 
 
 def test_reset_restores_default_symbols() -> None:
