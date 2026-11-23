@@ -99,6 +99,7 @@ _APP_FAQ: Sequence[tuple[tuple[str, ...], str]] = (
     (
         ("dashboard", "overview", "performance", "home"),
         "**Home** shows value, P/L, month dividends received, and a positions table. "
+        "**Growth screen** ranks library names for dividend growth. It does not change holdings. "
         "**Deposits & benchmarks** tracks capital deposited and index comparison. "
         "If numbers are empty, finish **Getting started** on Home or wait for "
         "**Background tasks**.",

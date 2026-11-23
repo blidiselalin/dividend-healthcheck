@@ -72,7 +72,7 @@ def test_collect_warnings_flags_missing_history() -> None:
     assert warnings[0].symbol == "XYZ"
 
 
-def test_resolve_month_dividend_cash_prefers_holdings_scoped_compute_when_higher() -> None:
+def test_resolve_month_dividend_cash_keeps_receipts_when_library_is_higher() -> None:
     holding = _holding()
     doc = StockDocument(
         symbol="KO",
@@ -98,6 +98,10 @@ def test_resolve_month_dividend_cash_prefers_holdings_scoped_compute_when_higher
             "services.portfolio_month_dividends.gross_paid_in_synced_month",
             return_value=None,
         ),
+        patch(
+            "services.portfolio_month_dividends.net_paid_from_receipts",
+            return_value=8.50,
+        ),
     ):
         cash = resolve_month_dividend_cash(
             year=2026,
@@ -106,9 +110,11 @@ def test_resolve_month_dividend_cash_prefers_holdings_scoped_compute_when_higher
             holdings=[holding],
             vector_docs={"KO": doc},
         )
-    assert cash.gross_usd == 100.0
-    assert cash.payer_count == 3
-    assert cash.source == "computed"
+    assert cash.gross_usd == 50.0
+    assert cash.payer_count == 1
+    assert cash.net_usd == 8.50
+    assert cash.net_is_estimate is False
+    assert cash.source == "receipts"
 
 
 def test_resolve_month_dividend_cash_prefers_receipts_when_compute_incomplete() -> None:
@@ -137,6 +143,10 @@ def test_resolve_month_dividend_cash_prefers_receipts_when_compute_incomplete() 
             "services.portfolio_month_dividends.gross_paid_in_synced_month",
             return_value=None,
         ),
+        patch(
+            "services.portfolio_month_dividends.net_paid_from_receipts",
+            return_value=440.30,
+        ),
     ):
         cash = resolve_month_dividend_cash(
             year=2026,
@@ -146,6 +156,8 @@ def test_resolve_month_dividend_cash_prefers_receipts_when_compute_incomplete() 
             vector_docs={"KO": doc},
         )
     assert cash.gross_usd == 489.22
+    assert cash.net_usd == 440.30
+    assert cash.net_is_estimate is False
     assert cash.payer_count == 10
     assert cash.source == "receipts"
 
@@ -187,3 +199,30 @@ def test_build_merged_dividend_income_records_fills_current_month_from_compute()
     assert len(current) == 1
     assert current[0].gross_usd == 42.0
     assert current[0].net_usd == 37.8
+
+
+def test_merged_records_keep_broker_withholding() -> None:
+    store = SimpleNamespace(list_dividends=lambda: [])
+    receipts = SimpleNamespace(
+        monthly_gross_totals=lambda **kwargs: {(2026, 5): 100.0},
+        monthly_net_totals=lambda **kwargs: {(2026, 5): 85.0},
+    )
+    ctx = SimpleNamespace(
+        dividends=store,
+        receipts=receipts,
+        portfolio=SimpleNamespace(list_open_holdings=lambda: []),
+    )
+    with patch(
+        "services.portfolio_context.create_portfolio_context",
+        return_value=ctx,
+    ):
+        records = build_merged_dividend_income_records(
+            store=store,
+            receipt_store=receipts,
+            holdings=[],
+            preload=None,
+        )
+    assert len(records) == 1
+    assert records[0].gross_usd == 100.0
+    assert records[0].net_usd == 85.0
+    assert records[0].tax_withheld_usd == 15.0

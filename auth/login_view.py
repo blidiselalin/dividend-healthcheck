@@ -13,7 +13,12 @@ from auth.settings import (
     invite_only_signup,
 )
 from auth.test_user import sign_in_as_test_user, test_user_email, test_user_enabled
-from ui.command_center_home import render_command_center_page
+from ui.command_center_home import (
+    PublicButtonVariant,
+    render_command_center_page,
+    render_public_button,
+    set_public_feedback,
+)
 
 
 def _login_with_google() -> None:
@@ -43,37 +48,53 @@ def render_login_page(*, access_denied: bool = False) -> None:
     render_command_center_page(auth_block=_auth_block)
 
 
+def _continue_dev_login() -> None:
+    email = str(st.session_state.get("cc_auth_dev_email") or "").strip().lower()
+    if not email:
+        set_public_feedback("warning", "Enter an email to continue in dev mode.", "auth_dev")
+        return
+    st.session_state["dev_login_email"] = email
+
+
+def _render_dev_login(*, notice: str) -> None:
+    st.warning(notice)
+    st.text_input(
+        "Dev email (local bypass)",
+        placeholder="you@gmail.com",
+        key="cc_auth_dev_email",
+    )
+    render_public_button(
+        "Continue in dev mode",
+        key="cc_auth_dev_continue",
+        variant=PublicButtonVariant.PRIMARY,
+        on_click=_continue_dev_login,
+    )
+
+
 def _render_auth_controls() -> None:
     if auth_disabled():
-        st.warning("Authentication is disabled. Enable Google OAuth in Streamlit secrets.")
-        dev_email = st.text_input("Dev email (local bypass)", placeholder="you@gmail.com")
-        if (
-            st.button("Continue in dev mode", type="primary", use_container_width=True)
-            and dev_email.strip()
-        ):
-            st.session_state["dev_login_email"] = dev_email.strip().lower()
-            st.rerun()
-    elif not auth_configured():
-        st.warning(
-            "Google sign-up is not configured. Copy `.streamlit/secrets.toml.example` to "
-            "`.streamlit/secrets.toml` and add your OAuth client credentials."
+        _render_dev_login(
+            notice="Authentication is disabled. Enable Google OAuth in Streamlit secrets."
         )
-        dev_email = st.text_input("Dev email (local bypass)", placeholder="you@gmail.com")
-        if (
-            st.button("Continue in dev mode", type="primary", use_container_width=True)
-            and dev_email.strip()
-        ):
-            st.session_state["dev_login_email"] = dev_email.strip().lower()
-            st.rerun()
+    elif not auth_configured():
+        _render_dev_login(
+            notice=(
+                "Google sign-up is not configured. Copy `.streamlit/secrets.toml.example` to "
+                "`.streamlit/secrets.toml` and add your OAuth client credentials."
+            )
+        )
     else:
         _render_google_auth_block()
 
     if test_user_enabled():
         st.divider()
         st.caption(f"**Test mode** — diversified demo · 10 holdings · {test_user_email()}")
-        if st.button("Continue as test user", use_container_width=True):
-            sign_in_as_test_user()
-            st.rerun()
+        render_public_button(
+            "Continue as test user",
+            key="cc_auth_test_user",
+            variant=PublicButtonVariant.SECONDARY,
+            on_click=sign_in_as_test_user,
+        )
 
 
 def _render_google_auth_block() -> None:
@@ -92,20 +113,18 @@ def _render_google_auth_block() -> None:
                 "One-click Google sign-up — your try-list holdings copy into your "
                 "account automatically."
             )
-        st.button(
+        render_public_button(
             "Create portfolio — Sign up with Google",
-            type="primary",
-            use_container_width=True,
-            on_click=_login_with_google,
             key="auth_signup_google",
+            variant=PublicButtonVariant.PRIMARY,
+            on_click=_login_with_google,
         )
         st.caption("Already have an account? Same button signs you in.")
     else:
         st.caption("Sign in with Google to save your portfolio.")
-        st.button(
+        render_public_button(
             "Create portfolio — Sign in with Google",
-            type="primary",
-            use_container_width=True,
-            on_click=_login_with_google,
             key="auth_signin_google_only",
+            variant=PublicButtonVariant.PRIMARY,
+            on_click=_login_with_google,
         )

@@ -34,6 +34,9 @@ def create_portfolio_context(db_path: Path | None = None) -> PortfolioContext:
     """Create portfolio stores that share one ``db_path`` / Postgres user scope."""
     portfolio = PortfolioStore(db_path=db_path, seed=False)
     path = portfolio.db_path
+    from services.portfolio_clear_service import recover_interrupted_replace
+
+    recover_interrupted_replace(db_path=path)
     journal = PurchaseJournalStore(db_path=path, seed=False)
     deposits = DepositsStore(db_path=path, seed=False)
     dividends = DividendIncomeStore(db_path=path, seed=False)

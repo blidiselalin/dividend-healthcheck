@@ -57,6 +57,17 @@ def test_summarize_with_rows_uses_estimated_annual_net() -> None:
     assert summary.month_count == 3
 
 
+def test_yearly_summary_tax_rate_follows_withheld_cash() -> None:
+    service = PortfolioDividendIncomeService(store=SimpleNamespace(list_dividends=lambda: []))
+    records = [_record(year=2025, month=3, net=85.0, gross=100.0, tax=15.0)]
+
+    yearly = service.yearly_summary(records)
+
+    assert yearly.iloc[0]["Tax %"] == 15.0
+    assert yearly.iloc[0]["Net $"] == 85.0
+    assert yearly.iloc[0]["Tax withheld $"] == 15.0
+
+
 def test_pivot_and_timeline_dataframes() -> None:
     service = PortfolioDividendIncomeService(store=SimpleNamespace(list_dividends=lambda: []))
     records = [

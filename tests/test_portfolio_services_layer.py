@@ -200,6 +200,19 @@ def test_market_cap_bucket(cap: float | None, expected: str) -> None:
     assert classify_market_cap_bucket(cap) == expected
 
 
+def test_unpriced_holding_is_excluded_from_sector_weights() -> None:
+    from services.portfolio_allocation_service import unpriced_tickers
+
+    rows = [
+        _detail_row(ticker="A", sector="Tech", current_value=100.0, acquisition_value=900.0),
+        _detail_row(ticker="B", sector="Health", current_value=None, acquisition_value=900.0),
+    ]
+    df = PortfolioAllocationService().sector_allocation(rows)
+    assert list(df["Sector"]) == ["Tech"]
+    assert df.iloc[0]["Weight %"] == pytest.approx(100.0)
+    assert unpriced_tickers(rows) == ["B"]
+
+
 def test_sector_allocation_weights() -> None:
     rows = [
         _detail_row(ticker="A", sector="Tech", current_value=600.0),

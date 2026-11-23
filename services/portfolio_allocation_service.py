@@ -43,8 +43,14 @@ def classify_market_cap_bucket(market_cap: float | None) -> str:
     return ">200B"
 
 
-def _position_value(row: PortfolioDetailRow) -> float:
-    return row.current_value if row.current_value is not None else row.acquisition_value
+def _position_value(row: PortfolioDetailRow) -> float | None:
+    """Market value. A missing price is not replaced with acquisition cost."""
+    return row.current_value
+
+
+def unpriced_tickers(rows: list[PortfolioDetailRow]) -> list[str]:
+    """Holdings with no market price. They stay out of allocation weights."""
+    return [row.ticker for row in rows if row.current_value is None]
 
 
 class PortfolioAllocationService:
@@ -58,7 +64,7 @@ class PortfolioAllocationService:
         total = 0.0
         for row in rows:
             value = _position_value(row)
-            if value <= 0:
+            if value is None or value <= 0:
                 continue
             sector = (row.sector or "Unknown").strip() or "Unknown"
             bucket = groups.setdefault(
@@ -93,7 +99,7 @@ class PortfolioAllocationService:
         total = 0.0
         for row in rows:
             value = _position_value(row)
-            if value <= 0:
+            if value is None or value <= 0:
                 continue
             bucket = classify_market_cap_bucket(row.market_cap)
             entry = groups.setdefault(
@@ -138,7 +144,7 @@ class PortfolioAllocationService:
                     "Sector": row.sector,
                     "Market cap (B)": round(cap_b, 2) if cap_b is not None else None,
                     "Bucket": BUCKET_LABELS.get(bucket, bucket),
-                    "Value USD": round(value, 2) if value else None,
+                    "Value USD": round(value, 2) if value is not None else None,
                     "Weight %": row.weight_pct,
                 }
             )

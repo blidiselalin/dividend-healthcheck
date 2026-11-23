@@ -37,6 +37,7 @@ class MonthDividendCash:
     net_usd: float | None
     payer_count: int
     source: str
+    net_is_estimate: bool = False
 
 
 def _symbol_keys(symbol: str) -> set[str]:
@@ -102,21 +103,23 @@ def resolve_month_dividend_cash(
     """
     Gross/net cash for one month through ``through``.
 
-    Precedence: synced ``dividend_receipts`` when present, else live compute from
-    resolved library history, else zero.
+    Posted receipts are the received total for the symbols in ``holdings``.
+    Library history is an estimate used only when that month has no receipts.
     """
     from services.portfolio_month_dividends import (
         _resolve_month_gross_and_net,
         compute_month_received_from_holdings,
         gross_paid_in_calendar_month,
+        net_paid_from_receipts,
     )
 
     open_symbols = {holding.symbol.strip().upper() for holding in holdings}
+    symbol_filter = open_symbols or None
     db_gross, db_count = gross_paid_in_calendar_month(
         year,
         month,
         through=through,
-        symbols=open_symbols or None,
+        symbols=symbol_filter,
     )
     computed_gross = 0.0
     computed_count = 0
@@ -126,8 +129,18 @@ def resolve_month_dividend_cash(
             vector_docs,
             reference_date=through,
         )
+    receipt_net = (
+        net_paid_from_receipts(
+            year,
+            month,
+            through=through,
+            symbols=symbol_filter,
+        )
+        if db_count > 0
+        else None
+    )
 
-    gross, payer_count, net = _resolve_month_gross_and_net(
+    gross, payer_count, net, net_is_estimate = _resolve_month_gross_and_net(
         year=year,
         month=month,
         through=through,
@@ -135,22 +148,13 @@ def resolve_month_dividend_cash(
         db_count=db_count,
         computed_gross=computed_gross,
         computed_count=computed_count,
+        receipt_net=receipt_net,
     )
 
-    if (
-        computed_count > 0
-        and computed_gross > 0
-        and db_count > 0
-        and db_gross > 0
-        and gross == computed_gross
-    ):
-        source = "computed"
-    elif db_count > 0 and gross == db_gross:
+    if db_count > 0:
         source = "receipts"
     elif computed_count > 0 and computed_gross > 0:
         source = "computed"
-    elif db_count > 0 or gross > 0:
-        source = "receipts"
     else:
         source = "none"
 
@@ -159,6 +163,7 @@ def resolve_month_dividend_cash(
         net_usd=net,
         payer_count=payer_count,
         source=source,
+        net_is_estimate=net_is_estimate,
     )
 
 
@@ -194,14 +199,23 @@ def build_merged_dividend_income_records(
         item.period_key: item for item in income_store.list_dividends()
     }
 
-    def _upsert_month(year: int, month: int, gross: float) -> None:
+    def _upsert_month(year: int, month: int, gross: float, net: float | None = None) -> None:
         if gross <= 0:
             return
         key = f"{year:04d}-{month:02d}"
-        rate = dividend_tax_rate(year)
-        net = round(gross * (1.0 - rate), 2)
+        if net is None:
+            rate = dividend_tax_rate(year)
+            net = round(gross * (1.0 - rate), 2)
+            tax_rate_pct = rate * 100
+        else:
+            net = round(net, 2)
+            tax_rate_pct = round((gross - net) / gross * 100, 2) if gross else 0.0
         existing = by_key.get(key)
-        if existing is not None and existing.gross_usd >= gross - 0.01:
+        if (
+            existing is not None
+            and existing.gross_usd >= gross - 0.01
+            and abs(existing.net_usd - net) <= 0.01
+        ):
             return
         by_key[key] = MonthlyNetDividend(
             period=date(year, month, 1),
@@ -209,13 +223,19 @@ def build_merged_dividend_income_records(
             month=month,
             month_label=MONTH_LABELS[month - 1],
             net_usd=net,
-            tax_rate_pct=rate * 100,
+            tax_rate_pct=tax_rate_pct,
             gross_usd=round(gross, 2),
             tax_withheld_usd=round(gross - net, 2),
         )
 
-    for (year, month), gross in receipts.monthly_gross_totals().items():
-        _upsert_month(year, month, gross)
+    gross_totals = receipts.monthly_gross_totals(posted_cash_only=True)
+    net_totals = (
+        receipts.monthly_net_totals(posted_cash_only=True)
+        if hasattr(receipts, "monthly_net_totals")
+        else {}
+    )
+    for (year, month), gross in gross_totals.items():
+        _upsert_month(year, month, gross, net=net_totals.get((year, month)))
 
     if holdings:
         docs, _ = resolve_dividend_documents(holdings, preload)
@@ -242,7 +262,8 @@ def build_merged_dividend_income_records(
                 holdings=holdings,
                 vector_docs=docs,
             )
-            _upsert_month(year, month, cash.gross_usd)
+            known_net = None if getattr(cash, "net_is_estimate", True) else cash.net_usd
+            _upsert_month(year, month, cash.gross_usd, net=known_net)
 
     return sorted(by_key.values(), key=lambda item: (item.year, item.month))
 

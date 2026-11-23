@@ -633,3 +633,63 @@ def test_merge_import_never_calls_clear_user_portfolio(
     assert not clear_calls
     symbols = {h.symbol for h in create_portfolio_context(db_path=db).portfolio.list_holdings()}
     assert "VZ" in symbols
+
+
+def test_replace_failure_after_clear_restores_previous_portfolio(
+    tmp_path: Path,
+    sample_csv: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = tmp_path / "portfolio.db"
+    ctx = create_portfolio_context(db_path=db)
+    ctx.portfolio.upsert_holding("VZ", shares=5, avg_cost_per_share=40.0)
+    ctx.journal.add_purchase("VZ", date(2024, 1, 15), 40.0, shares=5, side="buy", source="manual")
+    ctx.deposits.upsert_deposit(
+        year=2024,
+        month=1,
+        label="Jan 2024",
+        deposit_eur=500.0,
+        deposit_usd=540.0,
+        portfolio_eur=500.0,
+    )
+    ctx.receipts.upsert_broker_receipt(
+        symbol="VZ",
+        ex_date=date(2024, 2, 1),
+        pay_date=date(2024, 2, 1),
+        per_share_usd=0.65,
+        shares_held=5,
+        gross_usd=3.25,
+        withholding_usd=0.49,
+        net_usd=2.76,
+        dedup_key="vz-2024-02-01",
+    )
+    ctx.dividends.upsert_monthly_total(2024, 2, gross_usd=3.25, net_usd=2.76)
+
+    def _fail_timeline(*args: object, **kwargs: object) -> tuple[int, int, list[object]]:
+        raise RuntimeError("injected replace failure")
+
+    monkeypatch.setattr(
+        "services.portfolio_broker_import_service.sync_monthly_portfolio_timeline",
+        _fail_timeline,
+    )
+
+    with pytest.raises(RuntimeError, match="injected replace failure"):
+        apply_import(sample_csv, mode=ImportMode.REPLACE, db_path=db)
+
+    restored = create_portfolio_context(db_path=db)
+    symbols = {holding.symbol for holding in restored.portfolio.list_holdings()}
+    assert symbols == {"VZ"}
+    purchases = restored.journal.list_purchases(portfolio_only=False)
+    assert len(purchases) == 1
+    assert purchases[0].symbol == "VZ"
+    deposits = restored.deposits.list_deposits()
+    assert len(deposits) == 1
+    assert deposits[0].deposit_eur == 500.0
+    receipts = restored.receipts.list_for_symbol("VZ")
+    assert len(receipts) == 1
+    assert receipts[0].gross_usd == 3.25
+    assert receipts[0].withholding_usd == 0.49
+    assert receipts[0].net_usd == 2.76
+    monthly = restored.dividends.list_dividends()
+    assert len(monthly) == 1
+    assert monthly[0].net_usd == 2.76

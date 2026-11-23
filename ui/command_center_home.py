@@ -76,6 +76,16 @@ _CC_CSS = """
 .st-key-cc_public_shell [class*="st-key-cc_btn_"] button:active:not(:disabled) {
   transform: translateY(1px) !important;
 }
+.st-key-cc_public_shell [class*="st-key-cc_btn_secondary_"] button {
+  background: var(--ds-btn-bg) !important;
+  border: 1px solid var(--ds-btn-border) !important;
+  color: var(--ds-btn-text) !important;
+  box-shadow: none !important;
+}
+.st-key-cc_public_shell [class*="st-key-cc_btn_secondary_"] button:hover:not(:disabled) {
+  background: var(--ds-btn-bg-hover) !important;
+  border-color: var(--ds-btn-border-hover) !important;
+}
 .st-key-cc_public_shell [class*="st-key-cc_btn_ghost_"] button,
 .st-key-cc_public_shell [class*="st-key-cc_btn_ghost_"] [data-testid="stLinkButton"] a {
   background: transparent !important;
@@ -98,24 +108,42 @@ _CC_CSS = """
   border-color: var(--ds-highlight-border) !important;
   background: var(--ds-surface-highlight) !important;
 }
-.st-key-cc_public_shell [class*="st-key-cc_btn_tab_"] button:disabled,
-.st-key-cc_public_shell [class*="st-key-cc_btn_tab_"] button[kind="primary"]:disabled,
-.st-key-cc_public_shell .st-key-cc_header_cta button:disabled {
+.st-key-cc_public_shell [class*="st-key-cc_btn_tab_on_"] button,
+.st-key-cc_public_shell [class*="st-key-cc_btn_tab_on_"] button:disabled {
   opacity: 1 !important;
   filter: none !important;
-  color: var(--ds-btn-primary-text, #042f2e) !important;
-  background: linear-gradient(135deg, var(--ds-primary-light) 0%, var(--ds-primary) 100%) !important;
-  border-color: transparent !important;
-  box-shadow: var(--ds-btn-shadow, 0 8px 24px rgba(45, 212, 191, 0.18)) !important;
+  background: color-mix(in srgb, var(--ds-primary) 18%, var(--ds-surface)) !important;
+  border: 2px solid var(--ds-primary) !important;
+  box-shadow: none !important;
+}
+.st-key-cc_public_shell [class*="st-key-cc_btn_tab_on_"] button,
+.st-key-cc_public_shell [class*="st-key-cc_btn_tab_on_"] button:disabled,
+.st-key-cc_public_shell [class*="st-key-cc_btn_tab_on_"] button * {
+  opacity: 1 !important;
+  color: var(--ds-text) !important;
+}
+.st-key-cc_public_shell .st-key-cc_demo_nav_optional {
+  margin-top: 0.15rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--ds-border);
+}
+.st-key-cc_public_shell .st-key-cc_header_cta button:disabled,
+.st-key-cc_public_shell .st-key-cc_header_cta button:disabled * {
+  opacity: 1 !important;
+  filter: none !important;
 }
 .st-key-cc_public_shell [class*="st-key-cc_btn_danger_"] button {
-  background: rgba(248, 113, 113, 0.12) !important;
-  border: 1px solid rgba(248, 113, 113, 0.45) !important;
-  color: #fecaca !important;
+  background: var(--ds-risk-bg) !important;
+  border: 1px solid var(--ds-risk) !important;
+  box-shadow: none !important;
+}
+.st-key-cc_public_shell [class*="st-key-cc_btn_danger_"] button,
+.st-key-cc_public_shell [class*="st-key-cc_btn_danger_"] button * {
+  color: color-mix(in srgb, var(--ds-risk) 78%, var(--ds-text)) !important;
 }
 .st-key-cc_public_shell [class*="st-key-cc_btn_danger_"] button:hover:not(:disabled) {
-  background: rgba(248, 113, 113, 0.22) !important;
-  border-color: #f87171 !important;
+  background: color-mix(in srgb, var(--ds-risk) 18%, var(--ds-surface)) !important;
+  border-color: var(--ds-risk) !important;
 }
 .st-key-cc_public_shell .st-key-cc_auth_providers button {
   min-height: 44px !important;
@@ -136,6 +164,12 @@ _CC_CSS = """
   .st-key-cc_public_shell .st-key-cc_demo_nav_primary [data-testid="stHorizontalBlock"],
   .st-key-cc_public_shell .st-key-cc_demo_nav_optional [data-testid="stHorizontalBlock"] {
     flex-wrap: nowrap !important;
+  }
+  .st-key-cc_public_shell .st-key-cc_header_tabs [data-testid="stHorizontalBlock"] > div,
+  .st-key-cc_public_shell .st-key-cc_demo_nav_primary [data-testid="stHorizontalBlock"] > div,
+  .st-key-cc_public_shell .st-key-cc_demo_nav_optional [data-testid="stHorizontalBlock"] > div {
+    min-width: 0 !important;
+    flex: 1 1 0 !important;
   }
   .st-key-cc_public_shell .st-key-cc_header_cta {
     flex: 1 1 100% !important;
@@ -348,10 +382,9 @@ def render_public_button(
     submit: bool = False,
 ) -> bool:
     """Native Streamlit button wrapped for public-shell CSS variants."""
-    wrap_key = f"cc_btn_{variant.value}_{key}"
-    streamlit_type = (
-        "primary" if variant == PublicButtonVariant.PRIMARY or selected else "secondary"
-    )
+    state = "on_" if selected else ""
+    wrap_key = f"cc_btn_{variant.value}_{state}{key}"
+    streamlit_type = "primary" if variant == PublicButtonVariant.PRIMARY else "secondary"
     click_kwargs = kwargs or {}
     with st.container(key=wrap_key):
         if url:
@@ -367,6 +400,7 @@ def render_public_button(
             return bool(
                 st.form_submit_button(
                     label,
+                    key=key,
                     type=streamlit_type,
                     use_container_width=use_container_width,
                     help=help,
@@ -392,7 +426,7 @@ def render_public_button(
 
 def render_public_navigation(route: PublicRoute) -> None:
     with st.container(key="cc_header_bar"):
-        logo_col, tabs_col, theme_col, cta_col = st.columns([1.7, 2.4, 1.0, 1.5], gap="small")
+        logo_col, tabs_col, theme_col, cta_col = st.columns([1.45, 2.5, 1.55, 1.45], gap="small")
         with logo_col:
             render_logo(tagline="Product · interactive demo")
         with tabs_col, st.container(key="cc_header_tabs"):

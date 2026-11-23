@@ -13,7 +13,7 @@ import streamlit as st
 from data_ingestion.deposits_store import MonthlyDeposit
 from models.stock import StockData
 from services.dividend_timing import classify_dividend_timing
-from services.portfolio_allocation_service import PortfolioAllocationService
+from services.portfolio_allocation_service import PortfolioAllocationService, unpriced_tickers
 from services.portfolio_analysis_preload import PortfolioAnalysisPreload
 from services.portfolio_attention_service import (
     PortfolioAttentionService,
@@ -1196,8 +1196,12 @@ class PortfolioDetailsView:
         st.markdown("##### Sector & market cap")
         st.caption(
             "Weights by **current position value** (USD). "
+            "A holding with no price is listed below and left out of the weights. "
             "Market cap: **$1B–$10B**, **$10B–$200B**, **> $200B** (source: analysed stocks / Yahoo)."
         )
+        missing_prices = unpriced_tickers(rows)
+        if missing_prices:
+            st.caption("No price, excluded from these weights: " + ", ".join(missing_prices))
 
         chart_left, chart_right = st.columns(2)
         with chart_left:
@@ -1280,43 +1284,62 @@ class PortfolioDetailsView:
         from services.portfolio_month_dividends import cached_current_month_paid_dividends
 
         month_paid = cached_current_month_paid_dividends(rows=rows, preload=preload)
-        if month_paid is not None:
+        # Home already shows this month's receipts above the dashboard charts.
+        if month_paid is not None and not compact:
             st.markdown("##### Dividends received this month")
+            st.caption(
+                "Open holdings only. Receipts for sold positions stay in dividend history "
+                "and are not included in this month card."
+            )
             paid_row1_a, paid_row1_b, paid_row1_c = st.columns(3)
+            no_payments = month_paid.payer_count == 0 and month_paid.gross_usd <= 0
+            gross_value = "—" if no_payments else f"${month_paid.gross_usd:,.2f}"
+            net_label = "Net (est.)" if month_paid.net_is_estimate else "Net received"
+            tax_label = "Withholding (est.)" if month_paid.net_is_estimate else "Withholding"
             with paid_row1_a:
                 st.metric(
                     "Gross received",
-                    f"${month_paid.gross_usd:,.2f}",
-                    month_paid.through_label,
+                    gross_value,
+                    "No payments recorded" if no_payments else month_paid.through_label,
                     help=(
                         f"{term_help('gross_dividend')} "
                         f"{term_help('received_dividend')} "
                         f"Pay date in {month_paid.month_label}, "
-                        f"on or before {month_paid.through_date.strftime('%d %b %Y')}."
+                        f"on or before {month_paid.through_date.strftime('%d %b %Y')}. "
+                        "Limited to symbols you currently hold."
                     ),
                 )
             with paid_row1_b:
                 st.metric(
-                    "Net (est.)",
+                    net_label,
                     f"${month_paid.net_usd:,.2f}" if month_paid.net_usd is not None else "—",
                     f"{month_paid.payer_count} payment{'s' if month_paid.payer_count != 1 else ''}"
                     if month_paid.payer_count
                     else "None yet",
                     help=(
                         f"{term_help('net_dividend')} "
-                        "Estimated as gross minus typical US provider withholding."
+                        + (
+                            "Estimated as gross minus 10% when the broker receipt has no withholding."
+                            if month_paid.net_is_estimate
+                            else "Taken from broker receipt net and withholding."
+                        )
                     ),
                 )
             with paid_row1_c:
                 if month_paid.net_usd is not None and month_paid.gross_usd > 0:
                     tax = round(month_paid.gross_usd - month_paid.net_usd, 2)
+                    tax_delta = "10%" if month_paid.net_is_estimate else None
                     st.metric(
-                        "Withholding (est.)",
+                        tax_label,
                         f"${tax:,.2f}",
-                        "10%",
+                        tax_delta,
                         help=(
                             f"{term_help('withholding_tax')} "
-                            f"Estimate for {month_paid.through_label}."
+                            + (
+                                f"Estimate for {month_paid.through_label}."
+                                if month_paid.net_is_estimate
+                                else f"Broker withholding for {month_paid.through_label}."
+                            )
                         ),
                     )
                 else:
@@ -2107,17 +2130,17 @@ class PortfolioDetailsView:
         detail = service.detail_dataframe(records)
 
         st.caption(
-            "Gross cash from dividend payments, with **net after 10% provider withholding** "
-            "(US dividend tax retained at broker)."
+            "Gross cash from dividend payments. Net uses broker withholding when the "
+            "receipt records it. When withholding is missing, net is an estimate at 10%."
         )
 
         c1, c2, c3, c4, c5, c6 = st.columns(6)
         with c1:
             st.metric("Total gross", f"${summary.total_gross_usd:,.2f}")
         with c2:
-            st.metric("Total net (est.)", f"${summary.total_net_usd:,.2f}")
+            st.metric("Total net", f"${summary.total_net_usd:,.2f}")
         with c3:
-            st.metric("Total tax (est.)", f"${summary.total_tax_usd:,.2f}")
+            st.metric("Total tax", f"${summary.total_tax_usd:,.2f}")
         with c4:
             st.metric(f"YTD {summary.ytd_year} net", f"${summary.ytd_net_usd:,.2f}")
         with c5:
@@ -2167,7 +2190,6 @@ class PortfolioDetailsView:
 
         st.markdown("#### Gross dividends — quarterly pivot")
         from services.portfolio_dividend_quarters import (
-            compare_quarterly_gross,
             pivot_quarterly_gross_dataframe,
             quarterly_gross_from_monthly_records,
             quarterly_gross_from_receipt_store,
@@ -2186,36 +2208,11 @@ class PortfolioDetailsView:
                     col: st.column_config.NumberColumn(format="$%.2f") for col in q_year_cols
                 },
             )
-            comparisons = compare_quarterly_gross(receipt_quarters or monthly_quarters)
-            mismatches = [row for row in comparisons if row.status == "mismatch"]
-            if mismatches:
-                st.warning(
-                    f"**{len(mismatches)} quarter(s)** differ from IBKR reference by more than $1. "
-                    "Re-import IBKR activity or check sold-ticker receipts.",
-                    icon="⚠️",
-                )
-                with st.expander("Quarterly validation vs IBKR reference"):
-                    st.dataframe(
-                        pd.DataFrame(
-                            [
-                                {
-                                    "Year": row.year,
-                                    "Quarter": f"Q{row.quarter}",
-                                    "IBKR ref $": row.reference_usd,
-                                    "Computed $": row.computed_usd,
-                                    "Delta $": row.delta_usd,
-                                    "Status": row.status,
-                                }
-                                for row in comparisons
-                            ]
-                        ),
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-            else:
-                st.caption(
-                    "Quarterly gross totals match IBKR reference within $1 (partial quarters excluded)."
-                )
+            st.caption(
+                "Quarter totals are the imported receipts. A 2022–2026 owner checklist "
+                "exists for offline validation only. It is not a statement shipped with the app, "
+                "and an empty quarter is left blank rather than shown as a reported zero."
+            )
 
         st.markdown("#### Net dividends — annual pivot")
         year_cols = [column for column in pivot.columns if column != "Month"]
@@ -2511,7 +2508,7 @@ class PortfolioDetailsView:
                     st.info(status_msg, icon="ℹ️")
                 elif status_msg:
                     st.warning(
-                        f"{status_msg} " "Imported broker payments are shown when available.",
+                        f"{status_msg} Imported broker payments are shown when available.",
                         icon="⚠️",
                     )
                 else:
@@ -2763,6 +2760,10 @@ class PortfolioDetailsView:
         elif section == "deposits":
             cls._render_tab_header("deposits", show_refresh=True)
             cls._render_deposits_page()
+        elif section == "research_screen":
+            from ui.research_screen_panel import render_research_screen
+
+            render_research_screen()
 
     @classmethod
     def render(cls) -> None:

@@ -14,7 +14,11 @@ import pandas as pd
 
 from data_ingestion.dividend_income_store import MonthlyNetDividend
 
-# IBKR-style annual net dividends (USD) — broker reference for validation.
+# Owner checklist only. The 2022–2026 statements are not in this repo.
+# Product screens must not present these numbers as a verified broker match.
+IBKR_REFERENCE_OWNER_ONLY = True
+
+# IBKR-style annual net dividends (USD) — owner checklist, not a shipped statement.
 IBKR_REFERENCE_ANNUAL_NET: dict[int, float] = {
     2022: 3.24,
     2023: 975.09,
@@ -44,7 +48,6 @@ IBKR_REFERENCE_QUARTERLY_GROSS: dict[tuple[int, int], float] = {
     (2026, 1): 959.10,
     (2026, 2): 935.70,
     (2026, 3): 373.72,
-    (2026, 4): 0.00,
 }
 
 # Quarters still in progress — compare as minimum (computed >= reference partial).
@@ -121,9 +124,9 @@ def compare_quarterly_gross(
 
     for year, quarter in keys:
         ref = reference.get((year, quarter))
-        comp = computed.get((year, quarter), 0.0)
+        comp = computed.get((year, quarter))
         if ref is None:
-            if comp <= 0:
+            if comp is None or comp <= 0:
                 continue
             rows.append(
                 QuarterComparisonRow(
@@ -133,6 +136,18 @@ def compare_quarterly_gross(
                     computed_usd=comp,
                     delta_usd=comp,
                     status="extra",
+                )
+            )
+            continue
+        if comp is None:
+            rows.append(
+                QuarterComparisonRow(
+                    year=year,
+                    quarter=quarter,
+                    reference_usd=ref,
+                    computed_usd=0.0,
+                    delta_usd=round(0.0 - ref, 2),
+                    status="missing",
                 )
             )
             continue
@@ -182,9 +197,9 @@ def compare_annual_net(
 
     for year in keys:
         ref = reference.get(year)
-        comp = computed.get(year, 0.0)
+        comp = computed.get(year)
         if ref is None:
-            if comp <= 0:
+            if comp is None or comp <= 0:
                 continue
             rows.append(
                 AnnualNetComparisonRow(
@@ -193,6 +208,17 @@ def compare_annual_net(
                     computed_usd=comp,
                     delta_usd=comp,
                     status="extra",
+                )
+            )
+            continue
+        if comp is None:
+            rows.append(
+                AnnualNetComparisonRow(
+                    year=year,
+                    reference_usd=ref,
+                    computed_usd=0.0,
+                    delta_usd=round(0.0 - ref, 2),
+                    status="missing",
                 )
             )
             continue

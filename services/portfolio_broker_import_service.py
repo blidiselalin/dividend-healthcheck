@@ -23,7 +23,10 @@ from services.ibkr_activity_parser import (
     statement_deposit_period,
     statement_symbol_scope,
 )
-from services.portfolio_clear_service import clear_user_portfolio
+from services.portfolio_clear_service import (
+    clear_user_portfolio,
+    restoring_portfolio_on_failure,
+)
 from services.portfolio_context import create_portfolio_context
 from services.portfolio_import_pipeline import (
     prepare_statement,
@@ -106,7 +109,7 @@ def preview_import(content: str | bytes) -> ImportPreview:
     )
 
 
-def apply_import(  # noqa: C901
+def apply_import(
     content: str | bytes,
     *,
     mode: ImportMode,
@@ -127,10 +130,39 @@ def apply_import(  # noqa: C901
             issues=issues,
         )
 
+    if mode == ImportMode.REPLACE:
+        with restoring_portfolio_on_failure(db_path=db_path):
+            return _apply_import_body(
+                content,
+                statement=statement,
+                issues=issues,
+                mode=mode,
+                db_path=db_path,
+                progress=progress,
+            )
+    return _apply_import_body(
+        content,
+        statement=statement,
+        issues=issues,
+        mode=mode,
+        db_path=db_path,
+        progress=progress,
+    )
+
+
+def _apply_import_body(  # noqa: C901
+    content: str | bytes,
+    *,
+    statement: IBKRActivityStatement,
+    issues: list[ImportIssue],
+    mode: ImportMode,
+    db_path: Path | None = None,
+    progress: ImportProgressCallback | None = None,
+) -> ImportApplyResult:
     cleared: int | None = None
     if mode == ImportMode.REPLACE:
         _report(progress, "Clearing existing portfolio data…", 0.15)
-        clear_result = clear_user_portfolio(db_path=db_path)
+        clear_result = clear_user_portfolio(db_path=db_path, reset_session=False)
         cleared = clear_result.total_rows
 
     _report(progress, "Opening portfolio stores…", 0.18)

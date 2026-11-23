@@ -13,7 +13,6 @@ from data_ingestion.dividend_income_store import (
     MONTH_LABELS,
     DividendIncomeStore,
     MonthlyNetDividend,
-    dividend_tax_rate,
 )
 from utils.chart_theme import (
     PALETTE,
@@ -127,13 +126,15 @@ class PortfolioDividendIncomeService:
         rows = []
         for year in sorted(by_year):
             bucket = by_year[year]
+            gross = float(bucket["gross"])
+            tax_pct = round(bucket["tax"] / gross * 100, 2) if gross else 0.0
             rows.append(
                 {
                     "Year": year,
-                    "Tax %": dividend_tax_rate(year) * 100,
+                    "Tax %": tax_pct,
                     "Months": bucket["months"],
                     "Net $": round(bucket["net"], 2),
-                    "Gross $": round(bucket["gross"], 2),
+                    "Gross $": round(gross, 2),
                     "Tax withheld $": round(bucket["tax"], 2),
                 }
             )

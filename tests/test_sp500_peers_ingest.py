@@ -81,3 +81,31 @@ def test_remove_delisted_from_market_library(postgres_env: Any) -> None:
     assert result["removed"] == 2
     assert result["symbols"] == ["WBA", "ZZ"]
     mock_store.delete_symbols.assert_called_once_with(["WBA", "ZZ"])
+
+
+def test_dividend_load_preserves_completed_stocks_before_interruption(monkeypatch):
+    from services import sp500_peers_service
+
+    persisted: list[str] = []
+    store = MagicMock()
+    store.get_all_documents.return_value = []
+    store.add_documents.side_effect = lambda docs: persisted.extend(doc.symbol for doc in docs)
+    monkeypatch.setattr(sp500_peers_service, "_store", lambda: store)
+    monkeypatch.setattr(
+        "data_ingestion.dividend_universe.get_top_dividend_symbols",
+        lambda: [f"S{i}" for i in range(6)],
+    )
+
+    def fetch(symbol):
+        if symbol == "S5":
+            raise KeyboardInterrupt()
+        return StockDocument(symbol=symbol, name=symbol, source=DataSource.YAHOO)
+
+    enricher = MagicMock()
+    enricher.fetch_document.side_effect = fetch
+    with (
+        patch("data_ingestion.stock_enricher.create_stock_enricher", return_value=enricher),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        sp500_peers_service.ensure_top_dividend_in_vectordb(limit=6)
+    assert persisted == [f"S{i}" for i in range(5)]

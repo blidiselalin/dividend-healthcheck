@@ -45,8 +45,8 @@ Market and dividend information may be delayed or incomplete.
 - [Architecture](#architecture)
 - [Architecture Guardrails](#architecture-guardrails)
 - [Installation at a Glance](#installation-at-a-glance)
-- [Quick Start — Docker (recommended)](#quick-start--docker-recommended)
-- [Local Development (no Docker)](#local-development-no-docker)
+- [Load the app locally with Docker](#load-the-app-locally-with-docker)
+- [Load the app locally without Docker](#load-the-app-locally-without-docker)
 - [Authentication](#authentication)
 - [Portfolio Management](#portfolio-management)
 - [New user guide](#new-user-guide)
@@ -148,67 +148,79 @@ After the in-process **price refresh scheduler** updates library quotes (default
 
 ## Installation at a Glance
 
-Choose one path:
+| Goal | What you run | Where the app opens |
+|---|---|---|
+| Use the app on this machine | Docker Compose (Postgres 16) | http://localhost:8501 |
+| Change code and run tests | Python 3.11 or 3.12 virtualenv, then `streamlit run app.py` | http://localhost:8501 |
+| Host it for other people | A GCP VM, Docker Compose, and Caddy | Your HTTPS domain |
 
-1. **Docker (recommended)** — fastest way to run the full app with PostgreSQL.
-2. **Local development** — run Streamlit directly for feature work and tests.
-3. **GCP VM** — production-style setup with HTTPS and update automation.
-
-If you're unsure, start with **Docker Quick Start** below.
+Postgres is the database whenever `DATABASE_URL` is set. That is the Docker and GCP path. A local virtualenv with no `DATABASE_URL` uses files under the data directory instead, which is only for development.
 
 ---
 
-## Quick Start — Docker (recommended)
+## Load the app locally with Docker
 
-Requires [Docker Desktop](https://docs.docker.com/get-docker/) (or Docker + Docker Compose on Linux).
+This is the path that matches production: Streamlit plus PostgreSQL. Install [Docker Desktop](https://docs.docker.com/get-docker/) first.
 
 ```bash
 git clone https://github.com/blidiselalin/dividend-healthcheck.git
 cd dividend-healthcheck
-cp .env.example .env
-# Edit .env and set a strong POSTGRES_PASSWORD
 docker compose up -d --build
+docker compose ps
 ```
 
-Open: **http://localhost:8501**
+That one command starts Postgres 16 and the app. You do not start the database separately.
 
-First-run market library load (recommended once):
+`.env` is optional on your own machine. If it is missing, Compose uses user `dividendscope`, password `dividendscope`, and database `dividendscope`. Copy `.env.example` to `.env` and change `POSTGRES_PASSWORD` before a shared or cloud deploy.
+
+Wait until `dividendscope-postgres` is healthy. The app container then applies migrations and starts. Open **http://localhost:8501**. Compose publishes that port on `127.0.0.1` only, so it is reachable from this computer, not from other machines on the network.
+
+Without Google OAuth secrets, the landing page offers **Continue in dev mode**. Type any email and continue. To require Google sign-in, copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` and rebuild so the container can read it. See [Authentication](#authentication).
+
+Load the shared market library once (this takes a while):
 
 ```bash
 docker compose exec dividendscope python ingest_data.py --ensure-sp500 --enrich-existing
 ```
 
-Optional: complete historical tables sync if you want full yield/dividend history immediately:
+Optional full history sync:
 
 ```bash
 docker compose exec dividendscope python ingest_data.py --sync-history-tables
 ```
 
-> Migrations run automatically at container start via the entrypoint.
+Stop the app with `docker compose stop`. Start it again with `docker compose start`. Do not run `docker compose down -v`. The `-v` flag deletes the `dividendscope-persistent-data` volume, including the Postgres data.
 
 ---
 
-## Local Development (no Docker)
+## Load the app locally without Docker
 
-Use this for feature work and tests without running the full Docker stack.
+Use this when you are editing code. CI and a full `pip install -r requirements.txt` expect **Python 3.11 or 3.12**. Python 3.15 cannot install `chromadb`, which `requirements.txt` still lists for the no-database fallback.
 
 ```bash
 git clone https://github.com/blidiselalin/dividend-healthcheck.git
 cd dividend-healthcheck
-python -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Without `DATABASE_URL`, local development uses fallback local storage paths. Production should use PostgreSQL via Docker/GCP.
+Open **http://localhost:8501**. Leave `DATABASE_URL` unset. Portfolio rows then stay in the local data directory. The same dev-mode email bypass appears until you add `.streamlit/secrets.toml`.
 
-Common local commands:
+To force that bypass from the shell:
+
+```bash
+DIVIDENDSCOPE_AUTH_DISABLE=1 streamlit run app.py
+```
+
+Tests, still with the virtualenv active:
 
 ```bash
 python -m pytest tests/ -m "not integration" -q --tb=short
-python -m db --migrate
 ```
+
+`python -m db --migrate` applies Postgres migrations and needs `DATABASE_URL`. Unit tests do not.
 
 ---
 
@@ -730,7 +742,9 @@ DEFAULT_STALENESS_DAYS = 7   # Days before re-fetching from API
 
 ## Cloud Deployment (GCP)
 
-The recommended production setup is a **Google Compute Engine VM** running Docker Compose with Caddy for HTTPS.
+Production is a **Compute Engine VM** running the same Docker Compose stack as the local Docker path. Caddy on the VM terminates HTTPS and proxies to Streamlit on `127.0.0.1:8501`. Postgres data lives in the Docker volume `dividendscope-persistent-data`, not in Chroma or a per-user SQLite file.
+
+The step-by-step VM, DNS, firewall, and OAuth walkthrough is **[DEPLOY-GCP.md](DEPLOY-GCP.md)**. The short version:
 
 ### Recommended VM instances
 
@@ -792,7 +806,7 @@ For a full deployment walkthrough including DNS, static IP, OAuth redirect URIs,
 | Library prices updated but Home still old | Wait ~30s for the UI sync fragment, or open **Background tasks** / click **Reload live data** |
 | `Failed to fetch dynamically imported module` (Streamlit JS) | Hard-refresh the browser (Ctrl+Shift+R). Production Caddy sets `no-cache` on `/static/*` — redeploy Caddyfile if needed |
 | Benchmark chart shows no data | Run `python ingest_data.py --refresh-prices` to fetch benchmark ETF history |
-| `chromadb` import errors | `pip install chromadb>=0.4.22`; app works without it (API-only mode) |
+| `chromadb` will not install | Use Python 3.11 or 3.12. Python 3.15 has no wheel. Docker and GCP do not need Chroma when `DATABASE_URL` is set |
 | PDF export fails | `pip install reportlab` (included in `requirements.txt`) |
 | News section empty | `pip install feedparser` (optional); Yahoo Finance news still works without it |
 | Port 8501 already in use | `streamlit run app.py --server.port 8502` |

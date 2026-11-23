@@ -40,10 +40,10 @@ def _qp(at: AppTest, key: str) -> str:
 
 def _session_dict(at: AppTest) -> dict[str, Any]:
     """Copy AppTest session_state into a plain dict for service helpers."""
-    filtered = getattr(at.session_state, "filtered_state", None)
-    if isinstance(filtered, dict):
-        return dict(filtered)
-    return {}
+    to_dict = getattr(at.session_state, "to_dict", None)
+    if callable(to_dict):
+        return dict(to_dict())
+    return {key: at.session_state[key] for key in at.session_state}
 
 
 def _run_public(**query: str) -> AppTest:

@@ -489,8 +489,9 @@ def _render_ibkr_import_tab() -> None:
     replace_mode = mode_label == "Full replace"
     if replace_mode:
         st.warning(
-            "Full replace permanently deletes all holdings, purchases, dividends, deposits, "
-            "and monthly totals before importing."
+            "Full replace deletes all holdings, purchases, dividends, deposits, "
+            "and monthly totals, then imports this file. If the import fails, "
+            "the previous portfolio is restored."
         )
         st.checkbox(
             "I understand this deletes all portfolio data",

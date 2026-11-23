@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -202,6 +203,50 @@ def test_gross_paid_in_calendar_month_filters_to_open_symbols(tmp_path: Path) ->
     assert count_open == 1
 
 
+def test_current_month_card_uses_open_holdings_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    holding = PortfolioHolding(
+        symbol="KO",
+        shares=10.0,
+        avg_cost_per_share=50.0,
+        acquisition_value=500.0,
+        commission=0.0,
+        dividends_paid=0.0,
+        estimated_avg_price=50.0,
+        sort_order=0,
+    )
+    seen: dict[str, set[str] | None] = {}
+
+    def _gross(*args: object, **kwargs: object) -> tuple[float, int]:
+        symbols = kwargs.get("symbols")
+        seen["symbols"] = symbols if isinstance(symbols, set) else None
+        return 10.0, 1
+
+    def _net(*args: object, **kwargs: object) -> float:
+        return 8.5
+
+    monkeypatch.setattr(
+        "services.portfolio_month_dividends.create_portfolio_context",
+        lambda db_path=None: SimpleNamespace(
+            portfolio=SimpleNamespace(list_open_holdings=lambda: [holding])
+        ),
+    )
+    monkeypatch.setattr(
+        "services.portfolio_dividend_cash.resolve_dividend_documents",
+        lambda *args, **kwargs: ({}, {}),
+    )
+    monkeypatch.setattr("services.portfolio_month_dividends.gross_paid_in_calendar_month", _gross)
+    monkeypatch.setattr("services.portfolio_month_dividends.net_paid_from_receipts", _net)
+
+    paid = current_month_paid_dividends(rows=[], reference_date=date(2026, 6, 10))
+
+    assert paid is not None
+    assert seen["symbols"] == {"KO"}
+    assert paid.gross_usd == 10.0
+    assert paid.net_usd == 8.5
+    assert paid.net_is_estimate is False
+    assert paid.scope == "open_holdings"
+
+
 def test_net_paid_in_calendar_month_from_seed(tmp_path: Path) -> None:
     from data_ingestion.dividend_income_store import DividendIncomeStore
 
@@ -219,6 +264,7 @@ def test_portfolio_section_labels_renamed() -> None:
         "Dividend growth",
         "Purchase journal",
         "Deposits & benchmarks",
+        "Growth screen",
     ] == PORTFOLIO_SECTION_LABELS
 
 

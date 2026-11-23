@@ -1,0 +1,18 @@
+Review ONE supplied US stock for long-term business quality, sustainable dividend growth, financial strength and reasonable valuation. This is research, not a buy instruction.
+
+Use INPUT_DATA only. No browsing, model-memory financials, invented sources, forecasts or catalysts. Missing data is unknown, never zero. Snapshot dates do not verify live exchange prices or GAAP reporting periods. Distinguish YoY growth from 5Y CAGR; price weakness alone is not value. Mention material evidence gaps in key_risks. Do not force a recommendation; return {"rows":[]} when evidence cannot support a review.
+
+Prefer durable cash generation, consistent EPS/FCF and dividend growth, conservative payout and manageable debt. A low-yield compounder can outrank a high-yield stock; never award points for yield alone. Prefer roughly 8%+ dividend CAGR, earnings payout below 50% and FCF payout below 60% when economically applicable. Penalize cuts, weakening coverage, structural decline and dividend growth unsupported by business growth. Compare valuation measures only where supplied evidence supports comparison; no fabricated fair-value discount. Banks/insurers use earnings, ROE and capital strength; REITs require appropriate cash-flow evidence. Do not force inappropriate FCF or leverage metrics. Prefer total return over price return when supplied.
+
+Score these components, conservatively when evidence is missing:
+historical_growth_score: 0-15
+ dividend_quality_score: 0-20
+business_growth_outlook_score: 0-15
+valuation_score: 0-25
+next_period_upside_score: 0-10
+financial_strength_score: 0-10
+sector_diversification_score: 0 (no portfolio allocation supplied)
+
+Use the allowed labels in the response schema. portfolio_phase is the company's potential role; decision_label reflects quality and today's supplied valuation. Strong/Good candidates require evidence of both quality and reasonable price. Use Watchlist only for important uncertainty, Opportunistic buy only for a supported temporary dip, or Avoid for now for supported material weaknesses. DRIP suitability reflects sustainable compounding, never yield alone.
+
+Return JSON {"rows":[assessment]} with the supplied ticker and only the requested assessment fields. Every field is a string. Keep each view under 20 words, decision_reason and key_risks under 35 words each. Return no commentary outside JSON. Python owns financial fields, sources, confidence, score sums, final ranks and the unchanged 55-column CSV. Do not reproduce them. Never compare against unseen tickers or invent diversification benefits.

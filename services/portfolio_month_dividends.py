@@ -30,6 +30,8 @@ class CurrentMonthPaidDividends:
     gross_usd: float
     net_usd: float | None
     payer_count: int
+    net_is_estimate: bool = True
+    scope: str = "open_holdings"
 
     @property
     def through_label(self) -> str:
@@ -134,18 +136,18 @@ def compute_month_received_from_holdings(
     return round(total, 2), count
 
 
-def gross_paid_in_calendar_month(
+def _receipt_month_sums(
     year: int,
     month: int,
     *,
     through: date | None = None,
     store: DividendReceiptStore | None = None,
     symbols: set[str] | None = None,
-) -> tuple[float, int]:
-    """Sum gross receipts with pay_date in the month, capped at `through` (default today)."""
+) -> tuple[float, int, float]:
+    """Gross, row count, and stored net for receipts with pay_date in the month."""
     through = through or date.today()
     if (year, month) > (through.year, through.month):
-        return 0.0, 0
+        return 0.0, 0, 0.0
 
     last_day = calendar.monthrange(year, month)[1]
     month_end = date(year, month, last_day)
@@ -168,7 +170,8 @@ def gross_paid_in_calendar_month(
             row = connection.execute(
                 f"""
                 SELECT COALESCE(SUM(gross_usd), 0) AS gross,
-                       COUNT(*) AS receipt_count
+                       COUNT(*) AS receipt_count,
+                       COALESCE(SUM(COALESCE(net_usd, gross_usd - withholding_usd)), 0) AS net
                 FROM dividend_receipts
                 WHERE user_id = ?
                   AND pay_date >= ?
@@ -180,7 +183,8 @@ def gross_paid_in_calendar_month(
             row = connection.execute(
                 f"""
                 SELECT COALESCE(SUM(gross_usd), 0) AS gross,
-                       COUNT(*) AS receipt_count
+                       COUNT(*) AS receipt_count,
+                       COALESCE(SUM(COALESCE(net_usd, gross_usd - withholding_usd)), 0) AS net
                 FROM dividend_receipts
                 WHERE pay_date >= ?
                   AND pay_date <= ?{symbol_filter}
@@ -189,8 +193,52 @@ def gross_paid_in_calendar_month(
             ).fetchone()
 
     if not row:
-        return 0.0, 0
-    return round(float(row["gross"]), 2), int(row["receipt_count"])
+        return 0.0, 0, 0.0
+    return (
+        round(float(row["gross"]), 2),
+        int(row["receipt_count"]),
+        round(float(row["net"]), 2),
+    )
+
+
+def gross_paid_in_calendar_month(
+    year: int,
+    month: int,
+    *,
+    through: date | None = None,
+    store: DividendReceiptStore | None = None,
+    symbols: set[str] | None = None,
+) -> tuple[float, int]:
+    """Sum gross receipts with pay_date in the month, capped at `through` (default today)."""
+    gross, count, _net = _receipt_month_sums(
+        year,
+        month,
+        through=through,
+        store=store,
+        symbols=symbols,
+    )
+    return gross, count
+
+
+def net_paid_from_receipts(
+    year: int,
+    month: int,
+    *,
+    through: date | None = None,
+    store: DividendReceiptStore | None = None,
+    symbols: set[str] | None = None,
+) -> float | None:
+    """Stored net for the month, or None when the month has no receipt rows."""
+    _gross, count, net = _receipt_month_sums(
+        year,
+        month,
+        through=through,
+        store=store,
+        symbols=symbols,
+    )
+    if count <= 0:
+        return None
+    return net
 
 
 def net_paid_in_calendar_month(
@@ -229,42 +277,33 @@ def _resolve_month_gross_and_net(
     db_count: int,
     computed_gross: float,
     computed_count: int,
-) -> tuple[float, int, float | None]:
+    receipt_net: float | None = None,
+) -> tuple[float, int, float | None, bool]:
     """
-    Choose gross payer count and net for the month.
+    Choose gross, payer count, net, and whether net is an estimate.
 
-    When both filtered receipts and holdings-scoped recompute exist, prefer the
-    larger total (library fill for partial imports; synced receipts when recompute
-    is incomplete).
+    Posted receipts are the received total. A library recompute is used only
+    when the month has no receipt rows, and that net is always an estimate.
+    ``month`` and ``through`` identify the period for callers; the sums are
+    already bounded before this function runs.
     """
-    if computed_count > 0 and computed_gross > 0 and db_count > 0 and db_gross > 0:
-        if computed_gross >= db_gross - 0.01:
-            gross, payer_count = computed_gross, computed_count
-        else:
-            gross, payer_count = db_gross, db_count
-    elif computed_count > 0 and computed_gross > 0:
+    del month, through
+    if db_count > 0:
+        gross, payer_count = db_gross, db_count
+        if receipt_net is not None:
+            return gross, payer_count, round(receipt_net, 2), False
+        if gross > 0:
+            return gross, payer_count, net_received_through(gross, year=year), True
+        return gross, payer_count, None, True
+
+    if computed_count > 0 and computed_gross > 0:
         gross, payer_count = computed_gross, computed_count
-    elif db_count > 0 and db_gross > 0 or db_count > 0:
-        gross, payer_count = db_gross, db_count
     else:
         gross, payer_count = db_gross, db_count
 
-    synced_net = net_paid_in_calendar_month(year, month)
-    synced_gross = gross_paid_in_synced_month(year, month)
-
-    if db_count > 0 and synced_net is not None:
-        last_day = calendar.monthrange(year, month)[1]
-        month_end = date(year, month, last_day)
-        if through >= month_end and synced_gross is not None:
-            net = synced_net
-        else:
-            net = net_received_through(gross, year=year)
-    elif gross > 0:
-        net = net_received_through(gross, year=year)
-    else:
-        net = None
-
-    return gross, payer_count, net
+    if gross > 0:
+        return gross, payer_count, net_received_through(gross, year=year), True
+    return gross, payer_count, None, True
 
 
 def current_month_paid_dividends(
@@ -330,6 +369,7 @@ def current_month_paid_dividends(
             month_cash.payer_count,
             month_cash.net_usd,
         )
+        net_is_estimate = month_cash.net_is_estimate
         if gross <= 0 and rows and preload:
             row_dates = {row.ticker: (row.ex_dividend_date, row.dividend_pay_date) for row in rows}
             calendar = build_portfolio_dividend_calendar(
@@ -344,6 +384,7 @@ def current_month_paid_dividends(
                 gross = fallback_gross
                 payer_count = calendar.current_month.received_payer_count
                 net = net_received_through(gross, year=today.year)
+                net_is_estimate = True
     elif rows and preload and holdings:
         row_dates = {row.ticker: (row.ex_dividend_date, row.dividend_pay_date) for row in rows}
         calendar = build_portfolio_dividend_calendar(
@@ -357,6 +398,7 @@ def current_month_paid_dividends(
         gross = current.received_cash
         payer_count = current.received_payer_count
         net = net_received_through(gross, year=today.year)
+        net_is_estimate = True
     else:
         open_symbols = {holding.symbol.strip().upper() for holding in holdings}
         db_gross, db_count = gross_paid_in_calendar_month(
@@ -365,7 +407,13 @@ def current_month_paid_dividends(
             through=today,
             symbols=open_symbols or None,
         )
-        gross, payer_count, net = _resolve_month_gross_and_net(
+        receipt_net = net_paid_from_receipts(
+            today.year,
+            today.month,
+            through=today,
+            symbols=open_symbols or None,
+        )
+        gross, payer_count, net, net_is_estimate = _resolve_month_gross_and_net(
             year=today.year,
             month=today.month,
             through=today,
@@ -373,6 +421,7 @@ def current_month_paid_dividends(
             db_count=db_count,
             computed_gross=0.0,
             computed_count=0,
+            receipt_net=receipt_net if db_count > 0 else None,
         )
 
     return CurrentMonthPaidDividends(
@@ -381,6 +430,8 @@ def current_month_paid_dividends(
         gross_usd=gross,
         net_usd=net,
         payer_count=payer_count,
+        net_is_estimate=net_is_estimate,
+        scope="open_holdings",
     )
 
 

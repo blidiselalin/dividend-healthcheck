@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from services.portfolio_clear_service import clear_user_portfolio
+from services.portfolio_clear_service import (
+    _recovery_path,
+    _write_recovery,
+    clear_user_portfolio,
+    snapshot_user_portfolio,
+)
 from services.portfolio_context import create_portfolio_context
 
 
@@ -31,3 +36,17 @@ def test_clear_user_portfolio_wipes_all_tables(tmp_path: Path) -> None:
     assert fresh.portfolio.list_holdings() == []
     assert fresh.journal.list_purchases(portfolio_only=False) == []
     assert fresh.deposits.list_deposits() == []
+
+
+def test_killed_replace_restores_on_next_open(tmp_path: Path) -> None:
+    db = tmp_path / "portfolio.db"
+    ctx = create_portfolio_context(db_path=db)
+    ctx.portfolio.upsert_holding("VZ", shares=5, avg_cost_per_share=40.0)
+    _write_recovery(snapshot_user_portfolio(db_path=db), db)
+    ctx.portfolio.delete_all()
+
+    restored = create_portfolio_context(db_path=db)
+
+    symbols = {holding.symbol for holding in restored.portfolio.list_holdings()}
+    assert symbols == {"VZ"}
+    assert not _recovery_path(db).exists()

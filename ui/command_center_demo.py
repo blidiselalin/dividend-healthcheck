@@ -7,6 +7,7 @@ Research and Sample import remain optional secondary routes.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
@@ -60,6 +61,8 @@ from ui.design_system import (
     render_story_cards,
     render_ticker_chips,
 )
+
+logger = logging.getLogger(__name__)
 
 # Session-only guided demo tour (not authenticated NBA).
 _CC_TOUR_ADJUSTED = "cc_tour_adjusted"
@@ -199,7 +202,7 @@ def _render_demo_nav(active: DemoPage) -> None:
                 )
 
     with st.container(key="cc_demo_nav_optional"):
-        st.caption("Optional")
+        st.caption("Optional pages")
         cols = st.columns(len(_OPTIONAL_NAV))
         for col, page, label in zip(cols, _OPTIONAL_NAV, _OPTIONAL_NAV_LABELS):
             with col:
@@ -312,12 +315,10 @@ def _reset_demo_holdings() -> None:
     after = estimate_annual_income_usd(guest_holdings_from_session(st.session_state))
     _mark_tour(_CC_TOUR_ADJUSTED, step_id="adjust")
     st.session_state[GUEST_INCOME_CONFIRM_KEY] = {"before": before, "after": after}
+    symbols = ", ".join(default_guest_symbols())
     set_public_feedback(
         "success",
-        (
-            "Restored the diversified sample list "
-            f"({len(default_guest_symbols())} holdings across sectors)."
-        ),
+        (f"Restored the diversified sample list, including KO, JNJ, and O ({symbols})."),
         "reset",
     )
 
@@ -846,7 +847,8 @@ def _render_research(dashboard: GuestDashboard) -> None:
 def _load_sample_import_preview() -> None:
     try:
         preview = load_packaged_ibkr_sample_preview()
-    except (OSError, UnicodeError, ValueError, KeyError, AttributeError) as exc:
+    except Exception as exc:
+        logger.exception("Packaged sample statement failed to load")
         set_public_feedback(
             "error",
             "Could not load the packaged sample statement. Try again or continue with the default list.",
@@ -879,7 +881,8 @@ def _load_sample_import_preview() -> None:
 def _use_imported_sample() -> None:
     try:
         holdings, preview = apply_packaged_ibkr_sample_to_guest(st.session_state)
-    except (OSError, UnicodeError, ValueError, KeyError, AttributeError) as exc:
+    except Exception as exc:
+        logger.exception("Packaged sample statement failed to apply")
         set_public_feedback(
             "error",
             "Could not apply the packaged sample. The current guest list was left unchanged.",

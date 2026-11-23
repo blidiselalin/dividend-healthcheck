@@ -30,6 +30,11 @@ PORTFOLIO_NAV: list[tuple[str, str, str]] = [
         "deposits",
         "Monthly deposits, portfolio value, and index comparison",
     ),
+    (
+        "Growth screen",
+        "research_screen",
+        "Library dividend-growth shortlist. Research only, not a portfolio change",
+    ),
 ]
 
 _LEGACY_PORTFOLIO_SECTION_LABELS = {
@@ -393,7 +398,7 @@ def render_portfolio_section_nav() -> str:
         '<p class="ds-overline">Workspace</p>'
         '<p class="ds-portfolio-nav-title">Portfolio sections</p>'
         '<p class="ds-portfolio-nav-lead">'
-        "Jump to a section — home, holdings, income, growth, journal, or deposits."
+        "Jump to a section — home, holdings, income, growth, journal, deposits, or the growth screen."
         "</p>"
         "</div>"
     )
@@ -445,6 +450,8 @@ def portfolio_section_ready(section_key: str) -> bool:
         from services.portfolio_deposits_service import PortfolioDepositsService
 
         return bool(PortfolioDepositsService().list_deposits())
+    if section_key == "research_screen":
+        return True
     return portfolio_data_ready()
 
 

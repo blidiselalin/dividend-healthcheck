@@ -91,6 +91,18 @@ def shared_market_db_status(*, include_coverage: bool = True) -> dict[str, Any]:
     return status
 
 
+def list_dividend_payers(limit: int = 150) -> list[Any]:
+    """Positive-yield documents from the shared library. Empty when Postgres is off."""
+    try:
+        store = get_shared_vector_store()
+        listed = getattr(store, "list_dividend_payers", None)
+        if listed is None:
+            return []
+        return list(listed(limit))
+    except (SQLiteError, PostgresError, OSError):
+        return []
+
+
 def get_document(symbol: str) -> StockDocument | None:
     """Lookup one symbol in the shared library (any user)."""
     try:

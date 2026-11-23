@@ -640,6 +640,12 @@ class VectorStore:
             logger.error(f"Error getting dividend kings: {e}")
             return []
 
+    def list_dividend_payers(self, limit: int = 150) -> list[StockDocument]:
+        """Positive-yield library rows for the research screen. Postgres only."""
+        if getattr(self, "_use_postgres", False):
+            return self._pg_store.list_dividend_payers(limit)  # type: ignore[no-any-return]
+        return []
+
     def get_by_sector(self, sector: str) -> list[StockDocument]:
         """Get all documents in a sector."""
         if getattr(self, "_use_postgres", False):

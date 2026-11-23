@@ -17,7 +17,7 @@ from ui.theme import (
 
 
 def test_portfolio_nav_lists_all_sections_with_hints() -> None:
-    assert len(PORTFOLIO_NAV) == 6
+    assert len(PORTFOLIO_NAV) == 7
     assert [
         "Home",
         "Holdings",
@@ -25,6 +25,7 @@ def test_portfolio_nav_lists_all_sections_with_hints() -> None:
         "Dividend growth",
         "Purchase journal",
         "Deposits & benchmarks",
+        "Growth screen",
     ] == PORTFOLIO_SECTION_LABELS
     for _label, _key, hint in PORTFOLIO_NAV:
         assert hint.strip()

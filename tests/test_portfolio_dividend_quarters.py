@@ -129,6 +129,18 @@ def test_reference_quarterly_totals_sum_sensibly() -> None:
     assert y2025 > y2023
 
 
+def test_missing_quarter_is_not_reported_as_zero() -> None:
+    rows = compare_quarterly_gross({}, {(2026, 4): 0.0})
+    assert len(rows) == 1
+    assert rows[0].status == "missing"
+    assert (2026, 4) not in IBKR_REFERENCE_QUARTERLY_GROSS
+
+
+def test_reported_zero_quarter_still_matches() -> None:
+    rows = compare_quarterly_gross({(2024, 1): 0.0}, {(2024, 1): 0.0})
+    assert rows[0].status == "match"
+
+
 def test_compare_annual_net_matches_reference() -> None:
     rows = compare_annual_net(IBKR_REFERENCE_ANNUAL_NET, IBKR_REFERENCE_ANNUAL_NET)
     assert all(row.status in {"match", "partial"} for row in rows)

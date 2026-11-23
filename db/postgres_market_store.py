@@ -188,6 +188,22 @@ class PostgresMarketStore:
 
         return [_document_from_row(row) for row in rows if row]
 
+    def list_dividend_payers(self, limit: int = 150) -> list[Any]:
+        """Library rows with a positive yield, highest quality first."""
+        from db.connection import ensure_schema, get_connection
+
+        ensure_schema()
+        with get_connection() as conn:
+            query = (
+                "SELECT " + _STOCK_DOCUMENT_COLUMNS + "\n"
+                "FROM stock_documents\n"
+                "WHERE dividend_yield IS NOT NULL AND dividend_yield > 0\n"
+                "ORDER BY data_quality DESC NULLS LAST, symbol\n"
+                "LIMIT %s"
+            )
+            rows = conn.execute(query, (limit,)).fetchall()
+        return [_document_from_row(row) for row in rows if row]
+
     def get_by_sector(self, sector: str) -> list[Any]:
         from db.connection import ensure_schema, get_connection
 
@@ -306,9 +322,10 @@ def _document_from_row(row: Any, *, conn: Any = None) -> Any:  # noqa: C901
     if not row:
         return None
 
-    payload = row["document"]
-    if not isinstance(payload, dict):
-        payload = dict(payload)
+    # Portfolio overlays may precede enrichment and omit document identity fields.
+    payload = dict(row["document"] or {})
+    payload["symbol"] = payload.get("symbol") or row["symbol"]
+    payload["name"] = payload.get("name") or payload["symbol"]
     doc = StockDocument.from_dict(payload)
     doc = hydrate_document_history(doc)
 

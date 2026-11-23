@@ -241,7 +241,7 @@ def ensure_top_dividend_in_vectordb(  # noqa: C901
             logger.warning("Top dividend ingest failed for %s: %s", symbol, exc)
             stats["errors"] += 1
 
-        if len(batch) >= 25:
+        if len(batch) >= 5:
             store.add_documents(batch)
             batch.clear()
 

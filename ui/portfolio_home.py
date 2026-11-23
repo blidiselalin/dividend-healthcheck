@@ -242,7 +242,11 @@ def render_compact_summary(rows: list[PortfolioDetailRow]) -> None:
     from services.portfolio_month_dividends import cached_current_month_paid_dividends
     from ui.clear_dividend_risk_panel import render_portfolio_clear_dividend_risk
     from ui.portfolio_positions_table import render_positions_table
-    from ui.portfolio_summary import render_dividend_focus_block, render_holdings_summary
+    from ui.portfolio_summary import (
+        render_dividend_focus_block,
+        render_holdings_summary,
+        render_portfolio_health,
+    )
 
     stock_cache = st.session_state.get("portfolio_stock_cache") or {}
     yield_cache = st.session_state.get("portfolio_yield_cache") or {}
@@ -258,9 +262,10 @@ def render_compact_summary(rows: list[PortfolioDetailRow]) -> None:
 
     month_paid = cached_current_month_paid_dividends(rows=rows, preload=preload)
 
-    # 1) Value / P&L  2) Income glance  3) Risk watchlist  4) Positions
-    render_holdings_summary(rows, show_month_received=False)
+    # 1) Value / P&L  2) Income glance  3) Sector health  4) Risk watchlist  5) Positions
+    render_holdings_summary(rows, show_positions=True, show_month_received=False)
     render_dividend_focus_block(rows, month_paid=month_paid)
+    render_portfolio_health(rows)
     render_portfolio_clear_dividend_risk(
         rows,
         vector_docs=vector_docs if isinstance(vector_docs, dict) else {},

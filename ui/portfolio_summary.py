@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import streamlit as st
@@ -26,6 +27,94 @@ def _format_delta(value: float | None, pct: float | None) -> str:
     return f"${value:+,.2f}"
 
 
+@dataclass(frozen=True)
+class PortfolioHealthSnapshot:
+    """Compact health figures already computed on portfolio rows."""
+
+    sectors: tuple[tuple[str, float], ...]
+    largest_positions: tuple[tuple[str, float], ...]
+    income_leaders: tuple[tuple[str, float], ...]
+    unpriced: tuple[str, ...]
+    stale_prices: tuple[str, ...]
+
+
+def _top_weights(
+    rows: list[PortfolioDetailRow],
+    attr: str,
+    *,
+    limit: int = 3,
+) -> tuple[tuple[str, float], ...]:
+    ranked: list[tuple[str, float]] = []
+    for row in rows:
+        weight = getattr(row, attr, None)
+        if weight is None or weight <= 0:
+            continue
+        ranked.append((row.ticker, float(weight)))
+    ranked.sort(key=lambda item: item[1], reverse=True)
+    return tuple(ranked[:limit])
+
+
+def build_portfolio_health(rows: list[PortfolioDetailRow]) -> PortfolioHealthSnapshot:
+    """Sector weights, concentration, and missing prices. No new valuation math."""
+    from services.portfolio_allocation_service import (
+        PortfolioAllocationService,
+        unpriced_tickers,
+    )
+
+    sectors: list[tuple[str, float]] = []
+    frame = PortfolioAllocationService().sector_allocation(rows)
+    if not frame.empty:
+        for record in frame.head(6).itertuples(index=False):
+            sectors.append((str(record[0]), float(record[2])))
+    stale = tuple(row.ticker for row in rows if row.price_stale)
+    return PortfolioHealthSnapshot(
+        sectors=tuple(sectors),
+        largest_positions=_top_weights(rows, "weight_pct"),
+        income_leaders=_top_weights(rows, "income_weight_pct"),
+        unpriced=tuple(unpriced_tickers(rows)),
+        stale_prices=stale,
+    )
+
+
+def render_portfolio_health(rows: list[PortfolioDetailRow]) -> None:
+    """Sector exposure and concentration on Home. Full charts stay on Holdings."""
+    if not rows:
+        return
+    health = build_portfolio_health(rows)
+    st.markdown("##### Portfolio health")
+    st.caption(
+        "Sector weights use current market value. "
+        "A holding with no price is excluded. "
+        "Income share is the projected annual income already on each holding."
+    )
+    if health.sectors:
+        left, right = st.columns(2)
+        with left:
+            st.caption("Sector exposure")
+            for name, weight in health.sectors:
+                st.write(f"{name} · {weight:.1f}%")
+        with right:
+            st.caption("Largest positions")
+            if health.largest_positions:
+                for ticker, weight in health.largest_positions:
+                    st.write(f"{ticker} · {weight:.1f}% of value")
+            else:
+                st.write("Position weights appear after prices load.")
+            st.caption("Projected income concentration")
+            if health.income_leaders:
+                for ticker, weight in health.income_leaders:
+                    st.write(f"{ticker} · {weight:.1f}% of projected income")
+            else:
+                st.write("No projected income on these holdings.")
+    notices: list[str] = []
+    if health.unpriced:
+        notices.append("No price: " + ", ".join(health.unpriced))
+    if health.stale_prices:
+        notices.append("Stale price: " + ", ".join(health.stale_prices))
+    if notices:
+        st.caption(" · ".join(notices))
+
+
 def render_dividend_focus_block(
     rows: list[PortfolioDetailRow],
     *,
@@ -43,11 +132,10 @@ def render_dividend_focus_block(
 
     metrics: list[tuple[str, str, str, bool]] = []
     if month_paid is not None:
-        net = (
-            f" · net ${month_paid.net_usd:,.2f} est."
-            if month_paid.net_usd is not None and month_paid.gross_usd > 0
-            else ""
-        )
+        net = ""
+        if month_paid.net_usd is not None and month_paid.gross_usd > 0:
+            estimate = " est." if month_paid.net_is_estimate else ""
+            net = f" · net ${month_paid.net_usd:,.2f}{estimate}"
         metrics.append(
             (
                 f"Received ({month_paid.month_label.split()[0]})",
@@ -145,11 +233,10 @@ def render_holdings_summary(
     )
 
     if include_received and month_paid is not None:
-        net_hint = (
-            f" · net ${month_paid.net_usd:,.2f} est."
-            if month_paid.net_usd is not None and month_paid.gross_usd > 0
-            else ""
-        )
+        net_hint = ""
+        if month_paid.net_usd is not None and month_paid.gross_usd > 0:
+            estimate = " est." if month_paid.net_is_estimate else ""
+            net_hint = f" · net ${month_paid.net_usd:,.2f}{estimate}"
         cards.append(
             (
                 f"Received ({month_paid.month_label.split()[0]})",
