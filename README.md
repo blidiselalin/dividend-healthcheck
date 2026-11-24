@@ -4,7 +4,7 @@
 
 Research Dividend Kings and Aristocrats, track your holdings, monitor dividend income, and deploy to the cloud — all in one self-hosted Streamlit app backed by PostgreSQL.
 
-### Public Beta
+### Public Alpha
 
 DividendScope is under active development.  
 Use it for educational analytics, not personalized financial advice.  
@@ -14,10 +14,12 @@ Market and dividend information may be delayed or incomplete.
 
 | Item | Status |
 |---|---|
-| Current release | `v0.1.0-beta.1` (prerelease) |
+| Current release | `v0.1.0-alpha.1` (prerelease) |
 | Hosted access | Invite-only for real portfolios |
 | Public demo | Sample data only |
-| License | [MIT](LICENSE) — replace the copyright holder placeholder with the legal owner name before publish |
+| License | [MIT](LICENSE) — copyright owner details still need confirmation |
+
+`v0.1.0-alpha.1` is the published baseline. Follow-up changes on this branch are unreleased. The alpha.1 Docker Compose configuration does not load OAuth secrets; do not use that tag for real-portfolio access on a public host.
 
 ### Trust & community
 
@@ -28,13 +30,13 @@ Market and dividend information may be delayed or incomplete.
 - [Contributing](CONTRIBUTING.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Changelog](CHANGELOG.md)
-- [Beta scope](docs/releases/BETA_SCOPE.md)
+- [Alpha release scope and validation](docs/releases/ALPHA_RELEASE_PLAN.md)
 
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit](https://img.shields.io/badge/streamlit-1.42+-red.svg)](https://streamlit.io/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-336791.svg)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/docker-compose-2496ED.svg)](https://docs.docker.com/compose/)
-[![Release: v0.1.0-beta.1](https://img.shields.io/badge/release-v0.1.0--beta.1-orange.svg)](docs/releases/v0.1.0-beta.1.md)
+[![Release: v0.1.0-alpha.1](https://img.shields.io/badge/release-v0.1.0--alpha.1-orange.svg)](docs/releases/ALPHA_RELEASE_PLAN.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
@@ -165,17 +167,28 @@ This is the path that matches production: Streamlit plus PostgreSQL. Install [Do
 ```bash
 git clone https://github.com/blidiselalin/dividend-healthcheck.git
 cd dividend-healthcheck
+```
+
+Create the Streamlit secrets file and configure Google OIDC before starting Compose:
+
+```bash
+cp .streamlit/secrets.toml.example .streamlit/secrets.toml
+```
+
+Fill in the OAuth client ID, client secret, cookie secret, redirect URI, and allowed/admin email lists. Compose mounts `.streamlit` read-only and requires authentication. If OAuth is missing or invalid, portfolio access stays locked.
+
+Start Postgres 16 and the app:
+
+```bash
 docker compose up -d --build
 docker compose ps
 ```
-
-That one command starts Postgres 16 and the app. You do not start the database separately.
 
 `.env` is optional on your own machine. If it is missing, Compose uses user `dividendscope`, password `dividendscope`, and database `dividendscope`. Copy `.env.example` to `.env` and change `POSTGRES_PASSWORD` before a shared or cloud deploy.
 
 Wait until `dividendscope-postgres` is healthy. The app container then applies migrations and starts. Open **http://localhost:8501**. Compose publishes that port on `127.0.0.1` only, so it is reachable from this computer, not from other machines on the network.
 
-Without Google OAuth secrets, the landing page offers **Continue in dev mode**. Type any email and continue. To require Google sign-in, copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` and rebuild so the container can read it. See [Authentication](#authentication).
+The Docker Compose deployment requires Google sign-in. Keep `.streamlit/secrets.toml` on the host; Compose mounts the directory into the container. Missing credentials produce a locked setup message rather than a development sign-in. The local non-Docker workflow below uses a single-user local workspace unless OAuth secrets are configured.
 
 Load the shared market library once (this takes a while):
 
@@ -206,9 +219,9 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Open **http://localhost:8501**. Leave `DATABASE_URL` unset. Portfolio rows then stay in the local data directory. The same dev-mode email bypass appears until you add `.streamlit/secrets.toml`.
+Open **http://localhost:8501**. Leave `DATABASE_URL` unset. Portfolio rows then stay in the local data directory. Without OAuth secrets, local mode uses one unauthenticated local workspace. Keep it on your own machine; do not expose it to other users.
 
-To force that bypass from the shell:
+To explicitly disable authentication during local development:
 
 ```bash
 DIVIDENDSCOPE_AUTH_DISABLE=1 streamlit run app.py
@@ -243,15 +256,17 @@ Create `.streamlit/secrets.toml` (gitignored):
 [auth]
 redirect_uri = "https://your-domain/oauth2callback"
 cookie_secret = "a-random-string-at-least-32-chars"
-
-[auth.providers.google]
-client_id     = "YOUR_CLIENT_ID.apps.googleusercontent.com"
+client_id = "YOUR_CLIENT_ID.apps.googleusercontent.com"
 client_secret = "YOUR_CLIENT_SECRET"
+server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
+invite_only = true
+allowed_emails = ["you@example.com"]
+admin_emails = ["you@example.com"]
 ```
 
 ### Access control
 
-By default, anyone with a Google account can log in. To restrict to specific emails, use the **Admin panel** → **Access requests** feature in the sidebar.
+Google sign-up is invite-only by default when OAuth is configured. Put initial approved addresses in `allowed_emails`; users can request access for an admin to approve. Keep `admin_emails` limited to trusted operators.
 
 ### Demo / test mode
 

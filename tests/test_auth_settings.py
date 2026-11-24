@@ -5,7 +5,26 @@ from __future__ import annotations
 
 import pytest
 
-from auth.settings import invite_only_signup, is_email_allowed
+from auth.settings import auth_configured, auth_required, invite_only_signup, is_email_allowed
+
+
+def test_auth_required_can_be_forced_without_oauth_or_despite_disable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DIVIDENDSCOPE_AUTH_REQUIRED", "true")
+    monkeypatch.setenv("DIVIDENDSCOPE_AUTH_DISABLE", "1")
+    monkeypatch.setattr("auth.settings._auth_section", lambda: {"disable": True})
+    assert auth_required() is True
+
+
+def test_environment_oauth_values_do_not_fake_streamlit_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DIVIDENDSCOPE_AUTH_DISABLE", raising=False)
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "client-id")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "client-secret")
+    monkeypatch.setattr("auth.settings._auth_section", lambda: {})
+    assert auth_configured() is False
 
 
 def test_invite_only_when_allowlist_set(monkeypatch: pytest.MonkeyPatch) -> None:

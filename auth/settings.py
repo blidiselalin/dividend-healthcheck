@@ -41,22 +41,21 @@ def _valid_oauth_value(value: object) -> bool:
 
 
 def auth_configured() -> bool:
-    """True when Google OIDC client credentials are available."""
+    """True when Streamlit's OIDC secrets are available to ``st.login``."""
     if auth_disabled():
         return False
     section = _auth_section()
-    if _valid_oauth_value(section.get("client_id")) and _valid_oauth_value(
-        section.get("client_secret")
-    ):
-        return True
     return bool(
-        _valid_oauth_value(os.environ.get("GOOGLE_OAUTH_CLIENT_ID"))
-        and _valid_oauth_value(os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET"))
+        _valid_oauth_value(section.get("client_id"))
+        and _valid_oauth_value(section.get("client_secret"))
     )
 
 
 def auth_required() -> bool:
     """App should show the login screen before any portfolio data."""
+    required = os.environ.get("DIVIDENDSCOPE_AUTH_REQUIRED", "").strip().lower()
+    if required in ("1", "true", "yes", "on"):
+        return True
     if auth_disabled():
         return False
     section = _auth_section()

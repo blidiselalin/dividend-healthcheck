@@ -9,6 +9,7 @@ import streamlit as st
 from auth.settings import (
     auth_configured,
     auth_disabled,
+    auth_required,
     google_signup_enabled,
     invite_only_signup,
 )
@@ -72,6 +73,13 @@ def _render_dev_login(*, notice: str) -> None:
 
 
 def _render_auth_controls() -> None:
+    if auth_required() and not auth_configured():
+        st.error(
+            "Google sign-in is required for this deployment, but OAuth is not configured. "
+            "Contact the operator; portfolio access is locked."
+        )
+        return
+
     if auth_disabled():
         _render_dev_login(
             notice="Authentication is disabled. Enable Google OAuth in Streamlit secrets."

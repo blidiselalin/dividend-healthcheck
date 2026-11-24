@@ -1,5 +1,7 @@
 # DividendScope public beta scope
 
+> Historical beta planning document. The published release is `v0.1.0-alpha.1`; see [ALPHA_RELEASE_PLAN.md](ALPHA_RELEASE_PLAN.md) for current scope and validation.
+
 This document defines what **v0.1.0-beta.1** includes and excludes.
 
 Release type:

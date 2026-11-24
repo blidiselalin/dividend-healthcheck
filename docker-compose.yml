@@ -52,11 +52,13 @@ services:
     environment:
       DIVIDENDSCOPE_DATA_DIR: /data
       DIVIDENDSCOPE_LOG_LEVEL: INFO
+      DIVIDENDSCOPE_AUTH_REQUIRED: "1"
       PYTHONUNBUFFERED: "1"
       DATABASE_URL: postgresql://${POSTGRES_USER:-dividendscope}:${POSTGRES_PASSWORD:-dividendscope}@postgres:5432/${POSTGRES_DB:-dividendscope}
       SEC_EDGAR_USER_AGENT: ${SEC_EDGAR_USER_AGENT:-DividendScope/1.0 (edgar-data@dividendscope.local)}
     volumes:
       - dividendscope-data:/data
+      - ./.streamlit:/app/.streamlit:ro
     command:
       - streamlit
       - run

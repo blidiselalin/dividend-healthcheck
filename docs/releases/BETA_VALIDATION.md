@@ -1,5 +1,7 @@
 # DividendScope beta validation
 
+> Historical beta validation artifact. Current tag validation and scope are in [ALPHA_RELEASE_PLAN.md](ALPHA_RELEASE_PLAN.md).
+
 Validation date: 2026-11-12.
 
 This file records what was inspected and which checks were executed. A test file on disk is not a pass. An unexecuted check is **Not run**.

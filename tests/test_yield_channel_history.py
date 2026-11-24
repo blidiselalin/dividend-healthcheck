@@ -18,7 +18,7 @@ from utils.yield_channel_history import (
 
 def _doc_with_years(years: int) -> StockDocument:
     doc = StockDocument(symbol="INTU", name="Intuit")
-    start = date.today() - timedelta(days=years * 365)
+    start = date(2020, 11, 23)
     doc.price_history = [
         PriceHistory(
             date=start + timedelta(days=i * 7),
@@ -32,7 +32,7 @@ def _doc_with_years(years: int) -> StockDocument:
     ]
     doc.dividend_history = [
         DividendRecord(
-            ex_date=date(start.year + y, 2, 15),
+            ex_date=start + timedelta(days=30 + y * 365),
             payment_date=None,
             amount=1.0,
         )

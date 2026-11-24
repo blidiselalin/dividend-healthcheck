@@ -1,5 +1,7 @@
 # DividendScope v0.1.0-beta.1 release report
 
+> Historical report for the untagged beta candidate. It does not describe the published `v0.1.0-alpha.1` release; see [ALPHA_RELEASE_PLAN.md](ALPHA_RELEASE_PLAN.md) for the tag-specific validation and follow-up state.
+
 Date: 2026-11-12.
 
 Candidate: dirty working tree on `930fef8e7dfef4c765498cf7b8008f592e9375f9`. No tag. `origin/main` is that same commit. October–November financial work is uncommitted.
